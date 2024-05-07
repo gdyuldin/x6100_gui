@@ -119,7 +119,9 @@ typedef enum {
 //  LV_KEY_DEL              = 127,
 } keys_t;
 
-extern uint32_t EVENT_ROTARY;
+extern uint32_t EVENT_MAIN_ROTARY;
+extern uint32_t EVENT_VOL_ROTARY;
+extern uint32_t EVENT_MFK_ROTARY;
 extern uint32_t EVENT_KEYPAD;
 extern uint32_t EVENT_HKEY;
 extern uint32_t EVENT_RADIO_TX;

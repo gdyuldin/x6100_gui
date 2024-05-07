@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "encoder.h"
 
 typedef enum {
     VOL_VOL = 0,
@@ -31,6 +32,7 @@ typedef enum {
     VOL_LAST
 } vol_mode_t;
 
-void vol_update(int16_t diff, bool voice);
-void vol_press(int16_t dir);
-void vol_set_mode(vol_mode_t mode);
+void vol_init(encoder_t *enc);
+void vol_update(int16_t diff, bool voice, enc_state_t state);
+void vol_update_mode(int16_t dir, enc_state_t state);
+void vol_set_mode(void *mode);

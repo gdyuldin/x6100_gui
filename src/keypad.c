@@ -7,6 +7,7 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <linux/input.h>
@@ -48,7 +49,8 @@ static void keypad_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
                 /* Rotary MFK */
                     
                 case BTN_TRIGGER_HAPPY27:
-                    mfk->pressed = (in.value != 0);
+                    if (in.value != 0)
+                        encoder_state_toggle(mfk);
                     return;
                 
                 /* Front side */

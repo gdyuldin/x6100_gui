@@ -7,6 +7,7 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <linux/input.h>
@@ -27,16 +28,14 @@ static void encoder_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
             send = true;
         }
     }
-
     if (send) {
         backlight_tick();
+        lv_event_send(lv_scr_act(), encoder->event_id, (void *) diff);
     }
-
-    data->enc_diff = -diff;
     data->state = encoder->pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
-encoder_t * encoder_init(char *dev_name) {
+encoder_t * encoder_init(char *dev_name, uint32_t event_id) {
     int fd = open(dev_name, O_RDWR | O_NOCTTY | O_NDELAY);
 
     if (fd == -1) {
@@ -51,6 +50,7 @@ encoder_t * encoder_init(char *dev_name) {
     
     memset(encoder, 0, sizeof(encoder_t));
     encoder->fd = fd;
+    encoder->event_id = event_id;
     
     lv_indev_drv_init(&encoder->indev_drv);
     
@@ -62,5 +62,44 @@ encoder_t * encoder_init(char *dev_name) {
 
     lv_indev_set_group(encoder->indev, keyboard_group);
 
+    encoder->state = ENC_STATE_EDIT;
+
     return encoder;
+}
+
+void encoder_state_toggle(encoder_t *enc)
+{
+    switch (enc->state) {
+    case ENC_STATE_EDIT:
+        enc->state = ENC_STATE_SELECT;
+        voice_say_text_fmt("Selection mode");
+        break;
+        
+    case ENC_STATE_SELECT:
+        enc->state = ENC_STATE_EDIT;
+        voice_say_text_fmt("Edit mode");
+        break;
+    }
+    enc->update_fn(0, true, enc->state);
+}
+
+
+void encoder_update(encoder_t *enc, int16_t diff, bool voice)
+{
+    switch (enc->state)
+    {
+    case ENC_STATE_EDIT:
+        enc->update_fn(diff, voice, enc->state);
+        break;
+    
+    case ENC_STATE_SELECT:
+        enc->update_mode_fn(diff, enc->state);
+        break;
+    }
+}
+
+void encoder_set_mode(encoder_t *enc, void *mode)
+{
+    enc->set_mode_fn(mode);
+    enc->state = ENC_STATE_EDIT;
 }

@@ -160,7 +160,7 @@ void waterfall_set_height(lv_coord_t h) {
 }
 
 void waterfall_clear() {
-    memset(frame->data,0, frame->data_size);
+    memset(frame->data, 0, frame->data_size);
     scroll_hor = 0;
     scroll_hor_surplus = 0;
 }

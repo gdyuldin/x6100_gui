@@ -21,16 +21,23 @@
 #include "backlight.h"
 #include "voice.h"
 
-mfk_state_t  mfk_state = MFK_STATE_EDIT;
-mfk_mode_t   mfk_mode = MFK_MIN_LEVEL;
+mfk_mode_t mfk_mode = MFK_MIN_LEVEL;
 
-void mfk_update(int16_t diff, bool voice) {
+void mfk_init(encoder_t *enc)
+{
+    enc->update_fn = mfk_update;
+    enc->update_mode_fn = mfk_update_mode;
+    enc->set_mode_fn = mfk_set_mode;
+}
+
+
+void mfk_update(int16_t diff, bool voice, enc_state_t state) {
     int32_t     i;
     char        *str;
     bool        b;
     float       f;
 
-    uint32_t    color = mfk_state == MFK_STATE_EDIT ? 0xFFFFFF : 0xBBBBBB;
+    uint32_t    color = state == ENC_STATE_EDIT ? 0xFFFFFF : 0xBBBBBB;
 
     switch (mfk_mode) {
         case MFK_MIN_LEVEL:
@@ -574,7 +581,7 @@ void mfk_update(int16_t diff, bool voice) {
     }
 }
 
-void mfk_press(int16_t dir) {
+void mfk_update_mode(int16_t dir, enc_state_t state) {
     while (true) {
         if (dir > 0) {
             if (mfk_mode == MFK_LAST-1) {
@@ -596,10 +603,11 @@ void mfk_press(int16_t dir) {
             break;
         }
     }
-    
-    mfk_update(0, true);
+    mfk_update(0, true, state);
 }
 
-void mfk_set_mode(mfk_mode_t mode) {
-    mfk_mode = mode;
+
+void mfk_set_mode(void *mode) {
+    mfk_mode = *(mfk_mode_t*)mode;
+    mfk_update(0, true, ENC_STATE_EDIT);
 }

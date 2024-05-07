@@ -15,13 +15,20 @@
 
 static vol_mode_t   vol_mode = VOL_VOL;
 
-void vol_update(int16_t diff, bool voice) {
+void vol_init(encoder_t *enc)
+{
+    enc->update_fn = vol_update;
+    enc->update_mode_fn = vol_update_mode;
+    enc->set_mode_fn = vol_set_mode;
+}
+
+void vol_update(int16_t diff, bool voice, enc_state_t state) {
     int32_t     x;
     float       f;
-    char        *s;
+    const char        *s;
     bool        b;
 
-    uint32_t    color = vol->mode == VOL_EDIT ? 0xFFFFFF : 0xBBBBBB;
+    uint32_t    color = state == ENC_STATE_EDIT ? 0xFFFFFF : 0xBBBBBB;
 
     switch (vol_mode) {
         case VOL_VOL:
@@ -197,7 +204,7 @@ void vol_update(int16_t diff, bool voice) {
     }
 }
 
-void vol_press(int16_t dir) {
+void vol_update_mode(int16_t dir, enc_state_t state) {
     while (true) {
         if (dir > 0) {
             if (vol_mode == VOL_LAST-1) {
@@ -218,9 +225,10 @@ void vol_press(int16_t dir) {
         }
     }
 
-    vol_update(0, true);
+    vol_update(0, true, state);
 }
 
-void vol_set_mode(vol_mode_t mode) {
-    vol_mode = mode;
+void vol_set_mode(void *mode) {
+    vol_mode = *(vol_mode_t*)mode;
+    vol_update(0, true, ENC_STATE_EDIT);
 }

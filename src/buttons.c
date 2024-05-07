@@ -11,6 +11,7 @@
 #include "buttons.h"
 #include "mfk.h"
 #include "vol.h"
+#include "main.h"
 #include "msg.h"
 #include "rtty.h"
 #include "pannel.h"
@@ -327,16 +328,12 @@ static void button_action_cb(lv_event_t * e) {
 
 static void button_vol_update_cb(lv_event_t * e) {
     button_item_t *item = lv_event_get_user_data(e);
-
-    vol_set_mode(item->data);
-    vol_update(0, true);
+    encoder_set_mode(vol, (void *) &item->data);
 }
 
 static void button_mfk_update_cb(lv_event_t * e) {
     button_item_t *item = lv_event_get_user_data(e);
-
-    mfk_set_mode(item->data);
-    mfk_update(0, true);
+    encoder_set_mode(mfk, (void *) &item->data);
 }
 
 static void button_prev_page_cb(void * ptr) {
@@ -405,7 +402,7 @@ void buttons_press(uint8_t n, bool hold) {
         button_item_t *item = btn[n].item;
         
         if (item != NULL && item->hold) {
-            item->hold(item);
+            item->hold((void *)item);
         }
     } else {
         lv_event_send(btn[n].obj, LV_EVENT_PRESSED, NULL);

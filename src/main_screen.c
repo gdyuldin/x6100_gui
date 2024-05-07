@@ -521,7 +521,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
         case KEYPAD_GEN:
             if (keypad->state == KEYPAD_RELEASE) {
                 apps_disable();
-                mfk_set_mode(MFK_MIN_LEVEL);
+                // mfk_set_mode(MFK_MIN_LEVEL);
                 buttons_unload_page();
                 buttons_load_page(PAGE_VOL_1);
                 voice_say_text_fmt("General menu keys");
@@ -839,10 +839,20 @@ static void freq_shift(int16_t diff) {
 }
 
 static void main_screen_rotary_cb(lv_event_t * e) {
-    int32_t     diff = lv_event_get_param(e);
+    int32_t     diff = (int32_t)lv_event_get_param(e);
     
     freq_shift(diff);
     dialog_rotary(diff);
+}
+
+static void main_screen_vol_cb(lv_event_t * e) {
+    int32_t     diff = (int32_t)lv_event_get_param(e);
+    encoder_update(vol, -diff, false);
+}
+
+static void main_screen_mfk_cb(lv_event_t * e) {
+    int32_t     diff = (int32_t)lv_event_get_param(e);
+    encoder_update(mfk, -diff, false);
 }
 
 static void spectrum_key_cb(lv_event_t * e) {
@@ -871,22 +881,22 @@ static void spectrum_key_cb(lv_event_t * e) {
 
         case KEY_VOL_LEFT_EDIT:
         case '[':
-            vol_update(-1, false);
+            vol_update(-1, false, vol->state);
             break;
             
         case KEY_VOL_RIGHT_EDIT:
         case ']':
-            vol_update(+1, false);
+            vol_update(+1, false, vol->state);
             break;
 
         case KEY_VOL_LEFT_SELECT:
         case '{':
-            vol_press(-1);
+            vol_update_mode(-1, vol->state);
             break;
             
         case KEY_VOL_RIGHT_SELECT:
         case '}':
-            vol_press(+1);
+            vol_update_mode(+1, vol->state);
             break;
             
         case KEYBOARD_F9:
@@ -895,45 +905,10 @@ static void spectrum_key_cb(lv_event_t * e) {
             
             dialog_construct(dialog_settings, obj);
             break;
-            
-        case LV_KEY_LEFT:
-            switch (mfk_state) {
-                case MFK_STATE_EDIT:
-                    mfk_update(-1, false);
-                    break;
-                    
-                case MFK_STATE_SELECT:
-                    mfk_press(-1);
-                    break;
-            }
-            break;
-            
-        case LV_KEY_RIGHT:
-            switch (mfk_state) {
-                case MFK_STATE_EDIT:
-                    mfk_update(+1, false);
-                    break;
-                    
-                case MFK_STATE_SELECT:
-                    mfk_press(+1);
-                    break;
-            }
-            break;
 
         case LV_KEY_ESC:
             if (!dialog_is_run()) {
-                switch (vol->mode) {
-                    case VOL_EDIT:
-                        vol->mode = VOL_SELECT;
-                        voice_say_text_fmt("Selection mode");
-                        break;
-                        
-                    case VOL_SELECT:
-                        vol->mode = VOL_EDIT;
-                        voice_say_text_fmt("Edit mode");
-                        break;
-                }
-                vol_update(0, false);
+                encoder_state_toggle(vol);
             }
             break;
 
@@ -976,18 +951,7 @@ static void spectrum_key_cb(lv_event_t * e) {
 }
 
 static void spectrum_pressed_cb(lv_event_t * e) {
-    switch (mfk_state) {
-        case MFK_STATE_EDIT:
-            mfk_state = MFK_STATE_SELECT;
-            voice_say_text_fmt("Selection mode");
-            break;
-            
-        case MFK_STATE_SELECT:
-            mfk_state = MFK_STATE_EDIT;
-            voice_say_text_fmt("Edit mode");
-            break;
-    }
-    mfk_update(0, false);
+    encoder_state_toggle(mfk);    
 }
 
 static void keys_enable_cb(lv_timer_t *t) {
@@ -1043,7 +1007,9 @@ lv_obj_t * main_screen() {
 
     obj = lv_obj_create(NULL);
 
-    lv_obj_add_event_cb(obj, main_screen_rotary_cb, EVENT_ROTARY, NULL);
+    lv_obj_add_event_cb(obj, main_screen_rotary_cb, EVENT_MAIN_ROTARY, NULL);
+    lv_obj_add_event_cb(obj, main_screen_vol_cb, EVENT_VOL_ROTARY, NULL);
+    lv_obj_add_event_cb(obj, main_screen_mfk_cb, EVENT_MFK_ROTARY, NULL);
     lv_obj_add_event_cb(obj, main_screen_keypad_cb, EVENT_KEYPAD, NULL);
     lv_obj_add_event_cb(obj, main_screen_hkey_cb, EVENT_HKEY, NULL);
     lv_obj_add_event_cb(obj, main_screen_radio_cb, EVENT_RADIO_TX, NULL);

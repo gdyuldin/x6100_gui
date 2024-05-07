@@ -35,7 +35,7 @@ static void set_brightness(int16_t value) {
         char    str[8];
         int     len = snprintf(str, sizeof(str), "%i\n", 10 - value);
 
-        write(brightness, str, len);
+        ssize_t nbytes = write(brightness, str, len);
     }
 }
 
@@ -44,7 +44,7 @@ static void set_power(bool value) {
         char    str[8];
         int     len = snprintf(str, sizeof(str), "%i\n", value ? 0 : 1);
         
-        write(power, str, len);
+        ssize_t nbytes = write(power, str, len);
     }
 }
 

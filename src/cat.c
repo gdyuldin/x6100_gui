@@ -98,6 +98,24 @@
 #define M_NFM           0x05
 #define M_CWR           0x07
 
+// Levels (for C_CTL_LVL)
+#define LVL_AF          0x01  /* AF level( (Rx volume) */
+#define LVL_RF          0x02  /* RF gain */
+#define LVL_SQL         0x03  /* SQL level */
+#define LVL_NR          0x06  /* NR level */
+#define LVL_CW_TONE     0x09  /* CW sidetone frequency  */
+#define LVL_TP          0x0A  /* Tx power */
+#define LVL_MIC_GAIN    0x0B  /* Mic gain */
+#define LVL_CW_SPEED    0x0C  /* CW key speed */
+#define LVL_DNF_CENTER  0x0D  /* DNF center frequency */
+#define LVL_COMP        0x0E  /* COMP level */
+#define LVL_QSK_TIME    0x0F  /* QSK time  */
+#define LVL_NB          0x12  /* NB level  */
+#define LVL_MONI        0x15  /* MONI level  */
+#define LVL_VOX_GAIN    0x16  /* VOX gain */
+#define LVL_ANTI_VOX_GAIN 0x17  /* ANTI-VOX gain */
+#define LVL_LCD_BL      0x19  /* LCD backlight level */
+
 
 static int      fd;
 
@@ -138,7 +156,7 @@ static void prepare_answer() {
 
 static void send_frame(uint16_t len) {
     frame[len - 1] = FRAME_END;
-    write(fd, frame, len);
+    ssize_t nbytes = write(fd, frame, len);
 }
 
 static void send_code(uint8_t code) {
@@ -352,6 +370,19 @@ static void frame_parse(uint16_t len) {
                 send_code(CODE_OK);
             }
             break;
+
+        // case C_CTL_LVL:
+        //     switch (frame[6])
+        //     {
+        //     case /* constant-expression */:
+        //         /* code */
+        //         break;
+
+        //     default:
+        //         break;
+        //     }
+        //     key_tone
+        //     break;
 
         default:
             LV_LOG_WARN("Unsuported %02X:%02X (Len %i)", frame[4], frame[5], len);

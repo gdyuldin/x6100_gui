@@ -3,7 +3,7 @@ add_executable(${PROJECT_NAME})
 target_sources(${PROJECT_NAME} PUBLIC  
     main.c main_screen.c 
     styles.c spectrum.c radio.c dsp.c util.c 
-    waterfall.c rotary.c keyboard.c encoder.c
+    waterfall.c keyboard.c encoder.c
     events.c msg.c msg_tiny.c keypad.c params.c
     bands.c hkey.c clock.c info.c
     meter.c band_info.c tx_info.c
@@ -29,8 +29,8 @@ find_package(Threads REQUIRED)
 target_compile_options(${PROJECT_NAME} PRIVATE -g -fno-omit-frame-pointer -fasynchronous-unwind-tables)
 target_link_options(${PROJECT_NAME} PRIVATE -g -rdynamic)
 
-#target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address -fsanitize=undefined -fno-sanitize-recover)
-#target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address -fsanitize=undefined -fno-sanitize-recover -static-libasan -static-libubsan)
+# target_compile_options(${PROJECT_NAME} PRIVATE -O0 -g -fsanitize=address -fsanitize=undefined -fno-sanitize-recover -rdynamic)
+# target_link_options(${PROJECT_NAME} PRIVATE -O0 -g -fsanitize=address -fsanitize=undefined -fno-sanitize-recover -static-libasan -static-libubsan -rdynamic)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 target_link_libraries(${PROJECT_NAME} PRIVATE lvgl lvgl::drivers)

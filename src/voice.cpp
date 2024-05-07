@@ -274,7 +274,7 @@ void voice_say_float2(const char *prompt, float x) {
     voice_delay_say_text_fmt("%s|%.2f", prompt, x);
 }
 
-void voice_say_text(const char *prompt, char *x) {
+void voice_say_text(const char *prompt, const char *x) {
     voice_delay_say_text_fmt("%s|%s", prompt, x);
 }
 

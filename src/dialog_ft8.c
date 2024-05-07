@@ -938,7 +938,7 @@ static ft8_tx_msg_t parse_rx_msg(const char * str) {
     char            *call_de = NULL;
     char            *extra = NULL;
 
-    /* Splite */
+    /* Split */
     
     call_to = strtok(s, " ");
     

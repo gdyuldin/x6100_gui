@@ -34,7 +34,7 @@ void voice_say_bool(const char *prompt, bool x);
 void voice_say_int(const char *prompt, int32_t x);
 void voice_say_float(const char *prompt, float x);
 void voice_say_float2(const char *prompt, float x);
-void voice_say_text(const char *prompt, char *x);
+void voice_say_text(const char *prompt, const char *x);
 void voice_say_lang();
 
 const char * voice_change(int16_t diff);

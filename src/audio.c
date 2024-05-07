@@ -40,7 +40,7 @@ static void on_state_change(pa_context *c, void *userdata) {
 static void read_callback(pa_stream *s, size_t nbytes, void *udata) {
     int16_t *buf = NULL;
 
-    pa_stream_peek(capture_stm, &buf, &nbytes);
+    pa_stream_peek(capture_stm, (const void**)&buf, &nbytes);
     dsp_put_audio_samples(nbytes / 2, buf);
     pa_stream_drop(capture_stm);
 }

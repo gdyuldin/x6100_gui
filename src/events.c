@@ -14,7 +14,9 @@
 
 #define QUEUE_SIZE  32
 
-uint32_t        EVENT_ROTARY;
+uint32_t        EVENT_MAIN_ROTARY;
+uint32_t        EVENT_VOL_ROTARY;
+uint32_t        EVENT_MFK_ROTARY;
 uint32_t        EVENT_KEYPAD;
 uint32_t        EVENT_HKEY;
 uint32_t        EVENT_RADIO_TX;
@@ -41,7 +43,9 @@ static uint8_t          queue_read = 0;
 static pthread_mutex_t  queue_mux;
 
 void event_init() {
-    EVENT_ROTARY = lv_event_register_id();
+    EVENT_MAIN_ROTARY = lv_event_register_id();
+    EVENT_VOL_ROTARY = lv_event_register_id();
+    EVENT_MFK_ROTARY = lv_event_register_id();
     EVENT_KEYPAD = lv_event_register_id();
     EVENT_HKEY = lv_event_register_id();
     EVENT_RADIO_TX = lv_event_register_id();

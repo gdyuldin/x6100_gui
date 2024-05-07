@@ -121,7 +121,7 @@ static bool create_file() {
     file = sf_open(filename, SFM_WRITE, &sfinfo);
     
     if (file == NULL) {
-        char* err = sf_strerror(NULL);
+        const char* err = sf_strerror(NULL);
         LV_LOG_ERROR("Problem with create file: %s", err);
         return false;
     }
@@ -231,7 +231,7 @@ static void * beacon_thread(void *arg) {
             case VOICE_BEACON_OFF:
                 buttons_unload_page();
                 buttons_load_page(PAGE_MSG_VOICE_1);
-                return;
+                return NULL;
         
             case VOICE_BEACON_PLAY:
                 msg_set_text_fmt("Sending message");

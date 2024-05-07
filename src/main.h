@@ -8,15 +8,9 @@
 
 #pragma once
 
-#include "rotary.h"
 #include "encoder.h"
 
 #define VERSION "v0.20.1"
 
-typedef enum {
-    VOL_EDIT = 0,
-    VOL_SELECT,
-} vol_rotary_t;
-
-extern rotary_t     *vol;
+extern encoder_t    *vol;
 extern encoder_t    *mfk;
