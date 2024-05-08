@@ -190,6 +190,7 @@ void radio_vfo_set() {
 
     x6100_control_vfo_set(params_band.vfo);
     x6100_control_split_set(params_band.split);
+    x6100_control_rfg_set(params_band.rfg);
     radio_unlock();
 
     params_bands_find(params_band.vfo_x[params_band.vfo].freq, &params.freq_band);
