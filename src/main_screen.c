@@ -880,12 +880,12 @@ static void spectrum_key_cb(lv_event_t * e) {
 
         case KEY_VOL_LEFT_SELECT:
         case '{':
-            vol_press(-1);
+            vol_change_mode(-1);
             break;
             
         case KEY_VOL_RIGHT_SELECT:
         case '}':
-            vol_press(+1);
+            vol_change_mode(+1);
             break;
             
         case KEYBOARD_F9:
@@ -902,7 +902,7 @@ static void spectrum_key_cb(lv_event_t * e) {
                     break;
                     
                 case MFK_STATE_SELECT:
-                    mfk_press(-1);
+                    mfk_change_mode(-1);
                     break;
             }
             break;
@@ -914,7 +914,7 @@ static void spectrum_key_cb(lv_event_t * e) {
                     break;
                     
                 case MFK_STATE_SELECT:
-                    mfk_press(+1);
+                    mfk_change_mode(+1);
                     break;
             }
             break;

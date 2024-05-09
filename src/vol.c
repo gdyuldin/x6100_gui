@@ -12,6 +12,7 @@
 #include "main.h"
 #include "params.h"
 #include "voice.h"
+#include "util.h"
 
 static vol_mode_t   vol_mode = VOL_VOL;
 
@@ -197,27 +198,8 @@ void vol_update(int16_t diff, bool voice) {
     }
 }
 
-void vol_press(int16_t dir) {
-    while (true) {
-        if (dir > 0) {
-            if (vol_mode == VOL_LAST-1) {
-                vol_mode = 0;
-            } else {
-                vol_mode++;
-            }
-        } else {
-            if (vol_mode == 0) {
-                vol_mode = VOL_LAST-1;
-            } else {
-                vol_mode--;
-            }
-        }
-        
-        if (params.vol_modes & (1 << vol_mode)) {
-            break;
-        }
-    }
-
+void vol_change_mode(int16_t dir) {
+    vol_mode = loop_modes(dir, vol_mode, params.vol_modes, VOL_LAST-1);
     vol_update(0, true);
 }
 

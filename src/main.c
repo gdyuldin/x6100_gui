@@ -33,6 +33,8 @@
 #include "backlight.h"
 #include "events.h"
 #include "gps.h"
+#include "mfk.h"
+#include "vol.h"
 
 #define DISP_BUF_SIZE (128 * 1024)
 
@@ -87,6 +89,8 @@ int main(void) {
     vol->right[VOL_SELECT] = KEY_VOL_RIGHT_SELECT;
     
     params_init();
+    mfk_change_mode(0);
+    vol_change_mode(0);
     styles_init();
     
     lv_obj_t *main_obj = main_screen();

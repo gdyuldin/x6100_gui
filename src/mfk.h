@@ -71,5 +71,5 @@ typedef enum {
 extern mfk_state_t  mfk_state;
 
 void mfk_update(int16_t diff, bool voice);
-void mfk_press(int16_t dir);
+void mfk_change_mode(int16_t dir);
 void mfk_set_mode(mfk_mode_t mode);

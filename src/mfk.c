@@ -574,29 +574,8 @@ void mfk_update(int16_t diff, bool voice) {
     }
 }
 
-void mfk_press(int16_t dir) {
-    while (true) {
-        if (dir > 0) {
-            if (mfk_mode == MFK_LAST-1) {
-                mfk_mode = 0;
-            } else {
-                mfk_mode++;
-            }
-        } else {
-            if (mfk_mode == 0) {
-                mfk_mode = MFK_LAST-1;
-            } else {
-                mfk_mode--;
-            }
-        }
-        
-        uint64_t mask = (uint64_t) 1L << mfk_mode;
-        
-        if (params.mfk_modes & mask) {
-            break;
-        }
-    }
-    
+void mfk_change_mode(int16_t dir) {
+    mfk_mode = loop_modes(dir, mfk_mode, params.mfk_modes, MFK_LAST-1);
     mfk_update(0, true);
 }
 

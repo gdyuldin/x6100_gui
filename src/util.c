@@ -104,3 +104,37 @@ uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
     
     return data;
 }
+
+
+int loop_modes(int16_t dir, int mode, uint64_t modes, int max_val) {
+    while (1) {
+        if (dir > 0) {
+            if (mode == max_val) {
+                mode = 0;
+            } else {
+                mode++;
+            }
+        } else {
+            if (dir < 0)
+            {
+                if (mode == 0) {
+                    mode = max_val;
+                } else {
+                    mode--;
+                }
+            }
+        }
+        if (modes & (1LL << mode)) {
+            break;
+        }
+        if (dir == 0)
+        {
+            if (mode == max_val) {
+                mode = 0;
+            } else {
+                mode++;
+            }
+        }
+    }
+    return mode;
+}
