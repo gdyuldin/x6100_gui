@@ -602,4 +602,5 @@ void mfk_press(int16_t dir) {
 
 void mfk_set_mode(mfk_mode_t mode) {
     mfk_mode = mode;
+    mfk_state = MFK_STATE_EDIT;
 }

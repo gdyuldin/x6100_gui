@@ -223,4 +223,5 @@ void vol_press(int16_t dir) {
 
 void vol_set_mode(vol_mode_t mode) {
     vol_mode = mode;
+    vol->mode = VOL_EDIT;
 }
