@@ -521,7 +521,6 @@ static void main_screen_keypad_cb(lv_event_t * e) {
         case KEYPAD_GEN:
             if (keypad->state == KEYPAD_RELEASE) {
                 apps_disable();
-                mfk_set_mode(MFK_MIN_LEVEL);
                 buttons_unload_page();
                 buttons_load_page(PAGE_VOL_1);
                 voice_say_text_fmt("General menu keys");
