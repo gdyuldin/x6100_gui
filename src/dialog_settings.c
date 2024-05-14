@@ -1160,6 +1160,32 @@ static uint8_t make_auto(uint8_t row) {
     return row + 1;
 }
 
+static uint8_t make_waterfall_smooth_scroll(uint8_t row) {
+    lv_obj_t    *obj;
+    uint8_t     col = 0;
+
+    row_dsc[row] = 54;
+
+    obj = lv_label_create(grid);
+
+    lv_label_set_text(obj, "Waterfall smooth scroll");
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    obj = lv_obj_create(grid);
+    
+    lv_obj_set_size(obj, SMALL_6, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(obj);
+
+    obj = switch_bool(obj, &params.waterfall_smooth_scroll);
+
+    lv_obj_set_width(obj, SMALL_6 - 30);
+
+    return row + 1;
+}
+
 static uint8_t make_freq_accel(uint8_t row) {
     lv_obj_t    *obj;
     uint8_t     col = 0;
@@ -1238,6 +1264,9 @@ static void construct_cb(lv_obj_t *parent) {
 
     row = make_delimiter(row);
     row = make_auto(row);
+
+    row = make_waterfall_smooth_scroll(row);
+    row = make_delimiter(row);
 
     row = make_delimiter(row);
     row = make_freq_accel(row);

@@ -108,11 +108,16 @@ void waterfall_data(float *data_buf, uint16_t size) {
 }
 
 static void do_scroll_cb(lv_event_t * event) {
+    int16_t px;
     if (scroll_hor == 0) {
         return;
     }
 
-    int16_t px = abs(scroll_hor);
+    if (params.waterfall_smooth_scroll.x) {
+        px = (abs(scroll_hor) / 10) + 1;
+    } else {
+        px = abs(scroll_hor);
+    }
 
     if (scroll_hor > 0) {
         scroll_right(px);
