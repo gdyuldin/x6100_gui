@@ -31,7 +31,6 @@ static lv_coord_t       width;
 static lv_coord_t       height;
 static int32_t          width_hz = 100000;
 static uint32_t         line_len;
-static uint8_t          *line_buf = NULL;
 
 static int              grid_min = -70;
 static int              grid_max = -40;
@@ -51,12 +50,7 @@ lv_obj_t * waterfall_init(lv_obj_t * parent) {
 }
 
 static void scroll_down() {
-    uint8_t     *ptr = frame->data + frame->data_size - line_len * 2;
-
-    for (int y = 0; y < height-1; y++) {
-        memcpy(ptr + line_len, ptr, line_len);
-        ptr -= line_len;
-    }
+    memmove(frame->data + line_len, frame->data, frame->data_size - line_len);
 }
 
 static void scroll_right(int16_t px) {
@@ -65,9 +59,8 @@ static void scroll_right(int16_t px) {
     uint16_t    tail = (width - px) * PX_BYTES;
     
     for (int y = 0; y < height; y++) {
-        memset(line_buf + tail, 0, offset);
-        memcpy(line_buf, ptr + offset, tail);
-        memcpy(ptr, line_buf, line_len);
+        memmove(ptr, ptr + offset, tail);
+        memset(ptr + tail, 0, offset);
         
         ptr += line_len;
     }
@@ -79,9 +72,8 @@ static void scroll_left(int16_t px) {
     uint16_t    tail = (width - px) * PX_BYTES;
     
     for (int y = 0; y < height; y++) {
-        memset(line_buf, 0, offset);
-        memcpy(line_buf + offset, ptr, tail);
-        memcpy(ptr, line_buf, line_len);
+        memmove(ptr + offset, ptr, tail);
+        memset(ptr, 0, offset);
         
         ptr += line_len;
     }
@@ -120,7 +112,7 @@ static void do_scroll_cb(lv_event_t * event) {
         return;
     }
 
-    int16_t px = (abs(scroll_hor) / 10) + 1;
+    int16_t px = abs(scroll_hor);
 
     if (scroll_hor > 0) {
         scroll_right(px);
@@ -146,7 +138,6 @@ void waterfall_set_height(lv_coord_t h) {
     frame = lv_img_buf_alloc(width, height, LV_IMG_CF_TRUE_COLOR);
 
     line_len = frame->data_size / frame->header.h;
-    line_buf = malloc(line_len);
     
     styles_waterfall_palette(palette, 256);
 
