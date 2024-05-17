@@ -39,6 +39,7 @@ static lv_img_dsc_t     *frame;
 static lv_color_t       palette[256];
 static int16_t          scroll_hor = 0;
 static int16_t          scroll_hor_surplus = 0;
+static uint8_t          delay = 0;
 
 lv_obj_t * waterfall_init(lv_obj_t * parent) {
     obj = lv_obj_create(parent);
@@ -80,6 +81,12 @@ static void scroll_left(int16_t px) {
 }
 
 void waterfall_data(float *data_buf, uint16_t size) {
+    if (delay)
+    {
+        delay--;
+        return;
+    }
+
     if (scroll_hor) {
         return;
     }
@@ -199,21 +206,13 @@ void waterfall_change_min(int16_t d) {
 }
 
 void waterfall_change_freq(int16_t df) {
-    uint16_t    div = width_hz / width;
-    int16_t     surplus = df % div;
+    delay = 2;
+    uint16_t    hz_per_pixel = width_hz / width;
 
-    scroll_hor += df / div;
-    
-    if (surplus) {
-        scroll_hor_surplus += surplus;
-    } else {
-        scroll_hor_surplus = 0;
-    }
-    
-    if (abs(scroll_hor_surplus) > div) {
-        scroll_hor += scroll_hor_surplus / div;
-        scroll_hor_surplus = scroll_hor_surplus % div;
-    }
+    df += scroll_hor_surplus;
+    scroll_hor += df / hz_per_pixel;
+
+    scroll_hor_surplus = df % hz_per_pixel;
 
     if (scroll_hor) {
         lv_obj_invalidate(img);

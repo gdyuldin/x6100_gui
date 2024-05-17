@@ -128,8 +128,7 @@ void dsp_samples(float complex *buf_samples, uint16_t size) {
 
     spgramcf_get_psd(spectrum_sg, spectrum_psd);
 
-    for (uint16_t i = 0; i < nfft; i++)
-        spectrum_psd[i] -= 30.0f;
+    liquid_vectorf_addscalar(spectrum_psd, nfft, -30.0f, spectrum_psd);
 
     pthread_mutex_unlock(&spectrum_mux);
     
@@ -153,8 +152,7 @@ void dsp_samples(float complex *buf_samples, uint16_t size) {
     spgramcf_write(waterfall_sg, buf_filtered, size);
     spgramcf_get_psd(waterfall_sg, waterfall_psd);
 
-    for (uint16_t i = 0; i < nfft; i++)
-        waterfall_psd[i] -= 30.0f;
+    liquid_vectorf_addscalar(waterfall_psd, nfft, -30.0f, waterfall_psd);
     
     if (now - waterfall_time > waterfall_fps_ms) {
         if (!delay) {
