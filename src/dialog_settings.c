@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/rtc.h>
+#include <errno.h>
 
 #include "lvgl/lvgl.h"
 #include "dialog.h"
@@ -152,18 +153,36 @@ static void datetime_update_cb(lv_event_t * e) {
     tp.tv_sec = mktime(&ts);
     tp.tv_nsec = 0;
 
-    clock_settime(CLOCK_REALTIME, &tp);
-    
-    /* Set RTC */
-    
-    int rtc = open("/dev/rtc1", O_WRONLY);
-    
-    if (rtc > 0) {
-        ioctl(rtc, RTC_SET_TIME, &ts);
-        close(rtc);
-    } else {
-        LV_LOG_ERROR("Set RTC");
+    int res = clock_settime(CLOCK_REALTIME, &tp);
+    if (res != 0)
+    {
+        LV_LOG_ERROR("Can't set system time: %s\n", strerror(errno));
+        return;
     }
+    
+}
+
+static void datetime_set_rtc_cb(lv_event_t * e) {
+    lv_obj_t * obj = lv_event_get_target(e);
+    if (!lv_group_get_editing(lv_obj_get_group(obj)))
+    {
+        /* Set RTC */
+        
+        int rtc = open("/dev/rtc1", O_WRONLY);
+        
+        if (rtc > 0) {
+            int res = ioctl(rtc, RTC_SET_TIME, &ts);
+            if (res != 0)
+            {
+                LV_LOG_ERROR("Can't set RTC time: %s\n", strerror(errno));
+                return;
+            }
+            close(rtc);
+        } else {
+            LV_LOG_ERROR("Can't open /dev/rtc1: %s\n", strerror(errno));
+        }
+    }
+    
 }
 
 static uint8_t make_date(uint8_t row) {
@@ -194,6 +213,7 @@ static uint8_t make_date(uint8_t row) {
     
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     /* Month */
 
@@ -210,6 +230,7 @@ static uint8_t make_date(uint8_t row) {
     
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     /* Year */
 
@@ -226,6 +247,7 @@ static uint8_t make_date(uint8_t row) {
     
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     return row + 1;
 }
@@ -258,6 +280,7 @@ static uint8_t make_time(uint8_t row) {
     
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     /* Min */
 
@@ -274,6 +297,7 @@ static uint8_t make_time(uint8_t row) {
     
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     /* Sec */
 
@@ -290,6 +314,7 @@ static uint8_t make_time(uint8_t row) {
     
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     return row + 1;
 }
