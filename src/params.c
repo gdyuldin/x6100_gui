@@ -42,6 +42,7 @@ params_t params = {
     .waterfall_auto_min     = { .x = true,  .name = "waterfall_auto_min",       .voice = "Auto minimum of waterfall" },
     .waterfall_auto_max     = { .x = true,  .name = "waterfall_auto_max",       .voice = "Auto maximum of waterfall" },
     .waterfall_smooth_scroll= { .x = true,  .name = "waterfall_smooth_scroll",  .voice = "Waterfall smooth scroll"},
+    .waterfall_center_line  = { .x = true,  .name = "waterfall_center_line",    .voice = "Waterfall center line"},
     .mag_freq               = { .x = true,  .name = "mag_freq",                 .voice = "Magnification of frequency" },
     .mag_info               = { .x = true,  .name = "mag_info",                 .voice = "Magnification of info" },
     .mag_alc                = { .x = true,  .name = "mag_alc",                  .voice = "Magnification of A L C" },
@@ -678,6 +679,7 @@ static bool params_load() {
         if (params_load_bool(&params.waterfall_auto_min, name, i)) continue;
         if (params_load_bool(&params.waterfall_auto_max, name, i)) continue;
         if (params_load_bool(&params.waterfall_smooth_scroll, name, i)) continue;
+        if (params_load_bool(&params.waterfall_center_line, name, i)) continue;
         if (params_load_bool(&params.spmode, name, i)) continue;
         if (params_load_bool(&params.ft8_auto, name, i)) continue;
 
@@ -890,6 +892,7 @@ static void params_save() {
     params_save_bool(&params.waterfall_auto_min);
     params_save_bool(&params.waterfall_auto_max);
     params_save_bool(&params.waterfall_smooth_scroll);
+    params_save_bool(&params.waterfall_center_line);
     params_save_bool(&params.spmode);
     params_save_bool(&params.ft8_auto);
 

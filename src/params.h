@@ -246,6 +246,7 @@ typedef struct {
     params_bool_t       waterfall_auto_min;
     params_bool_t       waterfall_auto_max;
     params_bool_t       waterfall_smooth_scroll;
+    params_bool_t       waterfall_center_line;
     params_bool_t       mag_freq;
     params_bool_t       mag_info;
     params_bool_t       mag_alc;
