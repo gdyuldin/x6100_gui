@@ -37,13 +37,14 @@ params_t params = {
     .spectrum_peak          = true,
     .spectrum_peak_hold     = 5000,
     .spectrum_peak_speed    = 0.5f,
-    .spectrum_auto_min      = { .x = true,  .name = "spectrum_auto_min",    .voice = "Auto minimum of spectrum" },
-    .spectrum_auto_max      = { .x = true,  .name = "spectrum_auto_max",    .voice = "Auto maximum of spectrum" },
-    .waterfall_auto_min     = { .x = true,  .name = "waterfall_auto_min",   .voice = "Auto minimum of waterfall" },
-    .waterfall_auto_max     = { .x = true,  .name = "waterfall_auto_max",   .voice = "Auto maximum of waterfall" },
-    .mag_freq               = { .x = true,  .name = "mag_freq",             .voice = "Magnification of frequency" },
-    .mag_info               = { .x = true,  .name = "mag_info",             .voice = "Magnification of info" },
-    .mag_alc                = { .x = true,  .name = "mag_alc",              .voice = "Magnification of A L C" },
+    .spectrum_auto_min      = { .x = true,  .name = "spectrum_auto_min",        .voice = "Auto minimum of spectrum" },
+    .spectrum_auto_max      = { .x = true,  .name = "spectrum_auto_max",        .voice = "Auto maximum of spectrum" },
+    .waterfall_auto_min     = { .x = true,  .name = "waterfall_auto_min",       .voice = "Auto minimum of waterfall" },
+    .waterfall_auto_max     = { .x = true,  .name = "waterfall_auto_max",       .voice = "Auto maximum of waterfall" },
+    .waterfall_center_line  = { .x = true,  .name = "waterfall_center_line",    .voice = "Waterfall center line"},
+    .mag_freq               = { .x = true,  .name = "mag_freq",                 .voice = "Magnification of frequency" },
+    .mag_info               = { .x = true,  .name = "mag_info",                 .voice = "Magnification of info" },
+    .mag_alc                = { .x = true,  .name = "mag_alc",                  .voice = "Magnification of A L C" },
     .clock_view             = CLOCK_TIME_POWER,
     .clock_time_timeout     = 5,
     .clock_power_timeout    = 3,
@@ -676,6 +677,7 @@ static bool params_load() {
         if (params_load_bool(&params.spectrum_auto_max, name, i)) continue;
         if (params_load_bool(&params.waterfall_auto_min, name, i)) continue;
         if (params_load_bool(&params.waterfall_auto_max, name, i)) continue;
+        if (params_load_bool(&params.waterfall_center_line, name, i)) continue;
         if (params_load_bool(&params.spmode, name, i)) continue;
         if (params_load_bool(&params.ft8_auto, name, i)) continue;
 
@@ -887,6 +889,7 @@ static void params_save() {
     params_save_bool(&params.spectrum_auto_max);
     params_save_bool(&params.waterfall_auto_min);
     params_save_bool(&params.waterfall_auto_max);
+    params_save_bool(&params.waterfall_center_line);
     params_save_bool(&params.spmode);
     params_save_bool(&params.ft8_auto);
 

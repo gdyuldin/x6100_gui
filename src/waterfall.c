@@ -123,8 +123,11 @@ void waterfall_data(float *data_buf, uint16_t size) {
 }
 
 static void do_scroll_cb(lv_event_t * event) {
-    waterfall_draw_center_line(event);
     int16_t px;
+
+    if (params.waterfall_center_line.x) {
+        waterfall_draw_center_line(event);
+    }
     if (scroll_hor == 0) {
         return;
     }
