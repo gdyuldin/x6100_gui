@@ -27,6 +27,8 @@ float                   waterfall_auto_max;
 static lv_obj_t         *obj;
 static lv_obj_t         *img;
 
+static lv_draw_line_dsc_t middle_line_dsc;
+
 static lv_coord_t       width;
 static lv_coord_t       height;
 static int32_t          width_hz = 100000;
@@ -46,6 +48,11 @@ lv_obj_t * waterfall_init(lv_obj_t * parent) {
     
     lv_obj_add_style(obj, &waterfall_style, 0);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Middle line style
+    middle_line_dsc.color = lv_color_hex(0xAAAAAA);
+    middle_line_dsc.width = 1;
+    middle_line_dsc.opa = LV_OPA_60;
 
     return obj;
 }
@@ -116,6 +123,8 @@ void waterfall_data(float *data_buf, uint16_t size) {
 }
 
 static void do_scroll_cb(lv_event_t * event) {
+    waterfall_draw_center_line(event);
+    int16_t px;
     if (scroll_hor == 0) {
         return;
     }
@@ -157,6 +166,26 @@ void waterfall_set_height(lv_coord_t h) {
     
     waterfall_band_set();
     band_info_init(obj);
+}
+
+void waterfall_draw_center_line(lv_event_t * e) {
+    lv_obj_t            *obj = lv_event_get_target(e);
+    lv_draw_ctx_t       *draw_ctx = lv_event_get_draw_ctx(e);
+
+    lv_coord_t x1 = obj->coords.x1;
+    lv_coord_t y1 = obj->coords.y1;
+
+    lv_coord_t w = lv_obj_get_width(obj);
+    lv_coord_t h = lv_obj_get_height(obj);
+    
+    lv_point_t p1, p2;
+    
+    p1.x = x1 + w / 2;
+    p1.y = y1;
+    p2.x = p1.x;
+    p2.y = y1 + h;
+
+    lv_draw_line(draw_ctx, &middle_line_dsc, &p1, &p2);
 }
 
 void waterfall_clear() {
