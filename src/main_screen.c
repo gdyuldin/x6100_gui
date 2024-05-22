@@ -106,7 +106,7 @@ void mem_load(uint16_t id) {
 
 void mem_save(uint16_t id) {
     params_memory_save(id);
-    
+
     if (id <= MEM_NUM) {
         msg_set_text_fmt("Saved in memory %i", id);
     }
@@ -122,7 +122,7 @@ static void freq_update() {
     if (params_band.split && radio_get_state() == RADIO_TX) {
         vfo = (vfo == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A;
     }
-    
+
     f = params_band.vfo_x[vfo].freq;
 
     uint16_t    mhz, khz, hz;
@@ -145,7 +145,7 @@ static void freq_update() {
         uint64_t    f2 = params_band.vfo_x[(vfo == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A].freq;
 
         split_freq(f2, &mhz2, &khz2, &hz2);
-        
+
         lv_label_set_text_fmt(freq[1], "#%03X %i.%03i.%03i / %i.%03i.%03i", color, mhz, khz, hz, mhz2, khz2, hz2);
     } else {
         lv_label_set_text_fmt(freq[1], "#%03X %i.%03i.%03i", color, mhz, khz, hz);
@@ -153,7 +153,7 @@ static void freq_update() {
 
     split_freq(f + 50000, &mhz, &khz, &hz);
     lv_label_set_text_fmt(freq[2], "#%03X %i.%03i", color, mhz, khz);
-    
+
     band_info_update(f);
 }
 
@@ -176,28 +176,28 @@ static void check_cross_band(uint64_t freq, uint64_t prev_freq) {
 
 static void next_freq_step(bool up) {
     params_lock();
-    
+
     switch (params_mode.freq_step) {
         case 10:
             params_mode.freq_step = up ? 100 : 5000;
             break;
-            
+
         case 100:
             params_mode.freq_step = up ? 500 : 10;
             break;
-            
+
         case 500:
             params_mode.freq_step = up ? 1000 : 100;
             break;
-            
+
         case 1000:
             params_mode.freq_step = up ? 5000 : 500;
             break;
-            
+
         case 5000:
             params_mode.freq_step = up ? 10 : 1000;
             break;
-            
+
         default:
             break;
     }
@@ -230,7 +230,7 @@ void main_screen_app(uint8_t page_app) {
             pannel_visible();
             voice_say_text_fmt("Teletype window");
             break;
-            
+
         case PAGE_SETTINGS:
             dialog_construct(dialog_settings, obj);
             voice_say_text_fmt("Settings window");
@@ -255,7 +255,7 @@ void main_screen_app(uint8_t page_app) {
             dialog_construct(dialog_recorder, obj);
             voice_say_text_fmt("Audio recorder window");
             break;
-            
+
         default:
             break;
     }
@@ -299,23 +299,23 @@ void main_screen_action(press_action_t action) {
         case ACTION_STEP_DOWN:
             next_freq_step(false);
             break;
-            
+
         case ACTION_APP_RTTY:
             main_screen_app(PAGE_RTTY);
             break;
-            
+
         case ACTION_APP_FT8:
             main_screen_app(PAGE_FT8);
             break;
-            
+
         case ACTION_APP_SWRSCAN:
             main_screen_app(PAGE_SWRSCAN);
             break;
-            
+
         case ACTION_APP_GPS:
             main_screen_app(PAGE_GPS);
             break;
-            
+
         case ACTION_APP_SETTINGS:
             main_screen_app(PAGE_SETTINGS);
             break;
@@ -338,13 +338,14 @@ void main_screen_action(press_action_t action) {
 
 static void main_screen_keypad_cb(lv_event_t * e) {
     event_keypad_t *keypad = lv_event_get_param(e);
+    uint64_t prev_freq = params_band.vfo_x[params_band.vfo].freq;
 
     switch (keypad->key) {
         case KEYPAD_PRE:
             if (keypad->state == KEYPAD_RELEASE) {
                 radio_change_pre();
                 info_params_set();
-                
+
                 if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("Pre: %s", info_params_pre() ? "On" : "Off");
                 }
@@ -357,7 +358,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 }
             }
             break;
-            
+
         case KEYPAD_BAND_UP:
             if (keypad->state == KEYPAD_RELEASE) {
                 if (!band_lock) {
@@ -367,7 +368,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 dialog_send(EVENT_BAND_UP, NULL);
             }
             break;
-            
+
         case KEYPAD_BAND_DOWN:
             if (keypad->state == KEYPAD_RELEASE) {
                 if (!band_lock) {
@@ -377,12 +378,12 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 dialog_send(EVENT_BAND_DOWN, NULL);
             }
             break;
-            
+
         case KEYPAD_MODE_AM:
             if (mode_lock) {
                 break;
             }
-        
+
             if (keypad->state == KEYPAD_RELEASE) {
                 radio_change_mode(RADIO_MODE_AM);
                 params_mode_load();
@@ -396,7 +397,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 }
             }
             break;
-            
+
         case KEYPAD_MODE_CW:
             if (mode_lock) {
                 break;
@@ -565,7 +566,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                         buttons_load_page(PAGE_MSG_CW_1);
                         voice_say_text_fmt("CW messages window");
                         break;
-                        
+
                     case x6100_mode_lsb:
                     case x6100_mode_usb:
                     case x6100_mode_am:
@@ -578,7 +579,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                         buttons_load_page(PAGE_MSG_VOICE_1);
                         voice_say_text_fmt("Voice messages window");
                         break;
-                        
+
                     default:
                         msg_tiny_set_text_fmt("Not used in this mode");
                         break;
@@ -609,7 +610,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
             if (keypad->state == KEYPAD_RELEASE) {
                 radio_change_vfo();
                 info_params_set();
-                waterfall_clear();
+                waterfall_change_freq(params_band.vfo_x[params_band.vfo].freq - prev_freq);
                 spectrum_clear();
                 dsp_auto_clear();
                 main_screen_band_set();
@@ -634,7 +635,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 radio_poweroff();
             }
             break;
-            
+
         case KEYPAD_LOCK:
             if (keypad->state == KEYPAD_RELEASE) {
                 freq_lock = !freq_lock;
@@ -658,7 +659,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                             break;
                     }
                     break;
-                    
+
                 case KEYPAD_RELEASE:
                 case KEYPAD_LONG_RELEASE:
                     switch (radio_current_mode()) {
@@ -699,7 +700,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
                 voice_say_text_fmt("Memory %i stored", hkey->key - HKEY_1 + 1);
             }
             break;
-            
+
         case HKEY_SPCH:
             if (hkey->state == HKEY_RELEASE) {
                 freq_lock = !freq_lock;
@@ -707,7 +708,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
                 voice_say_text_fmt("Frequency %s", freq_lock ? "locked" : "unlocked");
             }
             break;
-            
+
         case HKEY_TUNER:
             if (hkey->state == HKEY_RELEASE) {
                 radio_change_atu();
@@ -755,7 +756,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
                 dialog_send(EVENT_BAND_DOWN, NULL);
             }
             break;
-        
+
         case HKEY_F1:
             if (hkey->state == HKEY_RELEASE) {
                 main_screen_action(params.press_f1);
@@ -771,7 +772,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
                 main_screen_action(params.long_f2);
             }
             break;
-        
+
         default:
             break;
     }
@@ -783,11 +784,11 @@ static void main_screen_radio_cb(lv_event_t * e) {
     if (params_band.split) {
         freq_update();
     }
-    
+
     lv_event_send(meter, code, NULL);
     lv_event_send(tx_info, code, NULL);
     lv_event_send(spectrum, code, NULL);
-    
+
     dialog_send(code, NULL);
 }
 
@@ -812,10 +813,10 @@ static uint16_t freq_accel(uint16_t diff) {
     switch (params.freq_accel.x) {
         case FREQ_ACCEL_NONE:
             return 1;
-            
+
         case FREQ_ACCEL_LITE:
             return (diff < 6) ? 5 : 10;
-            
+
         case FREQ_ACCEL_STRONG:
             return (diff < 6) ? 10 : 30;
     }
@@ -825,7 +826,7 @@ static void freq_shift(int16_t diff) {
     if (freq_lock) {
         return;
     }
-    
+
     uint64_t        freq, prev_freq;
 
     freq = radio_change_freq(diff * params_mode.freq_step * freq_accel(abs(diff)), &prev_freq);
@@ -833,14 +834,14 @@ static void freq_shift(int16_t diff) {
     spectrum_change_freq(freq - prev_freq);
     freq_update();
     check_cross_band(freq, prev_freq);
-    
+
     dialog_send(EVENT_FREQ_UPDATE, NULL);
     voice_say_freq(freq);
 }
 
 static void main_screen_rotary_cb(lv_event_t * e) {
     int32_t     diff = lv_event_get_param(e);
-    
+
     freq_shift(diff);
     dialog_rotary(diff);
 }
@@ -854,7 +855,7 @@ static void spectrum_key_cb(lv_event_t * e) {
                 freq_shift(-1);
             }
             break;
-            
+
         case '=':
             if (!freq_lock) {
                 freq_shift(+1);
@@ -873,7 +874,7 @@ static void spectrum_key_cb(lv_event_t * e) {
         case '[':
             vol_update(-1, false);
             break;
-            
+
         case KEY_VOL_RIGHT_EDIT:
         case ']':
             vol_update(+1, false);
@@ -883,37 +884,37 @@ static void spectrum_key_cb(lv_event_t * e) {
         case '{':
             vol_press(-1);
             break;
-            
+
         case KEY_VOL_RIGHT_SELECT:
         case '}':
             vol_press(+1);
             break;
-            
+
         case KEYBOARD_F9:
             buttons_unload_page();
             buttons_load_page(PAGE_SETTINGS);
-            
+
             dialog_construct(dialog_settings, obj);
             break;
-            
+
         case LV_KEY_LEFT:
             switch (mfk_state) {
                 case MFK_STATE_EDIT:
                     mfk_update(-1, false);
                     break;
-                    
+
                 case MFK_STATE_SELECT:
                     mfk_press(-1);
                     break;
             }
             break;
-            
+
         case LV_KEY_RIGHT:
             switch (mfk_state) {
                 case MFK_STATE_EDIT:
                     mfk_update(+1, false);
                     break;
-                    
+
                 case MFK_STATE_SELECT:
                     mfk_press(+1);
                     break;
@@ -927,7 +928,7 @@ static void spectrum_key_cb(lv_event_t * e) {
                         vol->mode = VOL_SELECT;
                         voice_say_text_fmt("Selection mode");
                         break;
-                        
+
                     case VOL_SELECT:
                         vol->mode = VOL_EDIT;
                         voice_say_text_fmt("Edit mode");
@@ -941,7 +942,7 @@ static void spectrum_key_cb(lv_event_t * e) {
         case KEYBOARD_PRINT_SCR:
             screenshot_take();
             break;
-            
+
         case KEYBOARD_SCRL_LOCK:
             freq_lock = !freq_lock;
             freq_update();
@@ -962,14 +963,14 @@ static void spectrum_key_cb(lv_event_t * e) {
             }
             dialog_send(EVENT_BAND_DOWN, NULL);
             break;
-            
+
         case HKEY_FINP:
             if (!freq_lock) {
                 voice_say_text_fmt("Enter frequency");
                 dialog_construct(dialog_freq, obj);
             }
             break;
-            
+
         default:
             break;
     }
@@ -981,7 +982,7 @@ static void spectrum_pressed_cb(lv_event_t * e) {
             mfk_state = MFK_STATE_SELECT;
             voice_say_text_fmt("Selection mode");
             break;
-            
+
         case MFK_STATE_SELECT:
             mfk_state = MFK_STATE_EDIT;
             voice_say_text_fmt("Edit mode");
@@ -1022,7 +1023,7 @@ void main_screen_lock_mode(bool lock) {
 void main_screen_set_freq(uint64_t freq) {
     x6100_vfo_t vfo = params_band.vfo;
     uint64_t    prev_freq = params_band.vfo_x[vfo].freq;
-    
+
     if (params_bands_find(freq, &params.freq_band)) {
         if (params.freq_band.type != 0) {
             if (params.freq_band.id != params.band) {
@@ -1050,23 +1051,23 @@ lv_obj_t * main_screen() {
     lv_obj_add_event_cb(obj, main_screen_radio_cb, EVENT_RADIO_RX, NULL);
     lv_obj_add_event_cb(obj, main_screen_update_cb, EVENT_SCREEN_UPDATE, NULL);
     lv_obj_add_event_cb(obj, main_screen_atu_update_cb, EVENT_ATU_UPDATE, NULL);
-    
+
     lv_obj_add_style(obj, &background_style, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-    
+
     spectrum = spectrum_init(obj);
     main_screen_keys_enable(true);
-    
+
     lv_obj_add_event_cb(spectrum, spectrum_key_cb, LV_EVENT_KEY, NULL);
     lv_obj_add_event_cb(spectrum, spectrum_pressed_cb, LV_EVENT_PRESSED, NULL);
-    
+
     spectrum_band_set();
 
     lv_obj_set_y(spectrum, y);
     lv_obj_set_height(spectrum, spectrum_height);
-    
+
     y += spectrum_height;
-    
+
     lv_obj_t *f;
 
     f = lv_label_create(obj);
@@ -1092,10 +1093,10 @@ lv_obj_t * main_screen() {
     waterfall = waterfall_init(obj);
 
     waterfall_band_set();
-    
+
     lv_obj_set_y(waterfall, y);
     waterfall_set_height(480 - y);
-    
+
     buttons_init(obj);
     buttons_load_page(PAGE_VOL_1);
 
@@ -1105,15 +1106,15 @@ lv_obj_t * main_screen() {
 
     clock_init(obj);
     info_init(obj);
-    
+
     meter = meter_init(obj);
     tx_info = tx_info_init(obj);
-    
+
     main_screen_band_set();
 
     msg_set_text_fmt("X6100 de R1CBU " VERSION);
     msg_set_timeout(2000);
-    
+
     return obj;
 }
 

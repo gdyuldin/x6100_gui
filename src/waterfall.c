@@ -237,7 +237,7 @@ void waterfall_change_min(int16_t d) {
     grid_min = x;
 }
 
-void waterfall_change_freq(int16_t df) {
+void waterfall_change_freq(int64_t df) {
     delay = 2;
     uint16_t    hz_per_pixel = width_hz / width;
 
