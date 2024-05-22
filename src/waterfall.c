@@ -53,8 +53,6 @@ static uint8_t          *waterfall_cache;
 static uint8_t          *frame_buf;
 static size_t           buf_offset;
 
-uint32_t                EVENT_FREQ_CHANGE;
-
 lv_img_dsc_t* img_2buf_alloc(lv_coord_t w, lv_coord_t h, lv_img_cf_t cf);
 void draw_middle_line();
 void redraw();
@@ -71,8 +69,6 @@ lv_obj_t * waterfall_init(lv_obj_t * parent) {
     lv_style_set_line_width(&middle_line_style, 1);
     lv_style_set_line_color(&middle_line_style, lv_color_hex(0xAAAAAA));
     lv_style_set_line_opa(&middle_line_style, LV_OPA_60);
-
-    EVENT_FREQ_CHANGE = lv_event_register_id();
 
     return obj;
 }
@@ -129,7 +125,7 @@ static void do_scroll_cb(lv_event_t * event) {
     }
 
     if (params.waterfall_smooth_scroll.x) {
-        px = (scroll_hor / 10) + sign(scroll_hor) * 1;
+        px = ((abs(scroll_hor) / 10) + 1) * sign(scroll_hor);
     } else {
         px = scroll_hor;
     }
@@ -166,7 +162,7 @@ void waterfall_set_height(lv_coord_t h) {
     waterfall_cache = malloc(frame->data_size);
     memset(waterfall_cache, 0, frame->data_size);
 
-    lv_obj_add_event_cb(img, do_scroll_cb, EVENT_FREQ_CHANGE, NULL);
+    lv_obj_add_event_cb(img, do_scroll_cb, LV_EVENT_DRAW_POST_END, NULL);
 
     waterfall_band_set();
     band_info_init(obj);
@@ -245,9 +241,6 @@ void waterfall_change_freq(int64_t df) {
     scroll_hor += df / hz_per_pixel;
 
     scroll_hor_surplus = df % hz_per_pixel;
-    if (scroll_hor) {
-        lv_event_send(img, EVENT_FREQ_CHANGE, NULL);
-    }
 }
 
 void redraw() {
