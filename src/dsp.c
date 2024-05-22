@@ -116,12 +116,6 @@ void dsp_samples(float complex *buf_samples, uint16_t size) {
     if (spectrum_factor > 1) {
         firdecim_crcf_execute_block(spectrum_decim, buf_filtered, size / spectrum_factor, spectrum_dec_buf);
         spgramcf_write(spectrum_sg, spectrum_dec_buf, size / spectrum_factor);
-        
-        memset(spectrum_dec_buf, 0, sizeof(float complex) * size / spectrum_factor);
-
-        for (uint8_t i = 0; i < spectrum_factor - 1; i++) {
-            spgramcf_write(spectrum_sg, spectrum_dec_buf, size / spectrum_factor);
-        }
     } else {
         spgramcf_write(spectrum_sg, buf_filtered, size);
     }
@@ -134,12 +128,7 @@ void dsp_samples(float complex *buf_samples, uint16_t size) {
     
     if (now - spectrum_time > spectrum_fps_ms) {
         if (!delay) {
-            for (uint16_t i = 0; i < nfft; i++) {
-                float psd = spectrum_psd[i];
-                
-                lpf(&spectrum_psd_filtered[i], psd, spectrum_beta);
-            }
-        
+            lpf_block(spectrum_psd_filtered, spectrum_psd, spectrum_beta, nfft);
             spectrum_data(spectrum_psd_filtered, nfft);
         }
 
@@ -178,7 +167,7 @@ void dsp_samples(float complex *buf_samples, uint16_t size) {
         to -= filter_from * nfft / 100000;
     
         int16_t peak_db = -121;
-    
+
         for (int32_t i = from; i <= to; i++)
             if (waterfall_psd[i] > peak_db)
                 peak_db = waterfall_psd[i];
