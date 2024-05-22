@@ -10,11 +10,12 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <time.h>
+#include <liquid/liquid.h>
 #include "util.h"
 
 uint64_t get_time() {
     struct timespec now;
-    
+
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     uint64_t usec = (uint64_t) now.tv_sec * 1000000L + now.tv_nsec / 1000;
@@ -39,7 +40,7 @@ int32_t align_int(int32_t x, uint16_t step) {
     if (step == 0) {
         return x;
     }
-    
+
     return x - (x % step);
 }
 
@@ -57,7 +58,7 @@ int32_t limit(int32_t x, int32_t min, int32_t max) {
     } else if (x > max) {
         return max;
     }
-    
+
     return x;
 }
 
@@ -69,12 +70,18 @@ void lpf(float *x, float current, float beta) {
     *x = *x * beta + current * (1.0f - beta);
 }
 
+void lpf_block(float *x, float *current, float beta, unsigned int count) {
+    liquid_vectorf_mulscalar(current, count, (1.0f - beta), current);
+    liquid_vectorf_mulscalar(x, count, beta, x);
+    liquid_vectorf_add(x, current, count, x);
+}
+
 void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len) {
     int16_t i;
-    
+
     for (i = 0; i < len / 2; i++) {
         uint8_t a = data % 10;
-        
+
         data /= 10;
         a |= (data % 10) << 4;
         data /= 10;
@@ -90,17 +97,55 @@ void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len) {
 uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
     int16_t     i;
     uint64_t    data = 0;
-    
+
     if (len & 1) {
         data = bcd_data[len / 2] & 0x0F;
     }
-    
+
     for (i = (len / 2) - 1; i >= 0; i--) {
         data *= 10;
         data += bcd_data[i] >> 4;
         data *= 10;
         data += bcd_data[i] & 0x0F;
     }
-    
+
     return data;
+}
+
+
+int loop_modes(int16_t dir, int mode, uint64_t modes, int max_val) {
+    while (1) {
+        if (dir > 0) {
+            if (mode == max_val) {
+                mode = 0;
+            } else {
+                mode++;
+            }
+        } else {
+            if (dir < 0)
+            {
+                if (mode == 0) {
+                    mode = max_val;
+                } else {
+                    mode--;
+                }
+            }
+        }
+        if (modes & (1LL << mode)) {
+            break;
+        }
+        if (dir == 0)
+        {
+            if (mode == max_val) {
+                mode = 0;
+            } else {
+                mode++;
+            }
+        }
+    }
+    return mode;
+}
+
+int sign(int x) {
+    return (x > 0) - (x < 0);
 }

@@ -18,6 +18,7 @@
 #include "meter.h"
 #include "backlight.h"
 #include "dsp.h"
+#include "util.h"
 
 #define PX_BYTES    4
 
@@ -27,12 +28,13 @@ float                   waterfall_auto_max;
 static lv_obj_t         *obj;
 static lv_obj_t         *img;
 
-static lv_draw_line_dsc_t middle_line_dsc;
+static lv_style_t       middle_line_style;
+static lv_obj_t         *middle_line;
+static lv_point_t       middle_line_points[] = { {0, 0}, {0, 0} };
 
 static lv_coord_t       width;
 static lv_coord_t       height;
 static int32_t          width_hz = 100000;
-static uint32_t         line_len;
 
 static int              grid_min = -70;
 static int              grid_max = -40;
@@ -43,47 +45,45 @@ static int16_t          scroll_hor = 0;
 static int16_t          scroll_hor_surplus = 0;
 static uint8_t          delay = 0;
 
+
+static int              *x_offsets;
+static uint16_t         last_row_id;
+static uint8_t          *waterfall_cache;
+
+static uint8_t          *frame_buf;
+static size_t           buf_offset;
+
+uint32_t                EVENT_FREQ_CHANGE;
+
+lv_img_dsc_t* img_2buf_alloc(lv_coord_t w, lv_coord_t h, lv_img_cf_t cf);
+void draw_middle_line();
+void redraw();
+
+
 lv_obj_t * waterfall_init(lv_obj_t * parent) {
     obj = lv_obj_create(parent);
-    
+
     lv_obj_add_style(obj, &waterfall_style, 0);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
     // Middle line style
-    middle_line_dsc.color = lv_color_hex(0xAAAAAA);
-    middle_line_dsc.width = 1;
-    middle_line_dsc.opa = LV_OPA_60;
+    lv_style_init(&middle_line_style);
+    lv_style_set_line_width(&middle_line_style, 1);
+    lv_style_set_line_color(&middle_line_style, lv_color_hex(0xAAAAAA));
+    lv_style_set_line_opa(&middle_line_style, LV_OPA_60);
+
+    EVENT_FREQ_CHANGE = lv_event_register_id();
 
     return obj;
 }
 
 static void scroll_down() {
-    memmove(frame->data + line_len, frame->data, frame->data_size - line_len);
+    last_row_id = (last_row_id + 1) % height;
 }
 
-static void scroll_right(int16_t px) {
-    uint8_t     *ptr = frame->data;
-    uint16_t    offset = px * PX_BYTES;
-    uint16_t    tail = (width - px) * PX_BYTES;
-    
-    for (int y = 0; y < height; y++) {
-        memmove(ptr, ptr + offset, tail);
-        memset(ptr + tail, 0, offset);
-        
-        ptr += line_len;
-    }
-}
-
-static void scroll_left(int16_t px) {
-    uint8_t     *ptr = frame->data;
-    uint16_t    offset = px * PX_BYTES;
-    uint16_t    tail = (width - px) * PX_BYTES;
-    
-    for (int y = 0; y < height; y++) {
-        memmove(ptr + offset, ptr, tail);
-        memset(ptr, 0, offset);
-        
-        ptr += line_len;
+static void scroll_lr(int16_t px) {
+    for (size_t i = 0; i < height; i++) {
+        x_offsets[i] -= px;
     }
 }
 
@@ -106,46 +106,36 @@ void waterfall_data(float *data_buf, uint16_t size) {
     for (int x = 0; x < width; x++) {
         uint16_t    index = x * size / width;
         float       v = (data_buf[index] - min) / (max - min);
-        
+
         if (v < 0.0f) {
             v = 0.0f;
         } else if (v > 1.0f) {
             v = 1.0f;
         }
-        
+
         uint8_t id = v * 255;
-        
-        lv_img_buf_set_px_color(frame, width - x, 0, palette[id]);
+        lv_memcpy_small(&waterfall_cache[(last_row_id * width + width - 1 - x) * PX_BYTES], &palette[id], PX_BYTES);
+        x_offsets[last_row_id] = 0;
     }
-    
-    event_send(img, LV_EVENT_REFRESH, NULL);
+
+    redraw();
 }
 
 static void do_scroll_cb(lv_event_t * event) {
     int16_t px;
 
-    if (params.waterfall_center_line.x) {
-        waterfall_draw_center_line(event);
-    }
     if (scroll_hor == 0) {
         return;
     }
 
     if (params.waterfall_smooth_scroll.x) {
-        px = (abs(scroll_hor) / 10) + 1;
+        px = (scroll_hor / 10) + sign(scroll_hor) * 1;
     } else {
-        px = abs(scroll_hor);
+        px = scroll_hor;
     }
-
-    if (scroll_hor > 0) {
-        scroll_right(px);
-        scroll_hor -= px;
-    } else {
-        scroll_left(px);
-        scroll_hor += px;
-    }
-    
-    event_send(img, LV_EVENT_REFRESH, NULL);
+    scroll_lr(px);
+    scroll_hor -= px;
+    redraw();
 }
 
 void waterfall_set_height(lv_coord_t h) {
@@ -154,47 +144,58 @@ void waterfall_set_height(lv_coord_t h) {
 
     /* For more accurate horizontal scroll, it should be a "multiple of 500Hz" */
     /* 800 * 500Hz / 100000Hz = 4.0px */
-    
+
     width = 800;
     height = lv_obj_get_height(obj);
 
-    frame = lv_img_buf_alloc(width, height, LV_IMG_CF_TRUE_COLOR);
+    frame = img_2buf_alloc(width, height, LV_IMG_CF_TRUE_COLOR);
+    frame_buf = frame->data;
+    buf_offset = 0;
 
-    line_len = frame->data_size / frame->header.h;
-    
     styles_waterfall_palette(palette, 256);
 
     img = lv_img_create(obj);
     lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
     lv_img_set_src(img, frame);
-    lv_obj_add_event_cb(img, do_scroll_cb, LV_EVENT_DRAW_POST, NULL);
-    
+
+    x_offsets = malloc(height * sizeof(int));
+    for (size_t i = 0; i < height; i++) {
+        x_offsets[i] = 0;
+    }
+    last_row_id = 0;
+    waterfall_cache = malloc(frame->data_size);
+    memset(waterfall_cache, 0, frame->data_size);
+
+    lv_obj_add_event_cb(img, do_scroll_cb, EVENT_FREQ_CHANGE, NULL);
+
     waterfall_band_set();
     band_info_init(obj);
+    draw_middle_line();
 }
 
-void waterfall_draw_center_line(lv_event_t * e) {
-    lv_obj_t            *obj = lv_event_get_target(e);
-    lv_draw_ctx_t       *draw_ctx = lv_event_get_draw_ctx(e);
-
-    lv_coord_t x1 = obj->coords.x1;
-    lv_coord_t y1 = obj->coords.y1;
-
-    lv_coord_t w = lv_obj_get_width(obj);
-    lv_coord_t h = lv_obj_get_height(obj);
-    
-    lv_point_t p1, p2;
-    
-    p1.x = x1 + w / 2;
-    p1.y = y1;
-    p2.x = p1.x;
-    p2.y = y1 + h;
-
-    lv_draw_line(draw_ctx, &middle_line_dsc, &p1, &p2);
+static void middle_line_cb(lv_event_t * event) {
+    if (params.waterfall_center_line.x && lv_obj_has_flag(middle_line, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_clear_flag(middle_line, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    if (!params.waterfall_center_line.x && !lv_obj_has_flag(middle_line, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(middle_line, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
 }
+
+void draw_middle_line() {
+    middle_line_points[1].y = height;
+    middle_line = lv_line_create(obj);
+    lv_line_set_points(middle_line, middle_line_points, 2);
+    lv_obj_add_style(middle_line, &middle_line_style, 0);
+    lv_obj_center(middle_line);
+    lv_obj_add_event_cb(obj, middle_line_cb, LV_EVENT_DRAW_POST_END, NULL);
+}
+
 
 void waterfall_clear() {
-    memset(frame->data,0, frame->data_size);
+    memset(waterfall_cache, 0, frame->data_size);
     scroll_hor = 0;
     scroll_hor_surplus = 0;
 }
@@ -244,8 +245,70 @@ void waterfall_change_freq(int16_t df) {
     scroll_hor += df / hz_per_pixel;
 
     scroll_hor_surplus = df % hz_per_pixel;
-
     if (scroll_hor) {
-        lv_obj_invalidate(img);
+        lv_event_send(img, EVENT_FREQ_CHANGE, NULL);
     }
+}
+
+void redraw() {
+    int x_offset;
+    size_t n, src_pos, dst_pos;
+
+    buf_offset = buf_offset == 0 ? frame->data_size : 0;
+
+    memset(frame_buf + buf_offset, 0, frame->data_size);
+
+    for (size_t i = 0; i < height; i++) {
+        x_offset = x_offsets[i];
+        if ((x_offset >= width) || (x_offset <= -width)){
+            continue;
+        }
+        if (x_offset >= 0) {
+            n = width - x_offset;
+            src_pos = 0;
+            dst_pos = x_offset;
+        } else {
+            n = width + x_offset;
+            src_pos = -x_offset;
+            dst_pos = 0;
+        }
+        src_pos += i * width;
+        dst_pos += ((height - i + last_row_id) % height) * width;
+
+        memcpy(frame_buf + buf_offset + dst_pos * PX_BYTES, waterfall_cache + src_pos * PX_BYTES, n * PX_BYTES);
+    }
+    frame->data = frame_buf + buf_offset;
+    event_send(img, LV_EVENT_REFRESH, NULL);
+}
+
+
+lv_img_dsc_t* img_2buf_alloc(lv_coord_t w, lv_coord_t h, lv_img_cf_t cf) {
+    /*Allocate image descriptor*/
+    lv_img_dsc_t * dsc = lv_mem_alloc(sizeof(lv_img_dsc_t));
+    if(dsc == NULL)
+        return NULL;
+
+    lv_memset_00(dsc, sizeof(lv_img_dsc_t));
+
+    /*Get image data size*/
+    dsc->data_size = lv_img_buf_get_img_size(w, h, cf);
+    if(dsc->data_size == 0) {
+        lv_mem_free(dsc);
+        return NULL;
+    }
+
+    /*Allocate raw buffer*/
+    dsc->data = lv_mem_alloc(dsc->data_size * 2);
+    if(dsc->data == NULL) {
+        lv_mem_free(dsc);
+        return NULL;
+    }
+    lv_memset_00((uint8_t *)dsc->data, dsc->data_size * 2);
+
+    /*Fill in header*/
+    dsc->header.always_zero = 0;
+    dsc->header.w = w;
+    dsc->header.h = h;
+    dsc->header.cf = cf;
+    return dsc;
 }

@@ -19,6 +19,9 @@ uint64_t align_long(uint64_t x, uint16_t step);
 int32_t limit(int32_t x, int32_t min, int32_t max);
 float sqr(float x);
 void lpf(float *x, float current, float beta);
+void lpf_block(float *x, float *current, float beta, unsigned int count);
 
 void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len);
 uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len);
+int loop_modes(int16_t dir, int mode, uint64_t modes, const int max_val);
+int sign(int x);
