@@ -599,6 +599,8 @@ static void tx_worker() {
     uint8_t packed[FTX_LDPC_K_BYTES];
     int     rc = pack77(tx_msg, packed);
 
+    const uint16_t signal_freq = 1325;
+
     if (rc < 0) {
         LV_LOG_ERROR("Cannot parse message %i", rc);
         state = IDLE;
@@ -609,10 +611,14 @@ static void tx_worker() {
 
     int32_t     n_samples = 0;
     float       symbol_bt = (params.ft8_protocol == PROTO_FT4) ? FT4_SYMBOL_BT : FT8_SYMBOL_BT;
-    int16_t     *samples = gfsk_synth(tones, FT8_NN, params.ft8_tx_freq.x, symbol_bt, symbol_period, &n_samples);
+    int16_t     *samples = gfsk_synth(tones, FT8_NN, signal_freq, symbol_bt, symbol_period, &n_samples);
     int16_t     *ptr = samples;
     size_t      part;
 
+    // Change freq before tx
+    uint64_t    radio_freq = params_band_cur_freq_get();
+
+    radio_set_freq(radio_freq + params.ft8_tx_freq.x - signal_freq);
     radio_set_modem(true);
 
     float gain_scale = -12.0f + log10f(params.pwr) * 5;
@@ -631,6 +637,8 @@ static void tx_worker() {
 
     audio_play_wait();
     radio_set_modem(false);
+    // Restore freq
+    radio_set_freq(radio_freq);
     free(samples);
 }
 
