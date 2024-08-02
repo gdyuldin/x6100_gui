@@ -14,14 +14,17 @@
 #include <time.h>
 
 
+/**
+ * Return time in ms from unix epoch
+ */
 uint64_t get_time() {
     struct timespec now;
 
     clock_gettime(CLOCK_MONOTONIC, &now);
 
-    uint64_t usec = (uint64_t) now.tv_sec * 1000000L + now.tv_nsec / 1000;
+    uint64_t usec = (uint64_t) now.tv_sec * 1000L + now.tv_nsec / 1000000L;
 
-    return usec / 1000;
+    return usec;
 }
 
 void get_time_str(char *str, size_t str_size) {

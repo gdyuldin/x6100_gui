@@ -15,7 +15,7 @@
 
 #define GFSK_CONST_K    5.336446f
 
-void gfsk_pulse(uint16_t n_spsym, float symbol_bt, float *pulse) {
+static void gfsk_pulse(uint16_t n_spsym, float symbol_bt, float *pulse) {
     for (uint32_t i = 0; i < 3 * n_spsym; i++) {
         float t = i / (float)n_spsym - 1.5f;
         float arg1 = GFSK_CONST_K * symbol_bt * (t + 0.5f);
@@ -32,7 +32,7 @@ int16_t * gfsk_synth(const uint8_t *symbols, uint16_t n_sym, float f0, float sym
     float       dphi_peak = 2 * M_PI * hmod / n_spsym;
     float       dphi[n_wave + 2 * n_spsym];
     int16_t     *samples = malloc(sizeof(int16_t) * n_wave);
-    
+
     *n_samples = n_wave;
 
     /* Shift frequency up by f0 */
@@ -79,6 +79,6 @@ int16_t * gfsk_synth(const uint8_t *symbols, uint16_t n_sym, float f0, float sym
         samples[i] *= env;
         samples[n_wave - 1 - i] *= env;
     }
-    
+
     return samples;
 }

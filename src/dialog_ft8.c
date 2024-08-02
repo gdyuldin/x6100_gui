@@ -69,7 +69,7 @@ typedef enum {
 
 typedef enum {
     QSO_IDLE = 0,
-    QSO_NEXT,
+    QSO_CQ,
     QSO_ODD,
     QSO_EVEN,
 } ft8_qso_t;
@@ -111,8 +111,6 @@ typedef struct {
     char        remote_qth[32];
     int16_t     remote_snr;
 
-    char        local_callsign[32];
-    char        local_qth[32];
     int16_t     local_snr;
 } ft8_qso_item_t;
 
@@ -161,7 +159,7 @@ static candidate_t          candidate_list[MAX_CANDIDATES];
 static message_t            decoded[MAX_DECODED];
 static message_t*           decoded_hashtable[MAX_DECODED];
 
-static struct tm            timestamp;
+static FILE                 *log_fd = NULL;
 
 static void construct_cb(lv_obj_t *parent);
 static void key_cb(lv_event_t * e);
@@ -170,38 +168,40 @@ static void audio_cb(unsigned int n, float complex *samples);
 static void rotary_cb(int32_t diff);
 static void * decode_thread(void *arg);
 
-static void show_all_cb(lv_event_t * e);
 static void show_cq_cb(lv_event_t * e);
+static void show_all_cb(lv_event_t * e);
 
-static void mode_ft8_cb(lv_event_t * e);
 static void mode_ft4_cb(lv_event_t * e);
+static void mode_ft8_cb(lv_event_t * e);
 
-static void tx_cq_dis_cb(lv_event_t * e);
 static void tx_cq_en_cb(lv_event_t * e);
+static void tx_cq_dis_cb(lv_event_t * e);
 
-static void tx_call_dis_cb(lv_event_t * e);
 static void tx_call_en_cb(lv_event_t * e);
+static void tx_call_dis_cb(lv_event_t * e);
 
 static void mode_auto_cb(lv_event_t * e);
 static void time_sync(lv_event_t * e);
 
 static void make_tx_msg(ft8_tx_msg_t msg, int16_t snr);
-static bool do_rx_msg(ft8_cell_t *cell, const char * msg, bool pressed);
+static bool answer_rx_msg(ft8_cell_t *cell, const char * msg, bool pressed);
+static bool get_time_slot(struct timespec now);
 
-static button_item_t button_show_all = { .label = "Show\nAll", .press = show_all_cb };
-static button_item_t button_show_cq = { .label = "Show\nCQ", .press = show_cq_cb };
+// button label is current state, press action and name - next state
+static button_item_t button_show_cq = { .label = "Show\nAll", .press = show_cq_cb };
+static button_item_t button_show_all = { .label = "Show\nCQ", .press = show_all_cb };
 
-static button_item_t button_mode_ft8 = { .label = "Mode\nFT8", .press = mode_ft8_cb };
-static button_item_t button_mode_ft4 = { .label = "Mode\nFT4", .press = mode_ft4_cb };
+static button_item_t button_mode_ft4 = { .label = "Mode\nFT8", .press = mode_ft4_cb };
+static button_item_t button_mode_ft8 = { .label = "Mode\nFT4", .press = mode_ft8_cb };
 
-static button_item_t button_tx_cq_dis = { .label = "TX CQ\nDisabled", .press = tx_cq_dis_cb };
-static button_item_t button_tx_cq_en = { .label = "TX CQ\nEnabled", .press = tx_cq_en_cb };
+static button_item_t button_tx_cq_en = { .label = "TX CQ\nDisabled", .press = tx_cq_en_cb };
+static button_item_t button_tx_cq_dis = { .label = "TX CQ\nEnabled", .press = tx_cq_dis_cb };
 
-static button_item_t button_tx_call_dis = { .label = "TX Call\nDisabled", .press = tx_call_dis_cb, .hold = tx_cq_en_cb };
-static button_item_t button_tx_call_en = { .label = "TX Call\nEnabled", .press = tx_call_en_cb, .hold = tx_cq_en_cb };
+static button_item_t button_tx_call_en = { .label = "TX Call\nDisabled", .press = tx_call_en_cb, .hold = tx_cq_dis_cb };
+static button_item_t button_tx_call_dis = { .label = "TX Call\nEnabled", .press = tx_call_dis_cb, .hold = tx_cq_dis_cb };
 
-static button_item_t button_auto_dis = { .label = "Auto\nDisabled", .press = mode_auto_cb };
-static button_item_t button_auto_en = { .label = "Auto\nEnabled", .press = mode_auto_cb };
+static button_item_t button_auto_en = { .label = "Auto\nDisabled", .press = mode_auto_cb };
+static button_item_t button_auto_dis = { .label = "Auto\nEnabled", .press = mode_auto_cb };
 
 static button_item_t button_time_sync = { .label = "Time\nSync", .press = time_sync };
 
@@ -219,6 +219,25 @@ dialog_t                    *dialog_ft8 = &dialog;
 static void reset() {
     wf.num_blocks = 0;
     state = IDLE;
+}
+
+static void log_qso() {
+    struct timespec now;
+    struct tm       *ts;
+
+    if (log_fd == NULL) {
+        return;
+    }
+
+    clock_gettime(CLOCK_REALTIME, &now);
+    ts = localtime(&now.tv_sec);
+
+    fprintf(log_fd, "%04i.%02i.%02i %02i:%02i %s  %s   %s %s  RSTs: %+02i RSTr: %+02i\r\n",
+        ts->tm_year + 1900, ts->tm_mon + 1, ts->tm_mday, ts->tm_hour, ts->tm_min, ts->tm_zone,
+        params_band_label_get(),
+        params.callsign.x, qso_item.remote_callsign,
+        qso_item.local_snr, qso_item.remote_snr);
+    fflush(log_fd);
 }
 
 static void init() {
@@ -282,6 +301,10 @@ static void init() {
 
     reset();
 
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    odd = get_time_slot(now);
+
     /* Waterfall */
 
     waterfall_nfft = block_size * 2;
@@ -295,6 +318,15 @@ static void init() {
     pthread_mutex_init(&audio_mutex, NULL);
     pthread_cond_init(&audio_cond, NULL);
     pthread_create(&thread, NULL, decode_thread, NULL);
+
+    /* Logger */
+
+    log_fd = fopen("/mnt/ft_log.txt", "a");
+    if (log_fd == NULL) {
+        perror("Unable to open log file:");
+    } else {
+        fprintf(log_fd, "\r\n");
+    }
 }
 
 static void done() {
@@ -315,9 +347,12 @@ static void done() {
     free(waterfall_psd);
 
     free(rx_window);
+    if (log_fd != NULL) {
+        fclose(log_fd);
+    }
 }
 
-static void send_info(const char * fmt, ...) {
+static void add_info(const char * fmt, ...) {
     va_list     args;
     char        buf[128];
     ft8_msg_t   *msg = malloc(sizeof(ft8_msg_t));
@@ -354,7 +389,7 @@ static bool to_me(const char * text) {
     return (callsign_len > 0) && (strncasecmp(text, params.callsign.x, callsign_len) == 0);
 }
 
-static void send_rx_text(int16_t snr, const char * text) {
+static void add_rx_text(int16_t snr, const char * text) {
     ft8_msg_type_t  type;
     int16_t         callsign_len = strlen(params.callsign.x);
 
@@ -390,7 +425,7 @@ static void send_rx_text(int16_t snr, const char * text) {
     event_send(table, EVENT_FT8_MSG, msg);
 }
 
-static void send_tx_text(const char * text) {
+static void add_tx_text(const char * text) {
     ft8_msg_t   *msg = malloc(sizeof(ft8_msg_t));
 
     msg->msg = strdup(text);
@@ -441,7 +476,7 @@ static void decode() {
             memcpy(&decoded[idx_hash], &message, sizeof(message));
             decoded_hashtable[idx_hash] = &decoded[idx_hash];
 
-            send_rx_text(cand->snr, message.text);
+            add_rx_text(cand->snr, message.text);
         }
     }
 }
@@ -509,77 +544,36 @@ void static process(float complex *frame) {
     wf.num_blocks++;
 }
 
-static bool do_start(bool *odd) {
-    struct tm       *tm;
-    time_t          now;
-    bool            start = false;
-
-    now = time(NULL);
-    tm = localtime(&now);
+static bool get_time_slot(struct timespec now) {
+    bool cur_odd;
+    float sec = (now.tv_sec % 60) + now.tv_nsec / 1000000000.0f;
 
     switch (params.ft8_protocol) {
-        case PROTO_FT4:
-            switch (tm->tm_sec) {
-                case 0 ... 1:
-                case 15 ... 16:
-                case 30 ... 31:
-                case 45 ... 46:
-                    *odd = true;
-                    start = true;
-                    break;
+    case PROTO_FT4:
+        cur_odd = (int)(sec / FT4_SLOT_TIME) % 2;
+        break;
 
-                case 7 ... 8:
-                case 22 ... 23:
-                case 37 ... 38:
-                case 52 ... 53:
-                    *odd = false;
-                    start = true;
-                    break;
-
-                default:
-                    start = false;
-            }
-            break;
-
-        case PROTO_FT8:
-            switch (tm->tm_sec) {
-                case 0 ... 1:
-                case 30 ... 31:
-                    *odd = true;
-                    start = true;
-                    break;
-
-                case 15 ... 16:
-                case 45 ... 46:
-                    *odd = false;
-                    start = true;
-                    break;
-
-                default:
-                    start = false;
-            }
-            break;
+    case PROTO_FT8:
+        cur_odd = (int)(sec / FT8_SLOT_TIME) % 2;
+        break;
     }
-
-    if (start) {
-        timestamp = *tm;
-    }
-
-    return start;
+    return cur_odd;
 }
 
-static void rx_worker(bool sync) {
+
+static void rx_worker(bool new_slot) {
     unsigned int    n;
     float complex   *buf;
     const size_t    size = block_size * DECIM;
+    if (new_slot) {
+        wf.num_blocks = 0;
+    }
 
     pthread_mutex_lock(&audio_mutex);
 
     while (cbuffercf_size(audio_buf) < size) {
         pthread_cond_wait(&audio_cond, &audio_mutex);
     }
-
-    pthread_mutex_unlock(&audio_mutex);
 
     while (cbuffercf_size(audio_buf) > size) {
         cbuffercf_read(audio_buf, size, &buf, &n);
@@ -589,15 +583,15 @@ static void rx_worker(bool sync) {
 
         waterfall_process(decim_buf, block_size);
 
-        if (sync) {
-            process(decim_buf);
+        process(decim_buf);
 
-            if (wf.num_blocks >= wf.max_blocks) {
-                decode();
-                reset();
-            }
+        if (wf.num_blocks >= wf.max_blocks) {
+            decode();
+            reset();
         }
     }
+
+    pthread_mutex_unlock(&audio_mutex);
 }
 
 static void tx_worker() {
@@ -617,7 +611,7 @@ static void tx_worker() {
     float       symbol_bt = (params.ft8_protocol == PROTO_FT4) ? FT4_SYMBOL_BT : FT8_SYMBOL_BT;
     int16_t     *samples = gfsk_synth(tones, FT8_NN, params.ft8_tx_freq.x, symbol_bt, symbol_period, &n_samples);
     int16_t     *ptr = samples;
-    size_t      part = 1024 * 2;
+    size_t      part;
 
     radio_set_modem(true);
 
@@ -627,6 +621,7 @@ static void tx_worker() {
             state = IDLE;
             break;
         }
+        part = LV_MIN(1024 * 2, n_samples);
         audio_gain_db(ptr, part, gain_scale, ptr);
         audio_play(ptr, part);
 
@@ -643,48 +638,58 @@ static void * decode_thread(void *arg) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
+    struct timespec now;
+    bool            new_odd;
+    struct tm       *ts;
+    bool            new_slot=false;
+
     while (true) {
+        clock_gettime(CLOCK_REALTIME, &now);
+        new_odd = get_time_slot(now);
+        new_slot = new_odd != odd;
         switch (state) {
             case IDLE:
-                if (do_start(&odd)) {
+                if (new_slot) {
                     switch (qso) {
                         case QSO_IDLE:
                             state = RX_PROCESS;
                             break;
 
-                        case QSO_NEXT:
+                        case QSO_CQ:
                             state = TX_PROCESS;
-                            qso = odd ? QSO_ODD : QSO_EVEN;
+                            qso = new_odd ? QSO_ODD : QSO_EVEN;
                             break;
 
                         case QSO_ODD:
-                            state = odd ? TX_PROCESS : RX_PROCESS;
+                            state = new_odd ? TX_PROCESS : RX_PROCESS;
                             break;
 
                         case QSO_EVEN:
-                            state = !odd ? TX_PROCESS : RX_PROCESS;
+                            state = !new_odd ? TX_PROCESS : RX_PROCESS;
                             break;
                     }
 
                     switch (state) {
                         case RX_PROCESS:
+                            rx_worker(new_slot);
                             if (qso == QSO_IDLE) {
-                                send_info("RX %s %02i:%02i:%02i", params_band_label_get(), timestamp.tm_hour, timestamp.tm_min, timestamp.tm_sec);
+                                ts = localtime(&now.tv_sec);
+                                add_info("RX %s %02i:%02i:%02i", params_band_label_get(),
+                                    ts->tm_hour, ts->tm_min, ts->tm_sec);
                             }
-                            rx_worker(true);
                             break;
 
                         case TX_PROCESS:
-                            send_tx_text(tx_msg);
+                            add_tx_text(tx_msg);
                             break;
                     }
                 } else {
-                    rx_worker(false);
+                    rx_worker(new_slot);
                 }
                 break;
 
             case RX_PROCESS:
-                rx_worker(true);
+                rx_worker(new_slot);
                 break;
 
             case TX_PROCESS:
@@ -695,6 +700,7 @@ static void * decode_thread(void *arg) {
             default:
                 break;
         }
+        odd = new_odd;
     }
 
     return NULL;
@@ -724,7 +730,7 @@ static void add_msg_cb(lv_event_t * e) {
         lv_table_set_cell_user_data(table, table_rows, 0, msg->cell);
 
         if (params.ft8_auto.x && (msg->cell->type == MSG_RX_TO_ME)) {
-            do_rx_msg(msg->cell, msg->msg, false);
+            answer_rx_msg(msg->cell, msg->msg, false);
         }
     }
 
@@ -928,6 +934,7 @@ static void make_tx_msg(ft8_tx_msg_t msg, int16_t snr) {
             break;
 
         case MSG_TX_R_REPORT:
+            qso_item.local_snr = snr;
             snprintf(tx_msg, sizeof(tx_msg) - 1, "%s %s R%+02i", qso_item.remote_callsign, params.callsign.x, qso_item.local_snr);
             break;
 
@@ -948,7 +955,7 @@ static ft8_tx_msg_t parse_rx_msg(const char * str) {
     char            *call_de = NULL;
     char            *extra = NULL;
 
-    /* Splite */
+    /* Split */
 
     call_to = strtok(s, " ");
 
@@ -963,6 +970,10 @@ static ft8_tx_msg_t parse_rx_msg(const char * str) {
     /* Analysis */
 
     if (call_to && strcmp(call_to, "CQ") == 0) {
+        if (call_de && strcmp(call_de, "DX") == 0) {
+            call_de = extra;
+            extra = strtok(NULL, " ");
+        }
         strcpy(qso_item.remote_callsign, call_de ? call_de : "");
         strcpy(qso_item.remote_qth, extra ? extra : "");
 
@@ -972,7 +983,7 @@ static ft8_tx_msg_t parse_rx_msg(const char * str) {
 
     if (call_to && to_me(call_to)) {
         if (extra && strcmp(extra, "RR73") == 0 || strcmp(extra, "73") == 0) {
-            buttons_load(2, &button_tx_cq_en);
+            buttons_load(2, &button_tx_cq_dis);
 
             free(s);
             return MSG_TX_DONE;
@@ -1007,13 +1018,13 @@ static ft8_tx_msg_t parse_rx_msg(const char * str) {
     return MSG_TX_INVALID;
 }
 
-static bool do_rx_msg(ft8_cell_t *cell, const char * msg, bool pressed) {
+static bool answer_rx_msg(ft8_cell_t *cell, const char * msg, bool pressed) {
     ft8_tx_msg_t next_msg = parse_rx_msg(msg);
 
     switch (next_msg) {
         case MSG_TX_CALLING:
             if (pressed) {
-                send_info("Start QSO");
+                add_info("Start QSO");
             }
             break;
 
@@ -1022,14 +1033,15 @@ static bool do_rx_msg(ft8_cell_t *cell, const char * msg, bool pressed) {
 
         case MSG_TX_DONE:
             qso = QSO_IDLE;
-            buttons_load(2, &button_tx_call_dis);
+            log_qso();
+            buttons_load(2, &button_tx_call_en);
             return true;
     }
 
     qso = cell->odd ? QSO_EVEN : QSO_ODD;   /* Must be reversed */
     make_tx_msg(next_msg, cell->snr);
 
-    buttons_load(2, &button_tx_call_en);
+    buttons_load(2, &button_tx_call_dis);
     return true;
 }
 
@@ -1171,7 +1183,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_remove_style(table, NULL, LV_STATE_ANY | LV_PART_MAIN);
     lv_obj_add_event_cb(table, add_msg_cb, EVENT_FT8_MSG, NULL);
     lv_obj_add_event_cb(table, selected_msg_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(table, tx_call_dis_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(table, tx_call_en_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(table, key_cb, LV_EVENT_KEY, NULL);
     lv_obj_add_event_cb(table, table_draw_part_begin_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
     lv_obj_add_event_cb(table, table_draw_part_end_cb, LV_EVENT_DRAW_PART_END, NULL);
@@ -1219,23 +1231,23 @@ static void construct_cb(lv_obj_t *parent) {
     table_rows = 0;
 
     if (params.ft8_show_all) {
-        buttons_load(0, &button_show_all);
-    } else {
         buttons_load(0, &button_show_cq);
+    } else {
+        buttons_load(0, &button_show_all);
     }
 
     switch (params.ft8_protocol) {
         case PROTO_FT8:
-            buttons_load(1, &button_mode_ft8);
+            buttons_load(1, &button_mode_ft4);
             break;
 
         case PROTO_FT4:
-            buttons_load(1, &button_mode_ft4);
+            buttons_load(1, &button_mode_ft8);
             break;
     }
 
-    buttons_load(2, &button_tx_cq_dis);
-    buttons_load(3, params.ft8_auto.x ? &button_auto_en : &button_auto_dis);
+    buttons_load(2, &button_tx_cq_en);
+    buttons_load(3, params.ft8_auto.x ? &button_auto_dis : &button_auto_en);
     buttons_load(4, &button_time_sync);
 
     mem_save(MEM_BACKUP_ID);
@@ -1258,38 +1270,25 @@ static void construct_cb(lv_obj_t *parent) {
     }
 }
 
-static void show_all_cb(lv_event_t * e) {
-    params_lock();
-    params.ft8_show_all = false;
-    params_unlock(&params.dirty.ft8_show_all);
-
-    buttons_load(0, &button_show_cq);
-}
-
 static void show_cq_cb(lv_event_t * e) {
     params_lock();
-    params.ft8_show_all = true;
+    params.ft8_show_all = false;
     params_unlock(&params.dirty.ft8_show_all);
 
     buttons_load(0, &button_show_all);
 }
 
-static void mode_ft8_cb(lv_event_t * e) {
+static void show_all_cb(lv_event_t * e) {
     params_lock();
-    params.ft8_protocol = PROTO_FT4;
-    params_unlock(&params.dirty.ft8_protocol);
+    params.ft8_show_all = true;
+    params_unlock(&params.dirty.ft8_show_all);
 
-    buttons_load(1, &button_mode_ft4);
-
-    done();
-    init();
-    clean();
-    load_band();
+    buttons_load(0, &button_show_cq);
 }
 
 static void mode_ft4_cb(lv_event_t * e) {
     params_lock();
-    params.ft8_protocol = PROTO_FT8;
+    params.ft8_protocol = PROTO_FT4;
     params_unlock(&params.dirty.ft8_protocol);
 
     buttons_load(1, &button_mode_ft8);
@@ -1300,26 +1299,39 @@ static void mode_ft4_cb(lv_event_t * e) {
     load_band();
 }
 
+static void mode_ft8_cb(lv_event_t * e) {
+    params_lock();
+    params.ft8_protocol = PROTO_FT8;
+    params_unlock(&params.dirty.ft8_protocol);
+
+    buttons_load(1, &button_mode_ft4);
+
+    done();
+    init();
+    clean();
+    load_band();
+}
+
 static void mode_auto_cb(lv_event_t * e) {
     params_bool_set(&params.ft8_auto, !params.ft8_auto.x);
 
-    buttons_load(3, params.ft8_auto.x ? &button_auto_en : &button_auto_dis);
+    buttons_load(3, params.ft8_auto.x ? &button_auto_dis : &button_auto_en);
 }
 
-static void tx_cq_dis_cb(lv_event_t * e) {
+static void tx_cq_en_cb(lv_event_t * e) {
     if (strlen(params.callsign.x) == 0) {
         msg_set_text_fmt("Call sign required");
 
         return;
     }
 
-    buttons_load(2, &button_tx_cq_en);
+    buttons_load(2, &button_tx_cq_dis);
     make_tx_msg(MSG_TX_CQ, 0);
-    qso = QSO_NEXT;
+    qso = QSO_CQ;
 }
 
-static void tx_cq_en_cb(lv_event_t * e) {
-    buttons_load(2, &button_tx_cq_dis);
+static void tx_cq_dis_cb(lv_event_t * e) {
+    buttons_load(2, &button_tx_cq_en);
 
     if (state == TX_PROCESS) {
         state = TX_STOP;
@@ -1328,12 +1340,12 @@ static void tx_cq_en_cb(lv_event_t * e) {
 }
 
 static void tx_call_off() {
-    buttons_load(2, &button_tx_call_dis);
+    buttons_load(2, &button_tx_call_en);
     state = TX_STOP;
     qso = QSO_IDLE;
 }
 
-static void tx_call_dis_cb(lv_event_t * e) {
+static void tx_call_en_cb(lv_event_t * e) {
     if (strlen(params.callsign.x) == 0) {
         msg_set_text_fmt("Call sign required");
 
@@ -1353,7 +1365,7 @@ static void tx_call_dis_cb(lv_event_t * e) {
         if (cell == NULL || cell->type == MSG_TX_MSG || cell->type == MSG_RX_INFO) {
             msg_set_text_fmt("What should I do about it?");
         } else {
-            if (!do_rx_msg(cell, lv_table_get_cell_value(table, row, col), true)) {
+            if (!answer_rx_msg(cell, lv_table_get_cell_value(table, row, col), true)) {
                 msg_set_text_fmt("Invalid message");
                 tx_call_off();
             }
@@ -1361,8 +1373,8 @@ static void tx_call_dis_cb(lv_event_t * e) {
     }
 }
 
-static void tx_call_en_cb(lv_event_t * e) {
-    buttons_load(2, &button_tx_call_dis);
+static void tx_call_dis_cb(lv_event_t * e) {
+    buttons_load(2, &button_tx_call_en);
 
     if (state == TX_PROCESS) {
         state = TX_STOP;
