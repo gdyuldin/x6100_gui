@@ -11,6 +11,7 @@ This is part of an alternative firmware for X6100 using the LVGL library
 mkdir x6100
 cd x6100
 git clone https://github.com/gdyuldin/AetherX6100Buildroot
+git checkout R1CBU
 git clone https://github.com/gdyuldin/x6100_gui
 ```
 
