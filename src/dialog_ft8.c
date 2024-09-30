@@ -1092,7 +1092,7 @@ static void tx_cq_dis_cb(lv_event_t * e) {
         state = RX_PROCESS;
     }
     cq_enabled = false;
-    tx_enabled = false;
+    tx_msg[0] = '\0';
 }
 
 static void tx_call_off() {
