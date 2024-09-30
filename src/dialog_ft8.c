@@ -37,6 +37,7 @@
 #include "gfsk.h"
 #include "adif.h"
 #include "qso_log.h"
+#include "scheduler.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -1586,17 +1587,22 @@ static void rx_worker(bool new_slot, bool odd) {
     }
 }
 
+static void update_call_btn(void * arg) {
+    if (tx_enabled) {
+        buttons_load(2, &button_tx_call_dis);
+    } else {
+        buttons_load(2, &button_tx_call_en);
+    }
+}
+
+
 static void generate_tx_msg() {
     if (qso_item.last_rx_msg != NULL) {
         if (!make_answer(qso_item.last_rx_msg, qso_item.last_snr, qso_item.rx_odd)) {
             tx_msg[0] = 0;
         } else {
             cq_enabled = false;
-            if (tx_enabled) {
-                buttons_load(2, &button_tx_call_dis);
-            } else {
-                buttons_load(2, &button_tx_call_en);
-            }
+            scheduler_put(update_call_btn, NULL, 0);
         }
         switch (qso_item.last_rx_msg->type) {
             case MSG_TYPE_RR73:
