@@ -184,10 +184,6 @@ static void tx_info_draw_cb(lv_event_t * e) {
 
 }
 
-static void update_alc_label_cb(lv_event_t * e) {
-    lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
-}
-
 static void tx_cb(lv_event_t * e) {
     pwr = 0.0f;
     vswr = 0.0f;
@@ -206,12 +202,12 @@ static void update_timer(lv_timer_t * timer)
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
         return;
     }
-    lv_event_send(obj, LV_EVENT_REFRESH, NULL);
+    lv_obj_invalidate(obj);
     if (params.mag_alc.x) {
         msg_tiny_set_text_fmt("ALC: %.1f", alc);
     }
     if (dialog_is_run() || !params.mag_alc.x) {
-        lv_event_send(alc_label, EVENT_MSG_UPDATE, NULL);
+        lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
     }
 }
 
@@ -244,7 +240,6 @@ lv_obj_t * tx_info_init(lv_obj_t *parent) {
     lv_obj_align(alc_label, LV_ALIGN_BOTTOM_RIGHT, -10, 13);
     lv_obj_set_style_text_color(alc_label, lv_color_white(), 0);
     lv_label_set_text(alc_label, "");
-    lv_obj_add_event_cb(alc_label, update_alc_label_cb, EVENT_MSG_UPDATE, NULL);
 
     lv_timer_t * timer = lv_timer_create(update_timer, UPDATE_UI_MS,  NULL);
     return obj;

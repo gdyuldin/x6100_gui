@@ -46,14 +46,15 @@ static lv_img_dsc_t     *frame;
 static lv_color_t       palette[256];
 static uint8_t          delay = 0;
 
-static int64_t         *freq_offsets;
+static int64_t          *freq_offsets;
 static uint16_t         last_row_id;
 static uint8_t          *waterfall_cache;
 
-static int64_t         radio_center_freq = 0;
-static int64_t         wf_center_freq = 0;
+static int64_t          radio_center_freq = 0;
+static int64_t          wf_center_freq = 0;
 
-static lv_timer_t     *update_timer;
+static lv_timer_t      *update_timer;
+static bool             new_data=false;
 
 static uint8_t          zoom = 1;
 
@@ -121,6 +122,7 @@ void waterfall_data(float *data_buf, uint16_t size, bool tx) {
         uint8_t id = v * 254 + 1;
         memcpy(&waterfall_cache[(last_row_id * size + size - 1 - x) * PX_BYTES], &palette[id], PX_BYTES);
     }
+    new_data=true;
 }
 
 static void do_scroll_cb(lv_event_t * event) {
@@ -287,5 +289,7 @@ static void zoom_changed_cd(void * s, lv_msg_t * m) {
 }
 
 static void update_timer_fn(lv_timer_t * t) {
+    if (!new_data) return;
     lv_obj_invalidate(img);
+    new_data = false;
 }
