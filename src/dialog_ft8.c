@@ -539,6 +539,7 @@ void static process(float complex *frame) {
                 complex float   freq = freq_buf[src_bin];
                 float           v = crealf(freq * conjf(freq));
                 float           db = 10.0f * log10f(v);
+                // TODO: add moving average
                 int             scaled = (int16_t) (db * 2.0f + scaled_offset);
 
                 if (scaled < 0) {
@@ -1388,6 +1389,7 @@ static msg_t parse_rx_msg(const char * str) {
     /* Analysis */
 
     if (strcmp(call_to, "CQ") == 0) {
+        // TODO: add POTA support
         if (strlen(call_de) == 2) {
             call_de = extra;
             extra = strtok(NULL, " ");
@@ -1458,7 +1460,7 @@ static void add_rx_text(int16_t snr, const char * text, bool odd) {
 
     if (str_equal(msg.call_to, params.callsign.x)) {
         cell_type = CELL_RX_TO_ME;
-        if (!active_qso()) {
+        if (!active_qso() && ((msg.type == MSG_TYPE_GRID) || (msg.type == MSG_TYPE_REPORT))) {
             // Use first decoded answer
             strncpy(qso_item.remote_callsign, msg.call_from, sizeof(qso_item.remote_callsign) - 1);
         }
