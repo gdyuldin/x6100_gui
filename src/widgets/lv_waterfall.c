@@ -98,14 +98,10 @@ void lv_waterfall_add_data(lv_obj_t * obj, float * data, uint16_t cnt) {
     }
 
     uint32_t        line_len = waterfall->line_len;
-    uint8_t         *ptr = dsc->data + dsc->data_size - line_len * 2;
 
     /* Scroll down */
 
-    for (uint16_t y = 0; y < dsc->header.h - 1; y++) {
-        memcpy(ptr + line_len, ptr, line_len);
-        ptr -= line_len;
-    }
+    memmove(dsc->data + line_len, dsc->data, dsc->data_size - line_len);
 
     /* Paint */
 

@@ -507,7 +507,6 @@ void static waterfall_process(float complex *frame, const size_t size) {
             &waterfall_psd[low_bin]);
 
         lv_waterfall_add_data(waterfall, &waterfall_psd[low_bin], high_bin - low_bin);
-        event_send(waterfall, LV_EVENT_REFRESH, NULL);
 
         waterfall_time = now;
         spgramcf_reset(waterfall_sg);
