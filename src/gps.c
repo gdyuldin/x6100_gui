@@ -18,10 +18,16 @@
 #include <errno.h>
 #include <pthread.h>
 #include <math.h>
+#include <libudev.h>
 
 static struct gps_data_t    gpsdata;
 static uint64_t             prev_time = 0;
 static gps_status_t         status=GPS_STATUS_WAITING;
+
+static struct udev *udev;
+static struct udev_device *dev;
+static struct udev_monitor *mon;
+static int fd;
 
 
 static bool connect() {
@@ -59,6 +65,31 @@ static void disconnect() {
 
 }
 
+static void wait_new_device() {
+	while (1) {
+		fd_set fds;
+		struct timeval tv;
+		int ret;
+
+		FD_ZERO(&fds);
+		FD_SET(fd, &fds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 0;
+
+		ret = select(fd+1, &fds, NULL, NULL, &tv);
+		if (ret > 0 && FD_ISSET(fd, &fds)) {
+			dev = udev_monitor_receive_device(mon);
+			if (dev && (strcmp(udev_device_get_action(dev), "add") == 0)) {
+				/* free dev */
+				udev_device_unref(dev);
+                return;
+			}
+		}
+		/* 500 milliseconds */
+		usleep(500*1000);
+	}
+}
+
 static void * gps_thread(void *arg) {
     while (true) {
         status = GPS_STATUS_WAITING;
@@ -66,12 +97,24 @@ static void * gps_thread(void *arg) {
             data_receive();
             status = GPS_STATUS_RESTARTING;
             disconnect();
+        } else {
+            status = GPS_STATUS_WAITING;
+            wait_new_device();
         }
-        usleep(10000000);
     }
 }
 
 void gps_init() {
+    /* create udev object */
+	udev = udev_new();
+	if (!udev) {
+		LV_LOG_ERROR("Cannot create udev context.");
+	}
+    mon = udev_monitor_new_from_netlink(udev, "udev");
+	udev_monitor_filter_add_match_subsystem_devtype(mon, "usb", NULL);
+	udev_monitor_enable_receiving(mon);
+	fd = udev_monitor_get_fd(mon);
+
     pthread_t thread;
 
     pthread_create(&thread, NULL, gps_thread, NULL);

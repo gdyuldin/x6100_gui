@@ -12,6 +12,7 @@
 #include "main_screen.h"
 #include "keyboard.h"
 #include "events.h"
+#include "waterfall.h"
 
 static lv_obj_t     *obj;
 static dialog_t     *current_dialog = NULL;
