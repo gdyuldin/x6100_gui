@@ -72,10 +72,6 @@ int main(void) {
     lv_disp_set_bg_color(lv_disp_get_default(), lv_color_black());
     lv_disp_set_bg_opa(lv_disp_get_default(), LV_OPA_COVER);
 
-    lv_timer_t *timer = _lv_disp_get_refr_timer(lv_disp_get_default());
-
-    lv_timer_set_period(timer, 15);
-
     keyboard_init();
 
     keypad_t *keypad = keypad_init("/dev/input/event0");

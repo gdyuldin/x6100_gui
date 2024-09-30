@@ -16,6 +16,7 @@
 #include "params/params.h"
 #include "util.h"
 #include "dialog.h"
+#include "scheduler.h"
 
 #define NUM_PWR_ITEMS   6
 #define NUM_VSWR_ITEMS  5
@@ -197,7 +198,7 @@ static void rx_cb(lv_event_t * e) {
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void update_timer(lv_timer_t * timer)
+static void update_tx_info(void * arg)
 {
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
         return;
@@ -241,7 +242,6 @@ lv_obj_t * tx_info_init(lv_obj_t *parent) {
     lv_obj_set_style_text_color(alc_label, lv_color_white(), 0);
     lv_label_set_text(alc_label, "");
 
-    lv_timer_t * timer = lv_timer_create(update_timer, UPDATE_UI_MS,  NULL);
     return obj;
 }
 
@@ -265,6 +265,7 @@ void tx_info_update(float p, float s, float a) {
             lpf(&vswr, s, beta, 0.0f);
     }
     msg_id++;
+    scheduler_put(update_tx_info, NULL, 0);
 }
 
 bool tx_info_refresh(uint8_t * prev_msg_id, float * alc_p, float * pwr_p, float * vswr_p) {
