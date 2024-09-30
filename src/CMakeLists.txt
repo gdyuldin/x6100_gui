@@ -13,7 +13,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
     dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
     textarea_window.c cw_encoder.c buttons.c vol.c recorder.c
-    qth.c voice.cpp gfsk.c cw_tune_ui.c adif.c qso_log.c
+    qth.c voice.cpp gfsk.c cw_tune_ui.c adif.c qso_log.c scheduler.c
 )
 
 add_subdirectory(fonts)

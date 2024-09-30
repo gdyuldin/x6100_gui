@@ -36,6 +36,7 @@
 #include "mfk.h"
 #include "vol.h"
 #include "qso_log.h"
+#include "scheduler.h"
 
 #define DISP_BUF_SIZE (800 * 480 * 4)
 
@@ -130,6 +131,7 @@ int main(void) {
     while (1) {
         next_loop_time = get_time() + lv_timer_handler();
         event_obj_check();
+        scheduler_work();
         sleep_time = next_loop_time - get_time();
         if (sleep_time > 0) {
             usleep(sleep_time * 1000);

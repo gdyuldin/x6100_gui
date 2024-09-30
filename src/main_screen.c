@@ -440,16 +440,7 @@ static void change_mode(keypad_key_t key, keypad_state_t state) {
         }
     }
 
-    radio_set_mode(params_band_vfo_get(), next_mode);
-    radio_filters_setup();
-    uint16_t zoom_factor = params_current_mode_spectrum_factor_get();
-    lv_msg_send(MSG_SPECTRUM_ZOOM_CHANGED, &zoom_factor);
-    info_params_set();
-    pannel_visible();
-
-    if (params.mag_info.x) {
-        msg_tiny_set_text_fmt("%s", info_params_mode());
-    }
+    main_screen_set_mode(&next_mode);
 }
 
 static void main_screen_keypad_cb(lv_event_t * e) {
@@ -1199,4 +1190,22 @@ void main_screen_notify_atu_update()
 void main_screen_band_set()
 {
     freq_update();
+}
+
+
+void main_screen_set_mode(void * arg) {
+    if (!arg) {
+        LV_LOG_WARN("arg is NULL");
+    }
+    x6100_mode_t next_mode = * (x6100_mode_t *) arg;
+    radio_set_mode(params_band_vfo_get(), next_mode);
+    radio_filters_setup();
+    uint16_t zoom_factor = params_current_mode_spectrum_factor_get();
+    lv_msg_send(MSG_SPECTRUM_ZOOM_CHANGED, &zoom_factor);
+    info_params_set();
+    pannel_visible();
+
+    if (params.mag_info.x) {
+        msg_tiny_set_text_fmt("%s", info_params_mode());
+    }
 }

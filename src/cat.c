@@ -18,6 +18,8 @@
 #include "events.h"
 #include "waterfall.h"
 #include "spectrum.h"
+#include "scheduler.h"
+#include "main_screen.h"
 
 #include <aether_radio/x6100_control/low/gpio.h>
 #include "lvgl/lvgl.h"
@@ -108,6 +110,16 @@ static int      fd;
 
 static uint8_t  frame[256];
 
+static void log_msg(const char * msg, uint16_t len) {
+    char buf[512];
+    char *buf_ptr = buf;
+    for (size_t i = 0; i < len; i++) {
+        buf_ptr += sprintf(buf_ptr, "%02X:", msg[i]);
+    }
+    *(buf_ptr - 1) = '\0';
+    LV_LOG_USER("Cmd %s (Len %i)", buf, len);
+}
+
 static uint16_t frame_get() {
     uint16_t    len = 0;
     uint8_t     c;
@@ -151,13 +163,26 @@ static void send_code(uint8_t code) {
     send_frame(6);
 }
 
-static void set_freq(uint64_t freq) {
+static void set_freq(void * arg) {
+    if (!arg) {
+        LV_LOG_ERROR("arg is NULL");
+    }
+    uint64_t freq = * (uint64_t*) arg;
     if (params_bands_find(freq, &params.freq_band)) {
         bands_activate(&params.freq_band, NULL);
     }
 
     radio_set_freq(freq);
-    event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
+    lv_event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
+}
+
+static void set_vfo(void * arg) {
+    if (!arg) {
+        LV_LOG_ERROR("arg is NULL");
+    }
+    x6100_vfo_t vfo = * (x6100_vfo_t*) arg;
+    radio_set_vfo(vfo);
+    lv_event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
 }
 
 
@@ -258,7 +283,7 @@ static void frame_parse(uint16_t len) {
     x6100_vfo_t target_vfo = cur_vfo;
 
 #if 0
-    LV_LOG_WARN("Cmd %02X:%02X (Len %i)", frame[4], frame[5], len);
+    log_msg(frame, len);
 #endif
 
     // echo input frame
@@ -282,7 +307,7 @@ static void frame_parse(uint16_t len) {
             new_freq = from_bcd(&frame[5], 10);
             if (new_freq != cur_freq)
             {
-                set_freq(new_freq);
+                scheduler_put(set_freq, &new_freq, sizeof(new_freq));
             }
 
             send_code(CODE_OK);
@@ -291,8 +316,7 @@ static void frame_parse(uint16_t len) {
         case C_SET_MODE: ;
             x6100_mode_t new_mode = ci_mode_2_x_mode(frame[5], NULL);
             if (new_mode != cur_mode) {
-                radio_set_mode(cur_vfo, new_mode);
-                event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
+                scheduler_put(main_screen_set_mode, &new_mode, sizeof(new_mode));
             }
 
             send_code(CODE_OK);
@@ -319,12 +343,13 @@ static void frame_parse(uint16_t len) {
             }
             break;
 
-        case C_SET_VFO:
+        case C_SET_VFO:;
+            x6100_vfo_t new_vfo;
             switch (frame[5]) {
             case S_VFOA:
                 if (cur_vfo != X6100_VFO_A) {
-                    radio_set_vfo(X6100_VFO_A);
-                    event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
+                    new_vfo = X6100_VFO_A;
+                    scheduler_put(set_vfo, &new_vfo, sizeof(new_vfo));
                 }
 
                 send_code(CODE_OK);
@@ -332,13 +357,14 @@ static void frame_parse(uint16_t len) {
 
             case S_VFOB:
                 if (cur_vfo != X6100_VFO_B) {
-                    radio_set_vfo(X6100_VFO_B);
-                    event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
+                    new_vfo = X6100_VFO_A;
+                    scheduler_put(set_vfo, &new_vfo, sizeof(new_vfo));
                 }
                 send_code(CODE_OK);
                 break;
 
             default:
+                LV_LOG_WARN("Unsupported %02X:%02X (Len %i)", frame[4], frame[5], len);
                 send_code(CODE_NG);
                 break;
             }
@@ -358,7 +384,7 @@ static void frame_parse(uint16_t len) {
                     params_band_vfo_freq_set(target_vfo, freq);
 
                     if (cur_vfo == target_vfo) {
-                        set_freq(freq);
+                        scheduler_put(set_freq, &freq, sizeof(freq));
                     }
                 }
                 send_code(CODE_OK);
@@ -377,8 +403,8 @@ static void frame_parse(uint16_t len) {
                 send_frame(10);
             } else {
                 // TODO: Add filters applying
-                radio_set_mode(target_vfo, ci_mode_2_x_mode(frame[6], &frame[7]));
-                event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
+                x6100_mode_t new_mode = ci_mode_2_x_mode(frame[6], &frame[7]);
+                scheduler_put(main_screen_set_mode, &new_mode, sizeof(new_mode));
                 send_code(CODE_OK);
             }
             break;
@@ -394,6 +420,7 @@ static void frame_parse(uint16_t len) {
                     break;
 
                 default:
+                    LV_LOG_WARN("Unsupported %02X:%02X (Len %i)", frame[4], frame[5], len);
                     send_code(CODE_NG);
                     break;
                 }

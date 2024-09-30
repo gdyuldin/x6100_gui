@@ -39,3 +39,6 @@ void main_screen_set_freq(uint64_t f);
 
 void mem_load(uint16_t id);
 void mem_save(uint16_t id);
+
+// Scheduler functions
+void main_screen_set_mode(void *arg);
