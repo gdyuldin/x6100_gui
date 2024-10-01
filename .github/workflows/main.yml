@@ -16,60 +16,15 @@ jobs:
 
     steps:
     # Checkout the repository to the GitHub Actions runner
-    - name: Checkout GUI
-      uses: actions/checkout@v4
-      with:
-        submodules: true
-        path: x6100_gui
-
-    - name: Checkout buildroot
-      uses: actions/checkout@v4
-      with:
-        submodules: true
-        repository: gdyuldin/AetherX6100Buildroot
-        path: AetherX6100Buildroot
-
-    - name: Patch GUI mk
+    - name: check free space
       run: |
-        sed -i "s,https://github.com/gdyuldin/x6100_gui,${GITHUB_WORKSPACE}/x6100_gui,g" AetherX6100Buildroot/br2_external/package/x6100-gui/x6100_gui.mk
-        sed -i "s,^X6100_GUI_SITE_METHOD = git,X6100_GUI_SITE_METHOD = local,g" AetherX6100Buildroot/br2_external/package/x6100-gui/x6100_gui.mk
-        sed -i "s,^X6100_GUI_GIT_SUBMODULES,# X6100_GUI_GIT_SUBMODULES,g" AetherX6100Buildroot/br2_external/package/x6100-gui/x6100_gui.mk
-
-    - name: Cache ccache
-      id: cache-ccache
-      uses: actions/cache@v4
-      with:
-        path: ~/.buildroot-ccache
-        key: ${{ runner.os }}-ccache
-
-    # Configure
-    - name: Configure
+        df -h
+        pwd
+    - name: cleanup
       run: |
-        cd AetherX6100Buildroot && bash ./br_config.sh
-
-    # Build
-    - name: Build
-      run: |
-        cd AetherX6100Buildroot/build && make
-        make libsndfile-dirclean
-        make
-
-    # Compress image
-    - name: Compress image
-      run: |
-        cd AetherX6100Buildroot/build/images
-        zip sdcard.img.zip sdcard.img
-
-    # Upload image
-    - name: 'Upload image'
-      uses: actions/upload-artifact@v4
-      with:
-        name: sdcard.img
-        path: AetherX6100Buildroot/build/images/sdcard.img
-
-    # Create release
-    - name: Release
-      uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        files: AetherX6100Buildroot/build/images/sdcard.img.zip
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+    - name: check free space
+      run: df -h
