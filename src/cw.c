@@ -86,7 +86,7 @@ static void dds_dec_init() {
     if (ds_dec != NULL) {
         dds_cccf_destroy(ds_dec);
     }
-    float rel_freq = (float) params.key_tone / AUDIO_CAPTURE_RATE;
+    float rel_freq = (float) subject_get_int(cfg.key_tone.val) / AUDIO_CAPTURE_RATE;
     float bw = (float) MAX_CW_BW / AUDIO_CAPTURE_RATE;
     ds_dec = dds_cccf_create(NUM_STAGES, rel_freq, bw, 60.0f);
     pthread_mutex_unlock(&cw_mutex);

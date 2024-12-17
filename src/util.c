@@ -14,6 +14,7 @@
 #include <time.h>
 #include <string.h>
 #include <string.h>
+#include <errno.h>
 
 
 /**
@@ -270,4 +271,26 @@ char * util_canonize_callsign(const char * callsign, bool strip_slashes) {
         result = strdup(callsign);
     }
     return result;
+}
+
+
+void sleep_usec(uint32_t msec) {
+    // does not interfere with signals like sleep and usleep do
+    struct timespec req_ts;
+    req_ts.tv_sec = msec / 1000000;
+    req_ts.tv_nsec = (msec % 1000000) * 1000L;
+    int32_t olderrno = errno; // Some OS (especially MacOSX) seem to set errno to ETIMEDOUT when sleeping
+
+    while (1) {
+        /* Sleep for the time specified in req_ts. If interrupted by a
+        signal, place the remaining time left to sleep back into req_ts. */
+        int rval = nanosleep(&req_ts, &req_ts);
+        if (rval == 0)
+            break; // Completed the entire sleep time; all done.
+        else if (errno == EINTR)
+            continue; // Interrupted by a signal. Try again.
+        else
+            break; // Some other error; bail out.
+    }
+    errno = olderrno;
 }

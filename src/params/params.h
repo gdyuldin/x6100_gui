@@ -21,6 +21,7 @@
 #include "common.h"
 #include "band.h"
 #include "types.h"
+#include "../cfg/cfg.h"
 
 typedef enum {
     BUTTONS_DARK = 0,
@@ -156,7 +157,6 @@ typedef struct {
     uint8_t             key_speed;
     x6100_key_mode_t    key_mode;
     x6100_iambic_mode_t iambic_mode;
-    uint16_t            key_tone;
     uint16_t            key_vol;
     bool                key_train;
     uint16_t            qsk_time;
@@ -299,7 +299,6 @@ typedef struct {
         bool    key_speed;
         bool    key_mode;
         bool    iambic_mode;
-        bool    key_tone;
         bool    key_vol;
         bool    key_train;
         bool    qsk_time;

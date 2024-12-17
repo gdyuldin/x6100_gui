@@ -284,7 +284,7 @@ void radio_init(radio_state_change_t tx_cb, radio_state_change_t rx_cb, radio_st
     x6100_control_key_speed_set(params.key_speed);
     x6100_control_key_mode_set(params.key_mode);
     x6100_control_iambic_mode_set(params.iambic_mode);
-    x6100_control_key_tone_set(params.key_tone);
+    x6100_control_key_tone_set(subject_get_int(cfg.key_tone.val));
     x6100_control_key_vol_set(params.key_vol);
     x6100_control_key_train_set(params.key_train);
     x6100_control_qsk_time_set(params.qsk_time);
@@ -788,15 +788,22 @@ x6100_iambic_mode_t radio_change_iambic_mode(int16_t d) {
 }
 
 uint16_t radio_change_key_tone(int16_t d) {
+    int32_t key_tone = subject_get_int(cfg.key_tone.val);
     if (d == 0) {
-        return params.key_tone;
+        return key_tone;
     }
 
-    int32_t new_val = limit(params.key_tone + ((d > 0) ? 10 : -10), 400, 1200);
-    CHANGE_PARAM(new_val, params.key_tone, params.dirty.key_tone, x6100_control_key_tone_set);
-    cw_notify_change_key_tone();
+    int32_t new_val = limit(key_tone + ((d > 0) ? 10 : -10), 400, 1200);
+    if (new_val != key_tone) {
+        subject_set_int(cfg.key_tone.val, new_val);
+        radio_lock();
+        x6100_control_key_tone_set(new_val);
+        radio_unlock();
+        lv_msg_send(MSG_PARAM_CHANGED, NULL);
+        cw_notify_change_key_tone();
+    };
 
-    return params.key_tone;
+    return new_val;
 }
 
 uint16_t radio_change_key_vol(int16_t d) {

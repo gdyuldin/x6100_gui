@@ -6,20 +6,24 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
-#include <unistd.h>
-#include <stdio.h>
-#include <pthread.h>
-#include <sqlite3.h>
-#include <string.h>
 
-#include "lvgl/lvgl.h"
 #include "params.h"
+
 #include "db.h"
+
 #include "../util.h"
 #include "../mfk.h"
 #include "../vol.h"
 #include "../dialog_msg_cw.h"
 #include "../qth/qth.h"
+
+#include "lvgl/lvgl.h"
+
+#include <unistd.h>
+#include <stdio.h>
+#include <pthread.h>
+#include <sqlite3.h>
+#include <string.h>
 
 #define BAND_NOT_LOADED -10
 
@@ -90,7 +94,6 @@ params_t params = {
     .key_speed              = 15,
     .key_mode               = x6100_key_manual,
     .iambic_mode            = x6100_iambic_a,
-    .key_tone               = 700,
     .key_vol                = 10,
     .key_train              = false,
     .qsk_time               = 100,
@@ -256,8 +259,6 @@ static bool params_load() {
             params.key_mode = i;
         } else if (strcmp(name, "iambic_mode") == 0) {
             params.iambic_mode = i;
-        } else if (strcmp(name, "key_tone") == 0) {
-            params.key_tone = i;
         } else if (strcmp(name, "key_vol") == 0) {
             params.key_vol = i;
         } else if (strcmp(name, "key_train") == 0) {
@@ -469,7 +470,6 @@ static void params_save() {
     if (params.dirty.key_speed)             params_write_int("key_speed", params.key_speed, &params.dirty.key_speed);
     if (params.dirty.key_mode)              params_write_int("key_mode", params.key_mode, &params.dirty.key_mode);
     if (params.dirty.iambic_mode)           params_write_int("iambic_mode", params.iambic_mode, &params.dirty.iambic_mode);
-    if (params.dirty.key_tone)              params_write_int("key_tone", params.key_tone, &params.dirty.key_tone);
     if (params.dirty.key_vol)               params_write_int("key_vol", params.key_vol, &params.dirty.key_vol);
     if (params.dirty.key_train)             params_write_int("key_train", params.key_train, &params.dirty.key_train);
     if (params.dirty.qsk_time)              params_write_int("qsk_time", params.qsk_time, &params.dirty.qsk_time);
@@ -670,6 +670,7 @@ static void * params_thread(void *arg) {
 void params_init() {
     int rc;
     if (database_init()) {
+        cfg_init(db);
         if (!params_load()) {
             LV_LOG_ERROR("Load params");
             sqlite3_close(db);
@@ -731,11 +732,12 @@ void params_init() {
 
 int32_t params_lo_offset_get() {
     x6100_mode_t mode = radio_current_mode();
+    int32_t key_tone = subject_get_int(cfg.key_tone.val);
     switch (mode) {
         case x6100_mode_cw:
-            return -params.key_tone;
+            return -key_tone;
         case x6100_mode_cwr:
-            return params.key_tone;
+            return key_tone;
         default:
             return 0;
     }

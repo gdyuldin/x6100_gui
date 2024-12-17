@@ -747,7 +747,7 @@ static char * key_train_label_getter() {
 
 static char * key_tone_label_getter() {
     static char buf[22];
-    sprintf(buf, "Tone:\n%zu Hz", params.key_tone);
+    sprintf(buf, "Tone:\n%zu Hz", subject_get_int(cfg.key_tone.val));
     return buf;
 }
 
