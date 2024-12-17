@@ -56,7 +56,6 @@ params_t params = {
     .clock_power_timeout    = 3,
     .clock_tx_timeout       = 1,
 
-    .vol                    = 20,
     .ant                    = 1,
     .pwr                    = 5.0f,
     .mic                    = x6100_mic_auto,
@@ -237,8 +236,6 @@ static bool params_load() {
         if (strcmp(name, "band") == 0) {
             params.band_id = i;
             params_band_load(i);
-        } else if (strcmp(name, "vol") == 0) {
-            params.vol = i;
         } else if (strcmp(name, "sql") == 0) {
             params.sql = i;
         } else if (strcmp(name, "pwr") == 0) {
@@ -457,7 +454,6 @@ static void params_save() {
     }
 
     if (params.dirty.band)                  params_write_int("band", params.band_id, &params.dirty.band);
-    if (params.dirty.vol)                   params_write_int("vol", params.vol, &params.dirty.vol);
     if (params.dirty.sql)                   params_write_int("sql", params.sql, &params.dirty.sql);
     if (params.dirty.pwr)                   params_write_int("pwr", params.pwr * 10, &params.dirty.pwr);
 

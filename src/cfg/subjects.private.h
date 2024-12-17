@@ -26,7 +26,9 @@ struct __subject {
         struct __subject_group *group;
     };
     enum data_type dtype;
-    pthread_mutex_t mux;
+    pthread_mutex_t mutex_get;
+    pthread_mutex_t mutex_set;
+    pthread_mutex_t mutex_subscribe;
 };
 
 struct __observer {

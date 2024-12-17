@@ -54,13 +54,18 @@ static float            rms_db_max;
 static float            rms_db_min;
 static bool             peak_on = false;
 
+static int32_t          key_tone = 0;
+
 static pthread_mutex_t  cw_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void dds_dec_init();
 
+static void on_key_tone_change(subject_t subj, void *user_data);
+
 void cw_init() {
+    subject_add_observer_and_call(cfg.key_tone.val, on_key_tone_change, NULL);
+
     input_cbuf = cbuffercf_create(10000);
-    dds_dec_init();
     wrms = wrms_create(16, 4);
     rms_cbuf = cbuffercf_create(4000 / 8 * 2);
     fft_cbuf = cbuffercf_create(4000 / 8 * 2);
@@ -77,16 +82,12 @@ void cw_init() {
     ready = true;
 }
 
-void cw_notify_change_key_tone() {
-    dds_dec_init();
-}
-
 static void dds_dec_init() {
     pthread_mutex_lock(&cw_mutex);
     if (ds_dec != NULL) {
         dds_cccf_destroy(ds_dec);
     }
-    float rel_freq = (float) subject_get_int(cfg.key_tone.val) / AUDIO_CAPTURE_RATE;
+    float rel_freq = (float) key_tone / AUDIO_CAPTURE_RATE;
     float bw = (float) MAX_CW_BW / AUDIO_CAPTURE_RATE;
     ds_dec = dds_cccf_create(NUM_STAGES, rel_freq, bw, 60.0f);
     pthread_mutex_unlock(&cw_mutex);
@@ -310,4 +311,10 @@ float cw_change_noise_beta(int16_t df) {
     lv_msg_send(MSG_PARAM_CHANGED, NULL);
 
     return params.cw_decoder_noise_beta;
+}
+
+
+static void on_key_tone_change(subject_t subj, void *user_data) {
+    key_tone = subject_get_int(subj);
+    dds_dec_init();
 }

@@ -84,7 +84,6 @@ typedef struct {
     /* radio */
 
     int16_t             band_id;
-    int16_t             vol;
     uint8_t             sql;
     params_bool_t       atu;
     bool                atu_loaded;
@@ -253,7 +252,6 @@ typedef struct {
         bool    brightness_buttons;
 
         bool    band;
-        bool    vol;
         bool    sql;
         bool    atu;
         bool    ant;

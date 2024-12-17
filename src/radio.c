@@ -177,6 +177,21 @@ static void * radio_thread(void *arg) {
     }
 }
 
+
+static void on_vol_change(subject_t subj, void *user_data) {
+    radio_lock();
+    x6100_control_rxvol_set(subject_get_int(subj));
+    radio_unlock();
+    lv_msg_send(MSG_PARAM_CHANGED, NULL);
+}
+
+static void on_key_tone_change(subject_t subj, void *user_data) {
+    radio_lock();
+    x6100_control_key_tone_set(subject_get_int(subj));
+    radio_unlock();
+    lv_msg_send(MSG_PARAM_CHANGED, NULL);
+}
+
 void radio_vfo_set() {
     uint64_t shift, vfo_freq;
 
@@ -272,7 +287,6 @@ void radio_init(radio_state_change_t tx_cb, radio_state_change_t rx_cb, radio_st
     radio_filters_setup();
     radio_load_atu();
 
-    x6100_control_rxvol_set(params.vol);
     x6100_control_rfg_set(params_band_rfg_get());
     x6100_control_sql_set(params.sql);
     x6100_control_atu_set(params.atu.x);
@@ -284,7 +298,6 @@ void radio_init(radio_state_change_t tx_cb, radio_state_change_t rx_cb, radio_st
     x6100_control_key_speed_set(params.key_speed);
     x6100_control_key_mode_set(params.key_mode);
     x6100_control_iambic_mode_set(params.iambic_mode);
-    x6100_control_key_tone_set(subject_get_int(cfg.key_tone.val));
     x6100_control_key_vol_set(params.key_vol);
     x6100_control_key_train_set(params.key_train);
     x6100_control_qsk_time_set(params.qsk_time);
@@ -323,6 +336,9 @@ void radio_init(radio_state_change_t tx_cb, radio_state_change_t rx_cb, radio_st
     idle_time = prev_time;
 
     pthread_mutex_init(&control_mux, NULL);
+
+    subject_add_observer_and_call(cfg.vol.val, on_vol_change, NULL);
+    subject_add_observer_and_call(cfg.key_tone.val, on_key_tone_change, NULL);
 
     pthread_t thread;
 
@@ -378,22 +394,25 @@ uint64_t radio_change_freq(int32_t df, uint64_t *prev_freq) {
 }
 
 uint16_t radio_change_vol(int16_t df) {
+    int32_t vol = subject_get_int(cfg.vol.val);
     if (df == 0) {
-        return params.vol;
+        return vol;
     }
 
     mute = false;
 
-    uint16_t new_val = limit(params.vol + df, 0, 55);
+    uint16_t new_val = limit(vol + df, 0, 55);
 
-    CHANGE_PARAM(new_val, params.vol, params.dirty.vol, x6100_control_rxvol_set);
+    if (new_val != vol) {
+        subject_set_int(cfg.vol.val, new_val);
+    };
 
-    return params.vol;
+    return new_val;
 }
 
 void radio_change_mute() {
     mute = !mute;
-    x6100_control_rxvol_set(mute ? 0 : params.vol);
+    x6100_control_rxvol_set(mute ? 0 : subject_get_int(cfg.vol.val));
 }
 
 uint16_t radio_change_moni(int16_t df) {
@@ -796,11 +815,6 @@ uint16_t radio_change_key_tone(int16_t d) {
     int32_t new_val = limit(key_tone + ((d > 0) ? 10 : -10), 400, 1200);
     if (new_val != key_tone) {
         subject_set_int(cfg.key_tone.val, new_val);
-        radio_lock();
-        x6100_control_key_tone_set(new_val);
-        radio_unlock();
-        lv_msg_send(MSG_PARAM_CHANGED, NULL);
-        cw_notify_change_key_tone();
     };
 
     return new_val;

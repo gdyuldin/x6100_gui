@@ -618,7 +618,7 @@ void buttons_load_page_group(button_group_t group) {
 
 static char * vol_label_getter() {
     static char buf[16];
-    sprintf(buf, "Volume:\n%zi", params.vol);
+    sprintf(buf, "Volume:\n%zi", subject_get_int(cfg.vol.val));
     return buf;
 }
 
