@@ -21,12 +21,11 @@ struct __subject {
     void (*observers[MAX_OBSERVERS])(struct __subject *, void *);
     void *user_data[MAX_OBSERVERS];
     union {
-        int32_t  int_val;
-        uint64_t uint64_val;
+        volatile int32_t  int_val;
+        volatile uint64_t uint64_val;
         struct __subject_group *group;
     };
     enum data_type dtype;
-    pthread_mutex_t mutex_get;
     pthread_mutex_t mutex_set;
     pthread_mutex_t mutex_subscribe;
 };

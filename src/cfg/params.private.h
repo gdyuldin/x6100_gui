@@ -4,7 +4,7 @@
 
 #include <sqlite3.h>
 
-int cfg_params_init(sqlite3 *db);
+void cfg_params_init(sqlite3 *db);
 
 int cfg_params_load_item(cfg_item_t *item);
 

@@ -10,7 +10,6 @@ static void notify_group(subject_t subj, void *user_data);
 
 subject_t subject_create_int(int32_t val) {
     subject_t subj = malloc(sizeof(struct __subject));
-    pthread_mutex_init(&subj->mutex_get, NULL);
     pthread_mutex_init(&subj->mutex_set, NULL);
     pthread_mutex_init(&subj->mutex_subscribe, NULL);
     subj->int_val = val;
@@ -21,7 +20,6 @@ subject_t subject_create_int(int32_t val) {
 
 subject_t subject_create_uint64(uint64_t val) {
     subject_t subj = malloc(sizeof(struct __subject));
-    pthread_mutex_init(&subj->mutex_get, NULL);
     pthread_mutex_init(&subj->mutex_set, NULL);
     pthread_mutex_init(&subj->mutex_subscribe, NULL);
     subj->uint64_val = val;
@@ -32,7 +30,6 @@ subject_t subject_create_uint64(uint64_t val) {
 
 subject_t subject_create_group(subject_t *subjects, uint8_t count) {
     subject_t subj = malloc(sizeof(struct __subject));
-    pthread_mutex_init(&subj->mutex_get, NULL);
     pthread_mutex_init(&subj->mutex_set, NULL);
     pthread_mutex_init(&subj->mutex_subscribe, NULL);
     subj->dtype = DTYPE_GROUP;
@@ -50,19 +47,13 @@ subject_t subject_create_group(subject_t *subjects, uint8_t count) {
 int32_t subject_get_int(subject_t subj) {
     if (subj->dtype != DTYPE_INT)
         fprintf(stderr, "WARNING: subject dtype (%d) is not INT, get result might be wrong\n", subj->dtype);
-    pthread_mutex_lock(&subj->mutex_get);
-    int32_t val = subj->int_val;
-    pthread_mutex_unlock(&subj->mutex_get);
-    return val;
+    return subj->int_val;
 }
 
 uint64_t subject_get_uint64(subject_t subj) {
     if (subj->dtype != DTYPE_UINT64)
         fprintf(stderr, "WARNING: subject dtype (%d) is not UINT64, get result might be wrong\n", subj->dtype);
-    pthread_mutex_lock(&subj->mutex_get);
-    uint64_t val = subj->uint64_val;
-    pthread_mutex_unlock(&subj->mutex_get);
-    return val;
+    return subj->uint64_val;
 }
 
 observer_t subject_add_observer(subject_t subj, void (*fn)(subject_t, void *), void *user_data) {
@@ -107,9 +98,11 @@ void subject_set_int(subject_t subj, int32_t val) {
     pthread_mutex_lock(&subj->mutex_set);
     if (subj->int_val != val) {
         subj->int_val = val;
+        pthread_mutex_unlock(&subj->mutex_set);
         call_observers(subj);
+    } else {
+        pthread_mutex_unlock(&subj->mutex_set);
     }
-    pthread_mutex_unlock(&subj->mutex_set);
 }
 
 void subject_set_uint64(subject_t subj, uint64_t val) {
@@ -118,9 +111,11 @@ void subject_set_uint64(subject_t subj, uint64_t val) {
     pthread_mutex_lock(&subj->mutex_set);
     if (subj->uint64_val != val) {
         subj->uint64_val = val;
+        pthread_mutex_unlock(&subj->mutex_set);
         call_observers(subj);
+    } else {
+        pthread_mutex_unlock(&subj->mutex_set);
     }
-    pthread_mutex_unlock(&subj->mutex_set);
 }
 
 void observer_remove(observer_t observer) {
