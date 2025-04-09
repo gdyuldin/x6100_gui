@@ -122,7 +122,7 @@ int cfg_atu_save_network(uint32_t network) {
         LV_LOG_ERROR("Failed save atu_params: %s", sqlite3_errmsg(db));
     } else {
         rc = 0;
-        add_atu_net_to_cache(freq, network);
+        load_all_atu_for_ant(ant_id);
         subject_set_int(atu_network.loaded, true);
         subject_set_int(atu_network.network, network);
     }
