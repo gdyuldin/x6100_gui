@@ -86,11 +86,11 @@ static void meter_draw_cb(lv_event_t * e) {
 
     for (uint16_t i = 0; i < count; i++) {
         if (db <= noise_level) {
-            rect_dsc.bg_color = lv_color_hex(0x777777);
+            rect_dsc.bg_color = lv_color_hex(0x00CC00);
         } else if (db <= -73) {
-            rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
+            rect_dsc.bg_color = lv_color_hex(0x00CC00);
         } else if (db <= -53) {
-            rect_dsc.bg_color = lv_color_hex(0xAAAA00);
+            rect_dsc.bg_color = lv_color_hex(0xFFFF00);
         } else {
             rect_dsc.bg_color = lv_color_hex(0xAA0000);
         }
@@ -107,7 +107,7 @@ static void meter_draw_cb(lv_event_t * e) {
         area.x1 = x1 + 30  - slice_w / 2 + slice_w * ((meter_peak - min_db) / slice_db);
         area.x2 = area.x1 + slice_w - slice_spacing;
         rect_dsc.bg_opa = LV_OPA_50;
-        rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
+        rect_dsc.bg_color = lv_color_hex(0xFFFF00);
         lv_draw_rect(draw_ctx, &rect_dsc, &area);
     }
 

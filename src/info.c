@@ -257,6 +257,6 @@ static void att_pre_label_update(Subject *subj, void * user_data) {
         lv_obj_set_style_text_color(items[INFO_PRE_ATT], lv_color_white(), 0);
         lv_obj_set_style_bg_color(items[INFO_PRE_ATT], lv_color_black(), 0);
         lv_obj_set_style_bg_opa(items[INFO_PRE_ATT], LV_OPA_0, 0);
-        lv_label_set_text(items[INFO_PRE_ATT], "P/A");
+        lv_label_set_text(items[INFO_PRE_ATT], "PRE");
     }
 }

@@ -13,6 +13,7 @@ start() {
 	printf 'Starting %s: ' "$DAEMON"
 	echo 0 > /sys/class/graphics/fbcon/cursor_blink
 	[ ! -f /mnt/params.db ] && cp /usr/share/x6100/params.default.db /mnt/params.db
+	[ ! -f /mnt/styles_custom.txt ] && cp /usr/share/x6100/styles/styles_custom.txt /mnt/styles_custom.txt
 	# shellcheck disable=SC2086 # we need the word splitting
 	start-stop-daemon -S -b -q -m -p "$PIDFILE" -x "/usr/sbin/$DAEMON"
 	status=$?

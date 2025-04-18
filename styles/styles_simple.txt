@@ -1,0 +1,26 @@
+# simple style
+#
+wf.palette = gauss
+bg_color   = 0x27313a
+btn.bg_img = images/btn_dark.bin
+msg.bg_img = images/msg_dark.bin
+
+clock.bg_img = images/top_short_dark.bin
+clock.width = 209
+clock.height = 61
+
+info.bg_img = images/top_short_dark.bin
+info.width = 209
+info.height = 61
+
+meter.bg_img = images/top_long_dark.bin
+meter.width = 380
+meter.height = 61
+
+panel.bg_img = images/panel_dark.bin
+msg_tiny.bg_img = images/msg_tiny_dark.bin
+dialog.bg_img = images/dialog_dark.bin
+
+tx_info.bg_img = images/top_big_dark.bin
+tx_info.width = 380
+tx_info.height = 123

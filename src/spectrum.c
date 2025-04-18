@@ -96,12 +96,12 @@ static void spectrum_draw_cb(lv_event_t *e) {
 
     lv_draw_line_dsc_init(&main_line_dsc);
 
-    main_line_dsc.color = lv_color_hex(0xAAAAAA);
+    main_line_dsc.color = lv_color_hex(0x00B300);
     main_line_dsc.width = 1;
 
     lv_draw_line_dsc_init(&peak_line_dsc);
 
-    peak_line_dsc.color = lv_color_hex(0x555555);
+    peak_line_dsc.color = lv_color_hex(0xC9C8C8);
     peak_line_dsc.width = 1;
 
     lv_coord_t x1 = obj->coords.x1;
@@ -164,7 +164,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
 
     lv_draw_rect_dsc_init(&rect_dsc);
 
-    rect_dsc.bg_color = bg_color;
+    rect_dsc.bg_color = lv_color_hex(0xFFEA00);
     rect_dsc.bg_opa   = LV_OPA_50;
 
     int32_t w_hz = width_hz / zoom_factor;
