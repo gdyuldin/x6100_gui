@@ -356,7 +356,11 @@ static std::string make_answer_text(ftx_msg_type_t last_rx_type, std::string rem
     int  len = 0;
     switch (last_rx_type) {
     case FTX_MSG_TYPE_CQ:
-        len = snprintf(answer, 35, "%s %s %s", remote_callsign.c_str(), local_callsign.c_str(), grid.c_str());
+        if (is_prefixed_callsign(local_callsign.c_str()) || is_prefixed_callsign(remote_callsign.c_str())){
+            len = snprintf(answer, 35, "%s %s", remote_callsign.c_str(), local_callsign.c_str());
+        } else {
+            len = snprintf(answer, 35, "%s %s %s", local_callsign.c_str(), remote_callsign.c_str(), grid.c_str());
+        }
         break;
     case FTX_MSG_TYPE_GRID:
         len = snprintf(answer, 35, "%s %s %+03d", remote_callsign.c_str(), local_callsign.c_str(), local_snr);

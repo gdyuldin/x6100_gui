@@ -11,6 +11,8 @@
 #include "main_screen.h"
 #include "dialog.h"
 #include "events.h"
+#include "msg.h"
+#include <string.h>
 
 static void construct_cb(lv_obj_t *parent);
 static void destruct_cb();
@@ -27,7 +29,11 @@ static dialog_t             dialog = {
 dialog_t                    *dialog_callsign = &dialog;
 
 static bool edit_ok() {
-    params_str_set(&params.callsign, textarea_window_get());
+    const char *callsign = textarea_window_get();
+    params_str_set(&params.callsign, callsign);
+    if (strlen(callsign) > 6) {
+        msg_schedule_text_fmt("FT8 may fail with long calls");
+    }
     dialog_destruct(&dialog);
     return true;
 }

@@ -1021,10 +1021,19 @@ static bool get_time_slot(struct timespec now, float *sec_since_start) {
  * Create CQ TX message
  */
 static void make_cq_msg(const char *callsign, const char *qth, const char *cq_mod, char *text) {
-    if (strlen(cq_mod)) {
-        snprintf(text, FTX_MAX_MESSAGE_LENGTH, "CQ_%s %s %s", cq_mod, callsign, qth);
+    if (is_prefixed_callsign(callsign)) {
+        // If prefixed, omit QTH
+        if (strlen(cq_mod)) {
+            snprintf(text, FTX_MAX_MESSAGE_LENGTH, "CQ_%s %s", cq_mod, callsign);
+        } else {
+            snprintf(text, FTX_MAX_MESSAGE_LENGTH, "CQ %s", callsign);
+        }
     } else {
-        snprintf(text, FTX_MAX_MESSAGE_LENGTH, "CQ %s %s", callsign, qth);
+        if (strlen(cq_mod)) {
+            snprintf(text, FTX_MAX_MESSAGE_LENGTH, "CQ_%s %s %s", cq_mod, callsign, qth);
+        } else {
+            snprintf(text, FTX_MAX_MESSAGE_LENGTH, "CQ %s %s", callsign, qth);
+        }
     }
 }
 
