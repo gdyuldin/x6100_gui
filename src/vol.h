@@ -32,6 +32,6 @@ typedef enum {
     VOL_LAST
 } vol_mode_t;
 
-void vol_update(int16_t diff, bool voice);
+void vol_update(int16_t diff, bool voice, bool show);
 void vol_change_mode(int16_t dir);
 void vol_set_mode(vol_mode_t mode);

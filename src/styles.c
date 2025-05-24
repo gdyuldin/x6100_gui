@@ -8,8 +8,6 @@
 
 #include "styles.h"
 
-#define PATH "A:/dev/shm/"
-
 const uint32_t wf_palette_legacy[256] = {
     0x000000, 0x000004, 0x000008, 0x00000c, 0x00000e, 0x000012, 0x000016, 0x000018,
     0x00001c, 0x00001e, 0x000022, 0x000024, 0x000026, 0x00002a, 0x00002c, 0x000030,
@@ -93,6 +91,7 @@ lv_style_t  btn_disabled_style;
 lv_style_t  msg_style;
 lv_style_t  msg_tiny_style;
 lv_style_t  clock_style;
+lv_style_t  knobs_style;
 lv_style_t  info_style;
 lv_style_t  info_row_style;
 lv_style_t  info_item_style;
@@ -245,6 +244,12 @@ void styles_init(themes_t theme) {
     lv_style_set_radius(&clock_style, 0);
     lv_style_set_bg_img_opa(&clock_style, LV_OPA_COVER);
 
+    /* Knobs */
+    lv_style_init(&knobs_style);
+    lv_style_set_text_color(&knobs_style, lv_color_white());
+    lv_style_set_radius(&knobs_style, 0);
+    lv_style_set_bg_img_opa(&knobs_style, LV_OPA_COVER);
+
     /* Left info */
     lv_style_init(&info_style);
     lv_style_set_align(&info_style, LV_ALIGN_TOP_LEFT);
@@ -321,6 +326,8 @@ static void setup_theme_legacy() {
     lv_style_set_bg_img_src(&clock_style, PATH "images/top_short.bin");
     lv_style_set_width(&clock_style, 206);
     lv_style_set_height(&clock_style, 61);
+    /* Knobs */
+    // lv_style_set_bg_img_src(&knobs_style, PATH "images/top_short.bin");
     /* Info */
     lv_style_set_bg_img_src(&info_style, PATH "images/top_short.bin");
     lv_style_set_width(&info_style, 206);
@@ -353,6 +360,8 @@ static void setup_theme_simple() {
     lv_style_set_bg_img_src(&clock_style, PATH "images/top_short_dark.bin");
     lv_style_set_width(&clock_style, 209);
     lv_style_set_height(&clock_style, 61);
+    /* Knobs */
+    // lv_style_set_bg_img_src(&knobs_style, PATH "images/top_short_dark.bin");
     /* Info */
     lv_style_set_bg_img_src(&info_style, PATH "images/top_short_dark.bin");
     lv_style_set_width(&info_style, 209);
