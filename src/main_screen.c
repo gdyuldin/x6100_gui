@@ -18,6 +18,7 @@
 #include "msg_tiny.h"
 #include "dsp.h"
 #include "clock.h"
+#include "knobs.h"
 #include "cw_tune_ui.h"
 #include "info.h"
 #include "meter.h"
@@ -70,6 +71,7 @@ static lv_obj_t     *msg;
 static lv_obj_t     *msg_tiny;
 static lv_obj_t     *meter;
 static lv_obj_t     *tx_info;
+static lv_obj_t     *knobs;
 
 static void freq_shift(int16_t diff);
 static void next_freq_step(bool up);
@@ -849,12 +851,12 @@ static void spectrum_key_cb(lv_event_t * e) {
 
         case KEY_VOL_LEFT_EDIT:
         case '[':
-            vol_update(-1, false);
+            vol_update(-1, false, true);
             break;
 
         case KEY_VOL_RIGHT_EDIT:
         case ']':
-            vol_update(+1, false);
+            vol_update(+1, false, true);
             break;
 
         case KEY_VOL_LEFT_SELECT:
@@ -874,7 +876,7 @@ static void spectrum_key_cb(lv_event_t * e) {
         case LV_KEY_LEFT:
             switch (mfk_state) {
                 case MFK_STATE_EDIT:
-                    mfk_update(-1, false);
+                    mfk_update(-1, false, true);
                     break;
 
                 case MFK_STATE_SELECT:
@@ -886,7 +888,7 @@ static void spectrum_key_cb(lv_event_t * e) {
         case LV_KEY_RIGHT:
             switch (mfk_state) {
                 case MFK_STATE_EDIT:
-                    mfk_update(+1, false);
+                    mfk_update(+1, false, true);
                     break;
 
                 case MFK_STATE_SELECT:
@@ -908,7 +910,7 @@ static void spectrum_key_cb(lv_event_t * e) {
                         voice_say_text_fmt("Edit mode");
                         break;
                 }
-                vol_update(0, false);
+                vol_update(0, false, true);
             }
             break;
 
@@ -959,7 +961,7 @@ static void spectrum_pressed_cb(lv_event_t * e) {
             voice_say_text_fmt("Edit mode");
             break;
     }
-    mfk_update(0, false);
+    mfk_update(0, false, true);
 }
 
 static void keys_enable_cb(lv_timer_t *t) {
@@ -1066,6 +1068,7 @@ lv_obj_t * main_screen() {
     msg_tiny = msg_tiny_init(obj);
 
     clock_init(obj);
+    knobs_init(obj);
     info_init(obj);
 
     meter = meter_init(obj);
@@ -1073,7 +1076,7 @@ lv_obj_t * main_screen() {
 
     cw_tune_init(obj);
 
-    msg_schedule_text_fmt("X6100 de R1CBU " VERSION);
+    msg_schedule_text_fmt("X6100 de R1CBU ES SQ5FOX " VERSION);
 
     subject_add_delayed_observer(freq_lock, on_fg_freq_change, NULL);
     subject_add_delayed_observer(cfg_cur.band->split.val, on_fg_freq_change, NULL);
@@ -1087,6 +1090,10 @@ lv_obj_t * main_screen() {
 
     subject_add_delayed_observer(cfg_cur.bg_freq, on_fg_freq_change, NULL);
     on_fg_freq_change(cfg_cur.bg_freq, NULL);
+
+    // Update knobs
+    vol_update(0, false, false);
+    mfk_update(0, false, false);
 
     return obj;
 }

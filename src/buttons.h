@@ -25,6 +25,8 @@ extern "C" {
 #include "mfk.h"
 #include "vol.h"
 
+#define BTN_HEIGHT 62
+
 typedef enum {
     BTN_EMPTY,
     BTN_TEXT,

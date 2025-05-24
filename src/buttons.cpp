@@ -32,7 +32,6 @@ typedef struct {
     button_item_t   *item;
 } button_t;
 
-static uint8_t        btn_height = 62;
 static button_t       btn[BUTTONS];
 static lv_obj_t      *parent_obj = NULL;
 static buttons_page_t *cur_page   = NULL;
@@ -539,7 +538,7 @@ void buttons_init(lv_obj_t *parent) {
         }
     }
 
-    uint16_t y = 480 - btn_height;
+    uint16_t y = 480 - BTN_HEIGHT;
     uint16_t x = 0;
     uint16_t width = 800 / 5;
 
@@ -552,7 +551,7 @@ void buttons_init(lv_obj_t *parent) {
         lv_obj_add_style(f, &btn_disabled_style, LV_STATE_DISABLED);
 
         lv_obj_set_pos(f, x, y);
-        lv_obj_set_size(f, width, btn_height);
+        lv_obj_set_size(f, width, BTN_HEIGHT);
         x += width;
 
         lv_obj_t *label = lv_label_create(f);
@@ -707,12 +706,12 @@ static void button_action_cb(button_item_t *item) {
 
 static void button_vol_update_cb(button_item_t *item) {
     vol_set_mode((vol_mode_t)item->data);
-    vol_update(0, true);
+    vol_update(0, true, true);
 }
 
 static void button_mfk_update_cb(button_item_t *item) {
     mfk_set_mode((mfk_mode_t)item->data);
-    mfk_update(0, true);
+    mfk_update(0, true, true);
 }
 
 static void button_vol_hold_cb(button_item_t *item) {
