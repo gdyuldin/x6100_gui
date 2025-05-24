@@ -28,9 +28,6 @@ void vol_update(int16_t diff, bool voice, bool show) {
 
     uint32_t    color = vol->mode == VOL_EDIT ? 0xFFFFFF : 0xBBBBBB;
 
-    //test
-    knobs_update_vol("UPDATE!! 2");
-
     switch (vol_mode) {
         case VOL_VOL:
             x = radio_change_vol(diff);

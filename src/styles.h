@@ -13,6 +13,9 @@
 #include <unistd.h>
 #include "lvgl/lvgl.h"
 
+// PATH
+#define PATH "A:/dev/shm/"
+
 // COLORS
 
 #define COLOR_LIGHT_GREEN (0x80FF80)

@@ -1060,6 +1060,8 @@ lv_obj_t * main_screen() {
     lv_obj_set_y(waterfall, y);
     waterfall_set_height(480 - y);
 
+    knobs_init(obj);
+
     buttons_init(obj);
     buttons_load_page(&buttons_page_vol_1);
 
@@ -1068,7 +1070,6 @@ lv_obj_t * main_screen() {
     msg_tiny = msg_tiny_init(obj);
 
     clock_init(obj);
-    knobs_init(obj);
     info_init(obj);
 
     meter = meter_init(obj);
@@ -1076,7 +1077,7 @@ lv_obj_t * main_screen() {
 
     cw_tune_init(obj);
 
-    msg_schedule_text_fmt("X6100 de R1CBU ES SQ5FOX " VERSION);
+    msg_schedule_text_fmt("X6100 de R1CBU es Others " VERSION);
 
     subject_add_delayed_observer(freq_lock, on_fg_freq_change, NULL);
     subject_add_delayed_observer(cfg_cur.band->split.val, on_fg_freq_change, NULL);
