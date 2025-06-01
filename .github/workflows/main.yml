@@ -46,7 +46,6 @@ jobs:
       with:
         submodules: true
         repository: dl2zw/AetherX6100Buildroot
-        ref: dl2zw
         path: AetherX6100Buildroot
 
     - name: Patch GUI mk
