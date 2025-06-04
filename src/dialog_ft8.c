@@ -284,6 +284,8 @@ void static waterfall_process(float complex *frame, const size_t size) {
         uint32_t low_bin = waterfall_nfft / 2 + waterfall_nfft * filter_low / SAMPLE_RATE;
         uint32_t high_bin = waterfall_nfft / 2 + waterfall_nfft * filter_high / SAMPLE_RATE;
 
+        high_bin = LV_MIN(high_bin, waterfall_nfft);
+
         spgramcf_get_psd(waterfall_sg, waterfall_psd);
         // Normalize FFT
         liquid_vectorf_addscalar(

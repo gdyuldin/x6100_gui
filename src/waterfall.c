@@ -87,7 +87,9 @@ lv_obj_t * waterfall_init(lv_obj_t * parent) {
     on_zoom_changed(cfg_cur.zoom, NULL);
 
     subject_add_observer_and_call(cfg_cur.lo_offset, on_lo_offset_change, NULL);
+    subject_add_observer(cfg.auto_level_enabled.val, on_grid_min_change, NULL);
     subject_add_observer_and_call(cfg_cur.band->grid.min.val, on_grid_min_change, NULL);
+    subject_add_observer(cfg.auto_level_enabled.val, on_grid_max_change, NULL);
     subject_add_observer_and_call(cfg_cur.band->grid.max.val, on_grid_max_change, NULL);
 
     return obj;
@@ -194,32 +196,26 @@ static void draw_middle_line() {
 }
 
 void waterfall_min_max_reset() {
-    if (params.waterfall_auto_min.x) {
+    if (subject_get_int(cfg.auto_level_enabled.val)) {
         grid_min = DEFAULT_MIN;
-    } else {
-        grid_min = subject_get_int(cfg_cur.band->grid.min.val);
-    }
-    if (params.waterfall_auto_max.x) {
         grid_max = DEFAULT_MAX;
     } else {
+        grid_min = subject_get_int(cfg_cur.band->grid.min.val);
         grid_max = subject_get_int(cfg_cur.band->grid.max.val);
     }
 }
 
 void waterfall_update_max(float db) {
-    if (params.waterfall_auto_max.x) {
-        lpf(&grid_max, db + 3.0f, 0.85f, DEFAULT_MAX);
-    } else {
-        // TODO: set min/max at param change
-        grid_max = subject_get_int(cfg_cur.band->grid.max.val);
+    if (subject_get_int(cfg.auto_level_enabled.val)) {
+        lpf(&grid_max, db, 0.75f, DEFAULT_MAX);
+        grid_max -= subject_get_float(cfg.auto_level_offset.val);
     }
 }
 
 void waterfall_update_min(float db) {
-    if (params.waterfall_auto_min.x) {
-        lpf(&grid_min, db + 3.0f, 0.95f, DEFAULT_MIN);
-    } else {
-        grid_min = subject_get_int(cfg_cur.band->grid.min.val);
+    if (subject_get_int(cfg.auto_level_enabled.val)) {
+        lpf(&grid_min, db, 0.75f, DEFAULT_MIN);
+        grid_min -= subject_get_float(cfg.auto_level_offset.val);
     }
 }
 
@@ -302,12 +298,12 @@ static void on_lo_offset_change(Subject *subj, void *user_data) {
     lo_offset = subject_get_int(subj);
 }
 static void on_grid_min_change(Subject *subj, void *user_data) {
-    if (!params.waterfall_auto_min.x) {
-        grid_min = subject_get_int(subj);
+    if (!subject_get_int(cfg.auto_level_enabled.val)) {
+        grid_min = subject_get_int(cfg_cur.band->grid.min.val);
     }
 }
 static void on_grid_max_change(Subject *subj, void *user_data) {
-    if (!params.waterfall_auto_max.x) {
-        grid_max = subject_get_int(subj);
+    if (!subject_get_int(cfg.auto_level_enabled.val)) {
+        grid_max = subject_get_int(cfg_cur.band->grid.max.val);
     }
 }

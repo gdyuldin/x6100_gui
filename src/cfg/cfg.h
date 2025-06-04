@@ -26,6 +26,10 @@ typedef struct {
     cfg_item_t tx_i_offset;
     cfg_item_t tx_q_offset;
 
+    /* UI */
+    cfg_item_t auto_level_enabled;
+    cfg_item_t auto_level_offset;
+
     /* key */
     cfg_item_t key_speed;
     cfg_item_t key_mode;

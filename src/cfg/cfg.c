@@ -251,6 +251,12 @@ static int init_params_cfg(sqlite3 *db) {
     fill_cfg_item(&cfg.tx_i_offset, subject_create_int(0), "tx_i_offset");
     fill_cfg_item(&cfg.tx_q_offset, subject_create_int(0), "tx_q_offset");
 
+    /* UI */
+    fill_cfg_item(&cfg.auto_level_enabled, subject_create_int(true), "auto_level_enabled");
+    fill_cfg_item_float(&cfg.auto_level_offset, subject_create_float(0.0f), 0.5f, "auto_level_offset");
+
+    /* Key */
+
     fill_cfg_item(&cfg.key_speed, subject_create_int(15), "key_speed");
     fill_cfg_item(&cfg.key_mode, subject_create_int(x6100_key_manual), "key_mode");
     fill_cfg_item(&cfg.iambic_mode, subject_create_int(x6100_iambic_a), "iambic_mode");

@@ -41,10 +41,6 @@ params_t params = {
     .spectrum_peak          = true,
     .spectrum_peak_hold     = 5000,
     .spectrum_peak_speed    = 0.5f,
-    .spectrum_auto_min      = { .x = true,  .name = "spectrum_auto_min",        .voice = "Auto minimum of spectrum" },
-    .spectrum_auto_max      = { .x = true,  .name = "spectrum_auto_max",        .voice = "Auto maximum of spectrum" },
-    .waterfall_auto_min     = { .x = true,  .name = "waterfall_auto_min",       .voice = "Auto minimum of waterfall" },
-    .waterfall_auto_max     = { .x = true,  .name = "waterfall_auto_max",       .voice = "Auto maximum of waterfall" },
     .waterfall_smooth_scroll= { .x = true,  .name = "waterfall_smooth_scroll",  .voice = "Waterfall smooth scroll"},
     .waterfall_center_line  = { .x = true,  .name = "waterfall_center_line",    .voice = "Waterfall center line"},
     .waterfall_zoom         = { .x = true,  .name = "waterfall_zoom",           .voice = "Waterfall zoom"},
@@ -275,10 +271,6 @@ static bool params_load() {
         if (params_load_bool(&params.mag_freq, name, i)) continue;
         if (params_load_bool(&params.mag_info, name, i)) continue;
         if (params_load_bool(&params.mag_alc, name, i)) continue;
-        if (params_load_bool(&params.spectrum_auto_min, name, i)) continue;
-        if (params_load_bool(&params.spectrum_auto_max, name, i)) continue;
-        if (params_load_bool(&params.waterfall_auto_min, name, i)) continue;
-        if (params_load_bool(&params.waterfall_auto_max, name, i)) continue;
         if (params_load_bool(&params.waterfall_smooth_scroll, name, i)) continue;
         if (params_load_bool(&params.waterfall_center_line, name, i)) continue;
         if (params_load_bool(&params.waterfall_zoom, name, i)) continue;
@@ -340,8 +332,6 @@ static void params_save() {
     if (!sql_query_exec("BEGIN")) {
         return;
     }
-
-    if (params.dirty.band)                  params_write_int("band", params.band_id, &params.dirty.band);
 
     if (params.dirty.spectrum_beta)         params_write_int("spectrum_beta", params.spectrum_beta, &params.dirty.spectrum_beta);
     if (params.dirty.spectrum_filled)       params_write_int("spectrum_filled", params.spectrum_filled, &params.dirty.spectrum_filled);
@@ -411,10 +401,6 @@ static void params_save() {
     params_save_bool(&params.mag_freq);
     params_save_bool(&params.mag_info);
     params_save_bool(&params.mag_alc);
-    params_save_bool(&params.spectrum_auto_min);
-    params_save_bool(&params.spectrum_auto_max);
-    params_save_bool(&params.waterfall_auto_min);
-    params_save_bool(&params.waterfall_auto_max);
     params_save_bool(&params.waterfall_smooth_scroll);
     params_save_bool(&params.waterfall_center_line);
     params_save_bool(&params.waterfall_zoom);
@@ -437,7 +423,6 @@ static void * params_thread(void *arg) {
         pthread_mutex_lock(&params_mux);
         if (params_ready_to_save()){
             params_save();
-            // params_band_save(params.band_id);
             // params_mode_save();
         }
         pthread_mutex_unlock(&params_mux);

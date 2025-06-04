@@ -78,7 +78,6 @@ typedef struct {
 
     /* radio */
 
-    int16_t             band_id;
     x6100_mic_sel_t     mic;
     uint8_t             hmic;
     uint8_t             imic;
@@ -107,10 +106,6 @@ typedef struct {
     uint16_t            spectrum_peak_hold;
     float               spectrum_peak_speed;
     bool                spectrum_filled;
-    params_bool_t       spectrum_auto_min;
-    params_bool_t       spectrum_auto_max;
-    params_bool_t       waterfall_auto_min;
-    params_bool_t       waterfall_auto_max;
     params_bool_t       waterfall_smooth_scroll;
     params_bool_t       waterfall_center_line;
     params_bool_t       waterfall_zoom;
