@@ -184,7 +184,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
     lv_draw_rect(draw_ctx, &rect_dsc, &area);
 
     /* Notch */
-    if (dnf_enabled && !dnf_auto && ((cur_mode != x6100_mode_am) || (cur_mode != x6100_mode_nfm))) {
+    if (dnf_enabled && !dnf_auto && ((cur_mode != x6100_mode_am) && (cur_mode != x6100_mode_nfm))) {
         int32_t from, to;
 
         rect_dsc.bg_color = lv_color_white();

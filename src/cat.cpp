@@ -468,9 +468,11 @@ static Frame *process_req(const Frame *req) {
             break;
 
         case C_SET_MODE:
-            if (data_size == 2) {
+            if ((data_size >= 1) && (data_size <= 2)) {
                 subject_set_int(cfg_cur.mode, ci_mode_2_x_mode(req->data[0]));
-                // filter selector -> req->data[1]
+                if (data_size == 2) {
+                    // filter selector -> req->data[1]
+                }
                 resp->set_code(CODE_OK);
             } else {
                 set_unsupported(req, resp);
