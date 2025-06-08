@@ -14,7 +14,7 @@
 #include <unistd.h>
 
 #define KNOBS_HEIGHT 24
-#define KNOBS_STATIC_WIDTH 24
+#define KNOBS_STATIC_WIDTH 16
 #define KNOBS_PADDING 8
 #define KNOBS_DYNAMIC_WIDTH 400
 

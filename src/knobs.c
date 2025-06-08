@@ -30,19 +30,19 @@ lv_obj_t * knobs_init(lv_obj_t * parent) {
     // Init
     lv_font_t *font = &sony_24;
     lv_style_set_height(&knobs_style, KNOBS_HEIGHT);
-    LV_IMG_DECLARE(up_icon)
-    LV_IMG_DECLARE(down_icon)
 
     // Static labels (those where labels but now are images)
     // Volume knob label
     obj_label_vol_knob_static = lv_img_create(parent);
-    lv_img_set_src(obj_label_vol_knob_static, &up_icon);
+    lv_img_set_src(obj_label_vol_knob_static, LV_SYMBOL_UP);
+    lv_obj_set_style_text_color(obj_label_vol_knob_static, lv_color_white(), 0);
     lv_obj_set_size(obj_label_vol_knob_static, KNOBS_STATIC_WIDTH, KNOBS_HEIGHT);
     lv_obj_set_pos(obj_label_vol_knob_static, x_static, y - KNOBS_HEIGHT * 2);
 
     // MFK knob label
     obj_label_mfk_knob_static = lv_img_create(parent);
-    lv_img_set_src(obj_label_mfk_knob_static, &down_icon);
+    lv_img_set_src(obj_label_mfk_knob_static, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_color(obj_label_mfk_knob_static, lv_color_white(), 0);
     lv_obj_set_size(obj_label_mfk_knob_static, KNOBS_STATIC_WIDTH, KNOBS_HEIGHT);
     lv_obj_set_pos(obj_label_mfk_knob_static, x_static, y - KNOBS_HEIGHT * 1);
 

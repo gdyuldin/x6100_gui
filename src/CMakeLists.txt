@@ -15,7 +15,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     textarea_window.c cw_encoder.c buttons.cpp vol.c recorder.c
     voice.cpp cw_tune_ui.c adif.c qso_log.c scheduler.cpp
     dialog_wifi.c wifi.cpp controls.cpp usb_devices.cpp
-    styles_custom.c knobs.c down_icon.c up_icon.c
+    styles_custom.c knobs.c
 )
 
 add_subdirectory(fonts)
