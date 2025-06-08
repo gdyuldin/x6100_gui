@@ -107,6 +107,8 @@ static dialog_t     dialog = {
 
 dialog_t            *dialog_settings = &dialog;
 
+static ObserverDelayed *output_gain_observer;
+
 static void load_general_page(button_item_t *item) {
     make_general_page();
     buttons_mark(&btn_ui, false);
@@ -1425,6 +1427,16 @@ static uint8_t make_tx_offset(uint8_t row) {
 /* Output gain */
 #define OUTPUT_GAIN_STEP 0.2f
 
+static void output_gain_subject_cb(Subject * subj, void *user_data) {
+    lv_obj_t *slider = (lv_obj_t *)user_data;
+    float val = subject_get_float(subj);
+    lv_slider_set_value(slider, val / OUTPUT_GAIN_STEP, LV_ANIM_OFF);
+
+    lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(slider);
+    char *fmt = (char *)lv_obj_get_user_data(slider_label);
+    lv_label_set_text_fmt(slider_label, fmt, val);
+}
+
 static void output_gain_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
     float val = (float)lv_slider_get_value(obj) * OUTPUT_GAIN_STEP;
@@ -1432,8 +1444,7 @@ static void output_gain_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    subject_set_float(cfg.output_gain.val, val);
-    printf("set val: %0.1f\n", val);
+    subject_set_float(cfg_cur.band->output_gain.val, val);
 }
 
 static uint8_t make_output_gain(uint8_t row) {
@@ -1452,10 +1463,12 @@ static uint8_t make_output_gain(uint8_t row) {
     lv_obj_set_style_bg_opa(cell, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
-
-    slider_with_text(cell, subject_get_float(cfg.output_gain.val),
+    lv_obj_t *slider = slider_with_text(cell, subject_get_float(cfg_cur.band->output_gain.val),
         -25.0f, 25.0f, OUTPUT_GAIN_STEP,
         SMALL_6 - 120, "%0.1f", output_gain_update_cb);
+
+    output_gain_observer = cfg_cur.band->output_gain.val->subscribe_delayed(output_gain_subject_cb, (void*)slider);
+    output_gain_observer->notify();
 
     return row + 1;
 }
@@ -1619,6 +1632,9 @@ static void construct_cb(lv_obj_t *parent) {
 static void destruct_cb() {
     grid_delete();
     grid = NULL;
+    if (output_gain_observer) {
+        delete output_gain_observer;
+    }
 }
 
 static void key_cb(lv_event_t * e) {

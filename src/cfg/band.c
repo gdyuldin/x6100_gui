@@ -2,6 +2,7 @@
  * Work with bands and band_params table on DB
  */
 #include "band.private.h"
+#include "params.private.h"
 
 #include "cfg.private.h"
 
@@ -32,6 +33,9 @@ static pthread_mutex_t read_all_bands_mutex    = PTHREAD_MUTEX_INITIALIZER;
 
 static band_info_t _band_info_cache = {.id = BAND_UNDEFINED, .start_freq = 0, .stop_freq = 0};
 
+// Gain for all bands, configured using previous version. Default value
+static float common_gain;
+
 cfg_band_t cfg_band;
 
 static void init_db(sqlite3 *database);
@@ -53,9 +57,12 @@ static void on_cur_att_change(Subject *subj, void *user_data);
 static void on_cur_pre_change(Subject *subj, void *user_data);
 
 static void fill_band_cfg_item(cfg_item_t *item, Subject * val, const char * db_name, int pk);
+static void fill_band_cfg_item_float(cfg_item_t *item, Subject * val, float db_scale, const char * db_name, int pk);
 
 void cfg_band_params_init(sqlite3 *database) {
     init_db(database);
+
+    common_gain = subject_get_float(cfg.output_gain.val);
 
     x6100_mode_t default_mode;
     int32_t      band_id      = subject_get_int(cfg.band_id.val);
@@ -105,6 +112,7 @@ void cfg_band_params_init(sqlite3 *database) {
     fill_band_cfg_item(&cfg_band.vfo, subject_create_int(X6100_VFO_A), "vfo", band_id);
     fill_band_cfg_item(&cfg_band.split, subject_create_int(false), "split", band_id);
     fill_band_cfg_item(&cfg_band.rfg, subject_create_int(100), "rfg", band_id);
+    fill_band_cfg_item_float(&cfg_band.output_gain, subject_create_float(common_gain), 0.2f, "output_gain", band_id);
 
     subject_add_observer(cfg_band.vfo_a.freq.val, on_ab_freq_change, &cfg_band.vfo_a.freq);
     subject_add_observer(cfg_band.vfo_b.freq.val, on_ab_freq_change, &cfg_band.vfo_b.freq);
@@ -384,7 +392,7 @@ void cfg_band_params_load_all() {
 
 int cfg_band_params_load_item(cfg_item_t *item) {
     enum data_type dtype = subject_get_dtype(item->val);
-    if (dtype != DTYPE_INT) {
+    if ((dtype != DTYPE_INT) && (dtype != DTYPE_FLOAT)) {
         LV_LOG_WARN("Unknown item %s dtype: %u, can't load", item->db_name, dtype);
         return -1;
     }
@@ -398,6 +406,7 @@ int cfg_band_params_load_item(cfg_item_t *item) {
     pthread_mutex_lock(&read_mutex);
     int     rc;
     int32_t int_val;
+    float float_val;
     rc = sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":name"), item->db_name, strlen(item->db_name), 0);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR("Failed to bind name %s: %s", item->db_name, sqlite3_errmsg(db));
@@ -413,12 +422,28 @@ int cfg_band_params_load_item(cfg_item_t *item) {
 
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
-        int_val = sqlite3_column_int(stmt, 0);
+        if (dtype == DTYPE_INT) {
+            int_val = sqlite3_column_int(stmt, 0);
+            LV_LOG_USER("Loaded %s=%i (pk=%i)", item->db_name, int_val, item->pk);
+        } else if (dtype == DTYPE_FLOAT) {
+            float_val = cfg_float_val_from_db(item, read_stmt, 0);
+        }
+    }
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    pthread_mutex_unlock(&read_mutex);
+
+    if (rc == SQLITE_ROW) {
         rc = 0;
     } else {
+        // Not found, use default values
         if (strcmp(item->db_name, "vfob_freq") == 0) {
             LV_LOG_USER("Copy vfoa freq to vfob");
             int_val = subject_get_int(cfg_band.vfo_a.freq.val);
+            rc = 0;
+        } else if (strcmp(item->db_name, "output_gain") == 0) {
+            float_val = common_gain;
+            LV_LOG_USER("Use general output gain: %f for band", common_gain);
             rc = 0;
         } else {
             LV_LOG_WARN("No results for load from band_params with name: %s and bands_id: %i", item->db_name, item->pk);
@@ -427,12 +452,9 @@ int cfg_band_params_load_item(cfg_item_t *item) {
             rc = -1;
         }
     }
-    sqlite3_reset(stmt);
-    sqlite3_clear_bindings(stmt);
-    pthread_mutex_unlock(&read_mutex);
-
+    // Update item subject
     if (rc == 0) {
-        LV_LOG_USER("Loaded %s=%i (pk=%i)", item->db_name, int_val, item->pk);
+        // Check for loaded frequency
         if ((strcmp(item->db_name, "vfoa_freq") == 0) || (strcmp(item->db_name, "vfob_freq") == 0)) {
             if ((int_val >= band_info->start_freq) && (int_val <= band_info->stop_freq) ||
                 (band_info->id == BAND_UNDEFINED)) {
@@ -442,6 +464,8 @@ int cfg_band_params_load_item(cfg_item_t *item) {
                             item->db_name, item->pk);
                 subject_set_int(item->val, band_info->start_freq);
             }
+        } else if (dtype == DTYPE_FLOAT) {
+            subject_set_float(item->val, float_val);
         } else {
             subject_set_int(item->val, int_val);
         }
@@ -463,6 +487,7 @@ int cfg_band_params_save_item(cfg_item_t *item) {
     pthread_mutex_lock(&write_mutex);
     int     rc;
     int32_t int_val;
+    float   float_val;
 
     rc = sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":name"), item->db_name, strlen(item->db_name), 0);
     if (rc != SQLITE_OK) {
@@ -494,6 +519,9 @@ int cfg_band_params_save_item(cfg_item_t *item) {
                 rc = sqlite3_bind_int(stmt, val_index, int_val);
             }
             break;
+        case DTYPE_FLOAT:
+            rc = cfg_float_val_to_db(item, insert_stmt, val_index, &float_val);
+            break;
         default:
             LV_LOG_WARN("Unknown item %s dtype: %u, will not save", item->db_name, dtype);
             sqlite3_reset(stmt);
@@ -511,7 +539,16 @@ int cfg_band_params_save_item(cfg_item_t *item) {
     if (rc != SQLITE_DONE) {
         LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
     } else {
-        LV_LOG_USER("Saved %s=%i (pk=%i)", item->db_name, int_val, item->pk);
+        switch (dtype) {
+            case DTYPE_INT:
+                LV_LOG_USER("Saved %s=%i (pk=%i)", item->db_name, int_val, item->pk);
+                break;
+            case DTYPE_FLOAT:
+                LV_LOG_USER("Saved %s=%f (pk=%i)", item->db_name, float_val, item->pk);
+                break;
+            default:
+                break;
+        }
         rc = 0;
     }
     sqlite3_reset(stmt);
@@ -763,5 +800,10 @@ static void on_cur_pre_change(Subject *subj, void *user_data) {
 
 static void fill_band_cfg_item(cfg_item_t *item, Subject * val, const char * db_name, int pk) {
     fill_cfg_item(item, val, db_name);
+    item->pk = pk;
+}
+
+static void fill_band_cfg_item_float(cfg_item_t *item, Subject * val, float db_scale, const char * db_name, int pk) {
+    fill_cfg_item_float(item, val, db_scale, db_name);
     item->pk = pk;
 }

@@ -26,6 +26,7 @@ typedef struct {
     cfg_item_t        vfo;
     cfg_item_t        split;
     cfg_item_t        rfg;
+    cfg_item_t        output_gain;
     struct {
         cfg_item_t min;
         cfg_item_t max;

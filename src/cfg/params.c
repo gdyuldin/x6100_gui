@@ -58,13 +58,7 @@ int cfg_params_load_item(cfg_item_t *item) {
                 subject_set_uint64(item->val, uint64_val);
                 break;
             case DTYPE_FLOAT: ;
-                float val;
-                if (item->db_scale != 0) {
-                    val = sqlite3_column_int(read_stmt, 0) * item->db_scale;
-                } else {
-                    val = sqlite3_column_double(read_stmt, 0);
-                }
-                LV_LOG_USER("Loaded %s=%f (pk=%i)", item->db_name, val, item->pk);
+                float val = cfg_float_val_from_db(item, read_stmt, 0);
                 subject_set_float(item->val, val);
                 break;
             default:
@@ -114,15 +108,7 @@ int cfg_params_save_item(cfg_item_t *item) {
             }
             break;
         case DTYPE_FLOAT:
-            float_val = subject_get_float(item->val);
-            if (item->db_scale != 0) {
-                rc = sqlite3_bind_int(insert_stmt, val_index, roundf(float_val / item->db_scale));
-            } else {
-                rc = sqlite3_bind_double(insert_stmt, val_index, float_val);
-            }
-            if (rc != SQLITE_OK) {
-                LV_LOG_WARN("Can't bind val %f to save params query", float_val);
-            }
+            rc = cfg_float_val_to_db(item, insert_stmt, val_index, &float_val);
             break;
         default:
             LV_LOG_WARN("Unknown item %s dtype: %u, will not save", item->db_name, dtype);
@@ -156,5 +142,31 @@ int cfg_params_save_item(cfg_item_t *item) {
     sqlite3_reset(insert_stmt);
     sqlite3_clear_bindings(insert_stmt);
     pthread_mutex_unlock(&write_mutex);
+    return rc;
+}
+
+
+float cfg_float_val_from_db(cfg_item_t *item, sqlite3_stmt *stmt, int iCol) {
+    float val;
+    if (item->db_scale != 0) {
+        val = sqlite3_column_int(stmt, iCol) * item->db_scale;
+    } else {
+        val = sqlite3_column_double(stmt, iCol);
+    }
+    LV_LOG_USER("Loaded %s=%f (pk=%i)", item->db_name, val, item->pk);
+    return val;
+}
+
+int cfg_float_val_to_db(cfg_item_t *item, sqlite3_stmt *stmt, int iCol, float* val) {
+    int rc;
+    *val = subject_get_float(item->val);
+    if (item->db_scale != 0) {
+        rc = sqlite3_bind_int(stmt, iCol, roundf(*val / item->db_scale));
+    } else {
+        rc = sqlite3_bind_double(stmt, iCol, *val);
+    }
+    if (rc != SQLITE_OK) {
+        LV_LOG_WARN("Can't bind val %f to save params query", *val);
+    }
     return rc;
 }

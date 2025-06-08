@@ -424,7 +424,7 @@ void radio_init() {
     subject_add_observer_and_call(cfg.vol.val, on_change_uint8, x6100_control_rxvol_set);
     subject_add_observer_and_call(cfg.sql.val, on_change_uint8, x6100_control_sql_set);
     subject_add_observer_and_call(cfg.pwr.val, on_change_float, x6100_control_txpwr_set);
-    subject_add_observer_and_call(cfg.output_gain.val, on_change_float, x6100_control_output_gain_set);
+    subject_add_observer_and_call(cfg_cur.band->output_gain.val, on_change_float, x6100_control_output_gain_set);
     subject_add_observer_and_call(cfg.atu_enabled.val, on_change_uint8, x6100_control_atu_set);
     subject_add_observer_and_call(cfg_cur.atu->network, on_atu_network_change, NULL);
     subject_add_observer_and_call(cfg.comp.val, on_change_comp_ratio, NULL);
