@@ -7,8 +7,7 @@
  */
 
 #include "styles.h"
-
-#define PATH "A:/dev/shm/"
+#include "styles_custom.h"
 
 const uint32_t wf_palette_legacy[256] = {
     0x000000, 0x000004, 0x000008, 0x00000c, 0x00000e, 0x000012, 0x000016, 0x000018,
@@ -93,6 +92,7 @@ lv_style_t  btn_disabled_style;
 lv_style_t  msg_style;
 lv_style_t  msg_tiny_style;
 lv_style_t  clock_style;
+lv_style_t  knobs_style;
 lv_style_t  info_style;
 lv_style_t  info_row_style;
 lv_style_t  info_item_style;
@@ -116,6 +116,7 @@ lv_color_t  bg_color;
 
 static void setup_theme_legacy();
 static void setup_theme_simple();
+static void setup_theme_flat();
 
 void styles_init(themes_t theme) {
     /* * */
@@ -177,7 +178,7 @@ void styles_init(themes_t theme) {
     /* Message style */
     lv_style_init(&msg_style);
     lv_style_set_text_color(&msg_style, lv_color_white());
-    lv_style_set_text_font(&msg_style, &sony_38);
+    lv_style_set_text_font(&msg_style, &sony_30);
     lv_style_set_width(&msg_style, 603);
     lv_style_set_height(&msg_style, 66);
     lv_style_set_x(&msg_style, 800 / 2 - (603 / 2));
@@ -245,6 +246,12 @@ void styles_init(themes_t theme) {
     lv_style_set_radius(&clock_style, 0);
     lv_style_set_bg_img_opa(&clock_style, LV_OPA_COVER);
 
+    /* Knobs */
+    lv_style_init(&knobs_style);
+    lv_style_set_text_color(&knobs_style, lv_color_white());
+    lv_style_set_radius(&knobs_style, 0);
+    lv_style_set_bg_img_opa(&knobs_style, LV_OPA_COVER);
+
     /* Left info */
     lv_style_init(&info_style);
     lv_style_set_align(&info_style, LV_ALIGN_TOP_LEFT);
@@ -295,12 +302,17 @@ void styles_init(themes_t theme) {
     lv_style_set_y(&cw_tune_style, 70);
 
     styles_set_theme(theme);
+
+    styles_customize_theme();
 }
 
 void styles_set_theme(themes_t theme) {
     switch (theme) {
         case THEME_LEGACY:
             setup_theme_legacy();
+            break;
+        case THEME_FLAT:
+            setup_theme_flat();
             break;
         case THEME_SIMPLE:
         default:
@@ -311,6 +323,7 @@ void styles_set_theme(themes_t theme) {
 
 static void setup_theme_legacy() {
     wf_palette = wf_palette_legacy;
+    wf_palette = wf_palette_gauss;
 
     bg_color = lv_color_hex(0x0040A0);
     lv_style_set_bg_color(&background_style, bg_color);
@@ -321,6 +334,8 @@ static void setup_theme_legacy() {
     lv_style_set_bg_img_src(&clock_style, PATH "images/top_short.bin");
     lv_style_set_width(&clock_style, 206);
     lv_style_set_height(&clock_style, 61);
+    /* Knobs */
+    // lv_style_set_bg_img_src(&knobs_style, PATH "images/top_short.bin");
     /* Info */
     lv_style_set_bg_img_src(&info_style, PATH "images/top_short.bin");
     lv_style_set_width(&info_style, 206);
@@ -341,6 +356,40 @@ static void setup_theme_legacy() {
     lv_obj_invalidate(lv_scr_act());
 }
 
+static void setup_theme_flat() {
+    wf_palette = wf_palette_gauss;
+
+    bg_color = lv_color_hex(0x36454F);
+    lv_style_set_bg_color(&background_style, bg_color);
+
+    lv_style_set_bg_img_src(&btn_style, PATH "images/dialog_dark.bin");
+    lv_style_set_bg_img_src(&msg_style, PATH "images/msg_dark.bin");
+    lv_style_set_width(&btn_style, 795);
+    lv_style_set_height(&btn_style, 61);
+    /* Clock */
+    lv_style_set_bg_img_src(&clock_style, PATH "images/dialog_dark.bin");
+    lv_style_set_width(&clock_style, 209);
+    lv_style_set_height(&clock_style, 61);
+    /* Info */
+    lv_style_set_bg_img_src(&info_style, PATH "images/dialog_dark.bin");
+    lv_style_set_width(&info_style, 209);
+    lv_style_set_height(&info_style, 61);
+    /* Meter */
+    lv_style_set_bg_img_src(&meter_style, PATH "images/dialog_dark.bin");
+    lv_style_set_width(&meter_style, 380);
+    lv_style_set_height(&meter_style, 61);
+
+    lv_style_set_bg_img_src(&pannel_style, PATH "images/panel_dark.bin");
+    lv_style_set_bg_img_src(&msg_tiny_style, PATH "images/msg_tiny_dark.bin");
+    lv_style_set_bg_img_src(&dialog_style, PATH "images/dialog_dark.bin");
+    /* TX info */
+    lv_style_set_bg_img_src(&tx_info_style, PATH "images/dialog_dark.bin");
+    lv_style_set_width(&tx_info_style, 380);
+    lv_style_set_height(&tx_info_style, 123);
+
+    lv_obj_invalidate(lv_scr_act());
+}
+
 static void setup_theme_simple() {
     wf_palette = wf_palette_gauss;
 
@@ -353,6 +402,8 @@ static void setup_theme_simple() {
     lv_style_set_bg_img_src(&clock_style, PATH "images/top_short_dark.bin");
     lv_style_set_width(&clock_style, 209);
     lv_style_set_height(&clock_style, 61);
+    /* Knobs */
+    // lv_style_set_bg_img_src(&knobs_style, PATH "images/top_short_dark.bin");
     /* Info */
     lv_style_set_bg_img_src(&info_style, PATH "images/top_short_dark.bin");
     lv_style_set_width(&info_style, 209);

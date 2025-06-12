@@ -19,6 +19,7 @@
 #include "util.h"
 
 #define NUM_PWR_ITEMS 6
+#define NUM_ALC_ITEMS 6
 #define NUM_VSWR_ITEMS 5
 #define UPDATE_UI_MS 40
 
@@ -27,6 +28,9 @@ static const float max_pwr = 10.0f;
 
 static const float min_swr = 1.0f;
 static const float max_swr = 5.0f;
+
+static const float min_alc = 0.0f;
+static const float max_alc = 10.0f;
 
 static float pwr  = 0.0f;
 static float vswr = 0.0f;
@@ -49,6 +53,15 @@ typedef struct {
 
 static item_t pwr_items[NUM_PWR_ITEMS] = {
     {.label = "PWR", .val = 0.0f },
+    {.label = "2",   .val = 2.0f },
+    {.label = "4",   .val = 4.0f },
+    {.label = "6",   .val = 6.0f },
+    {.label = "8",   .val = 8.0f },
+    {.label = "10",  .val = 10.0f}
+};
+
+static item_t alc_items[NUM_ALC_ITEMS] = {
+    {.label = "ALC", .val = 0.0f },
     {.label = "2",   .val = 2.0f },
     {.label = "4",   .val = 4.0f },
     {.label = "6",   .val = 6.0f },
@@ -142,6 +155,32 @@ static void tx_info_draw_cb(lv_event_t *e) {
         swr_val += slice_swr_step;
     }
 
+    /* ALC rects */
+
+    lv_draw_rect_dsc_init(&rect_dsc);
+
+    rect_dsc.bg_opa = LV_OPA_80;
+
+    float slice_alc_step    = 0.25f;
+    slices_total            = (max_alc - min_alc) / slice_alc_step;
+    uint8_t slice_alc_width = w / slices_total;
+
+    count = (alc - min_alc + slice_alc_step) / slice_alc_step;
+    count = LV_MIN(count, slices_total);
+
+    area.y1 = y1 - 5 + 108;
+    area.y2 = y1 + 32 + 108;
+
+    rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
+
+    for (uint16_t i = 0; i < count; i++) {
+
+        area.x1 = x1 + 30 + i * slice_alc_width - slice_alc_width / 2 + slice_spacing / 2;
+        area.x2 = area.x1 + slice_alc_width - slice_spacing;
+
+        lv_draw_rect(draw_ctx, &rect_dsc, &area);
+    }
+
     /* PWR Labels */
 
     lv_draw_label_dsc_init(&label_dsc);
@@ -186,12 +225,43 @@ static void tx_info_draw_cb(lv_event_t *e) {
 
         lv_draw_label(draw_ctx, &label_dsc, &area, label, NULL);
     }
+    
+    /* ALC Labels */
+
+    area.x1 = x1;
+    area.x2 = x1 + 20;
+
+    area.y1 = y1 + 120;
+    area.y2 = area.y1 + 32 + 120;
+
+    for (uint8_t i = 0; i < NUM_ALC_ITEMS; i++) {
+        char *label = alc_items[i].label;
+        float val   = alc_items[i].val;
+
+        lv_txt_get_size(&label_size, label, label_dsc.font, 0, 0, LV_COORD_MAX, 0);
+
+        area.x1 = x1 + 30 + slice_alc_width * ((val - min_alc) / slice_alc_step) - label_size.x / 2;
+        area.x2 = area.x1 + label_size.x;
+
+        lv_draw_label(draw_ctx, &label_dsc, &area, label, NULL);
+    }
+
 }
 
 static void tx_cb(lv_event_t *e) {
     pwr  = 0.0f;
     vswr = 0.0f;
     alc  = 0.0f;
+
+    /* if the user has selected ALC MAG then tweak the bar area height as appropriate */
+    if (params.mag_alc.x) {
+        lv_style_set_height(&tx_info_style, 123); /* was 123 */
+        lv_obj_clear_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+    /* otherwise, show the bar and hide the small label */
+        lv_style_set_height(&tx_info_style, 185); /* was 123 */
+        lv_obj_add_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
+    }
 
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(obj);
@@ -207,7 +277,7 @@ static void update_tx_info(void *arg) {
     }
     lv_obj_invalidate(obj);
     if (params.mag_alc.x) {
-        msg_tiny_set_text_fmt("ALC: %.1f", alc);
+        msg_tiny_set_text_fmt("ALC: %.1f", alc); /* maybe hide this while we work on the bar graph? */
     }
     if (dialog_is_run() || !params.mag_alc.x) {
         lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);

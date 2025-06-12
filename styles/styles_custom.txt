@@ -1,0 +1,5 @@
+# style customizations
+# see styles_simple.txt for some ideas
+#
+#wf.palette = gauss
+#bg_color   = 0x27313a

@@ -27,6 +27,7 @@ else()
                 USE_SOURCE_PERMISSIONS
         )
         install(DIRECTORY images DESTINATION share/x6100)
+        install(DIRECTORY styles DESTINATION share/x6100)
 endif()
 
 

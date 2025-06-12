@@ -13,6 +13,9 @@
 #include <unistd.h>
 #include "lvgl/lvgl.h"
 
+// PATH
+#define PATH "A:/dev/shm/"
+
 // COLORS
 
 #define COLOR_LIGHT_GREEN (0x80FF80)
@@ -41,6 +44,7 @@ extern lv_style_t   btn_disabled_style;
 extern lv_style_t   msg_style;
 extern lv_style_t   msg_tiny_style;
 extern lv_style_t   clock_style;
+extern lv_style_t   knobs_style;
 extern lv_style_t   info_style;
 extern lv_style_t   info_row_style;
 extern lv_style_t   info_item_style;
