@@ -580,6 +580,11 @@ void radio_init() {
     subject_add_observer_and_call(cfg.comp_threshold_offset.val, on_change_float, x6100_control_comp_threshold_set);
     subject_add_observer_and_call(cfg.comp_makeup_offset.val, on_change_float, x6100_control_comp_makeup_set);
 
+    subject_add_observer_and_call(cfg.mic.val, on_change_uint8, x6100_control_mic_set);
+    subject_add_observer_and_call(cfg.hmic.val, on_change_uint8, x6100_control_hmic_set);
+    subject_add_observer_and_call(cfg.imic.val, on_change_uint8, x6100_control_imic_set);
+    subject_add_observer_and_call(cfg.moni.val, on_change_uint8, x6100_control_moni_set);
+
     subject_add_observer_and_call(cfg.rit.val, base_control_command, (void*)x6100_rit);
     subject_add_observer_and_call(cfg.xit.val, base_control_command, (void*)x6100_xit);
     subject_add_observer_and_call(cfg.fm_emphasis.val, on_change_bool, x6100_control_fm_emp);
@@ -615,9 +620,6 @@ void radio_init() {
     x6100_control_bias_drive_set(params.bias_drive);
     x6100_control_bias_final_set(params.bias_final);
 
-    x6100_control_mic_set(params.mic);
-    x6100_control_hmic_set(params.hmic);
-    x6100_control_imic_set(params.imic);
     x6100_control_spmode_set(params.spmode.x);
 
     x6100_control_vox_set(params.vox);
@@ -627,7 +629,6 @@ void radio_init() {
 
     x6100_control_linein_set(params.line_in);
     x6100_control_lineout_set(params.line_out);
-    x6100_control_cmd(x6100_monilevel, params.moni);
 
     if (base_ver.rev >= 8) {
         x6100_control_bf16_flow_set(true);
@@ -695,23 +696,6 @@ void radio_change_mute() {
     x6100_control_rxvol_set(mute ? 0 : subject_get_int(cfg.vol.val));
 }
 
-uint16_t radio_change_moni(int16_t df) {
-    if (df == 0) {
-        return params.moni;
-    }
-
-    int16_t new_val = limit(params.moni + df, 0, 100);
-    if (new_val != params.moni) {
-        params_lock();
-        params.moni = new_val;
-        params_unlock(&params.dirty.moni);
-        WITH_RADIO_LOCK(x6100_control_cmd(x6100_monilevel, params.moni));
-        lv_msg_send(MSG_PARAM_CHANGED, NULL);
-    }
-
-    return params.moni;
-}
-
 bool radio_change_spmode(int16_t df) {
     if (df == 0) {
         return params.spmode.x;
@@ -758,56 +742,6 @@ void radio_stop_swrscan() {
 
 void radio_set_pwr(float d) {
     WITH_RADIO_LOCK(x6100_control_txpwr_set(d));
-}
-
-x6100_mic_sel_t radio_change_mic(int16_t d) {
-    if (d == 0) {
-        return params.mic;
-    }
-
-    params_lock();
-
-    switch (params.mic) {
-        case x6100_mic_builtin:
-            params.mic = d > 0 ? x6100_mic_handle : x6100_mic_auto;
-            break;
-
-        case x6100_mic_handle:
-            params.mic = d > 0 ? x6100_mic_auto : x6100_mic_builtin;
-            break;
-
-        case x6100_mic_auto:
-            params.mic = d > 0 ? x6100_mic_builtin : x6100_mic_handle;
-            break;
-    }
-
-    params_unlock(&params.dirty.mic);
-    lv_msg_send(MSG_PARAM_CHANGED, NULL);
-
-    WITH_RADIO_LOCK(x6100_control_mic_set(params.mic));
-
-    return params.mic;
-}
-
-uint8_t radio_change_hmic(int16_t d) {
-    if (d == 0) {
-        return params.hmic;
-    }
-    int32_t new_val = limit(params.hmic + d, 0, 50);
-    CHANGE_PARAM(new_val, params.hmic, params.dirty.hmic, x6100_control_hmic_set);
-
-    return params.hmic;
-}
-
-uint8_t radio_change_imic(int16_t d) {
-    if (d == 0) {
-        return params.imic;
-    }
-
-    int32_t new_val = limit(params.imic + d, 0, 35);
-    CHANGE_PARAM(new_val, params.imic, params.dirty.imic, x6100_control_imic_set);
-
-    return params.imic;
 }
 
 x6100_vfo_t radio_toggle_vfo() {

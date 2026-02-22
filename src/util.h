@@ -9,17 +9,15 @@
 #pragma once
 
 #include "helpers.h"
+#include "cfg/cfg.h"
 
 #ifdef __cplusplus
 
 #include "vector"
 
-template <typename T>
-T loop_modes(int16_t dir, T mode, const uint64_t mask, const std::vector<T> all_modes);
 
 extern "C" {
 #endif
-
 #include <aether_radio/x6100_control/control.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -64,4 +62,7 @@ int32_t util_compare_version(x6100_base_ver_t a, x6100_base_ver_t b);
 
 #ifdef __cplusplus
 }
+/* C++ only part */
+cfg_ctrl_t loop_modes(int16_t dir, cfg_ctrl_t mode, const uint64_t mask, const std::vector<cfg_ctrl_t> all_modes);
+
 #endif

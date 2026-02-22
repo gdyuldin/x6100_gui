@@ -44,7 +44,7 @@ template<typename... Args> void text_msg(const char * f, Args... args) {
 template <typename T> static T loop_items(std::vector<T> items, T cur, bool next);
 
 mfk_state_t  mfk_state = MFK_STATE_EDIT;
-cfg_mfk_mode_t   mfk_mode = MFK_SPECTRUM_FACTOR;
+cfg_ctrl_t   mfk_mode = CTRL_SPECTRUM_FACTOR;
 
 void mfk_update(int16_t diff, bool voice) {
     int32_t     i;
@@ -57,7 +57,7 @@ void mfk_update(int16_t diff, bool voice) {
     show_msg = !knobs_visible();
 
     switch (mfk_mode) {
-        case MFK_SPECTRUM_FACTOR:
+        case CTRL_SPECTRUM_FACTOR:
             i = subject_get_int(cfg_cur.zoom);
             if (diff != 0) {
                 if (diff > 0) {
@@ -77,7 +77,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_COMP:
+        case CTRL_COMP:
             i = subject_get_int(cfg.comp.val);
             if (diff) {
                 i = clip(i + diff, 1, 8);
@@ -96,7 +96,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_KEY_SPEED:
+        case CTRL_KEY_SPEED:
             i = subject_get_int(cfg.key_speed.val);
             if (diff) {
                 i = clip(i + diff, 5, 50);
@@ -111,7 +111,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_KEY_MODE:
+        case CTRL_KEY_MODE:
             i = subject_get_int(cfg.key_mode.val);
             if (diff) {
                 i = loop_items({x6100_key_manual, x6100_key_auto_left, x6100_key_auto_right}, (x6100_key_mode_t)i, diff > 0);
@@ -127,7 +127,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_IAMBIC_MODE:
+        case CTRL_IAMBIC_MODE:
             i = subject_get_int(cfg.iambic_mode.val);
             if (diff) {
                 i = loop_items({x6100_iambic_a, x6100_iambic_b}, (x6100_iambic_mode_t)i, diff > 0);
@@ -143,7 +143,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_KEY_TONE:
+        case CTRL_KEY_TONE:
             i = subject_get_int(cfg.key_tone.val);
             if (diff) {
                 i = clip(i + diff * 10, 400, 1200);
@@ -158,7 +158,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_KEY_VOL:
+        case CTRL_KEY_VOL:
             i = subject_get_int(cfg.key_vol.val);
             if (diff) {
                 i = clip(i + diff, 0, 32);
@@ -173,7 +173,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_KEY_TRAIN:
+        case CTRL_KEY_TRAIN:
             b = subject_get_int(cfg.key_train.val);
             if (diff) {
                 b = !b;
@@ -188,7 +188,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_QSK_TIME:
+        case CTRL_QSK_TIME:
             i = subject_get_int(cfg.qsk_time.val);
             if (diff) {
                 i = clip(i + diff * 10, 0, 1000);
@@ -203,7 +203,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_KEY_RATIO:
+        case CTRL_KEY_RATIO:
             f = subject_get_float(cfg.key_ratio.val);
             if (diff) {
                 f = clip(f + diff * 0.1f, 2.5f, 4.5f);
@@ -218,7 +218,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_ANT:
+        case CTRL_ANT:
             {
                 int32_t ant = subject_get_int(cfg.ant_id.val);
                 if (diff != 0) {
@@ -237,7 +237,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_RIT:
+        case CTRL_RIT:
             i = subject_get_int(cfg.rit.val);
             if (diff) {
                 i = clip(align(i + diff * 10, 10), -1500, +1500);
@@ -252,7 +252,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_XIT:
+        case CTRL_XIT:
             i = subject_get_int(cfg.xit.val);
             if (diff) {
                 i = clip(align(i + diff * 10, 10), -1500, +1500);
@@ -267,7 +267,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_DNF:
+        case CTRL_DNF:
             b = subject_get_int(cfg.dnf.val);
             if (diff) {
                 b = !b;
@@ -282,7 +282,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_DNF_CENTER:
+        case CTRL_DNF_CENTER:
             i = subject_get_int(cfg.dnf_center.val);
             if (diff) {
                 i = clip(i + diff * 50, 100, 3000);
@@ -297,7 +297,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_DNF_WIDTH:
+        case CTRL_DNF_WIDTH:
             i = subject_get_int(cfg.dnf_width.val);
             if (diff) {
                 i = clip(i + diff * 5, 10, 100);
@@ -312,7 +312,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_DNF_AUTO:
+        case CTRL_DNF_AUTO:
             b = subject_get_int(cfg.dnf_auto.val);
             if (diff) {
                 b = !b;
@@ -327,7 +327,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_NB:
+        case CTRL_NB:
             b = subject_get_int(cfg.nb.val);
             if (diff) {
                 b = !b;
@@ -342,7 +342,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_NB_LEVEL:
+        case CTRL_NB_LEVEL:
             i = subject_get_int(cfg.nb_level.val);
             if (diff) {
                 i = clip(i + diff * 5, 0, 100);
@@ -357,7 +357,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_NB_WIDTH:
+        case CTRL_NB_WIDTH:
             i = subject_get_int(cfg.nb_width.val);
             if (diff) {
                 i = clip(i + diff * 5, 0, 100);
@@ -372,7 +372,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_NR:
+        case CTRL_NR:
             b = subject_get_int(cfg.nr.val);
             if (diff) {
                 b = !b;
@@ -387,7 +387,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_NR_LEVEL:
+        case CTRL_NR_LEVEL:
             i = subject_get_int(cfg.nr_level.val);
             if (diff) {
                 i = clip(i + diff * 5, 0, 60);
@@ -402,7 +402,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_AGC_HANG:
+        case CTRL_AGC_HANG:
             b = subject_get_int(cfg.agc_hang.val);
             if (diff) {
                 b = !b;
@@ -417,7 +417,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_AGC_KNEE:
+        case CTRL_AGC_KNEE:
             i = subject_get_int(cfg.agc_knee.val);
             if (diff) {
                 i = clip(i + diff, -100, 0);
@@ -432,7 +432,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_AGC_SLOPE:
+        case CTRL_AGC_SLOPE:
             i = subject_get_int(cfg.agc_slope.val);
             if (diff) {
                 i = clip(i + diff, 0, 10);
@@ -447,7 +447,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_CW_DECODER:
+        case CTRL_CW_DECODER:
             b = subject_get_int(cfg.cw_decoder.val);
             if (diff) {
                 b = !b;
@@ -462,7 +462,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_CW_TUNE:
+        case CTRL_CW_TUNE:
             b = subject_get_int(cfg.cw_tune.val);
             if (diff) {
                 b = !b;
@@ -477,7 +477,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_CW_DECODER_SNR:
+        case CTRL_CW_DECODER_SNR:
             f = subject_get_float(cfg.cw_decoder_snr.val);
             if (diff) {
                 f = clip(f + diff * 0.1f, 3.0f, 30.0f);
@@ -492,7 +492,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_CW_DECODER_PEAK_BETA:
+        case CTRL_CW_DECODER_PEAK_BETA:
             f = subject_get_float(cfg.cw_decoder_peak_beta.val);
             if (diff) {
                 f = clip(f + diff * 0.01f, 0.1f, 0.95f);
@@ -508,7 +508,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_CW_DECODER_NOISE_BETA:
+        case CTRL_CW_DECODER_NOISE_BETA:
             f = subject_get_float(cfg.cw_decoder_noise_beta.val);
             if (diff) {
                 f = clip(f + diff * 0.01f, 0.1f, 0.95f);
@@ -524,7 +524,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_RTTY_RATE:
+        case CTRL_RTTY_RATE:
             f = rtty_change_rate(diff);
             text_msg("#%3X RTTY rate: %.2f", color, f);
 
@@ -535,7 +535,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_RTTY_SHIFT:
+        case CTRL_RTTY_SHIFT:
             i = rtty_change_shift(diff);
             text_msg("#%3X RTTY shift: %i Hz", color, i);
 
@@ -546,7 +546,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_RTTY_CENTER:
+        case CTRL_RTTY_CENTER:
             i = rtty_change_center(diff);
             text_msg("#%3X RTTY center: %i Hz", color, i);
 
@@ -557,7 +557,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_RTTY_REVERSE:
+        case CTRL_RTTY_REVERSE:
             b = rtty_change_reverse(diff);
             text_msg("#%3X RTTY reverse: %s", color, b ? "On" : "Off");
 
@@ -568,7 +568,7 @@ void mfk_update(int16_t diff, bool voice) {
             }
             break;
 
-        case MFK_IF_SHIFT:
+        case CTRL_IF_SHIFT:
             {
                 x6100_base_ver_t base_ver = x6100_control_get_base_ver();
                 if ((util_compare_version(base_ver, (x6100_base_ver_t){1, 1, 9, 0}) >= 0) || (base_ver.rev >= 8)) {
@@ -598,13 +598,13 @@ void mfk_update(int16_t diff, bool voice) {
 
 void mfk_change_mode(int16_t dir) {
     uint64_t mask = subject_get_uint64(cfg.mfk_modes.val);
-    int size = sizeof(cfg_encoder_mfk_modes) / sizeof(cfg_encoder_mfk_modes[0]);
-    std::vector<cfg_mfk_mode_t> all_modes(cfg_encoder_mfk_modes, cfg_encoder_mfk_modes + size);
+    int size = sizeof(cfg_encoder_mfk_modes_default) / sizeof(cfg_encoder_mfk_modes_default[0]);
+    std::vector<cfg_ctrl_t> all_modes(cfg_encoder_mfk_modes_default, cfg_encoder_mfk_modes_default + size);
     mfk_mode = loop_modes(dir, mfk_mode,  mask, all_modes);
     mfk_update(0, true);
 }
 
-void mfk_set_mode(cfg_mfk_mode_t mode) {
+void mfk_set_mode(cfg_ctrl_t mode) {
     mfk_mode = mode;
     mfk_state = MFK_STATE_EDIT;
     knobs_set_mfk_mode(true);

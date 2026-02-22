@@ -1,6 +1,11 @@
 #pragma once
 
 #include "common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "atu.h"
 #include "band.h"
 
@@ -8,70 +13,75 @@
 #include <sqlite3.h>
 
 typedef enum {
-    VOL_VOL = 0,
-    VOL_SQL,
-    VOL_RFG,
-    VOL_FILTER_LOW,
-    VOL_FILTER_HIGH,
-    VOL_PWR,
-    VOL_HMIC,
-    VOL_MIC,
-    VOL_IMIC,
-    VOL_MONI,
-    VOL_FILTER_BW = 15,
-} cfg_vol_mode_t;
-
+    ENCODER_BIND_NONE = '_',
+    ENCODER_BIND_VOL = 'V',
+    ENCODER_BIND_MFK = 'M',
+} encoder_binds_t;
 
 typedef enum {
-    MFK_SPECTRUM_FACTOR = 2,
+    CTRL_VOL = 0,
+    CTRL_SQL,
+    CTRL_RFG,
+    CTRL_FILTER_LOW,
+    CTRL_FILTER_HIGH,
+    CTRL_PWR,
+    CTRL_HMIC,
+    CTRL_MIC,
+    CTRL_IMIC,
+    CTRL_MONI,
+    CTRL_FILTER_BW,
 
-    MFK_KEY_SPEED = 9,
-    MFK_KEY_MODE,
-    MFK_IAMBIC_MODE,
-    MFK_KEY_TONE,
-    MFK_KEY_VOL,
-    MFK_KEY_TRAIN,
-    MFK_QSK_TIME,
-    MFK_KEY_RATIO,
+    CTRL_SPECTRUM_FACTOR,
 
-    MFK_DNF,
-    MFK_DNF_CENTER,
-    MFK_DNF_WIDTH,
-    MFK_DNF_AUTO,
-    MFK_NB,
-    MFK_NB_LEVEL,
-    MFK_NB_WIDTH,
-    MFK_NR,
-    MFK_NR_LEVEL,
+    CTRL_KEY_SPEED,
+    CTRL_KEY_MODE,
+    CTRL_IAMBIC_MODE,
+    CTRL_KEY_TONE,
+    CTRL_KEY_VOL,
+    CTRL_KEY_TRAIN,
+    CTRL_QSK_TIME,
+    CTRL_KEY_RATIO,
 
-    MFK_AGC_HANG,
-    MFK_AGC_KNEE,
-    MFK_AGC_SLOPE,
-    MFK_COMP,
+    CTRL_DNF,
+    CTRL_DNF_CENTER,
+    CTRL_DNF_WIDTH,
+    CTRL_DNF_AUTO,
+    CTRL_NB,
+    CTRL_NB_LEVEL,
+    CTRL_NB_WIDTH,
+    CTRL_NR,
+    CTRL_NR_LEVEL,
 
-    MFK_CW_DECODER,
-    MFK_CW_TUNE,
-    MFK_CW_DECODER_SNR,
-    MFK_CW_DECODER_PEAK_BETA,
-    MFK_CW_DECODER_NOISE_BETA,
+    CTRL_AGC_HANG,
+    CTRL_AGC_KNEE,
+    CTRL_AGC_SLOPE,
+    CTRL_COMP,
 
-    MFK_ANT,
-    MFK_RIT,
-    MFK_XIT,
+    CTRL_CW_DECODER,
+    CTRL_CW_TUNE,
+    CTRL_CW_DECODER_SNR,
+    CTRL_CW_DECODER_PEAK_BETA,
+    CTRL_CW_DECODER_NOISE_BETA,
+
+    CTRL_ANT,
+    CTRL_RIT,
+    CTRL_XIT,
+    CTRL_IF_SHIFT,
+
+    CTRL_FAST_ACCESS_LAST,
 
     /* APPs */
 
-    MFK_RTTY_RATE,
-    MFK_RTTY_SHIFT,
-    MFK_RTTY_CENTER,
-    MFK_RTTY_REVERSE,
+    CTRL_RTTY_RATE,
+    CTRL_RTTY_SHIFT,
+    CTRL_RTTY_CENTER,
+    CTRL_RTTY_REVERSE,
 
-    MFK_IF_SHIFT,
-} cfg_mfk_mode_t;
+} cfg_ctrl_t;
 
-extern cfg_vol_mode_t cfg_encoder_vol_modes[11];
+extern cfg_ctrl_t cfg_encoder_vol_modes_default[11];
 
-extern cfg_mfk_mode_t cfg_encoder_mfk_modes[31];
+extern cfg_ctrl_t cfg_encoder_mfk_modes_default[31];
 
 
 /* configuration structs. Should contain same types (for correct initialization) */
@@ -79,10 +89,17 @@ typedef struct {
     cfg_item_t vol_modes;
     cfg_item_t mfk_modes;
 
+    cfg_item_t encoders_binds;
+
     cfg_item_t vol;
     cfg_item_t sql;
     cfg_item_t pwr;
     cfg_item_t output_gain;
+
+    cfg_item_t mic;
+    cfg_item_t hmic;
+    cfg_item_t imic;
+    cfg_item_t moni;
 
     cfg_item_t key_tone;
     cfg_item_t band_id;
@@ -179,3 +196,7 @@ typedef struct {
 extern cfg_cur_t cfg_cur;
 
 int cfg_init(sqlite3 *db);
+
+#ifdef __cplusplus
+}
+#endif

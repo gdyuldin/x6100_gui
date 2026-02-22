@@ -74,15 +74,11 @@ typedef struct {
 
     /* radio */
 
-    x6100_mic_sel_t     mic;
-    uint8_t             hmic;
-    uint8_t             imic;
     params_uint8_t      charger;
     uint16_t            bias_drive;
     uint16_t            bias_final;
     uint8_t             line_in;
     uint8_t             line_out;
-    int16_t             moni;
     params_bool_t       spmode;
     params_uint8_t      freq_accel;
 

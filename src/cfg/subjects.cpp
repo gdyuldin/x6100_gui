@@ -64,6 +64,35 @@ data_type Subject::dtype() {
     return DTYPE_INVALID;
 }
 
+
+/**
+ * String subject
+ */
+
+inline SubjectT<const char *>::SubjectT(const char *val) {
+    const std::lock_guard<std::mutex> lock(mutex);
+    this->val = strdup(val);
+}
+
+SubjectT<const char *>::~SubjectT() {
+    const std::lock_guard<std::mutex> lock(mutex);
+    free((void*)this->val);
+}
+
+char *SubjectT<const char *>::get() {
+    const std::lock_guard<std::mutex> lock(mutex);
+    return strdup(val);
+}
+
+void SubjectT<const char *>::set(const char *val) {
+    const std::lock_guard<std::mutex> lock(mutex);
+    size_t len = strlen(val);
+    if ((len > 0) && (len != strlen(this->val))) {
+        this->val = (const char *)realloc((void*)this->val, len + 1);
+    }
+    strcpy((char *)this->val, val);
+}
+
 // static void init_observers(subject_t subj);
 // static void call_observers(subject_t subj);
 // static void notify_group(subject_t subj, void *user_data);
@@ -80,6 +109,10 @@ Subject *subject_create_float(float val) {
     return new SubjectT(val);
 }
 
+Subject *subject_create_text(const char *val) {
+    return new SubjectT(val);
+}
+
 int32_t subject_get_int(Subject *subj) {
     return static_cast<SubjectT<int32_t>*>(subj)->get();
 }
@@ -92,18 +125,22 @@ float subject_get_float(Subject *subj) {
     return static_cast<SubjectT<float>*>(subj)->get();
 }
 
+char *subject_get_text(Subject *subj) {
+    return static_cast<SubjectT<const char*>*>(subj)->get();
+}
+
 void subject_set_int(Subject *subj, int32_t val) {
     if (subj->dtype() == DTYPE_INT) {
         static_cast<SubjectT<int32_t>*>(subj)->set(val);
     } else {
-        LV_LOG_ERROR("Expected dtype int, got %u\n", subj->dtype());
+        LV_LOG_ERROR("Expected subject with dtype int, got %u\n", subj->dtype());
     }
 }
 void subject_set_uint64(Subject *subj, uint64_t val) {
     if (subj->dtype() == DTYPE_UINT64) {
         static_cast<SubjectT<uint64_t>*>(subj)->set(val);
     } else {
-        LV_LOG_ERROR("Expected dtype uint64, got %u\n", subj->dtype());
+        LV_LOG_ERROR("Expected subject with dtype uint64, got %u\n", subj->dtype());
     }
 }
 
@@ -111,7 +148,15 @@ void subject_set_float(Subject *subj, float val) {
     if (subj->dtype() == DTYPE_FLOAT) {
         static_cast<SubjectT<float>*>(subj)->set(val);
     } else {
-        LV_LOG_ERROR("Expected dtype float, got %u\n", subj->dtype());
+        LV_LOG_ERROR("Expected subject with dtype float, got %u\n", subj->dtype());
+    }
+}
+
+void subject_set_text(Subject *subj, const char *val) {
+    if (subj->dtype() == DTYPE_STR) {
+        static_cast<SubjectT<const char*>*>(subj)->set(val);
+    } else {
+        LV_LOG_ERROR("Expected subject with dtype str, got %u\n", subj->dtype());
     }
 }
 

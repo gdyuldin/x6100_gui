@@ -31,7 +31,7 @@ bool knobs_visible();
 }
 
 /* C++ only part */
-void knobs_set_vol_param(cfg_vol_mode_t control);
+void knobs_set_vol_param(cfg_ctrl_t control);
 
-void knobs_set_mfk_param(cfg_mfk_mode_t control);
+void knobs_set_mfk_param(cfg_ctrl_t control);
 #endif

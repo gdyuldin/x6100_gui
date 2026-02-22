@@ -91,6 +91,7 @@ rotary_t * rotary_init(char *dev_name) {
     rotary->indev = lv_indev_drv_register(&rotary->indev_drv);
 
     lv_indev_set_group(rotary->indev, keyboard_group);
+    rotary->mode = VOL_EDIT;
 
     return rotary;
 }

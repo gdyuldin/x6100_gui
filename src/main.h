@@ -13,10 +13,6 @@
 
 #define VERSION "v0.32.2"
 
-typedef enum {
-    VOL_EDIT = 0,
-    VOL_SELECT,
-} vol_rotary_t;
 
 extern rotary_t     *vol;
 extern encoder_t    *mfk;

@@ -12,8 +12,6 @@
 #define COMPARE(a, b) ((a > b) - (a < b))
 
 extern "C" {
-    #include "cfg/cfg.h"
-
     #include <complex.h>
     #include <stdlib.h>
     #include <stdio.h>
@@ -313,10 +311,10 @@ int32_t util_compare_version(x6100_base_ver_t a, x6100_base_ver_t b) {
     return ret;
 }
 
-template <typename T> T loop_modes(int16_t dir, T mode, const uint64_t mask, const std::vector<T> all_modes) {
-    std::vector<T> enabled;
-    std::vector<T> filtered;
-    auto cond = [mask, mode](T m) { return ((1LL << m) & mask); };
+cfg_ctrl_t loop_modes(int16_t dir, cfg_ctrl_t mode, const uint64_t mask, const std::vector<cfg_ctrl_t> all_modes) {
+    std::vector<cfg_ctrl_t> enabled;
+    std::vector<cfg_ctrl_t> filtered;
+    auto cond = [mask, mode](cfg_ctrl_t m) { return ((1LL << m) & mask); };
     std::copy_if(all_modes.begin(), all_modes.end(), std::back_inserter(enabled), cond);
 
     if (enabled.size() == 0) {
@@ -328,13 +326,13 @@ template <typename T> T loop_modes(int16_t dir, T mode, const uint64_t mask, con
         if (dir > 0) {
             mode_int++;
         }
-        auto cond = [mask, mode_int](T m) { return m >= mode_int; };
+        auto cond = [mask, mode_int](cfg_ctrl_t m) { return m >= mode_int; };
         std::copy_if(enabled.begin(), enabled.end(), std::back_inserter(filtered), cond);
         std::sort(filtered.begin(), filtered.end());
         filtered.push_back(enabled[0]);
         mode = filtered[0];
     } else {
-        auto cond = [mask, mode](T m) { return m < mode; };
+        auto cond = [mask, mode](cfg_ctrl_t m) { return m < mode; };
         std::copy_if(enabled.begin(), enabled.end(), std::back_inserter(filtered), cond);
         std::sort(filtered.rbegin(), filtered.rend());
         filtered.push_back(enabled.back());
@@ -342,9 +340,3 @@ template <typename T> T loop_modes(int16_t dir, T mode, const uint64_t mask, con
     }
     return mode;
 }
-
-template cfg_vol_mode_t loop_modes(int16_t dir, cfg_vol_mode_t mode, const uint64_t mask,
-                                   const std::vector<cfg_vol_mode_t> all_modes);
-
-template cfg_mfk_mode_t loop_modes(int16_t dir, cfg_mfk_mode_t mode, const uint64_t mask,
-                                   const std::vector<cfg_mfk_mode_t> all_modes);

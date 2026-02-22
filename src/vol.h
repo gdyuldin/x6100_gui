@@ -19,9 +19,9 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-void vol_update(int16_t diff, bool voice);
-void vol_change_mode(int16_t dir);
-void vol_set_mode(cfg_vol_mode_t mode);
+void vol_update(int16_t diff);
+void vol_change_ctrl(int16_t dir);
+void vol_set_ctrl(cfg_ctrl_t mode);
 
 #ifdef __cplusplus
 }

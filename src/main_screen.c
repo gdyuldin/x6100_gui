@@ -863,22 +863,22 @@ static void spectrum_key_cb(lv_event_t * e) {
 
         case KEY_VOL_LEFT_EDIT:
         case '[':
-            vol_update(-1, false);
+            vol_update(-1);
             break;
 
         case KEY_VOL_RIGHT_EDIT:
         case ']':
-            vol_update(+1, false);
+            vol_update(+1);
             break;
 
         case KEY_VOL_LEFT_SELECT:
         case '{':
-            vol_change_mode(-1);
+            vol_change_ctrl(-1);
             break;
 
         case KEY_VOL_RIGHT_SELECT:
         case '}':
-            vol_change_mode(+1);
+            vol_change_ctrl(+1);
             break;
 
         case KEYBOARD_F9:
@@ -910,6 +910,7 @@ static void spectrum_key_cb(lv_event_t * e) {
             break;
 
         case LV_KEY_ESC:
+            // VOL press also
             if (!dialog_is_run()) {
                 switch (vol->mode) {
                     case VOL_EDIT:
@@ -924,7 +925,7 @@ static void spectrum_key_cb(lv_event_t * e) {
                         voice_say_text_fmt("Edit mode");
                         break;
                 }
-                vol_update(0, false);
+                vol_update(0);
             }
             break;
 

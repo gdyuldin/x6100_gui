@@ -225,8 +225,8 @@ void audio_play_en(bool on) {
         x6100_control_record_set(true);
     } else {
         x6100_control_record_set(false);
-        x6100_control_hmic_set(params.hmic);
-        x6100_control_imic_set(params.imic);
+        x6100_control_hmic_set(subject_get_int(cfg.hmic.val));
+        x6100_control_imic_set(subject_get_int(cfg.imic.val));
     }
 }
 

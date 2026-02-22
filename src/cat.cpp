@@ -607,7 +607,7 @@ static Frame *process_req(const Frame *req) {
                     case 0x15:
                         // Monitor level
                         resp->set_payload_len(4);
-                        to_bcd_be(&resp->data[1], params.moni * 255 / 100, 3);
+                        to_bcd_be(&resp->data[1], subject_get_int(cfg.moni.val) * 255 / 100, 3);
                         break;
                     default:
                         set_unsupported(req, resp);

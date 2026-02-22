@@ -176,7 +176,7 @@ class KnobInfo {
   public:
     KnobInfo(lv_obj_t **label, const std::string arrow_symbol) : label(label), arrow_symbol(arrow_symbol) {};
 
-    void set_mode(bool edit) {
+    void set_edit_mode(bool edit) {
         if (edit) {
             mode = MODE_EDIT;
         } else {
@@ -207,56 +207,53 @@ class KnobInfo {
 static void on_knob_info_enabled_change(Subject *subj, void *user_data);
 
 
-static std::map<int, Control*> vol_controls = {
-    {VOL_VOL, new ControlSubjInt("Volume", &cfg.vol.val)},
-    {VOL_VOL, new ControlSubjInt("Volume", &cfg.vol.val)},
-    {VOL_SQL, new ControlSubjInt("Voice SQL", &cfg.sql.val)},
-    {VOL_RFG, new ControlSubjInt("RF gain", &cfg_cur.band->rfg.val)},
-    {VOL_FILTER_LOW, new ControlSubjInt("Filter low", &cfg_cur.filter.low)},
-    {VOL_FILTER_HIGH, new ControlSubjInt("Filter high", &cfg_cur.filter.high)},
-    {VOL_FILTER_BW, new ControlSubjInt("Filter bw", &cfg_cur.filter.bw)},
-    {VOL_PWR, new ControlSubjFloat("Power", &cfg.pwr.val, "%0.1f")},
-    {VOL_MIC, new ControlChoices("MIC", &params.mic, {"Built-In", "Handle", "Auto"})},
-    {VOL_HMIC, new ControlInt("H-MIC gain", &params.hmic)},
-    {VOL_IMIC, new ControlInt("I-MIC gain", &params.imic)},
-    {VOL_MONI, new ControlInt("Moni level", &params.moni)}
-};
+static std::map<int, Control*> controls = {
+    {CTRL_VOL, new ControlSubjInt("Volume", &cfg.vol.val)},
+    {CTRL_VOL, new ControlSubjInt("Volume", &cfg.vol.val)},
+    {CTRL_SQL, new ControlSubjInt("Voice SQL", &cfg.sql.val)},
+    {CTRL_RFG, new ControlSubjInt("RF gain", &cfg_cur.band->rfg.val)},
+    {CTRL_FILTER_LOW, new ControlSubjInt("Filter low", &cfg_cur.filter.low)},
+    {CTRL_FILTER_HIGH, new ControlSubjInt("Filter high", &cfg_cur.filter.high)},
+    {CTRL_FILTER_BW, new ControlSubjInt("Filter bw", &cfg_cur.filter.bw)},
+    {CTRL_PWR, new ControlSubjFloat("Power", &cfg.pwr.val, "%0.1f")},
+    {CTRL_MIC, new ControlSubjChoices("MIC", &cfg.mic.val, {"Built-In", "Handle", "Auto"})},
+    {CTRL_HMIC, new ControlSubjInt("H-MIC gain", &cfg.hmic.val)},
+    {CTRL_IMIC, new ControlSubjInt("I-MIC gain", &cfg.imic.val)},
+    {CTRL_MONI, new ControlSubjInt("Moni level", &cfg.moni.val)},
+    {CTRL_SPECTRUM_FACTOR, new ControlSubjInt("Zoom", &cfg_cur.zoom)},
+    {CTRL_COMP, new ControlComp("Compressor", &cfg.comp.val)},
+    {CTRL_ANT, new ControlSubjInt("Ant", &cfg.ant_id.val)},
+    {CTRL_RIT, new ControlSubjInt("RIT", &cfg.rit.val)},
+    {CTRL_XIT, new ControlSubjInt("XIT", &cfg.xit.val)},
+    {CTRL_IF_SHIFT, new ControlSubjInt("IF shift", &cfg_cur.band->if_shift.val)},
 
-static std::map<int, Control *> mfk_controls = {
-    {MFK_SPECTRUM_FACTOR, new ControlSubjInt("Zoom", &cfg_cur.zoom)},
-    {MFK_COMP, new ControlComp("Compressor", &cfg.comp.val)},
-    {MFK_ANT, new ControlSubjInt("Ant", &cfg.ant_id.val)},
-    {MFK_RIT, new ControlSubjInt("RIT", &cfg.rit.val)},
-    {MFK_XIT, new ControlSubjInt("XIT", &cfg.xit.val)},
-    {MFK_IF_SHIFT, new ControlSubjInt("IF shift", &cfg_cur.band->if_shift.val)},
+    {CTRL_DNF, new ControlSubjOnOff("Notch filter", &cfg.dnf.val)},
+    {CTRL_DNF_CENTER, new ControlSubjInt("DNF center", &cfg.dnf_center.val)},
+    {CTRL_DNF_WIDTH, new ControlSubjInt("DNF width", &cfg.dnf_width.val)},
+    {CTRL_DNF_AUTO, new ControlSubjOnOff("DNF auto", &cfg.dnf_auto.val)},
+    {CTRL_NB, new ControlSubjOnOff("Noise blanker", &cfg.nb.val)},
+    {CTRL_NB_LEVEL, new ControlSubjInt("NB level", &cfg.nb_level.val)},
+    {CTRL_NB_WIDTH, new ControlSubjInt("NB width", &cfg.nb_width.val)},
+    {CTRL_NR, new ControlSubjOnOff("Noise reduction", &cfg.nr.val)},
+    {CTRL_NR_LEVEL, new ControlSubjInt("NR level", &cfg.nr_level.val)},
 
-    {MFK_DNF, new ControlSubjOnOff("Notch filter", &cfg.dnf.val)},
-    {MFK_DNF_CENTER, new ControlSubjInt("DNF center", &cfg.dnf_center.val)},
-    {MFK_DNF_WIDTH, new ControlSubjInt("DNF width", &cfg.dnf_width.val)},
-    {MFK_DNF_AUTO, new ControlSubjOnOff("DNF auto", &cfg.dnf_auto.val)},
-    {MFK_NB, new ControlSubjOnOff("Noise blanker", &cfg.nb.val)},
-    {MFK_NB_LEVEL, new ControlSubjInt("NB level", &cfg.nb_level.val)},
-    {MFK_NB_WIDTH, new ControlSubjInt("NB width", &cfg.nb_width.val)},
-    {MFK_NR, new ControlSubjOnOff("Noise reduction", &cfg.nr.val)},
-    {MFK_NR_LEVEL, new ControlSubjInt("NR level", &cfg.nr_level.val)},
+    {CTRL_AGC_HANG, new ControlSubjOnOff("AGC hang", &cfg.agc_hang.val)},
+    {CTRL_AGC_KNEE, new ControlSubjInt("AGC knee", &cfg.agc_knee.val)},
+    {CTRL_AGC_SLOPE, new ControlSubjInt("AGC slope", &cfg.agc_slope.val)},
 
-    {MFK_AGC_HANG, new ControlSubjOnOff("AGC hang", &cfg.agc_hang.val)},
-    {MFK_AGC_KNEE, new ControlSubjInt("AGC knee", &cfg.agc_knee.val)},
-    {MFK_AGC_SLOPE, new ControlSubjInt("AGC slope", &cfg.agc_slope.val)},
-
-    {MFK_KEY_SPEED, new ControlSubjInt("Key speed", &cfg.key_speed.val)},
-    {MFK_KEY_TRAIN, new ControlSubjOnOff("Key train", &cfg.key_train.val)},
-    {MFK_KEY_MODE, new ControlSubjChoices("Key mode", &cfg.key_mode.val, {"Manual", "Auto-L", "Auto-R"})},
-    {MFK_IAMBIC_MODE, new ControlSubjChoices("Iambic mode", &cfg.iambic_mode.val, {"A", "B"})},
-    {MFK_KEY_TONE, new ControlSubjInt("Key tone", &cfg.key_tone.val)},
-    {MFK_KEY_VOL, new ControlSubjInt("Key vol", &cfg.key_vol.val)},
-    {MFK_QSK_TIME, new ControlSubjInt("QSK time", &cfg.qsk_time.val)},
-    {MFK_KEY_RATIO, new ControlSubjFloat("Key ratio", &cfg.key_ratio.val)},
-    {MFK_CW_DECODER, new ControlSubjOnOff("CW decoder", &cfg.cw_decoder.val)},
-    {MFK_CW_TUNE, new ControlSubjOnOff("CW tuner", &cfg.cw_tune.val)},
-    {MFK_CW_DECODER_SNR, new ControlSubjFloat("CW decoded snr", &cfg.cw_decoder_snr.val)},
-    {MFK_CW_DECODER_PEAK_BETA, new ControlSubjFloat("CW decoder peak beta", &cfg.cw_decoder_peak_beta.val, "%0.2f")},
-    {MFK_CW_DECODER_NOISE_BETA,
+    {CTRL_KEY_SPEED, new ControlSubjInt("Key speed", &cfg.key_speed.val)},
+    {CTRL_KEY_TRAIN, new ControlSubjOnOff("Key train", &cfg.key_train.val)},
+    {CTRL_KEY_MODE, new ControlSubjChoices("Key mode", &cfg.key_mode.val, {"Manual", "Auto-L", "Auto-R"})},
+    {CTRL_IAMBIC_MODE, new ControlSubjChoices("Iambic mode", &cfg.iambic_mode.val, {"A", "B"})},
+    {CTRL_KEY_TONE, new ControlSubjInt("Key tone", &cfg.key_tone.val)},
+    {CTRL_KEY_VOL, new ControlSubjInt("Key vol", &cfg.key_vol.val)},
+    {CTRL_QSK_TIME, new ControlSubjInt("QSK time", &cfg.qsk_time.val)},
+    {CTRL_KEY_RATIO, new ControlSubjFloat("Key ratio", &cfg.key_ratio.val)},
+    {CTRL_CW_DECODER, new ControlSubjOnOff("CW decoder", &cfg.cw_decoder.val)},
+    {CTRL_CW_TUNE, new ControlSubjOnOff("CW tuner", &cfg.cw_tune.val)},
+    {CTRL_CW_DECODER_SNR, new ControlSubjFloat("CW decoded snr", &cfg.cw_decoder_snr.val)},
+    {CTRL_CW_DECODER_PEAK_BETA, new ControlSubjFloat("CW decoder peak beta", &cfg.cw_decoder_peak_beta.val, "%0.2f")},
+    {CTRL_CW_DECODER_NOISE_BETA,
      new ControlSubjFloat("CW decoder noise beta", &cfg.cw_decoder_noise_beta.val, "%0.2f")},
     // {MFK_RTTY_RATE, Control("RTTY rate", []() { return to_str((float)params.rtty_rate / 100.0f, "%0.2f"); })},
     // {MFK_RTTY_SHIFT, Control("RTTY shift", []() { return std::to_string(params.rtty_shift); })},
@@ -287,8 +284,7 @@ void knobs_init(lv_obj_t * parent) {
     lv_label_set_recolor(vol_info, true);
     lv_label_set_text(vol_info, "");
     // vol_knob_info = new KnobInfo(vol_info, LV_SYMBOL_UP);
-    // Init values
-    vol_update(0, 0);
+    vol_knob_info->set_edit_mode(true);
 
     mfk_info = lv_label_create(parent);
     lv_obj_add_style(mfk_info, &knobs_style, 0);
@@ -296,7 +292,7 @@ void knobs_init(lv_obj_t * parent) {
     lv_label_set_recolor(mfk_info, true);
     lv_label_set_text(mfk_info, "");
     // mfk_knob_info = new KnobInfo(mfk_info, LV_SYMBOL_DOWN);
-    mfk_update(0, 0);
+    mfk_knob_info->set_edit_mode(true);
 
     subject_add_delayed_observer_and_call(cfg.knob_info.val, on_knob_info_enabled_change, nullptr);
 }
@@ -318,13 +314,13 @@ bool knobs_visible() {
 /* VOL */
 
 void knobs_set_vol_mode(bool edit) {
-    vol_knob_info->set_mode(edit);
+    vol_knob_info->set_edit_mode(edit);
 }
 
-void knobs_set_vol_param(cfg_vol_mode_t control) {
+void knobs_set_vol_param(cfg_ctrl_t control) {
     Control *item;
     try {
-        item = vol_controls.at(control);
+        item = controls.at(control);
     } catch (const std::out_of_range &ex) {
         LV_LOG_WARN("VOL Control %d is unknown, skip, %s", control, ex.what());
         return;
@@ -335,13 +331,13 @@ void knobs_set_vol_param(cfg_vol_mode_t control) {
 /* MFK */
 
 void knobs_set_mfk_mode(bool edit) {
-    mfk_knob_info->set_mode(edit);
+    mfk_knob_info->set_edit_mode(edit);
 }
 
-void knobs_set_mfk_param(cfg_mfk_mode_t control) {
+void knobs_set_mfk_param(cfg_ctrl_t control) {
     Control *item;
     try {
-        item = mfk_controls.at(control);
+        item = controls.at(control);
     } catch (const std::out_of_range &ex) {
         LV_LOG_WARN("MFK Control %d is unknown, skip, %s", control, ex.what());
         return;

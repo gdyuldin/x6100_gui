@@ -44,6 +44,8 @@ int cfg_params_load_item(cfg_item_t *item) {
     }
     int32_t int_val;
     uint64_t uint64_val;
+    float float_val;
+    const char *text_val;
     rc = sqlite3_step(read_stmt);
     if (rc == SQLITE_ROW) {
         switch (subject_get_dtype(item->val)) {
@@ -57,15 +59,19 @@ int cfg_params_load_item(cfg_item_t *item) {
                 LV_LOG_USER("Loaded %s=%llu (pk=%i)", item->db_name, uint64_val, item->pk);
                 subject_set_uint64(item->val, uint64_val);
                 break;
-            case DTYPE_FLOAT: ;
-                float val;
+            case DTYPE_FLOAT:
                 if (item->db_scale != 0) {
-                    val = sqlite3_column_int(read_stmt, 0) * item->db_scale;
+                    float_val = sqlite3_column_int(read_stmt, 0) * item->db_scale;
                 } else {
-                    val = sqlite3_column_double(read_stmt, 0);
+                    float_val = sqlite3_column_double(read_stmt, 0);
                 }
-                LV_LOG_USER("Loaded %s=%f (pk=%i)", item->db_name, val, item->pk);
-                subject_set_float(item->val, val);
+                LV_LOG_USER("Loaded %s=%f (pk=%i)", item->db_name, float_val, item->pk);
+                subject_set_float(item->val, float_val);
+                break;
+            case DTYPE_STR:
+                text_val = sqlite3_column_text(read_stmt, 0);
+                LV_LOG_USER("Loaded %s=%s (pk=%i)", item->db_name, text_val, item->pk);
+                subject_set_text(item->val, text_val);
                 break;
             default:
                 LV_LOG_WARN("Unknown item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
@@ -98,6 +104,7 @@ int cfg_params_save_item(cfg_item_t *item) {
     int32_t        int_val;
     uint64_t       uint64_val;
     float          float_val;
+    const char    *text_val;
     switch (dtype) {
         case DTYPE_INT:
             int_val = subject_get_int(item->val);
@@ -124,6 +131,14 @@ int cfg_params_save_item(cfg_item_t *item) {
                 LV_LOG_WARN("Can't bind val %f to save params query", float_val);
             }
             break;
+        case DTYPE_STR:
+            text_val = subject_get_text(item->val);
+            rc       = sqlite3_bind_text(insert_stmt, val_index, text_val, -1, 0);
+            if (rc != SQLITE_OK) {
+                LV_LOG_WARN("Can't bind val '%s' to save params query", text_val);
+            }
+            break;
+
         default:
             LV_LOG_WARN("Unknown item %s dtype: %u, will not save", item->db_name, dtype);
             sqlite3_reset(insert_stmt);

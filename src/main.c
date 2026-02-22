@@ -97,7 +97,7 @@ int main(void) {
     audio_set_play_vol(params.play_gain_db_f.x);
     audio_set_rec_vol(params.rec_gain_db_f.x);
     mfk_change_mode(0);
-    vol_change_mode(0);
+    vol_change_ctrl(0);
     styles_init(params.theme.x);
 
     radio_init();

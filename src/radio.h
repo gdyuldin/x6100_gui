@@ -52,7 +52,7 @@ bool radio_check_freq(int32_t freq);
 x6100_vfo_t radio_toggle_vfo();
 
 uint16_t radio_change_vol(int16_t df);
-uint16_t radio_change_moni(int16_t df);
+// uint16_t radio_change_moni(int16_t df);
 bool radio_change_spmode(int16_t df);
 
 void radio_change_mute();
@@ -61,9 +61,9 @@ void radio_set_pwr(float d);
 
 void radio_set_charger(bool on);
 
-x6100_mic_sel_t radio_change_mic(int16_t d);
-uint8_t radio_change_hmic(int16_t d);
-uint8_t radio_change_imic(int16_t d);
+// x6100_mic_sel_t radio_change_mic(int16_t d);
+// uint8_t radio_change_hmic(int16_t d);
+// uint8_t radio_change_imic(int16_t d);
 
 void radio_start_atu();
 

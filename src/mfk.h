@@ -28,7 +28,7 @@ extern mfk_state_t  mfk_state;
 
 void mfk_update(int16_t diff, bool voice);
 void mfk_change_mode(int16_t dir);
-void mfk_set_mode(cfg_mfk_mode_t mode);
+void mfk_set_mode(cfg_ctrl_t mode);
 
 #ifdef __cplusplus
 }

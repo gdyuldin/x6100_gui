@@ -52,58 +52,58 @@ static void on_cur_zoom_change(Subject *subj, void *user_data);
 
 
 // All allowed modes for VOL fast access
-cfg_vol_mode_t cfg_encoder_vol_modes[] = {
-    VOL_VOL,
-    VOL_SQL,
-    VOL_RFG,
-    VOL_FILTER_LOW,
-    VOL_FILTER_HIGH,
-    VOL_PWR,
-    VOL_HMIC,
-    VOL_MIC,
-    VOL_IMIC,
-    VOL_MONI,
-    VOL_FILTER_BW,
+cfg_ctrl_t cfg_encoder_vol_modes_default[] = {
+    CTRL_VOL,
+    CTRL_SQL,
+    CTRL_RFG,
+    CTRL_FILTER_LOW,
+    CTRL_FILTER_HIGH,
+    CTRL_PWR,
+    CTRL_HMIC,
+    CTRL_MIC,
+    CTRL_IMIC,
+    CTRL_MONI,
+    CTRL_FILTER_BW,
 };
 
 // All allowed modes for MFK fast access
-cfg_mfk_mode_t cfg_encoder_mfk_modes[] = {
-    MFK_SPECTRUM_FACTOR,
-    MFK_KEY_SPEED,
-    MFK_KEY_MODE,
-    MFK_IAMBIC_MODE,
-    MFK_KEY_TONE,
-    MFK_KEY_VOL,
-    MFK_KEY_TRAIN,
-    MFK_QSK_TIME,
-    MFK_KEY_RATIO,
+cfg_ctrl_t cfg_encoder_mfk_modes_default[] = {
+    CTRL_SPECTRUM_FACTOR,
+    CTRL_KEY_SPEED,
+    CTRL_KEY_MODE,
+    CTRL_IAMBIC_MODE,
+    CTRL_KEY_TONE,
+    CTRL_KEY_VOL,
+    CTRL_KEY_TRAIN,
+    CTRL_QSK_TIME,
+    CTRL_KEY_RATIO,
 
-    MFK_DNF,
-    MFK_DNF_CENTER,
-    MFK_DNF_WIDTH,
-    MFK_DNF_AUTO,
-    MFK_NB,
-    MFK_NB_LEVEL,
-    MFK_NB_WIDTH,
-    MFK_NR,
-    MFK_NR_LEVEL,
+    CTRL_DNF,
+    CTRL_DNF_CENTER,
+    CTRL_DNF_WIDTH,
+    CTRL_DNF_AUTO,
+    CTRL_NB,
+    CTRL_NB_LEVEL,
+    CTRL_NB_WIDTH,
+    CTRL_NR,
+    CTRL_NR_LEVEL,
 
-    MFK_AGC_HANG,
-    MFK_AGC_KNEE,
-    MFK_AGC_SLOPE,
-    MFK_COMP,
+    CTRL_AGC_HANG,
+    CTRL_AGC_KNEE,
+    CTRL_AGC_SLOPE,
+    CTRL_COMP,
 
-    MFK_CW_DECODER,
-    MFK_CW_TUNE,
-    MFK_CW_DECODER_SNR,
-    MFK_CW_DECODER_PEAK_BETA,
-    MFK_CW_DECODER_NOISE_BETA,
+    CTRL_CW_DECODER,
+    CTRL_CW_TUNE,
+    CTRL_CW_DECODER_SNR,
+    CTRL_CW_DECODER_PEAK_BETA,
+    CTRL_CW_DECODER_NOISE_BETA,
 
-    MFK_ANT,
-    MFK_RIT,
-    MFK_XIT,
+    CTRL_ANT,
+    CTRL_RIT,
+    CTRL_XIT,
 
-    MFK_IF_SHIFT,
+    CTRL_IF_SHIFT,
 };
 
 
@@ -295,16 +295,39 @@ static int init_params_cfg(sqlite3 *db) {
 
     /* Fill configuration */
     fill_cfg_item(&cfg.vol_modes, subject_create_uint64(
-        (1 << VOL_VOL) | (1 << VOL_RFG) | (1 << VOL_FILTER_LOW) | (1 << VOL_FILTER_HIGH) | (1 << VOL_PWR) | (1 << VOL_HMIC)
+        (1 << CTRL_VOL) | (1 << CTRL_RFG) | (1 << CTRL_FILTER_LOW) | (1 << CTRL_FILTER_HIGH) | (1 << CTRL_PWR) | (1 << CTRL_HMIC)
     ), "vol_modes");
     fill_cfg_item(&cfg.mfk_modes, subject_create_uint64(
-        (1 << MFK_SPECTRUM_FACTOR) | (1 << MFK_AGC_KNEE) | (1 << MFK_DNF)
+        (1 << CTRL_SPECTRUM_FACTOR) | (1 << CTRL_AGC_KNEE) | (1 << CTRL_DNF)
     ), "mfk_modes");
+
+    char encoder_bind[CTRL_FAST_ACCESS_LAST + 1];
+    memset(encoder_bind, ENCODER_BIND_NONE, CTRL_FAST_ACCESS_LAST);
+    encoder_bind[CTRL_FAST_ACCESS_LAST] = '\0';
+
+    // Set default values
+    encoder_bind[CTRL_VOL] = ENCODER_BIND_VOL;
+    encoder_bind[CTRL_RFG] = ENCODER_BIND_VOL;
+    encoder_bind[CTRL_FILTER_LOW] = ENCODER_BIND_VOL;
+    encoder_bind[CTRL_FILTER_HIGH] = ENCODER_BIND_VOL;
+    encoder_bind[CTRL_PWR] = ENCODER_BIND_VOL;
+    encoder_bind[CTRL_HMIC] = ENCODER_BIND_VOL;
+
+    encoder_bind[CTRL_SPECTRUM_FACTOR] = ENCODER_BIND_MFK;
+    encoder_bind[CTRL_AGC_KNEE] = ENCODER_BIND_MFK;
+    encoder_bind[CTRL_DNF] = ENCODER_BIND_MFK;
+
+    fill_cfg_item(&cfg.encoders_binds, subject_create_text(encoder_bind), "encoder_bind");
 
     fill_cfg_item(&cfg.vol, subject_create_int(20), "vol");
     fill_cfg_item(&cfg.sql, subject_create_int(0), "sql");
     fill_cfg_item_float(&cfg.pwr, subject_create_float(5.0f), 0.1f, "pwr");
     fill_cfg_item_float(&cfg.output_gain, subject_create_float(0.0f), 0.2f, "output_gain");
+
+    fill_cfg_item(&cfg.mic, subject_create_int(x6100_mic_auto), "mic");
+    fill_cfg_item(&cfg.hmic, subject_create_int(20), "hmic");
+    fill_cfg_item(&cfg.imic, subject_create_int(30), "imic");
+    fill_cfg_item(&cfg.moni, subject_create_int(30), "moni");
 
     fill_cfg_item(&cfg.key_tone, subject_create_int(700), "key_tone");
     fill_cfg_item(&cfg.band_id, subject_create_int(5), "band");

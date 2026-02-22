@@ -49,15 +49,11 @@ params_t params = {
     .clock_power_timeout    = 3,
     .clock_tx_timeout       = 1,
 
-    .mic                    = x6100_mic_auto,
-    .hmic                   = 20,
-    .imic                   = 30,
     .charger                = { .x = 1, .min = 0, .max = 2, .name = "charger"},
     .bias_drive             = 450,
     .bias_final             = 650,
     .line_in                = 10,
     .line_out               = 10,
-    .moni                   = 59,
     .spmode                 = { .x = false,             .name = "spmode",           .voice = "Speaker mode" },
     .freq_accel             = { .x = FREQ_ACCEL_LITE,   .name = "freq_accel",       .voice = "Frequency acceleration" },
 
@@ -178,13 +174,7 @@ static bool params_load() {
         const int64_t   l = sqlite3_column_int64(stmt, 1);
         const char      *t = sqlite3_column_text(stmt, 1);
 
-        if (strcmp(name, "mic") == 0) {
-            params.mic = i;
-        } else if (strcmp(name, "hmic") == 0) {
-            params.hmic = i;
-        } else if (strcmp(name, "imic") == 0) {
-            params.imic = i;
-        } else if (strcmp(name, "cw_encoder_period") == 0) {
+        if (strcmp(name, "cw_encoder_period") == 0) {
             params.cw_encoder_period = i;
         } else if (strcmp(name, "voice_msg_period") == 0) {
             params.voice_msg_period = i;
@@ -208,8 +198,6 @@ static bool params_load() {
             params.line_in = i;
         } else if (strcmp(name, "line_out") == 0) {
             params.line_out = i;
-        } else if (strcmp(name, "moni") == 0) {
-            params.moni = i;
         } else if (strcmp(name, "clock_view") == 0) {
             params.clock_view = i;
         } else if (strcmp(name, "clock_time_timeout") == 0) {
@@ -314,10 +302,6 @@ static void params_save() {
         return;
     }
 
-    if (params.dirty.mic)                   params_write_int("mic", params.mic, &params.dirty.mic);
-    if (params.dirty.hmic)                  params_write_int("hmic", params.hmic, &params.dirty.hmic);
-    if (params.dirty.imic)                  params_write_int("imic", params.imic, &params.dirty.imic);
-
     if (params.dirty.cw_encoder_period)     params_write_int("cw_encoder_period", params.cw_encoder_period, &params.dirty.cw_encoder_period);
     if (params.dirty.voice_msg_period)      params_write_int("voice_msg_period", params.voice_msg_period, &params.dirty.voice_msg_period);
 
@@ -328,8 +312,6 @@ static void params_save() {
 
     if (params.dirty.line_in)               params_write_int("line_in", params.line_in, &params.dirty.line_in);
     if (params.dirty.line_out)              params_write_int("line_out", params.line_out, &params.dirty.line_out);
-
-    if (params.dirty.moni)                  params_write_int("moni", params.moni, &params.dirty.moni);
 
     if (params.dirty.brightness_normal)     params_write_int("brightness_normal", params.brightness_normal, &params.dirty.brightness_normal);
     if (params.dirty.brightness_idle)       params_write_int("brightness_idle", params.brightness_idle, &params.dirty.brightness_idle);
