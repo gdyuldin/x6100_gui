@@ -313,7 +313,7 @@ bool knobs_visible() {
 
 /* VOL */
 
-void knobs_set_vol_mode(bool edit) {
+void knobs_set_vol_state(bool edit) {
     vol_knob_info->set_edit_mode(edit);
 }
 
@@ -330,7 +330,7 @@ void knobs_set_vol_param(cfg_ctrl_t control) {
 
 /* MFK */
 
-void knobs_set_mfk_mode(bool edit) {
+void knobs_set_mfk_state(bool edit) {
     mfk_knob_info->set_edit_mode(edit);
 }
 

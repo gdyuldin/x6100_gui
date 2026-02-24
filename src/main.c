@@ -87,17 +87,18 @@ int main(void) {
     vol = rotary_init("/dev/input/event2");
     mfk = encoder_init("/dev/input/event3");
 
-    vol->left[VOL_EDIT] = KEY_VOL_LEFT_EDIT;
-    vol->right[VOL_EDIT] = KEY_VOL_RIGHT_EDIT;
+    vol->left[VOL_STATE_EDIT] = KEY_VOL_LEFT_EDIT;
+    vol->right[VOL_STATE_EDIT] = KEY_VOL_RIGHT_EDIT;
 
-    vol->left[VOL_SELECT] = KEY_VOL_LEFT_SELECT;
-    vol->right[VOL_SELECT] = KEY_VOL_RIGHT_SELECT;
+    vol->left[VOL_STATE_SELECT] = KEY_VOL_LEFT_SELECT;
+    vol->right[VOL_STATE_SELECT] = KEY_VOL_RIGHT_SELECT;
+    vol->state = VOL_STATE_EDIT;
 
     params_init();
     audio_set_play_vol(params.play_gain_db_f.x);
     audio_set_rec_vol(params.rec_gain_db_f.x);
-    mfk_change_mode(0);
-    vol_change_ctrl(0);
+    mfk_init();
+    vol_init();
     styles_init(params.theme.x);
 
     radio_init();

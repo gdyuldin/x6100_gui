@@ -26,9 +26,11 @@ typedef enum {
 
 extern mfk_state_t  mfk_state;
 
-void mfk_update(int16_t diff, bool voice);
-void mfk_change_mode(int16_t dir);
-void mfk_set_mode(cfg_ctrl_t mode);
+void mfk_init();
+
+void mfk_update(int16_t diff);
+void mfk_change_ctrl(int16_t dir);
+void mfk_set_ctrl(cfg_ctrl_t mode);
 
 #ifdef __cplusplus
 }

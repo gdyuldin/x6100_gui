@@ -37,15 +37,13 @@ static lv_obj_t      *parent_obj = NULL;
 static buttons_page_t *cur_page   = NULL;
 
 static void button_app_page_cb(button_item_t *item);
-static void button_vol_update_cb(button_item_t *item);
-static void button_mfk_update_cb(button_item_t *item);
+static void button_encoder_update_cb(button_item_t *item);
 static void button_mem_load_cb(button_item_t *item);
 
 static void param_changed_cb(void * s, lv_msg_t * m);
 static void label_update_cb(Subject *subj, void *user_data);
 
-static void button_vol_hold_cb(button_item_t *item);
-static void button_mfk_hold_cb(button_item_t *item);
+static void button_encoder_hold_update_cb(button_item_t *item);
 static void button_mem_save_cb(button_item_t *item);
 
 // Label getters
@@ -104,35 +102,21 @@ static const char * nr_level_label_getter();
 
 static void button_action_cb(button_item_t *item);
 
-/* Make VOL button functions */
-static button_item_t make_vol_btn(const char *name, cfg_ctrl_t data) {
+/* Make VOL/MFK button functions */
+static button_item_t make_encoder_btn(const char *name, cfg_ctrl_t data) {
     return button_item_t{
-        .type = BTN_TEXT, .label = name, .press = button_vol_update_cb, .hold = button_vol_hold_cb, .data = data};
+        .type = BTN_TEXT, .label = name, .press = button_encoder_update_cb, .hold = button_encoder_hold_update_cb, .data = data};
 }
 
-static button_item_t make_vol_btn(const char *(*label_fn)(), cfg_ctrl_t data, Subject **subj = nullptr) {
+static button_item_t make_encoder_btn(const char *(*label_fn)(), cfg_ctrl_t data, Subject **subj = nullptr) {
     return button_item_t{.type     = BTN_TEXT_FN,
                          .label_fn = label_fn,
-                         .press    = button_vol_update_cb,
-                         .hold     = button_vol_hold_cb,
+                         .press    = button_encoder_update_cb,
+                         .hold     = button_encoder_hold_update_cb,
                          .data     = data,
                          .subj     = subj};
 }
 
-/* Make MFK button functions */
-static button_item_t make_mfk_btn(const char *name, cfg_ctrl_t data) {
-    return button_item_t{
-        .type = BTN_TEXT, .label = name, .press = button_mfk_update_cb, .hold = button_mfk_hold_cb, .data = data};
-}
-
-static button_item_t make_mfk_btn(const char *(*label_fn)(), cfg_ctrl_t data, Subject **subj = nullptr) {
-    return button_item_t{.type     = BTN_TEXT_FN,
-                         .label_fn = label_fn,
-                         .press    = button_mfk_update_cb,
-                         .hold     = button_mfk_hold_cb,
-                         .data     = data,
-                         .subj     = subj};
-}
 
 /* Make MEM buttons functions */
 static button_item_t make_mem_btn(const char *name, int32_t data) {
@@ -157,38 +141,38 @@ static button_item_t make_page_btn(const char *name, const char *voice) {
 static button_item_t btn_vol = {
     .type     = BTN_TEXT_FN,
     .label_fn = vol_label_getter,
-    .press    = button_vol_update_cb,
+    .press    = button_encoder_update_cb,
     .data     = CTRL_VOL,
     .subj     = &cfg.vol.val,
 };
 
-static button_item_t btn_sql = make_vol_btn(sql_label_getter, CTRL_SQL, &cfg.sql.val);
-static button_item_t btn_rfg = make_vol_btn(rfg_label_getter, CTRL_RFG, &cfg_cur.band->rfg.val);
-static button_item_t btn_tx_pwr = make_vol_btn(tx_power_label_getter, CTRL_PWR, &cfg.pwr.val);
-static button_item_t btn_flt_low  = make_vol_btn(filter_low_label_getter, CTRL_FILTER_LOW, &cfg_cur.filter.low);
-static button_item_t btn_flt_high = make_vol_btn(filter_high_label_getter, CTRL_FILTER_HIGH, &cfg_cur.filter.high);
-static button_item_t btn_flt_bw   = make_vol_btn(filter_bw_label_getter, CTRL_FILTER_BW, &cfg_cur.filter.bw);
-static button_item_t btn_mic_sel   = make_vol_btn(mic_sel_label_getter, CTRL_MIC, &cfg.mic.val);
-static button_item_t btn_hmic_gain = make_vol_btn(h_mic_gain_label_getter, CTRL_HMIC, &cfg.hmic.val);
-static button_item_t btn_imic_hain = make_vol_btn(i_mic_gain_label_getter, CTRL_IMIC, &cfg.imic.val);
-static button_item_t btn_moni_lvl  = make_vol_btn(moni_level_label_getter, CTRL_MONI, &cfg.moni.val);
+static button_item_t btn_sql = make_encoder_btn(sql_label_getter, CTRL_SQL, &cfg.sql.val);
+static button_item_t btn_rfg = make_encoder_btn(rfg_label_getter, CTRL_RFG, &cfg_cur.band->rfg.val);
+static button_item_t btn_tx_pwr = make_encoder_btn(tx_power_label_getter, CTRL_PWR, &cfg.pwr.val);
+static button_item_t btn_flt_low  = make_encoder_btn(filter_low_label_getter, CTRL_FILTER_LOW, &cfg_cur.filter.low);
+static button_item_t btn_flt_high = make_encoder_btn(filter_high_label_getter, CTRL_FILTER_HIGH, &cfg_cur.filter.high);
+static button_item_t btn_flt_bw   = make_encoder_btn(filter_bw_label_getter, CTRL_FILTER_BW, &cfg_cur.filter.bw);
+static button_item_t btn_mic_sel   = make_encoder_btn(mic_sel_label_getter, CTRL_MIC, &cfg.mic.val);
+static button_item_t btn_hmic_gain = make_encoder_btn(h_mic_gain_label_getter, CTRL_HMIC, &cfg.hmic.val);
+static button_item_t btn_imic_hain = make_encoder_btn(i_mic_gain_label_getter, CTRL_IMIC, &cfg.imic.val);
+static button_item_t btn_moni_lvl  = make_encoder_btn(moni_level_label_getter, CTRL_MONI, &cfg.moni.val);
 
 /* MFK */
 
-static button_item_t btn_zoom               = make_mfk_btn("Spectrum\nZoom", CTRL_SPECTRUM_FACTOR);
-static button_item_t btn_ant     = make_mfk_btn("Antenna", CTRL_ANT);
-static button_item_t btn_rit     = make_mfk_btn(rit_label_getter, CTRL_RIT, &cfg.rit.val);
-static button_item_t btn_xit     = make_mfk_btn(xit_label_getter, CTRL_XIT, &cfg.xit.val);
+static button_item_t btn_zoom               = make_encoder_btn("Spectrum\nZoom", CTRL_SPECTRUM_FACTOR);
+static button_item_t btn_ant     = make_encoder_btn("Antenna", CTRL_ANT);
+static button_item_t btn_rit     = make_encoder_btn(rit_label_getter, CTRL_RIT, &cfg.rit.val);
+static button_item_t btn_xit     = make_encoder_btn(xit_label_getter, CTRL_XIT, &cfg.xit.val);
 static button_item_t btn_agc_hang  = {.type     = BTN_TEXT_FN,
                                       .label_fn = agc_hang_label_getter,
                                       .press    = controls_toggle_agc_hang,
-                                      .hold     = button_mfk_hold_cb,
+                                      .hold     = button_encoder_hold_update_cb,
                                       .data     = CTRL_AGC_HANG,
                                       .subj     = &cfg.agc_hang.val};
-static button_item_t btn_agc_knee  = make_mfk_btn(agc_knee_label_getter, CTRL_AGC_KNEE, &cfg.agc_knee.val);
-static button_item_t btn_agc_slope = make_mfk_btn(agc_slope_label_getter, CTRL_AGC_SLOPE, &cfg.agc_slope.val);
-static button_item_t btn_comp      = make_mfk_btn(comp_label_getter, CTRL_COMP, &cfg.comp.val);
-static button_item_t btn_if_shift  = make_mfk_btn(if_shift_label_getter, CTRL_IF_SHIFT, &cfg_cur.band->if_shift.val);
+static button_item_t btn_agc_knee  = make_encoder_btn(agc_knee_label_getter, CTRL_AGC_KNEE, &cfg.agc_knee.val);
+static button_item_t btn_agc_slope = make_encoder_btn(agc_slope_label_getter, CTRL_AGC_SLOPE, &cfg.agc_slope.val);
+static button_item_t btn_comp      = make_encoder_btn(comp_label_getter, CTRL_COMP, &cfg.comp.val);
+static button_item_t btn_if_shift  = make_encoder_btn(if_shift_label_getter, CTRL_IF_SHIFT, &cfg_cur.band->if_shift.val);
 
 /* MEM */
 
@@ -203,58 +187,58 @@ static button_item_t btn_mem_8 = make_mem_btn("Set 8", 8);
 
 /* CW */
 
-static button_item_t btn_key_speed  = make_mfk_btn(key_speed_label_getter, CTRL_KEY_SPEED, &cfg.key_speed.val);
-static button_item_t btn_key_volume = make_mfk_btn(key_volume_label_getter, CTRL_KEY_VOL, &cfg.key_vol.val);
+static button_item_t btn_key_speed  = make_encoder_btn(key_speed_label_getter, CTRL_KEY_SPEED, &cfg.key_speed.val);
+static button_item_t btn_key_volume = make_encoder_btn(key_volume_label_getter, CTRL_KEY_VOL, &cfg.key_vol.val);
 static button_item_t btn_key_train  = {.type     = BTN_TEXT_FN,
                                        .label_fn = key_train_label_getter,
                                        .press    = controls_toggle_key_train,
-                                       .hold     = button_mfk_hold_cb,
+                                       .hold     = button_encoder_hold_update_cb,
                                        .data     = CTRL_KEY_TRAIN,
                                        .subj     = &cfg.key_train.val};
-static button_item_t btn_key_tone   = make_mfk_btn(key_tone_label_getter, CTRL_KEY_TONE, &cfg.key_tone.val);
+static button_item_t btn_key_tone   = make_encoder_btn(key_tone_label_getter, CTRL_KEY_TONE, &cfg.key_tone.val);
 
-static button_item_t btn_key_mode        = make_mfk_btn(key_mode_label_getter, CTRL_KEY_MODE, &cfg.key_mode.val);
+static button_item_t btn_key_mode        = make_encoder_btn(key_mode_label_getter, CTRL_KEY_MODE, &cfg.key_mode.val);
 static button_item_t btn_key_iambic_mode = {.type     = BTN_TEXT_FN,
                                             .label_fn = iambic_mode_label_getter,
                                             .press    = controls_toggle_key_iambic_mode,
-                                            .hold     = button_mfk_hold_cb,
+                                            .hold     = button_encoder_hold_update_cb,
                                             .data     = CTRL_IAMBIC_MODE,
                                             .subj     = &cfg.iambic_mode.val};
-static button_item_t btn_key_qsk_time    = make_mfk_btn(qsk_time_label_getter, CTRL_QSK_TIME, &cfg.qsk_time.val);
-static button_item_t btn_key_ratio       = make_mfk_btn(key_ratio_label_getter, CTRL_KEY_RATIO, &cfg.key_ratio.val);
+static button_item_t btn_key_qsk_time    = make_encoder_btn(qsk_time_label_getter, CTRL_QSK_TIME, &cfg.qsk_time.val);
+static button_item_t btn_key_ratio       = make_encoder_btn(key_ratio_label_getter, CTRL_KEY_RATIO, &cfg.key_ratio.val);
 
 static button_item_t btn_cw_decoder = {.type     = BTN_TEXT_FN,
                                        .label_fn = cw_decoder_label_getter,
                                        .press    = controls_toggle_cw_decoder,
-                                       .hold     = button_mfk_hold_cb,
+                                       .hold     = button_encoder_hold_update_cb,
                                        .data     = CTRL_CW_DECODER,
                                        .subj     = &cfg.cw_decoder.val};
 static button_item_t btn_cw_tuner   = {.type     = BTN_TEXT_FN,
                                        .label_fn = cw_tuner_label_getter,
                                        .press    = controls_toggle_cw_tuner,
-                                       .hold     = button_mfk_hold_cb,
+                                       .hold     = button_encoder_hold_update_cb,
                                        .data     = CTRL_CW_TUNE,
                                        .subj     = &cfg.cw_tune.val};
-static button_item_t btn_cw_snr     = make_mfk_btn(cw_snr_label_getter, CTRL_CW_DECODER_SNR, &cfg.cw_decoder_snr.val);
+static button_item_t btn_cw_snr     = make_encoder_btn(cw_snr_label_getter, CTRL_CW_DECODER_SNR, &cfg.cw_decoder_snr.val);
 static button_item_t btn_cw_peak_beta =
-    make_mfk_btn(cw_peak_beta_label_getter, CTRL_CW_DECODER_PEAK_BETA, &cfg.cw_decoder_peak_beta.val);
+    make_encoder_btn(cw_peak_beta_label_getter, CTRL_CW_DECODER_PEAK_BETA, &cfg.cw_decoder_peak_beta.val);
 static button_item_t btn_cw_noise_beta =
-    make_mfk_btn(cw_noise_beta_label_getter, CTRL_CW_DECODER_NOISE_BETA, &cfg.cw_decoder_noise_beta.val);
+    make_encoder_btn(cw_noise_beta_label_getter, CTRL_CW_DECODER_NOISE_BETA, &cfg.cw_decoder_noise_beta.val);
 
 /* DSP */
 
 static button_item_t btn_dnf        = {.type     = BTN_TEXT_FN,
                                        .label_fn = dnf_label_getter,
                                        .press    = controls_toggle_dnf,
-                                       .hold     = button_mfk_hold_cb,
+                                       .hold     = button_encoder_hold_update_cb,
                                        .data     = CTRL_DNF,
                                        .subj     = &cfg.dnf.val};
-static button_item_t btn_dnf_center = make_mfk_btn(dnf_center_label_getter, CTRL_DNF_CENTER, &cfg.dnf_center.val);
-static button_item_t btn_dnf_width  = make_mfk_btn(dnf_width_label_getter, CTRL_DNF_WIDTH, &cfg.dnf_width.val);
+static button_item_t btn_dnf_center = make_encoder_btn(dnf_center_label_getter, CTRL_DNF_CENTER, &cfg.dnf_center.val);
+static button_item_t btn_dnf_width  = make_encoder_btn(dnf_width_label_getter, CTRL_DNF_WIDTH, &cfg.dnf_width.val);
 static button_item_t btn_dnf_auto   = {.type     = BTN_TEXT_FN,
                                        .label_fn = dnf_auto_label_getter,
                                        .press    = controls_toggle_dnf_auto,
-                                       .hold     = button_mfk_hold_cb,
+                                       .hold     = button_encoder_hold_update_cb,
                                        .data     = CTRL_DNF_AUTO,
                                        .subj     = &cfg.dnf_auto.val};
 
@@ -262,19 +246,19 @@ static button_item_t btn_dnf_auto   = {.type     = BTN_TEXT_FN,
 static button_item_t btn_nb       = {.type     = BTN_TEXT_FN,
                                      .label_fn = nb_label_getter,
                                      .press    = controls_toggle_nb,
-                                     .hold     = button_mfk_hold_cb,
+                                     .hold     = button_encoder_hold_update_cb,
                                      .data     = CTRL_NB,
                                      .subj     = &cfg.nb.val};
-static button_item_t btn_nb_level = make_mfk_btn(nb_level_label_getter, CTRL_NB_LEVEL, &cfg.nb_level.val);
-static button_item_t btn_nb_width = make_mfk_btn(nb_width_label_getter, CTRL_NB_WIDTH, &cfg.nb_width.val);
+static button_item_t btn_nb_level = make_encoder_btn(nb_level_label_getter, CTRL_NB_LEVEL, &cfg.nb_level.val);
+static button_item_t btn_nb_width = make_encoder_btn(nb_width_label_getter, CTRL_NB_WIDTH, &cfg.nb_width.val);
 
 static button_item_t btn_nr       = {.type     = BTN_TEXT_FN,
                                      .label_fn = nr_label_getter,
                                      .press    = controls_toggle_nr,
-                                     .hold     = button_mfk_hold_cb,
+                                     .hold     = button_encoder_hold_update_cb,
                                      .data     = CTRL_NR,
                                      .subj     = &cfg.nr.val};
-static button_item_t btn_nr_level = make_mfk_btn(nr_level_label_getter, CTRL_NR_LEVEL, &cfg.nr_level.val);
+static button_item_t btn_nr_level = make_encoder_btn(nr_level_label_getter, CTRL_NR_LEVEL, &cfg.nr_level.val);
 
 /* APP */
 
@@ -299,25 +283,25 @@ static button_item_t btn_rtty_p1 = {
 static button_item_t btn_rtty_rate = {
     .type  = BTN_TEXT,
     .label = "Rate",
-    .press = button_mfk_update_cb,
+    .press = button_encoder_update_cb,
     .data  = CTRL_RTTY_RATE,
 };
 static button_item_t btn_rtty_shift = {
     .type  = BTN_TEXT,
     .label = "Shift",
-    .press = button_mfk_update_cb,
+    .press = button_encoder_update_cb,
     .data  = CTRL_RTTY_SHIFT,
 };
 static button_item_t btn_rtty_center = {
     .type  = BTN_TEXT,
     .label = "Center",
-    .press = button_mfk_update_cb,
+    .press = button_encoder_update_cb,
     .data  = CTRL_RTTY_CENTER,
 };
 static button_item_t btn_rtty_reverse = {
     .type  = BTN_TEXT,
     .label = "Reverse",
-    .press = button_mfk_update_cb,
+    .press = button_encoder_update_cb,
     .data  = CTRL_RTTY_REVERSE,
 };
 
@@ -673,13 +657,13 @@ static void button_encoder_update_cb(button_item_t *item) {
     size_t n_binds = strlen((char *)binds);
 
     void (*set_fn)(cfg_ctrl_t) = NULL;
-    if (n_binds < ctrl){
+    if (n_binds > ctrl){
         switch (binds[ctrl]) {
             case ENCODER_BIND_VOL:
                 set_fn = vol_set_ctrl;
                 break;
             case ENCODER_BIND_MFK:
-                set_fn = mfk_set_mode;
+                set_fn = mfk_set_ctrl;
                 break;
             default: ;
                 auto it = std::find(std::begin(cfg_encoder_vol_modes_default), std::end(cfg_encoder_vol_modes_default), ctrl);
@@ -688,34 +672,26 @@ static void button_encoder_update_cb(button_item_t *item) {
                 } else {
                     it = std::find(std::begin(cfg_encoder_mfk_modes_default), std::end(cfg_encoder_mfk_modes_default), ctrl);
                     if (it != std::end(cfg_encoder_mfk_modes_default)) {
-                        set_fn = mfk_set_mode;
+                        set_fn = mfk_set_ctrl;
                     }
                 }
                 break;
         }
-        if (set_fn) {
-            set_fn(ctrl);
-        }
     } else {
-        LV_LOG_ERROR("Binds is too short (%d) for ctrl %c", n_binds, ctrl);
+        set_fn = mfk_set_ctrl;
+        // LV_LOG_ERROR("Binds is too short (%d) for ctrl %d", n_binds, ctrl);
+    }
+    if (set_fn) {
+        set_fn(ctrl);
     }
     free(binds);
-}
-
-static void button_vol_update_cb(button_item_t *item) {
-    vol_set_ctrl((cfg_ctrl_t)item->data);
-}
-
-static void button_mfk_update_cb(button_item_t *item) {
-    mfk_set_mode((cfg_ctrl_t)item->data);
-    mfk_update(0, true);
 }
 
 static void button_encoder_hold_update_cb(button_item_t *item) {
     cfg_ctrl_t ctrl = (cfg_ctrl_t)item->data;
     char *binds = (char *)subject_get_text(cfg.encoders_binds.val);
     size_t n_binds = strlen((char *)binds);
-    if (n_binds < ctrl){
+    if (n_binds > ctrl){
         switch (binds[ctrl]) {
             case ENCODER_BIND_NONE:
                 msg_update_text_fmt("Added to VOL encoder");
@@ -742,44 +718,6 @@ static void button_encoder_hold_update_cb(button_item_t *item) {
         LV_LOG_ERROR("Binds is too short (%d) for ctrl %c", n_binds, ctrl);
     }
     free(binds);
-}
-
-static void button_vol_hold_cb(button_item_t *item) {
-    uint64_t mask = (uint64_t)1L << item->data;
-
-    uint64_t modes = subject_get_uint64(cfg.vol_modes.val);
-
-    if (modes ^ mask) {
-        modes ^= mask;
-        subject_set_uint64(cfg.vol_modes.val, modes);
-
-        if (modes & mask) {
-            msg_update_text_fmt("Added to VOL encoder");
-            voice_say_text_fmt("Added to volume encoder");
-        } else {
-            msg_update_text_fmt("Removed from VOL encoder");
-            voice_say_text_fmt("Removed from volume encoder");
-        }
-    }
-}
-
-static void button_mfk_hold_cb(button_item_t *item) {
-    uint64_t        mask = (uint64_t) 1L << item->data;
-
-    uint64_t modes = subject_get_uint64(cfg.mfk_modes.val);
-
-    if (modes ^ mask) {
-        modes ^= mask;
-        subject_set_uint64(cfg.mfk_modes.val, modes);
-
-        if (modes & mask) {
-            msg_update_text_fmt("Added to MFK encoder");
-            voice_say_text_fmt("Added to MFK encoder");
-        } else {
-            msg_update_text_fmt("Removed from MFK encoder");
-            voice_say_text_fmt("Removed from MFK encoder");
-        }
-    }
 }
 
 static void button_mem_load_cb(button_item_t *item) {

@@ -215,6 +215,7 @@ keypad_t * keypad_init(char *dev_name) {
 
 
     lv_indev_set_group(keypad->indev, keyboard_group);
+    keypad->evdev_state = LV_INDEV_STATE_RELEASED;
 
     return keypad;
 }

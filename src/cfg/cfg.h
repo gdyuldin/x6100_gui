@@ -86,9 +86,6 @@ extern cfg_ctrl_t cfg_encoder_mfk_modes_default[31];
 
 /* configuration structs. Should contain same types (for correct initialization) */
 typedef struct {
-    cfg_item_t vol_modes;
-    cfg_item_t mfk_modes;
-
     cfg_item_t encoders_binds;
 
     cfg_item_t vol;

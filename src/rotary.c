@@ -58,7 +58,7 @@ static void rotary_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
         }
         remain_diff -= diff;
         data->state = LV_INDEV_STATE_PRESSED;
-        data->key = diff > 0 ? rotary->left[rotary->mode] : rotary->right[rotary->mode];
+        data->key = diff > 0 ? rotary->left[rotary->state] : rotary->right[rotary->state];
         data->continue_reading = 1;
 
     }
@@ -91,7 +91,6 @@ rotary_t * rotary_init(char *dev_name) {
     rotary->indev = lv_indev_drv_register(&rotary->indev_drv);
 
     lv_indev_set_group(rotary->indev, keyboard_group);
-    rotary->mode = VOL_EDIT;
 
     return rotary;
 }

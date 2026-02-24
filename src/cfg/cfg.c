@@ -294,13 +294,6 @@ static int init_params_cfg(sqlite3 *db) {
     cfg_params_init(db);
 
     /* Fill configuration */
-    fill_cfg_item(&cfg.vol_modes, subject_create_uint64(
-        (1 << CTRL_VOL) | (1 << CTRL_RFG) | (1 << CTRL_FILTER_LOW) | (1 << CTRL_FILTER_HIGH) | (1 << CTRL_PWR) | (1 << CTRL_HMIC)
-    ), "vol_modes");
-    fill_cfg_item(&cfg.mfk_modes, subject_create_uint64(
-        (1 << CTRL_SPECTRUM_FACTOR) | (1 << CTRL_AGC_KNEE) | (1 << CTRL_DNF)
-    ), "mfk_modes");
-
     char encoder_bind[CTRL_FAST_ACCESS_LAST + 1];
     memset(encoder_bind, ENCODER_BIND_NONE, CTRL_FAST_ACCESS_LAST);
     encoder_bind[CTRL_FAST_ACCESS_LAST] = '\0';
