@@ -1047,7 +1047,7 @@ static void label_update_cb(Subject *subj, void *user_data) {
 static void disp_btn_refresh(disp_btn_t *b) {
     button_item_t *bi = b->item;
     if (!bi) {
-        LV_LOG_WARN("Button has no data");
+        LV_LOG_WARN("Button has no assigned data");
         return;
     }
 

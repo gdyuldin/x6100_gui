@@ -39,7 +39,7 @@ void cfg_params_init(sqlite3 *database) {
 int cfg_params_load_item_int(cfg_item_t *item) {
     if (subject_get_dtype(item->val) != DTYPE_INT) {
         LV_LOG_WARN("Wrong item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
-        return -1;
+        return WRONG_TYPE;
     }
     int rc;
     pthread_mutex_lock(&read_mutex);
@@ -55,10 +55,10 @@ int cfg_params_load_item_int(cfg_item_t *item) {
         int_val = sqlite3_column_int(read_stmt, 0);
         LV_LOG_USER("Loaded %s=%i (pk=%i)", item->db_name, int_val, item->pk);
         subject_set_int(item->val, int_val);
-        rc = 0;
+        rc = SUCCESS;
     } else {
         LV_LOG_WARN("No results for load %s", item->db_name);
-        rc = -1;
+        rc = NOT_FOUND;
     }
     sqlite3_reset(read_stmt);
     sqlite3_clear_bindings(read_stmt);
@@ -69,7 +69,7 @@ int cfg_params_load_item_int(cfg_item_t *item) {
 int cfg_params_load_item_uint64(cfg_item_t *item) {
     if (subject_get_dtype(item->val) != DTYPE_UINT64) {
         LV_LOG_WARN("Wrong item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
-        return -1;
+        return WRONG_TYPE;
     }
     int rc;
     pthread_mutex_lock(&read_mutex);
@@ -85,10 +85,10 @@ int cfg_params_load_item_uint64(cfg_item_t *item) {
         uint64_val = sqlite3_column_int64(read_stmt, 0);
         LV_LOG_USER("Loaded %s=%llu (pk=%i)", item->db_name, uint64_val, item->pk);
         subject_set_uint64(item->val, uint64_val);
-        rc = 0;
+        rc = SUCCESS;
     } else {
         LV_LOG_WARN("No results for load %s", item->db_name);
-        rc = -1;
+        rc = NOT_FOUND;
     }
     sqlite3_reset(read_stmt);
     sqlite3_clear_bindings(read_stmt);
@@ -99,7 +99,7 @@ int cfg_params_load_item_uint64(cfg_item_t *item) {
 int cfg_params_load_item_float(cfg_item_t *item) {
     if (subject_get_dtype(item->val) != DTYPE_FLOAT) {
         LV_LOG_WARN("Wrong item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
-        return -1;
+        return WRONG_TYPE;
     }
     int rc;
     pthread_mutex_lock(&read_mutex);
@@ -119,10 +119,10 @@ int cfg_params_load_item_float(cfg_item_t *item) {
         }
         LV_LOG_USER("Loaded %s=%f (pk=%i)", item->db_name, float_val, item->pk);
         subject_set_float(item->val, float_val);
-        rc = 0;
+        rc = SUCCESS;
     } else {
         LV_LOG_WARN("No results for load %s", item->db_name);
-        rc = -1;
+        rc = NOT_FOUND;
     }
     sqlite3_reset(read_stmt);
     sqlite3_clear_bindings(read_stmt);
@@ -133,7 +133,7 @@ int cfg_params_load_item_float(cfg_item_t *item) {
 int cfg_params_load_item_str(cfg_item_t *item) {
     if (subject_get_dtype(item->val) != DTYPE_STR) {
         LV_LOG_WARN("Wrong item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
-        return -1;
+        return WRONG_TYPE;
     }
     int rc;
     pthread_mutex_lock(&read_mutex);
@@ -155,10 +155,10 @@ int cfg_params_load_item_str(cfg_item_t *item) {
         } else {
             subject_set_text(item->val, text_val);
         }
-        rc = 0;
+        rc = SUCCESS;
     } else {
         LV_LOG_WARN("No results for load %s", item->db_name);
-        rc = -1;
+        rc = NOT_FOUND;
     }
     sqlite3_reset(read_stmt);
     sqlite3_clear_bindings(read_stmt);
@@ -171,7 +171,7 @@ int cfg_params_save_item_int(cfg_item_t *item) {
     enum data_type dtype = subject_get_dtype(item->val);
     if (dtype != DTYPE_INT) {
         LV_LOG_WARN("Wrong item %s dtype: %u, will not save", item->db_name, dtype);
-        return -1;
+        return WRONG_TYPE;
     }
 
     int rc;
@@ -196,7 +196,7 @@ int cfg_params_save_item_int(cfg_item_t *item) {
             LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
         } else {
             LV_LOG_USER("Saved %s=%i (pk=%i)", item->db_name, int_val, item->pk);
-            rc = SQLITE_OK;
+            rc = SUCCESS;
         }
     }
     sqlite3_reset(insert_stmt);
@@ -209,7 +209,7 @@ int cfg_params_save_item_uint64(cfg_item_t *item) {
     enum data_type dtype = subject_get_dtype(item->val);
     if (dtype != DTYPE_UINT64) {
         LV_LOG_WARN("Wrong item %s dtype: %u, will not save", item->db_name, dtype);
-        return -1;
+        return WRONG_TYPE;
     }
 
     int rc;
@@ -233,7 +233,7 @@ int cfg_params_save_item_uint64(cfg_item_t *item) {
             LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
         } else {
             LV_LOG_USER("Saved %s=%llu (pk=%i)", item->db_name, uint64_val, item->pk);
-            rc = 0;
+            rc = SUCCESS;
         }
     }
     sqlite3_reset(insert_stmt);
@@ -246,7 +246,7 @@ int cfg_params_save_item_float(cfg_item_t *item) {
     enum data_type dtype = subject_get_dtype(item->val);
     if (dtype != DTYPE_FLOAT) {
         LV_LOG_WARN("Wrong item %s dtype: %u, will not save", item->db_name, dtype);
-        return -1;
+        return WRONG_TYPE;
     }
 
     int rc;
@@ -275,7 +275,7 @@ int cfg_params_save_item_float(cfg_item_t *item) {
             LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
         } else {
             LV_LOG_USER("Saved %s=%f (pk=%i)", item->db_name, float_val, item->pk);
-            rc = 0;
+            rc = SUCCESS;
         }
     }
     sqlite3_reset(insert_stmt);
@@ -288,7 +288,7 @@ int cfg_params_save_item_str(cfg_item_t *item) {
     enum data_type dtype = subject_get_dtype(item->val);
     if (dtype != DTYPE_STR) {
         LV_LOG_WARN("Wrong item %s dtype: %u, will not save", item->db_name, dtype);
-        return -1;
+        return WRONG_TYPE;
     }
 
     int rc;
@@ -313,7 +313,7 @@ int cfg_params_save_item_str(cfg_item_t *item) {
             LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
         } else {
             LV_LOG_USER("Saved %s=%s (pk=%i)", item->db_name, text_val, item->pk);
-            rc = 0;
+            rc = SUCCESS;
         }
     }
     sqlite3_reset(insert_stmt);

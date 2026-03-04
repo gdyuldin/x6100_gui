@@ -223,10 +223,11 @@ int load_items_from_db(cfg_item_t *cfg_arr, uint32_t count) {
     for (size_t i = 0; i < count; i++) {
         cfg_arr[i].dirty->val = ITEM_STATE_LOADING;
         rc = cfg_arr[i].load(&cfg_arr[i]);
-        if (rc != 0) {
+        if (rc == NOT_FOUND) {
+            LV_LOG_USER("%s is not found (pk=%i), rc=%d", cfg_arr[i].db_name, cfg_arr[i].pk, rc);
+            cfg_arr[i].save(&cfg_arr[i]);
+        } else if (rc != SUCCESS) {
             LV_LOG_WARN("Can't load %s (pk=%i), rc=%d", cfg_arr[i].db_name, cfg_arr[i].pk, rc);
-        } else {
-
         }
         cfg_arr[i].dirty->val = ITEM_STATE_CLEAN;
     }

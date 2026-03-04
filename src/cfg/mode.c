@@ -562,4 +562,6 @@ static void update_lo_offset(Subject *subj, void *user_data) {
 static void fill_mode_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name, int pk) {
     fill_cfg_item_int(item, val, db_name);
     item->pk = pk;
+    item->load = NULL;
+    item->save = NULL;
 }

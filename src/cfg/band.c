@@ -795,9 +795,13 @@ static void on_cur_pre_change(Subject *subj, void *user_data) {
 static void fill_band_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name, int pk) {
     fill_cfg_item_int(item, val, db_name);
     item->pk = pk;
+    item->load = NULL;
+    item->save = NULL;
 }
 
 static void fill_band_cfg_item_float(cfg_item_t *item, Subject * val, const float db_scale, const char * db_name, int pk) {
     fill_cfg_item_float(item, val, db_scale, db_name);
     item->pk = pk;
+    item->load = NULL;
+    item->save = NULL;
 }

@@ -4,6 +4,12 @@
 
 #include <sqlite3.h>
 
+typedef enum {
+    SUCCESS = 0,
+    WRONG_TYPE = -1,
+    NOT_FOUND = -2,
+} load_save_error_codes_t;
+
 void cfg_params_init(sqlite3 *db);
 
 int cfg_params_load_item_int(cfg_item_t *item);
