@@ -22,5 +22,7 @@ int  load_items_from_db(cfg_item_t *cfg_arr, uint32_t count);
 void save_item_to_db(cfg_item_t *item, bool force);
 void save_items_to_db(cfg_item_t *cfg_arr, uint32_t cfg_size);
 
+void fill_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name);
+void fill_cfg_item_uint64(cfg_item_t *item, Subject * val, const char * db_name);
 void fill_cfg_item_float(cfg_item_t *item, Subject * val, float db_scale, const char * db_name);
-void fill_cfg_item(cfg_item_t *item, Subject * val, const char * db_name);
+void fill_cfg_item_text(cfg_item_t *item, Subject * val, const char * db_name);

@@ -77,6 +77,8 @@ typedef enum {
     CTRL_RTTY_CENTER,
     CTRL_RTTY_REVERSE,
 
+    CTRL_LAST,
+
 } cfg_ctrl_t;
 
 extern cfg_ctrl_t cfg_encoder_vol_modes_default[11];

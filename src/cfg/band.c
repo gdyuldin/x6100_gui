@@ -53,7 +53,7 @@ static void on_cur_agc_change(Subject *subj, void *user_data);
 static void on_cur_att_change(Subject *subj, void *user_data);
 static void on_cur_pre_change(Subject *subj, void *user_data);
 
-static void fill_band_cfg_item(cfg_item_t *item, Subject * val, const char * db_name, int pk);
+static void fill_band_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name, int pk);
 static void fill_band_cfg_item_float(cfg_item_t *item, Subject * val, const float db_scale, const char * db_name, int pk);
 
 void cfg_band_params_init(sqlite3 *database) {
@@ -89,28 +89,28 @@ void cfg_band_params_init(sqlite3 *database) {
 
     /* Fill band configuration */
 
-    fill_band_cfg_item(&cfg_band.vfo_a.freq, subject_create_int(default_freq), "vfoa_freq", band_id);
-    fill_band_cfg_item(&cfg_band.vfo_a.mode, subject_create_int(default_mode), "vfoa_mode", band_id);
-    fill_band_cfg_item(&cfg_band.vfo_a.agc, subject_create_int(x6100_agc_auto), "vfoa_agc", band_id);
-    fill_band_cfg_item(&cfg_band.vfo_a.att, subject_create_int(x6100_att_off), "vfoa_att", band_id);
-    fill_band_cfg_item(&cfg_band.vfo_a.pre, subject_create_int(x6100_pre_off), "vfoa_pre", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_a.freq, subject_create_int(default_freq), "vfoa_freq", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_a.mode, subject_create_int(default_mode), "vfoa_mode", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_a.agc, subject_create_int(x6100_agc_auto), "vfoa_agc", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_a.att, subject_create_int(x6100_att_off), "vfoa_att", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_a.pre, subject_create_int(x6100_pre_off), "vfoa_pre", band_id);
 
-    fill_band_cfg_item(&cfg_band.vfo_b.freq, subject_create_int(default_freq), "vfob_freq", band_id);
-    fill_band_cfg_item(&cfg_band.vfo_b.mode, subject_create_int(default_mode), "vfob_mode", band_id);
-    fill_band_cfg_item(&cfg_band.vfo_b.agc, subject_create_int(x6100_agc_auto), "vfob_agc", band_id);
-    fill_band_cfg_item(&cfg_band.vfo_b.att, subject_create_int(x6100_att_off), "vfob_att", band_id);
-    fill_band_cfg_item(&cfg_band.vfo_b.pre, subject_create_int(x6100_pre_off), "vfob_pre", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_b.freq, subject_create_int(default_freq), "vfob_freq", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_b.mode, subject_create_int(default_mode), "vfob_mode", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_b.agc, subject_create_int(x6100_agc_auto), "vfob_agc", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_b.att, subject_create_int(x6100_att_off), "vfob_att", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo_b.pre, subject_create_int(x6100_pre_off), "vfob_pre", band_id);
 
-    fill_band_cfg_item(&cfg_band.grid.min, subject_create_int(-121), "grid_min", band_id);
-    fill_band_cfg_item(&cfg_band.grid.max, subject_create_int(-73), "grid_max", band_id);
+    fill_band_cfg_item_int(&cfg_band.grid.min, subject_create_int(-121), "grid_min", band_id);
+    fill_band_cfg_item_int(&cfg_band.grid.max, subject_create_int(-73), "grid_max", band_id);
 
-    fill_band_cfg_item(&cfg_band.vfo, subject_create_int(X6100_VFO_A), "vfo", band_id);
-    fill_band_cfg_item(&cfg_band.split, subject_create_int(false), "split", band_id);
-    fill_band_cfg_item(&cfg_band.rfg, subject_create_int(100), "rfg", band_id);
+    fill_band_cfg_item_int(&cfg_band.vfo, subject_create_int(X6100_VFO_A), "vfo", band_id);
+    fill_band_cfg_item_int(&cfg_band.split, subject_create_int(false), "split", band_id);
+    fill_band_cfg_item_int(&cfg_band.rfg, subject_create_int(100), "rfg", band_id);
 
-    fill_band_cfg_item(&cfg_band.if_shift, subject_create_int(0), "if_shift", band_id);
-    fill_band_cfg_item(&cfg_band.tx_i_offset, subject_create_int(0), "tx_i_offset", band_id);
-    fill_band_cfg_item(&cfg_band.tx_q_offset, subject_create_int(0), "tx_q_offset", band_id);
+    fill_band_cfg_item_int(&cfg_band.if_shift, subject_create_int(0), "if_shift", band_id);
+    fill_band_cfg_item_int(&cfg_band.tx_i_offset, subject_create_int(0), "tx_i_offset", band_id);
+    fill_band_cfg_item_int(&cfg_band.tx_q_offset, subject_create_int(0), "tx_q_offset", band_id);
 
     fill_band_cfg_item_float(&cfg_band.dac_offset, subject_create_float(0.0f), 0.1f, "dac_offset", band_id);
 
@@ -792,8 +792,8 @@ static void on_cur_pre_change(Subject *subj, void *user_data) {
     subject_set_int(target_subj, new_pre);
 }
 
-static void fill_band_cfg_item(cfg_item_t *item, Subject * val, const char * db_name, int pk) {
-    fill_cfg_item(item, val, db_name);
+static void fill_band_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name, int pk) {
+    fill_cfg_item_int(item, val, db_name);
     item->pk = pk;
 }
 

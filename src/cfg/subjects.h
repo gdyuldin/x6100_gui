@@ -93,13 +93,12 @@ template <typename T> class SubjectT : public Subject {
 
 template <> class SubjectT<const char*> : public Subject {
     std::mutex mutex;
-    const char* val;
+    std::string val;
 
   public:
-    SubjectT(const char* val);
-    ~SubjectT();
+    SubjectT(const char* data) : val(data) {};
     char* get();
-    void set(const char* val);
+    void set(const char* data);
     data_type dtype() {
         return DTYPE_STR;
     }

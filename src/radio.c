@@ -68,7 +68,6 @@ typedef struct __attribute__((__packed__)) {
         radio_lock(); \
         radio_fn(val); \
         radio_unlock(); \
-        lv_msg_send(MSG_PARAM_CHANGED, NULL); \
     }
 
 
@@ -702,7 +701,6 @@ bool radio_change_spmode(int16_t df) {
     }
 
     params_bool_set(&params.spmode, df > 0);
-    lv_msg_send(MSG_PARAM_CHANGED, NULL);
 
     WITH_RADIO_LOCK(x6100_control_spmode_set(params.spmode.x));
 

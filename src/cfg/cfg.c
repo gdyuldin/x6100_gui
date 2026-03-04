@@ -192,12 +192,27 @@ static void on_key_tone_change(Subject *subj, void *user_data) {
 void init_items(cfg_item_t *cfg_arr, uint32_t count, int (*load)(struct cfg_item_t *item),
                 int (*save)(struct cfg_item_t *item)) {
     for (size_t i = 0; i < count; i++) {
-        cfg_arr[i].load       = load;
-        cfg_arr[i].save       = save;
-        cfg_arr[i].dirty      = malloc(sizeof(*cfg_arr[i].dirty));
-        cfg_arr[i].dirty->val = ITEM_STATE_CLEAN;
-        pthread_mutex_init(&cfg_arr[i].dirty->mux, NULL);
-        Observer *o = subject_add_observer(cfg_arr[i].val, on_item_change, &cfg_arr[i]);
+        cfg_item_t *item = &cfg_arr[i];
+        if (load) {
+            if (item->load) {
+                LV_LOG_ERROR("Item %s load func is redefined", item->db_name);
+            }
+            item->load = load;
+        } else if (!item->load) {
+            LV_LOG_ERROR("Item %s has no defined load func", item->db_name);
+        }
+        if (save) {
+            if (item->save) {
+                LV_LOG_ERROR("Item %s save func is redefined", item->db_name);
+            }
+            item->save = save;
+        } else if (!item->save) {
+            LV_LOG_ERROR("Item %s has no defined save func", item->db_name);
+        }
+        item->dirty      = malloc(sizeof(*item->dirty));
+        item->dirty->val = ITEM_STATE_CLEAN;
+        pthread_mutex_init(&item->dirty->mux, NULL);
+        Observer *o = subject_add_observer(item->val, on_item_change, item);
     }
 }
 /**
@@ -209,7 +224,7 @@ int load_items_from_db(cfg_item_t *cfg_arr, uint32_t count) {
         cfg_arr[i].dirty->val = ITEM_STATE_LOADING;
         rc = cfg_arr[i].load(&cfg_arr[i]);
         if (rc != 0) {
-            LV_LOG_USER("Can't load %s (pk=%i)", cfg_arr[i].db_name, cfg_arr[i].pk);
+            LV_LOG_WARN("Can't load %s (pk=%i), rc=%d", cfg_arr[i].db_name, cfg_arr[i].pk, rc);
         } else {
 
         }
@@ -246,15 +261,54 @@ void save_items_to_db(cfg_item_t *cfg_arr, uint32_t cfg_size) {
 /**
  * Helpers for initialization
  */
-void fill_cfg_item(cfg_item_t *item, Subject * val, const char * db_name) {
+void fill_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name) {
     item->db_name = strdup(db_name);
     item->val = val;
+    item->load = cfg_params_load_item_int;
+    item->save = cfg_params_save_item_int;
+}
+
+void fill_cfg_item_uint64(cfg_item_t *item, Subject * val, const char * db_name) {
+    item->db_name = strdup(db_name);
+    item->val = val;
+    item->load = cfg_params_load_item_uint64;
+    item->save = cfg_params_save_item_uint64;
 }
 
 void fill_cfg_item_float(cfg_item_t *item, Subject * val, float db_scale, const char * db_name) {
     item->db_name = strdup(db_name);
     item->db_scale = db_scale;
     item->val = val;
+    item->load = cfg_params_load_item_float;
+    item->save = cfg_params_save_item_float;
+}
+
+void fill_cfg_item_enc_str(cfg_item_t *item, Subject * val, const char * db_name) {
+    item->db_name = strdup(db_name);
+    item->val = val;
+    item->load = cfg_params_load_item_str;
+    item->save = cfg_params_save_item_str;
+}
+
+/**
+ * Helpers for db <-> val conversion
+ */
+
+static void * db_to_val_encoder_bind(void * val, Subject *subj) {
+    size_t target_len = strlen(subject_get_text(subj));
+    char *str = strdup((char *)val);
+    size_t new_len = strlen(str);
+    if (new_len > target_len) {
+        // Truncate
+        str[target_len] = '\0';
+    } else if (new_len < target_len) {
+        str = realloc(str, target_len + 1);
+        for (size_t i = new_len; i < target_len; i++) {
+            str[i] = ENCODER_BIND_NONE;
+        }
+        str[target_len] = '\0';
+    }
+    return (void *)str;
 }
 
 /**
@@ -310,81 +364,83 @@ static int init_params_cfg(sqlite3 *db) {
     encoder_bind[CTRL_AGC_KNEE] = ENCODER_BIND_MFK;
     encoder_bind[CTRL_DNF] = ENCODER_BIND_MFK;
 
-    fill_cfg_item(&cfg.encoders_binds, subject_create_text(encoder_bind), "encoder_bind");
+    fill_cfg_item_enc_str(&cfg.encoders_binds, subject_create_text(encoder_bind), "encoder_bind");
+    // Process db values. Heplful for future changes
+    cfg.encoders_binds.db_to_val = db_to_val_encoder_bind;
 
-    fill_cfg_item(&cfg.vol, subject_create_int(20), "vol");
-    fill_cfg_item(&cfg.sql, subject_create_int(0), "sql");
+    fill_cfg_item_int(&cfg.vol, subject_create_int(20), "vol");
+    fill_cfg_item_int(&cfg.sql, subject_create_int(0), "sql");
     fill_cfg_item_float(&cfg.pwr, subject_create_float(5.0f), 0.1f, "pwr");
     fill_cfg_item_float(&cfg.output_gain, subject_create_float(0.0f), 0.2f, "output_gain");
 
-    fill_cfg_item(&cfg.mic, subject_create_int(x6100_mic_auto), "mic");
-    fill_cfg_item(&cfg.hmic, subject_create_int(20), "hmic");
-    fill_cfg_item(&cfg.imic, subject_create_int(30), "imic");
-    fill_cfg_item(&cfg.moni, subject_create_int(30), "moni");
+    fill_cfg_item_int(&cfg.mic, subject_create_int(x6100_mic_auto), "mic");
+    fill_cfg_item_int(&cfg.hmic, subject_create_int(20), "hmic");
+    fill_cfg_item_int(&cfg.imic, subject_create_int(30), "imic");
+    fill_cfg_item_int(&cfg.moni, subject_create_int(30), "moni");
 
-    fill_cfg_item(&cfg.key_tone, subject_create_int(700), "key_tone");
-    fill_cfg_item(&cfg.band_id, subject_create_int(5), "band");
-    fill_cfg_item(&cfg.ant_id, subject_create_int(1), "ant");
-    fill_cfg_item(&cfg.atu_enabled, subject_create_int(false), "atu");
-    fill_cfg_item(&cfg.comp, subject_create_int(4), "comp");
+    fill_cfg_item_int(&cfg.key_tone, subject_create_int(700), "key_tone");
+    fill_cfg_item_int(&cfg.band_id, subject_create_int(5), "band");
+    fill_cfg_item_int(&cfg.ant_id, subject_create_int(1), "ant");
+    fill_cfg_item_int(&cfg.atu_enabled, subject_create_int(false), "atu");
+    fill_cfg_item_int(&cfg.comp, subject_create_int(4), "comp");
     fill_cfg_item_float(&cfg.comp_threshold_offset, subject_create_float(0.0f), 0.5f, "comp_threshold_offset");
     fill_cfg_item_float(&cfg.comp_makeup_offset, subject_create_float(0.0f), 0.5f, "comp_makeup_offset");
 
-    fill_cfg_item(&cfg.rit, subject_create_int(0), "rit");
-    fill_cfg_item(&cfg.xit, subject_create_int(0), "xit");
-    fill_cfg_item(&cfg.fm_emphasis, subject_create_int(0), "fm_emphasis");
+    fill_cfg_item_int(&cfg.rit, subject_create_int(0), "rit");
+    fill_cfg_item_int(&cfg.xit, subject_create_int(0), "xit");
+    fill_cfg_item_int(&cfg.fm_emphasis, subject_create_int(0), "fm_emphasis");
 
     /* UI */
-    fill_cfg_item(&cfg.auto_level_enabled, subject_create_int(true), "auto_level_enabled");
+    fill_cfg_item_int(&cfg.auto_level_enabled, subject_create_int(true), "auto_level_enabled");
     fill_cfg_item_float(&cfg.auto_level_offset, subject_create_float(0.0f), 0.5f, "auto_level_offset");
-    fill_cfg_item(&cfg.knob_info, subject_create_int(true), "knob_info");
+    fill_cfg_item_int(&cfg.knob_info, subject_create_int(true), "knob_info");
 
     /* Key */
 
-    fill_cfg_item(&cfg.key_speed, subject_create_int(15), "key_speed");
-    fill_cfg_item(&cfg.key_mode, subject_create_int(x6100_key_manual), "key_mode");
-    fill_cfg_item(&cfg.iambic_mode, subject_create_int(x6100_iambic_a), "iambic_mode");
-    fill_cfg_item(&cfg.key_vol, subject_create_int(10), "key_vol");
-    fill_cfg_item(&cfg.key_train, subject_create_int(false), "key_train");
-    fill_cfg_item(&cfg.qsk_time, subject_create_int(100), "qsk_time");
+    fill_cfg_item_int(&cfg.key_speed, subject_create_int(15), "key_speed");
+    fill_cfg_item_int(&cfg.key_mode, subject_create_int(x6100_key_manual), "key_mode");
+    fill_cfg_item_int(&cfg.iambic_mode, subject_create_int(x6100_iambic_a), "iambic_mode");
+    fill_cfg_item_int(&cfg.key_vol, subject_create_int(10), "key_vol");
+    fill_cfg_item_int(&cfg.key_train, subject_create_int(false), "key_train");
+    fill_cfg_item_int(&cfg.qsk_time, subject_create_int(100), "qsk_time");
     fill_cfg_item_float(&cfg.key_ratio, subject_create_float(3.0f), 0.1f, "key_ratio");
 
     /* CW decoder */
-    fill_cfg_item(&cfg.cw_decoder, subject_create_int(true), "cw_decoder");
-    fill_cfg_item(&cfg.cw_tune, subject_create_int(false), "cw_tune");
+    fill_cfg_item_int(&cfg.cw_decoder, subject_create_int(true), "cw_decoder");
+    fill_cfg_item_int(&cfg.cw_tune, subject_create_int(false), "cw_tune");
     fill_cfg_item_float(&cfg.cw_decoder_snr, subject_create_float(5.0f), 0.1f, "cw_decoder_snr_2");
     fill_cfg_item_float(&cfg.cw_decoder_snr_gist, subject_create_float(1.0f), 0.1f, "cw_decoder_snr_gist");
     fill_cfg_item_float(&cfg.cw_decoder_peak_beta, subject_create_float(0.10f), 0.01f, "cw_decoder_peak_beta");
     fill_cfg_item_float(&cfg.cw_decoder_noise_beta, subject_create_float(0.80f), 0.01f, "cw_decoder_noise_beta");
 
-    fill_cfg_item(&cfg.agc_hang, subject_create_int(false), "agc_hang");
-    fill_cfg_item(&cfg.agc_knee, subject_create_int(-60), "agc_knee");
-    fill_cfg_item(&cfg.agc_slope, subject_create_int(6), "agc_slope");
+    fill_cfg_item_int(&cfg.agc_hang, subject_create_int(false), "agc_hang");
+    fill_cfg_item_int(&cfg.agc_knee, subject_create_int(-60), "agc_knee");
+    fill_cfg_item_int(&cfg.agc_slope, subject_create_int(6), "agc_slope");
 
     // DSP
-    fill_cfg_item(&cfg.dnf, subject_create_int(false), "dnf");
-    fill_cfg_item(&cfg.dnf_center, subject_create_int(1000), "dnf_center");
-    fill_cfg_item(&cfg.dnf_width, subject_create_int(50), "dnf_width");
-    fill_cfg_item(&cfg.dnf_auto, subject_create_int(false), "dnf_auto");
+    fill_cfg_item_int(&cfg.dnf, subject_create_int(false), "dnf");
+    fill_cfg_item_int(&cfg.dnf_center, subject_create_int(1000), "dnf_center");
+    fill_cfg_item_int(&cfg.dnf_width, subject_create_int(50), "dnf_width");
+    fill_cfg_item_int(&cfg.dnf_auto, subject_create_int(false), "dnf_auto");
 
-    fill_cfg_item(&cfg.nb, subject_create_int(false), "nb");
-    fill_cfg_item(&cfg.nb_level, subject_create_int(10), "nb_level");
-    fill_cfg_item(&cfg.nb_width, subject_create_int(10), "nb_width");
+    fill_cfg_item_int(&cfg.nb, subject_create_int(false), "nb");
+    fill_cfg_item_int(&cfg.nb_level, subject_create_int(10), "nb_level");
+    fill_cfg_item_int(&cfg.nb_width, subject_create_int(10), "nb_width");
 
-    fill_cfg_item(&cfg.nr, subject_create_int(false), "nr");
-    fill_cfg_item(&cfg.nr_level, subject_create_int(0), "nr_level");
+    fill_cfg_item_int(&cfg.nr, subject_create_int(false), "nr");
+    fill_cfg_item_int(&cfg.nr_level, subject_create_int(0), "nr_level");
 
     // SWR scan
-    fill_cfg_item(&cfg.swrscan_linear, subject_create_int(true), "swrscan_linear");
-    fill_cfg_item(&cfg.swrscan_span, subject_create_int(200000), "swrscan_span");
+    fill_cfg_item_int(&cfg.swrscan_linear, subject_create_int(true), "swrscan_linear");
+    fill_cfg_item_int(&cfg.swrscan_span, subject_create_int(200000), "swrscan_span");
 
     // FT8
-    fill_cfg_item(&cfg.ft8_show_all, subject_create_int(true), "ft8_show_all");
-    fill_cfg_item(&cfg.ft8_protocol, subject_create_int(FTX_PROTOCOL_FT8), "ft8_protocol");
-    fill_cfg_item(&cfg.ft8_auto, subject_create_int(true), "ft8_auto");
-    fill_cfg_item(&cfg.ft8_hold_freq, subject_create_int(true), "ft8_hold_freq");
-    fill_cfg_item(&cfg.ft8_max_repeats, subject_create_int(6), "ft8_max_repeats");
-    fill_cfg_item(&cfg.ft8_omit_cq_qth, subject_create_int(false), "ft8_omit_cq_qth");
+    fill_cfg_item_int(&cfg.ft8_show_all, subject_create_int(true), "ft8_show_all");
+    fill_cfg_item_int(&cfg.ft8_protocol, subject_create_int(FTX_PROTOCOL_FT8), "ft8_protocol");
+    fill_cfg_item_int(&cfg.ft8_auto, subject_create_int(true), "ft8_auto");
+    fill_cfg_item_int(&cfg.ft8_hold_freq, subject_create_int(true), "ft8_hold_freq");
+    fill_cfg_item_int(&cfg.ft8_max_repeats, subject_create_int(6), "ft8_max_repeats");
+    fill_cfg_item_int(&cfg.ft8_omit_cq_qth, subject_create_int(false), "ft8_omit_cq_qth");
 
     /* Bind callbacks */
     // subject_add_observer(cfg.band_id.val, on_band_id_change, NULL);
@@ -393,6 +449,6 @@ static int init_params_cfg(sqlite3 *db) {
     /* Load values from table */
     cfg_item_t *cfg_arr  = (cfg_item_t *)&cfg;
     uint32_t    cfg_size = sizeof(cfg) / sizeof(*cfg_arr);
-    init_items(cfg_arr, cfg_size, cfg_params_load_item, cfg_params_save_item);
+    init_items(cfg_arr, cfg_size, NULL, NULL);
     return load_items_from_db(cfg_arr, cfg_size);
 }

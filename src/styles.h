@@ -23,6 +23,8 @@
 
 #define SYMBOL_PLUG "\xEF\x87\xA6"  // F1E6
 #define SYMBOL_PLUG_CHARGE "\xEE\x95\x9B"  // E55B
+#define SYMBOL_NORTH_WEST_ARROW "\xE2\x86\x96"
+#define SYMBOL_SOUTH_WEST_ARROW "\xE2\x86\x99"
 
 // Pallete
 
@@ -35,9 +37,13 @@ extern lv_style_t   spectrum_style;
 extern lv_style_t   freq_style;
 extern lv_style_t   freq_main_style;
 extern lv_style_t   waterfall_style;
+
 extern lv_style_t   btn_style;
 extern lv_style_t   btn_active_style;
 extern lv_style_t   btn_disabled_style;
+extern lv_style_t   btn_mark_style;
+extern lv_style_t   btn_mark_assigned_style;
+
 extern lv_style_t   msg_style;
 extern lv_style_t   msg_tiny_style;
 extern lv_style_t   clock_style;

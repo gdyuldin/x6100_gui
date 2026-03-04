@@ -10,6 +10,7 @@
 
 #define BUTTONS 5
 #define BTN_HEIGHT 62
+#define BTN_WIDTH 160
 
 #ifdef __cplusplus
 
@@ -31,6 +32,8 @@ typedef enum {
     BTN_TEXT_FN,
 } btn_type_t;
 
+typedef struct _disp_button_t disp_btn_t;
+
 typedef struct button_item_t {
     btn_type_t type;
     union {
@@ -44,7 +47,8 @@ typedef struct button_item_t {
     struct buttons_page_t *next;
     struct buttons_page_t *prev;
     int32_t                data;
-    lv_obj_t              *label_obj;
+    bool                   encoder_allowed;
+    disp_btn_t            *disp_btn;
     Subject              **subj;
     Observer              *observer;
     bool                   mark;

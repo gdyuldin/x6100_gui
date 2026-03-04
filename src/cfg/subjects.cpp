@@ -69,28 +69,27 @@ data_type Subject::dtype() {
  * String subject
  */
 
-inline SubjectT<const char *>::SubjectT(const char *val) {
-    const std::lock_guard<std::mutex> lock(mutex);
-    this->val = strdup(val);
-}
-
-SubjectT<const char *>::~SubjectT() {
-    const std::lock_guard<std::mutex> lock(mutex);
-    free((void*)this->val);
-}
 
 char *SubjectT<const char *>::get() {
     const std::lock_guard<std::mutex> lock(mutex);
-    return strdup(val);
+    return strdup(val.data());
 }
 
-void SubjectT<const char *>::set(const char *val) {
-    const std::lock_guard<std::mutex> lock(mutex);
-    size_t len = strlen(val);
-    if ((len > 0) && (len != strlen(this->val))) {
-        this->val = (const char *)realloc((void*)this->val, len + 1);
+void SubjectT<const char *>::set(const char *data) {
+    std::string new_val(data);
+    bool        changed = false;
+    {
+        const std::lock_guard<std::mutex> lock(mutex);
+        if (this->val != new_val) {
+            changed   = true;
+            this->val = new_val;
+        }
     }
-    strcpy((char *)this->val, val);
+    if (changed) {
+        for (auto observer : observers) {
+            observer->notify();
+        }
+    }
 }
 
 // static void init_observers(subject_t subj);

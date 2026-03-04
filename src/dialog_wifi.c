@@ -564,17 +564,14 @@ static void update_status_cb(lv_timer_t *t) {
 }
 
 static void wifi_state_changed_cb(void *s, lv_msg_t *m) {
-    const char *status_text;
-    for (size_t i = 0; i < SIZE_OF_ARRAY(btn_page.items); i++) {
-        lv_obj_t *label = btn_page.items[i]->label_obj;
-        if (!label)
-            continue;
-        char *(*label_getter)() = lv_obj_get_user_data(label);
-        if (!label_getter)
-            continue;
-        lv_label_set_text(label, label_getter());
+    buttons_page_t *page = buttons_get_cur_page();
+    if (page) {
+        for (size_t i = 0; i < BUTTONS; i++) {
+            buttons_refresh(page->items[i]);
+        }
     }
 
+    const char *status_text;
     switch (wifi_get_status()) {
     case WIFI_CONNECTED:
         status_text = "Connected";
