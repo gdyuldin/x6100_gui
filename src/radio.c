@@ -31,6 +31,10 @@
 #define FLOW_RESTART_TIMEOUT 300
 #define IDLE_TIMEOUT        (3 * 1000)
 
+#define FILTER_2_OFFSET 60
+#define FILTER_2_OFFSET_IN 20
+#define FILTER_2_OFFSET_OUT (FILTER_2_OFFSET - FILTER_2_OFFSET_IN)
+
 static radio_rx_tx_change_t notify_rx_tx;
 static void(*low_power_cb)(bool) = NULL;
 
@@ -403,6 +407,8 @@ static void on_atu_network_change(Subject *subj, void *user_data) {
 
 static void on_low_filter_change(Subject *subj, void *user_data) {
     int32_t low = subject_get_int(subj);
+    int32_t low2 = LV_MAX(0, low - FILTER_2_OFFSET_OUT);
+    low += FILTER_2_OFFSET_IN;
     switch (subject_get_int(cfg_cur.mode)) {
         case x6100_mode_am:
         case x6100_mode_nfm:
@@ -410,9 +416,9 @@ static void on_low_filter_change(Subject *subj, void *user_data) {
 
         default:
             radio_lock();
-            LV_LOG_USER("Radio set filter_low=%i", low);
+            LV_LOG_USER("Radio set filter_low=%i, low2=%i", low, low2);
             x6100_control_cmd(x6100_filter1_low, low);
-            x6100_control_cmd(x6100_filter2_low, low);
+            x6100_control_cmd(x6100_filter2_low, low2);
             radio_unlock();
             break;
     }
@@ -420,22 +426,24 @@ static void on_low_filter_change(Subject *subj, void *user_data) {
 
 static void on_high_filter_change(Subject *subj, void *user_data) {
     int32_t high = subject_get_int(subj);
+    int32_t high2 = high + FILTER_2_OFFSET_OUT;
+    high -= FILTER_2_OFFSET_IN;
     radio_lock();
     switch (subject_get_int(cfg_cur.mode)) {
         case x6100_mode_am:
         case x6100_mode_nfm:
-            LV_LOG_USER("Radio set filter_low=%i", -high);
-            LV_LOG_USER("Radio set filter_high=%i", high);
+            LV_LOG_USER("Radio set filter_low=%i, low2=%i", -high, -high2);
+            LV_LOG_USER("Radio set filter_high=%i, high2=%i", high, high2);
             x6100_control_cmd(x6100_filter1_low, -high);
-            x6100_control_cmd(x6100_filter2_low, -high);
+            x6100_control_cmd(x6100_filter2_low, -high2);
             x6100_control_cmd(x6100_filter1_high, high);
-            x6100_control_cmd(x6100_filter2_high, high);
+            x6100_control_cmd(x6100_filter2_high, high2);
             break;
 
         default:
-            LV_LOG_USER("Radio set filter_high=%i", high);
+            LV_LOG_USER("Radio set filter_high=%i, high2=%i", high, high2);
             x6100_control_cmd(x6100_filter1_high, high);
-            x6100_control_cmd(x6100_filter2_high, high);
+            x6100_control_cmd(x6100_filter2_high, high2);
             break;
     }
     radio_unlock();
