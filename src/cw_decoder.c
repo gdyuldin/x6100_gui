@@ -293,6 +293,11 @@ void cw_decoder_signal(bool on, float ms) {
                 strcat(elements, "-");
             }
 
+            if (strlen(elements) > 8) {
+                // Prevent overflow
+                memmove(elements, elements + 1, strlen(elements) - 1);
+            }
+
             character_step = true;
             word_step = true;
         }
