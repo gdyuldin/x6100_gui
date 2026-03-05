@@ -596,6 +596,9 @@ void radio_init() {
     subject_add_observer_and_call(cfg.xit.val, base_control_command, (void*)x6100_xit);
     subject_add_observer_and_call(cfg.fm_emphasis.val, on_change_bool, x6100_control_fm_emp);
 
+    subject_add_observer_and_call(cfg.tx_filter_low.val, on_change_uint16, x6100_control_tx_filter_low_set);
+    subject_add_observer_and_call(cfg.tx_filter_high.val, on_change_uint16, x6100_control_tx_filter_high_set);
+
     subject_add_observer_and_call(cfg.key_tone.val, on_change_uint16, x6100_control_key_tone_set);
     subject_add_observer_and_call(cfg.key_speed.val, on_change_uint8, x6100_control_key_speed_set);
     subject_add_observer_and_call(cfg.key_mode.val, on_change_uint8, x6100_control_key_mode_set);

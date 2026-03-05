@@ -1775,6 +1775,73 @@ uint8_t make_fm_emphasis(uint8_t row) {
     return row + 1;
 }
 
+/* TX filter */
+
+#define TX_FILTER_STEP 10
+
+static void tx_filter_low_update_cb(lv_event_t * e) {
+    lv_obj_t *obj = lv_event_get_target(e);
+    uint32_t val = lv_slider_get_value(obj) * TX_FILTER_STEP;
+
+    lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
+    char *fmt = (char *)lv_obj_get_user_data(slider_label);
+    lv_label_set_text_fmt(slider_label, fmt, val);
+    subject_set_int(cfg.tx_filter_low.val, val);
+}
+
+static void tx_filter_high_update_cb(lv_event_t * e) {
+    lv_obj_t *obj = lv_event_get_target(e);
+    uint32_t val = lv_slider_get_value(obj) * TX_FILTER_STEP;
+
+    lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
+    char *fmt = (char *)lv_obj_get_user_data(slider_label);
+    lv_label_set_text_fmt(slider_label, fmt, val);
+    subject_set_int(cfg.tx_filter_high.val, val);
+}
+
+uint8_t make_tx_filter(uint8_t row) {
+    lv_obj_t    *obj;
+    lv_obj_t    *cell;
+
+    cell = lv_label_create(grid);
+
+    lv_label_set_text(cell, "TX filter low");
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    cell = lv_obj_create(grid);
+
+    lv_obj_set_size(cell, SMALL_6, 56);
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(cell, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(cell);
+
+    slider_with_text(cell, subject_get_int(cfg.tx_filter_low.val),
+        50, 400, TX_FILTER_STEP,
+        SMALL_6 - 150, "%d", tx_filter_low_update_cb);
+    row++;
+
+    cell = lv_label_create(grid);
+
+    lv_label_set_text(cell, "TX filter high");
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    cell = lv_obj_create(grid);
+
+    lv_obj_set_size(cell, SMALL_6, 56);
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(cell, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(cell);
+
+    slider_with_text(cell, subject_get_int(cfg.tx_filter_high.val),
+        2000, 4000, TX_FILTER_STEP,
+        SMALL_6 - 150, "%d", tx_filter_high_update_cb);
+    row++;
+
+    return row;
+}
+
 /* Charger */
 
 uint8_t make_charger(uint8_t row) {
@@ -1907,6 +1974,11 @@ static void make_general_page() {
         row = band_out_gain_correction(row);
         row = make_delimiter(row);
         row = make_fm_emphasis(row);
+        row = make_delimiter(row);
+    }
+
+    if (base_ver.rev >= 9) {
+        row = make_tx_filter(row);
         row = make_delimiter(row);
     }
 

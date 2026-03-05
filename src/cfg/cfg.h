@@ -113,6 +113,9 @@ typedef struct {
 
     cfg_item_t fm_emphasis;
 
+    cfg_item_t tx_filter_low;
+    cfg_item_t tx_filter_high;
+
     /* UI */
     cfg_item_t auto_level_enabled;
     cfg_item_t auto_level_offset;

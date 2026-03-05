@@ -391,6 +391,9 @@ static int init_params_cfg(sqlite3 *db) {
     fill_cfg_item_int(&cfg.xit, subject_create_int(0), "xit");
     fill_cfg_item_int(&cfg.fm_emphasis, subject_create_int(0), "fm_emphasis");
 
+    fill_cfg_item_int(&cfg.tx_filter_low, subject_create_int(160), "tx_filter_low");
+    fill_cfg_item_int(&cfg.tx_filter_high, subject_create_int(3000), "tx_filter_high");
+
     /* UI */
     fill_cfg_item_int(&cfg.auto_level_enabled, subject_create_int(true), "auto_level_enabled");
     fill_cfg_item_float(&cfg.auto_level_offset, subject_create_float(0.0f), 0.5f, "auto_level_offset");
