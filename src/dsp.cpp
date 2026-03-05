@@ -62,6 +62,7 @@ static float          spectrum_beta   = 0.7f;
 static uint8_t        spectrum_fps_ms = (1000 / 15);
 static uint64_t       spectrum_time;
 static cfloat         spectrum_dec_buf[RADIO_SAMPLES];
+static uint32_t       spectrum_prev_freq;
 
 static ChunkedSpgram *waterfall_sg_rx;
 static ChunkedSpgram *waterfall_sg_tx;
@@ -348,12 +349,39 @@ static void process_samples(cfloat *buf_samples, uint16_t size, firdecim_crcf sp
     }
 }
 
-static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx) {
+static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_t base_freq) {
     if ((now - spectrum_time > spectrum_fps_ms) && sp_sg->ready()) {
         sp_sg->get_psd(spectrum_psd);
         liquid_vectorf_addscalar(spectrum_psd, SPECTRUM_NFFT, DB_OFFSET + zoom_level_offset, spectrum_psd);
+        // Shift filtered
+        if (base_freq != spectrum_prev_freq) {
+            int32_t shift = (int32_t)(base_freq - spectrum_prev_freq) * (spectrum_factor * SPECTRUM_NFFT) / 100000;
+            float *src = spectrum_psd_filtered;
+            float *dst = spectrum_psd_filtered;
+            float *to_clear_p;
+            int32_t size;
+            if (shift > 0) {
+                src = spectrum_psd_filtered + shift;
+                size = SPECTRUM_NFFT - shift;
+                to_clear_p = spectrum_psd_filtered + size;
+            } else if (shift < 0) {
+                dst = spectrum_psd_filtered - shift;
+                size = SPECTRUM_NFFT + shift;
+                to_clear_p = spectrum_psd_filtered;
+            }
+            if (size > 0) {
+                memmove(dst, src, size * sizeof(*src));
+                float *stop = to_clear_p + LV_ABS(shift);
+                do
+                {
+                    *to_clear_p++ = S_MIN;
+                } while (to_clear_p < stop);
+
+            }
+            spectrum_prev_freq = base_freq;
+        }
         lpf_block(spectrum_psd_filtered, spectrum_psd, spectrum_beta, SPECTRUM_NFFT);
-        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx);
+        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx, base_freq);
         spectrum_time = now;
         return true;
     }
@@ -413,6 +441,7 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
         if (cur_freq != base_freq) {
             cur_freq = base_freq;
             waterfall_sg_rx->reset();
+            spectrum_sg_rx->reset();
         }
     }
 
@@ -442,7 +471,7 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
         wf_sg = NULL;
     }
     process_samples(buf_samples, size, sp_decim, sp_sg, wf_sg, tx);
-    update_spectrum(sp_sg, now, tx);
+    update_spectrum(sp_sg, now, tx, base_freq);
     pthread_mutex_unlock(&spectrum_mux);
     if (wf_sg) {
         if (update_waterfall(wf_sg, now, tx, base_freq)) {

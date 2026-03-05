@@ -76,6 +76,7 @@ static void on_grid_min_change(Subject *subj, void *user_data);
 static void on_grid_max_change(Subject *subj, void *user_data);
 static void on_int32_val_change(Subject *subj, void *user_data);
 static void on_cur_freq_change(Subject *subj, void *user_data);
+static void shift_peaks(int32_t df);
 
 static void spectrum_draw_cb(lv_event_t *e) {
     lv_obj_t          *obj      = lv_event_get_target(e);
@@ -307,8 +308,14 @@ lv_obj_t *spectrum_init(lv_obj_t *parent) {
     return obj;
 }
 
-void spectrum_data(float *data_buf, uint16_t size, bool tx) {
+void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq) {
     uint64_t now = get_time();
+
+    if (base_freq != cur_freq) {
+        int32_t df = base_freq - cur_freq;
+        cur_freq = base_freq;
+        shift_peaks(df);
+    }
 
     pthread_mutex_lock(&data_mux);
     spectrum_tx = tx;
@@ -408,31 +415,31 @@ static void on_int32_val_change(Subject *subj, void *user_data) {
     *(int32_t*)user_data = subject_get_int(subj);
 }
 
-void on_cur_freq_change(Subject *subj, void *user_data) {
-    int32_t new_freq = subject_get_int(subj);
-    if (cur_freq != new_freq) {
-        int32_t df = new_freq - cur_freq + freq_mod;
-        cur_freq = new_freq;
-        uint64_t time = get_time();
+static void shift_peaks(int32_t df) {
+    df += freq_mod;
+    uint64_t time = get_time();
 
-        uint16_t div     = width_hz / SPECTRUM_SIZE / zoom_factor;
-        int32_t  delta   = (df + div / 2) / div;
-        freq_mod = df - delta * div;
+    uint16_t div     = width_hz / SPECTRUM_SIZE / zoom_factor;
+    int32_t  delta   = (df + div / 2) / div;
+    freq_mod = df - delta * div;
 
-        if (delta == 0) {
-            return;
-        }
-        peak_t  *to;
-        for (int16_t i = 0; i < SPECTRUM_SIZE; i++) {
-            int16_t dst_id = delta > 0 ? i : SPECTRUM_SIZE - i - 1;
-            to = &spectrum_peak[dst_id];
-            int16_t src_id = dst_id + delta;
-            if ((src_id < 0) || (src_id >= SPECTRUM_SIZE)) {
-                to->val = S_MIN;
-                to->time = time;
-            } else {
-                *to = spectrum_peak[src_id];
-            }
+    if (delta == 0) {
+        return;
+    }
+    peak_t  *to;
+    for (int16_t i = 0; i < SPECTRUM_SIZE; i++) {
+        int16_t dst_id = delta > 0 ? i : SPECTRUM_SIZE - i - 1;
+        to = &spectrum_peak[dst_id];
+        int16_t src_id = dst_id + delta;
+        if ((src_id < 0) || (src_id >= SPECTRUM_SIZE)) {
+            to->val = S_MIN;
+            to->time = time;
+        } else {
+            *to = spectrum_peak[src_id];
         }
     }
+}
+
+void on_cur_freq_change(Subject *subj, void *user_data) {
+    scheduler_put_noargs(spectrum_refresh);
 }

@@ -14,7 +14,7 @@
 #include "lvgl/lvgl.h"
 
 lv_obj_t * spectrum_init(lv_obj_t * parent);
-void spectrum_data(float *data_buf, uint16_t size, bool tx);
+void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq);
 void spectrum_min_max_reset();
 
 void spectrum_update_max(float db);

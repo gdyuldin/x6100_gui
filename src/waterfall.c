@@ -36,6 +36,7 @@ typedef struct {
 
 static lv_obj_t         *obj;
 static lv_obj_t         *img;
+static bool             ready = false;
 
 static lv_style_t       middle_line_style;
 static lv_obj_t         *middle_line;
@@ -187,13 +188,14 @@ void waterfall_set_height(lv_coord_t h) {
     }
     last_row_id = 0;
 
-    lv_obj_add_event_cb(img, do_scroll_cb, LV_EVENT_DRAW_POST_END, NULL);
+    lv_obj_add_event_cb(img, do_scroll_cb, LV_EVENT_DRAW_MAIN_END, NULL);
 
     waterfall_min_max_reset();
     band_info_init(obj);
     draw_middle_line();
     on_zoom_changed(cfg_cur.zoom, NULL);
     on_if_shift_changed(cfg_cur.band->if_shift.val, NULL);
+    ready = true;
 }
 
 static void middle_line_cb(lv_event_t * event) {
@@ -318,6 +320,9 @@ static void redraw_cb(lv_event_t * e) {
 }
 
 static void refresh_waterfall( void * arg) {
+    if (!ready) {
+        return;
+    }
     refresh_counter++;
     if (refresh_counter >= refresh_period) {
         refresh_counter = 0;
