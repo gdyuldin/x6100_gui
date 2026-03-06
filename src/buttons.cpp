@@ -516,6 +516,7 @@ void buttons_init(lv_obj_t *parent) {
     for (uint8_t i = 0; i < 5; i++) {
         lv_obj_t *f = lv_obj_create(parent);
         disp_btns[i].parent = f;
+        lv_obj_add_flag(f, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
         lv_obj_remove_style_all(f);
         lv_obj_add_style(f, &btn_style, 0);
@@ -531,9 +532,8 @@ void buttons_init(lv_obj_t *parent) {
         lv_obj_t *enc_mark;
 
         enc_mark = lv_obj_create(f);
-        lv_obj_set_pos(enc_mark, 4, 4);
-
-        lv_obj_set_style_bg_color(enc_mark, lv_color_hex(0xC0C0C0), 0);
+        lv_obj_set_pos(enc_mark, 5, 5);
+        lv_obj_clear_flag(enc_mark, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_style(enc_mark, &btn_mark_style, 0);
         lv_obj_add_style(enc_mark, &btn_mark_assigned_style, STATE_ASSIGNED);
 
@@ -541,9 +541,9 @@ void buttons_init(lv_obj_t *parent) {
 
 
         enc_mark = lv_obj_create(f);
-        lv_obj_set_pos(enc_mark, 4, BTN_HEIGHT - 4 - 10);
+        lv_obj_set_pos(enc_mark, 5, BTN_HEIGHT - 5 - 24);
+        lv_obj_clear_flag(enc_mark, LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_set_style_bg_color(enc_mark, lv_color_hex(0x606060), 0);
         lv_obj_add_style(enc_mark, &btn_mark_style, 0);
         lv_obj_add_style(enc_mark, &btn_mark_assigned_style, STATE_ASSIGNED);
         disp_btns[i].mfk_mark = enc_mark;
