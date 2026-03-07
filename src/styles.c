@@ -188,9 +188,9 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_color(style, lv_color_hex(0x808080));
     lv_style_set_blend_mode(style, LV_BLEND_MODE_ADDITIVE);
     lv_style_set_outline_width(style, 0);
-    lv_style_set_border_width(style, 0);
+    lv_style_set_border_width(style, 2);
+    lv_style_set_border_color(style, lv_color_hex(0x909090));
     lv_style_set_opa(style, LV_OPA_30);
-
 
     style = &btn_mark_assigned_style;
     lv_style_init(style);
