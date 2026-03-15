@@ -121,6 +121,7 @@ lv_color_t  bg_color;
 
 static void setup_theme_legacy();
 static void setup_theme_simple();
+static void setup_theme_flat();
 
 void styles_init(themes_t theme) {
     /* * */
@@ -337,6 +338,9 @@ void styles_set_theme(themes_t theme) {
         case THEME_LEGACY:
             setup_theme_legacy();
             break;
+        case THEME_FLAT:
+            setup_theme_flat();
+            break;
         case THEME_SIMPLE:
         default:
             setup_theme_simple();
@@ -373,6 +377,40 @@ static void setup_theme_legacy() {
     /* TX info */
     lv_style_set_bg_img_src(&tx_info_style, PATH "images/top_big.bin");
     lv_style_set_width(&tx_info_style, 377);
+    lv_style_set_height(&tx_info_style, 123);
+
+    lv_obj_invalidate(lv_scr_act());
+}
+
+static void setup_theme_flat() {
+    wf_palette = wf_palette_gauss;
+
+    bg_color = lv_color_hex(0x36454F);
+    lv_style_set_bg_color(&background_style, bg_color);
+
+    lv_style_set_bg_img_src(&btn_style, PATH "images/dialog_dark.bin");
+    lv_style_set_bg_img_src(&msg_style, PATH "images/msg_dark.bin");
+    lv_style_set_width(&btn_style, 795);
+    lv_style_set_height(&btn_style, 61);
+    /* Clock */
+    lv_style_set_bg_img_src(&clock_style, PATH "images/dialog_dark.bin");
+    lv_style_set_width(&clock_style, 209);
+    lv_style_set_height(&clock_style, 61);
+    /* Info */
+    lv_style_set_bg_img_src(&info_style, PATH "images/dialog_dark.bin");
+    lv_style_set_width(&info_style, 209);
+    lv_style_set_height(&info_style, 61);
+    /* Meter */
+    lv_style_set_bg_img_src(&meter_style, PATH "images/dialog_dark.bin");
+    lv_style_set_width(&meter_style, 380);
+    lv_style_set_height(&meter_style, 61);
+
+    lv_style_set_bg_img_src(&panel_style, PATH "images/panel_dark.bin");
+    lv_style_set_bg_img_src(&msg_tiny_style, PATH "images/msg_tiny_dark.bin");
+    lv_style_set_bg_img_src(&dialog_style, PATH "images/dialog_dark.bin");
+    /* TX info */
+    lv_style_set_bg_img_src(&tx_info_style, PATH "images/dialog_dark.bin");
+    lv_style_set_width(&tx_info_style, 380);
     lv_style_set_height(&tx_info_style, 123);
 
     lv_obj_invalidate(lv_scr_act());
