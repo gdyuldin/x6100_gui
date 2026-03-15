@@ -100,7 +100,11 @@ static void spectrum_draw_cb(lv_event_t *e) {
 
     lv_draw_line_dsc_init(&main_line_dsc);
 
+    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
     main_line_dsc.color = lv_color_hex(0xAAAAAA);
+    } else {
+    main_line_dsc.color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
+    }
     main_line_dsc.width = 1;
 
     lv_draw_line_dsc_init(&peak_line_dsc);
@@ -172,7 +176,11 @@ static void spectrum_draw_cb(lv_event_t *e) {
 
     lv_draw_rect_dsc_init(&rect_dsc);
 
+    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
     rect_dsc.bg_color = bg_color;
+    } else {
+    rect_dsc.bg_color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
+    }
     rect_dsc.bg_opa   = LV_OPA_50;
 
     int32_t w_hz = width_hz / zoom_factor;
