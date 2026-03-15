@@ -91,6 +91,7 @@ static void meter_draw_cb(lv_event_t * e) {
     int16_t db = s_items[0].db;
 
     for (uint16_t i = 0; i < count; i++) {
+        if (params.meter_color.x == METER_GRAY) {
         if (db <= noise_level) {
             rect_dsc.bg_color = lv_color_hex(0x777777);
         } else if (db <= -73) {
@@ -99,6 +100,17 @@ static void meter_draw_cb(lv_event_t * e) {
             rect_dsc.bg_color = lv_color_hex(0xAAAA00);
         } else {
             rect_dsc.bg_color = lv_color_hex(0xAA0000);
+        }
+        } else {
+            if (db <= noise_level) {
+                rect_dsc.bg_color = lv_color_hex(0x00CC00);
+            } else if (db <= -73) {
+                rect_dsc.bg_color = lv_color_hex(0x00CC00);
+            } else if (db <= -53) {
+                rect_dsc.bg_color = lv_color_hex(0xFFFF00);
+            } else {
+                rect_dsc.bg_color = lv_color_hex(0xAA0000);
+            }
         }
         area.x1 = x1 + 30 + i * slice_w - slice_w / 2 + slice_spacing / 2;
         area.x2 = area.x1 + slice_w - slice_spacing;
@@ -113,7 +125,11 @@ static void meter_draw_cb(lv_event_t * e) {
         area.x1 = x1 + 30 - slice_w / 2 + slice_w * (uint8_t)((meter_peak - min_db) / slice_db + 0.5f) + slice_spacing / 2;
         area.x2 = area.x1 + slice_w - slice_spacing;
         rect_dsc.bg_opa = LV_OPA_50;
-        rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
+        if (params.meter_color.x == METER_GRAY) {
+            rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
+        } else {
+            rect_dsc.bg_color = lv_color_hex(0xFFFF00);
+        }
         lv_draw_rect(draw_ctx, &rect_dsc, &area);
     }
 
