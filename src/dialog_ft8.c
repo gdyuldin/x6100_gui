@@ -322,7 +322,9 @@ void static waterfall_process(float complex *frame, const size_t size) {
 static void scroll_table_down_cb(lv_timer_t *t) {
     static int32_t c = LV_KEY_DOWN;
     lv_event_send(table, LV_EVENT_KEY, &c);
-    lv_timer_del(t);
+    if (t){
+        lv_timer_del(t);
+    }
 }
 
 static void truncate_table() {
@@ -380,9 +382,10 @@ static void add_msg_cb(void *data) {
     if (scroll) {
         uint32_t delay = 0;
         if (cell_data->cell_type == CELL_RX_INFO) {
-            delay = 2000;
+            lv_timer_create(scroll_table_down_cb, 2000, NULL);
+        } else {
+            scroll_table_down_cb(NULL);
         }
-        lv_timer_create(scroll_table_down_cb, delay, NULL);
     }
 }
 
