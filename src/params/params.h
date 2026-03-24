@@ -68,6 +68,12 @@ typedef enum {
     METER_COLORED,
 } meter_color_t;
 
+/* SWR Color */
+typedef enum {
+    SWR_GRAY,
+    SWR_COLORED,
+} swr_color_t;
+
 /* Params */
 
 typedef struct {
@@ -184,6 +190,10 @@ typedef struct {
     /* Meter Color */
 
     params_uint8_t       meter_color;
+
+    /* SWR Color */
+
+    params_uint8_t       swr_color;
 
     /* durty flags */
 

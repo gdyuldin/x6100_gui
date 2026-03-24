@@ -223,6 +223,14 @@ static void meter_color_update_cb(lv_event_t * e) {
     params_uint8_set(var, lv_dropdown_get_selected(obj));
 }
 
+// SWR Color
+static void swr_color_update_cb(lv_event_t * e) {
+    lv_obj_t        *obj = lv_event_get_target(e);
+    params_uint8_t  *var = (params_uint8_t*)lv_event_get_user_data(e);
+
+    params_uint8_set(var, lv_dropdown_get_selected(obj));
+}
+
 /* Shared create */
 static lv_obj_t * create_switch(lv_obj_t *parent){
     lv_obj_t *obj = lv_switch_create(parent);
@@ -2064,6 +2072,25 @@ static uint8_t make_meter_color(uint8_t row) {
     return row + 1;
 }
 
+// SWR Color
+static uint8_t make_swr_color(uint8_t row) {
+    lv_obj_t    *obj;
+    uint8_t     col = 0;
+
+    obj = lv_label_create(grid);
+
+    lv_label_set_text(obj, "SWR Color");
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    obj = dropdown_uint8(grid, &params.swr_color, " Gray \n Colored");
+
+    lv_obj_set_size(obj, SMALL_6, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_center(obj);
+
+    return row + 1;
+}
+
 static uint8_t make_delimiter(uint8_t row) {
     row_dsc[row] = 10;
 
@@ -2188,9 +2215,10 @@ static void make_ui_page() {
 
     row = make_theme(row);
 
-    // RGB picker Meter Color
+    // RGB picker, Meter, SWR Color
     row = make_rgb_color_picker(row);
     row = make_meter_color(row);
+    row = make_swr_color(row);
 
     row_dsc[row] = LV_GRID_TEMPLATE_LAST;
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
