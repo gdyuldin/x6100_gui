@@ -103,7 +103,7 @@ static void meter_draw_cb(lv_event_t * e) {
         }
         } else {
             if (db <= noise_level) {
-                rect_dsc.bg_color = lv_color_hex(0x00CC00);
+                rect_dsc.bg_color = lv_color_hex(0x228B22);
             } else if (db <= -73) {
                 rect_dsc.bg_color = lv_color_hex(0x00CC00);
             } else if (db <= -53) {
