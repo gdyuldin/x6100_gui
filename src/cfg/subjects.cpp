@@ -36,6 +36,7 @@ void ObserverDelayed::notify_all_delayed() {
     for (auto item: ObserverDelayed::instances) {
         if (item->changed) {
             item->Observer::notify();
+            item->changed = false;
         }
     }
 }
