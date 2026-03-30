@@ -53,11 +53,16 @@ class Subject {
     protected:
     std::list<Observer*> observers;
     data_type type;
+    // For grouped notify
+    bool pause_notify = false;
+    bool changed = false;
     public:
     virtual data_type dtype();
     Observer* subscribe(void (*fn)(Subject *, void *), void *user_data=nullptr);
     ObserverDelayed* subscribe_delayed(void (*fn)(Subject *, void *), void *user_data=nullptr);
     void unsubscribe(Observer *o);
+    void set_pause_notify(bool val);
+    void force_paused_notify();
 };
 
 template <typename T> class SubjectT : public Subject {
@@ -75,8 +80,12 @@ template <typename T> class SubjectT : public Subject {
     void set(T val) {
         if (this->val != val) {
             this->val = val;
-            for (auto observer : observers) {
-                observer->notify();
+            if (this->pause_notify) {
+                this->changed = true;
+            } else {
+                for (auto observer : observers) {
+                    observer->notify();
+                }
             }
         }
     };

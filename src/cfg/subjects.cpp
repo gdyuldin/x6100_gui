@@ -61,6 +61,20 @@ void Subject::unsubscribe(Observer *observer) {
     observers.erase(std::find(observers.begin(), observers.end(), observer));
 }
 
+void Subject::set_pause_notify(bool val) {
+    this->pause_notify = val;
+}
+
+void Subject::force_paused_notify() {
+    if (this->pause_notify && this->changed) {
+        for (auto observer : observers) {
+            observer->notify();
+        }
+    }
+    this->changed = false;
+    this->pause_notify = false;
+}
+
 data_type Subject::dtype() {
     return DTYPE_INVALID;
 }
@@ -87,8 +101,12 @@ void SubjectT<const char *>::set(const char *data) {
         }
     }
     if (changed) {
-        for (auto observer : observers) {
-            observer->notify();
+        if (this->pause_notify) {
+            this->changed = true;
+        } else {
+            for (auto observer : observers) {
+                observer->notify();
+            }
         }
     }
 }

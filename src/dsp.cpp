@@ -355,7 +355,7 @@ static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_
         liquid_vectorf_addscalar(spectrum_psd, SPECTRUM_NFFT, DB_OFFSET + zoom_level_offset, spectrum_psd);
         // Shift filtered
         if (base_freq != spectrum_prev_freq) {
-            int32_t shift = (int32_t)(base_freq - spectrum_prev_freq) * (spectrum_factor * SPECTRUM_NFFT) / 100000;
+            int32_t shift = ((int64_t)base_freq - spectrum_prev_freq) * (spectrum_factor * SPECTRUM_NFFT) / 100000;
             float *src = spectrum_psd_filtered;
             float *dst = spectrum_psd_filtered;
             float *to_clear_p;
