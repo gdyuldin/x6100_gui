@@ -31,24 +31,7 @@ static int init_params_cfg(sqlite3 *db);
 
 static void *params_save_thread(void *arg);
 
-static void on_key_tone_change(Subject *subj, void *user_data);
-static void on_item_change(Subject *subj, void *user_data);
-static void on_vfo_change(Subject *subj, void *user_data);
-// static void on_band_id_change(Subject *subj, void *user_data);
-static void on_ab_freq_change(Subject *subj, void *user_data);
-static void on_ab_mode_change(Subject *subj, void *user_data);
-static void update_cur_low_filter(Subject *subj, void *user_data);
-static void update_cur_high_filter(Subject *subj, void *user_data);
-static void on_freq_step_change(Subject *subj, void *user_data);
-static void on_zoom_change(Subject *subj, void *user_data);
-
-static void on_bg_freq_change(Subject *subj, void *user_data);
-static void on_cur_mode_change(Subject *subj, void *user_data);
-static void on_cur_filter_low_change(Subject *subj, void *user_data);
-static void on_cur_filter_high_change(Subject *subj, void *user_data);
-static void on_cur_filter_bw_change(Subject *subj, void *user_data);
-static void on_cur_freq_step_change(Subject *subj, void *user_data);
-static void on_cur_zoom_change(Subject *subj, void *user_data);
+static void on_db_item_change(Subject *subj, void *user_data);
 
 
 // All allowed modes for VOL fast access
@@ -156,7 +139,7 @@ int cfg_init(sqlite3 *db) {
 /**
  * Delayed save of item
  */
-static void on_item_change(Subject *subj, void *user_data) {
+static void on_db_item_change(Subject *subj, void *user_data) {
     cfg_item_t *item = (cfg_item_t *)user_data;
     pthread_mutex_lock(&item->dirty->mux);
     if (item->dirty->val != ITEM_STATE_LOADING) {
@@ -164,26 +147,6 @@ static void on_item_change(Subject *subj, void *user_data) {
         LV_LOG_INFO("Set dirty %s (pk=%i)", item->db_name, item->pk);
     }
     pthread_mutex_unlock(&item->dirty->mux);
-}
-
-/**
- * Changing of key tone
- */
-static void on_key_tone_change(Subject *subj, void *user_data) {
-    int32_t key_tone = subject_get_int(subj);
-    if (cfg_cur.mode == NULL) {
-        LV_LOG_USER("Skip update filters, cfg_cur.mode is not initialized");
-        return;
-    }
-    x6100_mode_t db_mode = xmode_2_db(subject_get_int(cfg_cur.mode));
-    if (db_mode == x6100_mode_cw) {
-        int32_t high, low, bw;
-        bw   = subject_get_int(cfg_cur.filter.bw);
-        low  = key_tone - bw / 2;
-        high = low + bw;
-        subject_set_int(cfg_cur.filter.high, high);
-        subject_set_int(cfg_cur.filter.low, low);
-    }
 }
 
 /**
@@ -212,7 +175,7 @@ void init_items(cfg_item_t *cfg_arr, uint32_t count, int (*load)(struct cfg_item
         item->dirty      = malloc(sizeof(*item->dirty));
         item->dirty->val = ITEM_STATE_CLEAN;
         pthread_mutex_init(&item->dirty->mux, NULL);
-        Observer *o = subject_add_observer(item->val, on_item_change, item);
+        Observer *o = subject_add_observer(item->val, on_db_item_change, item);
     }
 }
 /**
@@ -446,9 +409,6 @@ static int init_params_cfg(sqlite3 *db) {
     fill_cfg_item_int(&cfg.ft8_max_repeats, subject_create_int(6), "ft8_max_repeats");
     fill_cfg_item_int(&cfg.ft8_omit_cq_qth, subject_create_int(false), "ft8_omit_cq_qth");
 
-    /* Bind callbacks */
-    // subject_add_observer(cfg.band_id.val, on_band_id_change, NULL);
-    subject_add_observer(cfg.key_tone.val, on_key_tone_change, NULL);
 
     /* Load values from table */
     cfg_item_t *cfg_arr  = (cfg_item_t *)&cfg;

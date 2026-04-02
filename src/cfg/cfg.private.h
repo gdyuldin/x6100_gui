@@ -2,6 +2,10 @@
 
 #include "cfg.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <pthread.h>
 #include <sqlite3.h>
 
@@ -26,3 +30,8 @@ void fill_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name);
 void fill_cfg_item_uint64(cfg_item_t *item, Subject * val, const char * db_name);
 void fill_cfg_item_float(cfg_item_t *item, Subject * val, float db_scale, const char * db_name);
 void fill_cfg_item_text(cfg_item_t *item, Subject * val, const char * db_name);
+
+
+#ifdef __cplusplus
+}
+#endif

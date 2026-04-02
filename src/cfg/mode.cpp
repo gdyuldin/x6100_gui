@@ -1,13 +1,19 @@
 #include "mode.private.h"
 
-#include "cfg.private.h"
-#include "band.private.h"
+#include <vector>
 
-#include "../lvgl/lvgl.h"
-#include "mode.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+extern "C" {
+
+    #include "cfg.private.h"
+    #include "band.private.h"
+
+    #include "../lvgl/lvgl.h"
+    #include "mode.h"
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+}
+
 
 static sqlite3        *db;
 static sqlite3_stmt   *insert_stmt;
@@ -30,13 +36,15 @@ static void on_cur_filter_bw_change(Subject *subj, void *user_data);
 static void on_cur_freq_step_change(Subject *subj, void *user_data);
 static void on_cur_zoom_change(Subject *subj, void *user_data);
 
-static void update_cur_low_filter(Subject *subj, void *user_data);
-static void update_cur_high_filter(Subject *subj, void *user_data);
+static void update_mode_low_filter(Subject *subj, void *user_data);
+static void update_mode_high_filter(Subject *subj, void *user_data);
 static void on_freq_step_change(Subject *subj, void *user_data);
 static void on_zoom_change(Subject *subj, void *user_data);
 
 static void update_real_filters(Subject *subj, void *user_data);
 static void update_lo_offset(Subject *subj, void *user_data);
+
+static void update_cw_filters(Subject *subj, void *user_data);
 
 static void fill_mode_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name, int pk);
 
@@ -44,7 +52,7 @@ void cfg_mode_params_init(sqlite3 *database) {
     init_db(database);
 
     /* Fill mode configuration */
-    x6100_mode_t mode    = subject_get_int(cfg_cur.mode);
+    x6100_mode_t mode    = (x6100_mode_t)subject_get_int(cfg_cur.mode);
     db_mode_t    db_mode = xmode_2_db(mode);
     uint32_t     low, high, step, zoom, cur_low, cur_high;
     mode_default_values(db_mode, &low, &high, &step, &zoom);
@@ -83,16 +91,18 @@ void cfg_mode_params_init(sqlite3 *database) {
     subject_add_observer(cfg_cur.mode, update_lo_offset, NULL);
     subject_add_observer_and_call(cfg.key_tone.val, update_lo_offset, NULL);
 
+    subject_add_observer(cfg.key_tone.val, update_cw_filters, NULL);
+
     fill_mode_cfg_item_int(&cfg_mode.filter_low, subject_create_int(low), "filter_low", db_mode);
     fill_mode_cfg_item_int(&cfg_mode.filter_high, subject_create_int(high), "filter_high", db_mode);
     fill_mode_cfg_item_int(&cfg_mode.freq_step, subject_create_int(step), "freq_step", db_mode);
     fill_mode_cfg_item_int(&cfg_mode.zoom, subject_create_int(zoom), "spectrum_factor", db_mode);
 
-    subject_add_observer(cfg_mode.filter_low.val, update_cur_low_filter, &cfg_mode.filter_low);
-    subject_add_observer(cfg_cur.mode, update_cur_low_filter, &cfg_mode.filter_low);
+    subject_add_observer(cfg_mode.filter_low.val, update_mode_low_filter, &cfg_mode.filter_low);
+    // subject_add_observer(cfg_cur.mode, update_mode_low_filter, &cfg_mode.filter_low);
 
-    subject_add_observer(cfg_mode.filter_high.val, update_cur_high_filter, &cfg_mode.filter_high);
-    subject_add_observer(cfg_cur.mode, update_cur_high_filter, &cfg_mode.filter_high);
+    subject_add_observer(cfg_mode.filter_high.val, update_mode_high_filter, &cfg_mode.filter_high);
+    // subject_add_observer(cfg_cur.mode, update_mode_high_filter, &cfg_mode.filter_high);
 
     subject_add_observer(cfg_mode.freq_step.val, on_freq_step_change, NULL);
 
@@ -141,6 +151,10 @@ int cfg_mode_params_load_item(cfg_item_t *item) {
                     LV_LOG_WARN("%s can't be negative (%i), ignore DB value", item->db_name, val);
                 } else {
                     LV_LOG_USER("Loaded %s=%i (pk=%u)", item->db_name, val, item->pk);
+                    if (val > 10000) {
+                        LV_LOG_USER("Limit %s to 10000", item->db_name);
+                        val = 10000;
+                    }
                     subject_set_int(item->val, val);
                 }
                 break;
@@ -306,7 +320,7 @@ int32_t cfg_mode_change_freq_step(bool up) {
 }
 
 int32_t cfg_mode_set_low_filter(int32_t val) {
-    x6100_mode_t mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t mode = (x6100_mode_t)subject_get_int(cfg_cur.mode);
     int32_t      high = subject_get_int(cfg_cur.filter.high);
     switch (mode) {
         case x6100_mode_am:
@@ -321,7 +335,7 @@ int32_t cfg_mode_set_low_filter(int32_t val) {
 }
 
 int32_t cfg_mode_set_high_filter(int32_t val) {
-    x6100_mode_t mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t mode = (x6100_mode_t)subject_get_int(cfg_cur.mode);
     int32_t      low = subject_get_int(cfg_cur.filter.low);
     if ((val <= MAX_FILTER_FREQ) & (val > low)) {
         subject_set_int(cfg_cur.filter.high, val);
@@ -346,7 +360,7 @@ static void init_db(sqlite3 *database) {
 }
 
 static void on_cur_mode_change(Subject *subj, void *user_data) {
-    x6100_mode_t new_mode = subject_get_int(subj);
+    x6100_mode_t new_mode = (x6100_mode_t)subject_get_int(subj);
 
     if (cfg_mode.filter_high.dirty == NULL) {
         LV_LOG_USER("Skip updating mode values, not initialized");
@@ -365,6 +379,9 @@ static void on_cur_mode_change(Subject *subj, void *user_data) {
         }
     }
     // Load
+    cfg_cur.filter.low->set_pause_notify(true);
+    cfg_cur.filter.high->set_pause_notify(true);
+    cfg_cur.filter.bw->set_pause_notify(true);
     for (size_t i = 0; i < cfg_mode_size; i++) {
         if (cfg_mode_arr[i].pk != db_mode) {
             cfg_mode_arr[i].dirty->val = ITEM_STATE_LOADING;
@@ -373,41 +390,55 @@ static void on_cur_mode_change(Subject *subj, void *user_data) {
             cfg_mode_arr[i].dirty->val = ITEM_STATE_CLEAN;
         }
     }
+    cfg_cur.filter.low->force_paused_notify();
+    cfg_cur.filter.high->force_paused_notify();
+    cfg_cur.filter.bw->force_paused_notify();
 }
 
 static void on_cur_filter_low_change(Subject *subj, void *user_data) {
     int32_t new_low = subject_get_int(subj);
+    int32_t bw = subject_get_int(cfg_cur.filter.high) - new_low;
     LV_LOG_INFO("New current low=%i", new_low);
-    subject_set_int(cfg_cur.filter.bw, subject_get_int(cfg_cur.filter.high) - new_low);
     int32_t new_high;
     switch (cfg_mode.filter_low.pk) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
-            new_high = (subject_get_int(cfg.key_tone.val) - new_low) * 2;
-            subject_set_int(cfg_mode.filter_high.val, new_high);
+            // new_high = (subject_get_int(cfg.key_tone.val) - new_low) * 2;
+            // On CW cfg_mode.filter_high.val is actually bw
+            subject_set_int(cfg_mode.filter_high.val, bw);
+            break;
+
+        case x6100_mode_am:
+        case x6100_mode_nfm:
+            new_low = 0;
+            bw = subject_get_int(cfg_cur.filter.high);
+            subject_set_int(cfg_mode.filter_low.val, new_low);
             break;
 
         default:
             subject_set_int(cfg_mode.filter_low.val, new_low);
             break;
     }
+    subject_set_int(cfg_cur.filter.bw, bw);
 }
 
 static void on_cur_filter_high_change(Subject *subj, void *user_data) {
     int32_t new_high = subject_get_int(subj);
+    int32_t bw = new_high - subject_get_int(cfg_cur.filter.low);
     LV_LOG_INFO("New current high=%i", new_high);
-    subject_set_int(cfg_cur.filter.bw, new_high - subject_get_int(cfg_cur.filter.low));
     switch (cfg_mode.filter_high.pk) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
-            new_high = (new_high - subject_get_int(cfg.key_tone.val)) * 2;
-            subject_set_int(cfg_mode.filter_high.val, new_high);
+            // bw = (new_high - subject_get_int(cfg.key_tone.val)) * 2;
+            // On CW cfg_mode.filter_high.val is actually bw
+            subject_set_int(cfg_mode.filter_high.val, bw);
             break;
 
         default:
             subject_set_int(cfg_mode.filter_high.val, new_high);
             break;
     }
+    subject_set_int(cfg_cur.filter.bw, bw);
 }
 
 static void on_cur_filter_bw_change(Subject *subj, void *user_data) {
@@ -416,22 +447,34 @@ static void on_cur_filter_bw_change(Subject *subj, void *user_data) {
         return;
     }
     int32_t new_bw = subject_get_int(subj);
-    int32_t new_low, new_high;
+    int32_t new_low, new_high, key_tone;
     switch (cfg_mode.filter_high.pk) {
         case x6100_mode_am:
         case x6100_mode_nfm:
-            new_low  = subject_get_int(cfg_cur.filter.low);
+            new_low = 0;
+            new_high = new_bw;
+            break;
+        case x6100_mode_cw:
+        case x6100_mode_cwr:
+            key_tone = subject_get_int(cfg.key_tone.val);
+            new_low = key_tone - new_bw / 2;
+            new_low = LV_MAX(new_low, 0);
             new_high = new_low + new_bw;
             break;
         default:
             new_low  = (subject_get_int(cfg_cur.filter.high) + subject_get_int(cfg_cur.filter.low) - new_bw) / 2;
+            new_low = LV_MAX(new_low, 0);
             new_high = new_low + new_bw;
             break;
     }
     LV_LOG_INFO("New bw=%i, set cur filters: low=%i high=%i", new_bw, new_low, new_high);
 
+    cfg_cur.filter.low->set_pause_notify(true);
+    cfg_cur.filter.high->set_pause_notify(true);
     subject_set_int(cfg_cur.filter.low, new_low);
     subject_set_int(cfg_cur.filter.high, new_high);
+    cfg_cur.filter.low->force_paused_notify();
+    cfg_cur.filter.high->force_paused_notify();
 }
 
 static void on_cur_freq_step_change(Subject *subj, void *user_data) {
@@ -439,28 +482,29 @@ static void on_cur_freq_step_change(Subject *subj, void *user_data) {
         LV_LOG_USER("Freq step is not initialized, skip updating");
     }
     subject_set_int(cfg_mode.freq_step.val, subject_get_int(subj));
-    ;
 }
 
 static void on_cur_zoom_change(Subject *subj, void *user_data) {
     subject_set_int(cfg_mode.zoom.val, subject_get_int(subj));
-    ;
 }
 
 /**
  * On changing mode params
  */
-static void update_cur_low_filter(Subject *subj, void *user_data) {
+static void update_mode_low_filter(Subject *subj, void *user_data) {
     cfg_item_t *item    = (cfg_item_t *)user_data;
     int32_t     cur_low = subject_get_int(cfg_mode.filter_low.val);
     switch (item->pk) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
+            cur_low = subject_get_int(cfg.key_tone.val) - subject_get_int(cfg_mode.filter_high.val) / 2;
+            cur_low = LV_MAX(cur_low, 0);
+            break;
         case x6100_mode_am:
         case x6100_mode_nfm:
-            // cur_low = subject_get_int(cfg.key_tone.val) - subject_get_int(cfg_mode.filter_high.val) / 2;
-            // cur_low = 0;
-            return;
+            // Ignore saved filter low.
+            // return;
+            cur_low = 0;
             break;
 
         default:
@@ -470,16 +514,23 @@ static void update_cur_low_filter(Subject *subj, void *user_data) {
     subject_set_int(cfg_cur.filter.low, cur_low);
 }
 
-static void update_cur_high_filter(Subject *subj, void *user_data) {
+static void update_mode_high_filter(Subject *subj, void *user_data) {
     cfg_item_t *item     = (cfg_item_t *)user_data;
     int32_t     cur_high = subject_get_int(cfg_mode.filter_high.val);
     int32_t     bw;
+    int32_t     low;
+
     switch (item->pk) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
             bw       = cur_high;
             cur_high = subject_get_int(cfg.key_tone.val) + bw / 2;
-            subject_set_int(cfg_cur.filter.low, cur_high - bw);
+            low = cur_high - bw;
+            if (low < 0) {
+                cur_high -= low;
+                low = 0;
+            }
+            subject_set_int(cfg_cur.filter.low, low);
             break;
 
         case x6100_mode_am:
@@ -506,7 +557,7 @@ static void on_zoom_change(Subject *subj, void *user_data) {
  * get frequencies for display and dsp (with negative numbers)
  */
 static void update_real_filters(Subject *subj, void *user_data) {
-    x6100_mode_t mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t mode = (x6100_mode_t)subject_get_int(cfg_cur.mode);
     int32_t      low  = subject_get_int(cfg_cur.filter.low);
     int32_t      high = subject_get_int(cfg_cur.filter.high);
     int32_t      from, to;
@@ -537,13 +588,41 @@ static void update_real_filters(Subject *subj, void *user_data) {
             return;
     }
     LV_LOG_INFO("Set real filters: (%i, %i)", from, to);
+
     subject_set_int(cfg_cur.filter.real.from, from);
     subject_set_int(cfg_cur.filter.real.to, to);
 }
 
+/**
+ * Changing of key tone
+ */
+static void update_cw_filters(Subject *subj, void *user_data) {
+    int32_t key_tone = subject_get_int(cfg.key_tone.val);
+    if (cfg_cur.mode == NULL) {
+        LV_LOG_USER("Skip update filters, cfg_cur.mode is not initialized");
+        return;
+    }
+    db_mode_t db_mode = xmode_2_db((x6100_mode_t)subject_get_int(cfg_cur.mode));
+    if (db_mode == x6100_mode_cw) {
+        int32_t high, low, bw;
+        bw   = subject_get_int(cfg_cur.filter.bw);
+        low  = key_tone - bw / 2;
+        if (low < 0) {
+            low = 0;
+        }
+        high = low + bw;
+        cfg_cur.filter.high->set_pause_notify(true);
+        cfg_cur.filter.low->set_pause_notify(true);
+        subject_set_int(cfg_cur.filter.high, high);
+        subject_set_int(cfg_cur.filter.low, low);
+        cfg_cur.filter.high->force_paused_notify();
+        cfg_cur.filter.low->force_paused_notify();
+    }
+}
+
 
 static void update_lo_offset(Subject *subj, void *user_data) {
-    x6100_mode_t mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t mode = (x6100_mode_t)subject_get_int(cfg_cur.mode);
     int32_t key_tone = subject_get_int(cfg.key_tone.val);
     int32_t lo_offset;
     switch (mode) {
