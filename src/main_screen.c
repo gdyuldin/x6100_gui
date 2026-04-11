@@ -1203,6 +1203,8 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
 
     split_freq(f + half_width, &mhz, &khz, &hz);
     lv_label_set_text_fmt(freq[2], "#%03X %i.%03i", color, mhz, khz);
+    lv_area_t area = {.x1=0, .x2=800, .y1=spectrum_height, .y2=spectrum_height+freq_height};
+    lv_obj_invalidate_area(obj, &area);
 }
 
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data) {
