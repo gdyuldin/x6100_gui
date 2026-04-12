@@ -28,11 +28,13 @@ static uint64_t     freq;
 static lv_anim_t    fade;
 static bool         fade_run = false;
 static uint8_t      zoom     = 1;
+static int32_t      if_shift = 0;
 
 static lv_timer_t *timer = NULL;
 
 static void on_zoom_changed(Subject *subj, void *user_data);
 static void on_freq_changed(Subject *subj, void *user_data);
+static void on_if_shift_changed(Subject *subj, void *user_data);
 
 static void refresh_bands_info();
 
@@ -69,8 +71,8 @@ static void band_info_draw_cb(lv_event_t *e) {
 
         lv_border_side_t border_side = LV_BORDER_SIDE_NONE;
 
-        int32_t start = (int64_t)(band->start_freq - freq) * w / width_hz * current_zoom;
-        int32_t stop  = (int64_t)(band->stop_freq - freq) * w / width_hz * current_zoom;
+        int32_t start = (int64_t)(band->start_freq - freq + if_shift) * w / width_hz * current_zoom;
+        int32_t stop  = (int64_t)(band->stop_freq - freq + if_shift) * w / width_hz * current_zoom;
 
         start += w / 2;
         stop += w / 2;
@@ -163,6 +165,7 @@ lv_obj_t *band_info_init(lv_obj_t *parent) {
 
     subject_add_observer_and_call(cfg_cur.zoom, on_zoom_changed, NULL);
     subject_add_delayed_observer_and_call(cfg_cur.fg_freq, on_freq_changed, NULL);
+    subject_add_delayed_observer_and_call(cfg_cur.band->if_shift.val, on_if_shift_changed, NULL);
 
     return obj;
 }
@@ -192,6 +195,10 @@ static void on_zoom_changed(Subject *subj, void *user_data) {
 
 static void on_freq_changed(Subject *subj, void *user_data) {
     band_info_update(subject_get_int(subj));
+}
+
+static void on_if_shift_changed(Subject *subj, void *user_data) {
+    if_shift = subject_get_int(subj);
 }
 
 static void refresh_bands_info() {
