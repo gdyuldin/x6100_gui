@@ -96,15 +96,15 @@ jobs:
         zip sdcard.${{ github.ref_name }}.img.zip sdcard.${{ github.ref_name }}.img
 
     # Upload image
-    - name: 'Upload image'
-      uses: actions/upload-artifact@v4
-      with:
-        name: sdcard.img
-        path: AetherX6100Buildroot/build/images/sdcard.img
+    # - name: 'Upload image'
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: sdcard.img
+    #     path: AetherX6100Buildroot/build/images/sdcard.img
 
     # Create release
     - name: Release
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: AetherX6100Buildroot/build/images/sdcard.img.zip
+        files: AetherX6100Buildroot/build/images/sdcard.${{ github.ref_name }}.img.zip
