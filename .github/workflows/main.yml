@@ -92,7 +92,8 @@ jobs:
     - name: Compress image
       run: |
         cd AetherX6100Buildroot/build/images
-        zip sdcard.img.zip sdcard.img
+        mv sdcard.img sdcard.${{ github.ref_name }}.img
+        zip sdcard.${{ github.ref_name }}.img.zip sdcard.${{ github.ref_name }}.img
 
     # Upload image
     - name: 'Upload image'
