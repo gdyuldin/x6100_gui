@@ -146,7 +146,7 @@ void cfg_band_set_freq_for_vfo(x6100_vfo_t vfo, int32_t freq) {
         LV_LOG_ERROR("Unknown band, can't set freq %i for vfo %u", freq, vfo);
         return;
     }
-    int32_t            new_band_id = band_info->id;
+    int32_t  new_band_id = band_info->id;
     struct vfo_params *target;
     if (vfo == X6100_VFO_A) {
         target = &cfg_band.vfo_a;
@@ -156,11 +156,15 @@ void cfg_band_set_freq_for_vfo(x6100_vfo_t vfo, int32_t freq) {
     if (new_band_id != target->freq.pk) {
         cfg_band.vfo.pk = new_band_id;
         save_item_to_db(&cfg_band.vfo, true);
-        // save old freq and update band_id
-        cfg_band_params_save_all();
-        cfg_band_params_change_pk(new_band_id);
-        if (new_band_id != BAND_UNDEFINED) {
-            cfg_band_params_load_all();
+        if (target->freq.dirty->val == ITEM_STATE_LOADING) {
+            cfg_band_params_change_pk(new_band_id);
+        } else {
+            // save old freq and update band_id
+            cfg_band_params_save_all();
+            cfg_band_params_change_pk(new_band_id);
+            if (new_band_id != BAND_UNDEFINED) {
+                cfg_band_params_load_all();
+            }
         }
         subject_set_int(cfg.band_id.val, new_band_id);
     }
