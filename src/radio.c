@@ -5,7 +5,19 @@
  *
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
+
+/*********************
+ *      INCLUDES
+ *********************/
 #include "radio.h"
+
+#include <unistd.h>
+#include <stdio.h>
+#include <pthread.h>
+#include <string.h>
+
+#include <aether_radio/x6100_control/low/flow.h>
+#include <aether_radio/x6100_control/low/gpio.h>
 
 #include "cfg/atu.h"
 #include "cfg/transverter.h"
@@ -19,14 +31,9 @@
 #include "cw.h"
 #include "pubsub_ids.h"
 
-#include <aether_radio/x6100_control/low/flow.h>
-#include <aether_radio/x6100_control/low/gpio.h>
-
-#include <unistd.h>
-#include <stdio.h>
-#include <pthread.h>
-#include <string.h>
-
+/*********************
+ *      DEFINES
+ *********************/
 
 #define FLOW_RESTART_TIMEOUT 300
 #define IDLE_TIMEOUT        (3 * 1000)
@@ -34,6 +41,58 @@
 #define FILTER_2_OFFSET 60
 #define FILTER_2_OFFSET_IN 20
 #define FILTER_2_OFFSET_OUT (FILTER_2_OFFSET - FILTER_2_OFFSET_IN)
+
+/**********************
+ *      MACROS
+ **********************/
+
+#define WITH_RADIO_LOCK(fn) radio_lock(); fn; radio_unlock();
+
+#define CHANGE_PARAM(new_val, val, dirty, radio_fn) \
+    if (new_val != val) { \
+        params_lock(); \
+        val = new_val; \
+        params_unlock(&dirty); \
+        radio_lock(); \
+        radio_fn(val); \
+        radio_unlock(); \
+    }
+
+/**********************
+ *      TYPEDEFS
+ **********************/
+
+typedef struct __attribute__((__packed__)) {
+    uint32_t lo_freq;
+    uint8_t flow_fmt;
+    uint8_t flow_seq_n: 4;
+    uint8_t flow_seq_total: 4;
+    uint8_t vary_freq: 1;
+    uint8_t fft_dec: 3;
+    uint32_t _pad1: 12;
+    uint32_t _pad2;
+} flow_info_t;
+
+
+typedef enum {
+    x6100_flow_fp32 = 0,
+    x6100_flow_bf16,
+} x6100_flow_fmt_t;
+
+/**********************
+ *  STATIC PROTOTYPES
+ **********************/
+
+static void on_change_bool(Subject *subj, void *user_data);
+static void radio_lock();
+static void radio_unlock();
+static void recover_processing_audio_inputs();
+static bool radio_tick();
+static void * radio_thread(void *arg);
+
+/**********************
+ *  STATIC VARIABLES
+ **********************/
 
 static radio_rx_tx_change_t notify_rx_tx;
 static void(*low_power_cb)(bool) = NULL;
@@ -51,224 +110,189 @@ static bool             mute = false;
 
 static cfloat           samples_buf[RADIO_SAMPLES*2];
 
-typedef struct __attribute__((__packed__)) {
-    uint32_t lo_freq;
-    uint8_t flow_fmt;
-    uint8_t flow_seq_n: 4;
-    uint8_t flow_seq_total: 4;
-    uint8_t vary_freq: 1;
-    uint8_t fft_dec: 3;
-    uint32_t _pad1: 12;
-    uint32_t _pad2;
-} flow_info_t;
+static uint32_t min_tx;
+static uint32_t max_tx;
 
-#define WITH_RADIO_LOCK(fn) radio_lock(); fn; radio_unlock();
+/**********************
+ *   GLOBAL FUNCTIONS
+ **********************/
 
-#define CHANGE_PARAM(new_val, val, dirty, radio_fn) \
-    if (new_val != val) { \
-        params_lock(); \
-        val = new_val; \
-        params_unlock(&dirty); \
-        radio_lock(); \
-        radio_fn(val); \
-        radio_unlock(); \
+void radio_bb_reset() {
+    x6100_gpio_set(x6100_pin_bb_reset, 1);
+    usleep(100000);
+    x6100_gpio_set(x6100_pin_bb_reset, 0);
+}
+
+void radio_init() {
+    if (!x6100_gpio_init())
+        return;
+
+    x6100_gpio_set(x6100_pin_morse_key, 1);     /* Morse key off */
+
+
+    if (!x6100_flow_init())
+        return;
+
+
+    pthread_mutex_init(&control_mux, NULL);
+
+    pthread_t thread;
+
+    pthread_create(&thread, NULL, radio_thread, NULL);
+    pthread_detach(thread);
+}
+
+void radio_set_rx_tx_notify_fn(radio_rx_tx_change_t cb) {
+    notify_rx_tx = cb;
+}
+
+void radio_set_low_power_cb(void (*cb)(bool)) {
+    low_power_cb = cb;
+}
+
+radio_state_t radio_get_state() {
+    return state;
+}
+
+void radio_set_freq(int32_t freq) {
+    if (!radio_check_freq(freq)) {
+        LV_LOG_ERROR("Freq %i incorrect", freq);
+        return;
+    }
+    x6100_vfo_t vfo = subject_get_int(cfg_cur.band->vfo.val);
+    int32_t shift = cfg_transverter_get_shift(freq);
+    WITH_RADIO_LOCK(x6100_control_vfo_freq_set(vfo, freq - shift));
+}
+
+bool radio_check_freq(int32_t freq) {
+    if (freq >= 500000 && freq <= 55000000) {
+        return true;
+    }
+    return cfg_transverter_get_shift(freq) != 0;
+}
+
+uint16_t radio_change_vol(int16_t df) {
+    int32_t vol = subject_get_int(cfg.vol.val);
+    if (df == 0) {
+        return vol;
     }
 
+    mute = false;
 
-typedef enum {
-    x6100_flow_fp32 = 0,
-    x6100_flow_bf16,
-} x6100_flow_fmt_t;
+    uint16_t new_val = limit(vol + df, 0, 55);
 
-static void radio_lock() {
+    if (new_val != vol) {
+        subject_set_int(cfg.vol.val, new_val);
+    };
+
+    return new_val;
+}
+
+void radio_change_mute() {
+    mute = !mute;
+    x6100_control_rxvol_set(mute ? 0 : subject_get_int(cfg.vol.val));
+}
+
+bool radio_change_spmode(int16_t df) {
+    if (df == 0) {
+        return params.spmode.x;
+    }
+
+    params_bool_set(&params.spmode, df > 0);
+
+    WITH_RADIO_LOCK(x6100_control_spmode_set(params.spmode.x));
+
+    return params.spmode.x;
+}
+
+void radio_start_atu() {
+    if (state == RADIO_RX) {
+        state = RADIO_ATU_START;
+    }
+}
+
+bool radio_start_swrscan() {
+    if (state != RADIO_RX) {
+        return false;
+    }
+
+    subject_set_int(cfg_cur.mode, x6100_mode_am);
+    radio_lock();
+    x6100_control_txpwr_set(5.0f);
+    x6100_control_swrscan_set(true);
+    radio_unlock();
+    state = RADIO_SWRSCAN;
+
+    return true;
+}
+
+void radio_stop_swrscan() {
+    if (state == RADIO_SWRSCAN) {
+        state = RADIO_RX;
+        radio_lock();
+        x6100_control_swrscan_set(false);
+        x6100_control_txpwr_set(subject_get_float(cfg.pwr.val));
+        radio_unlock();
+    }
+}
+
+void radio_set_pwr(float d) {
+    WITH_RADIO_LOCK(x6100_control_txpwr_set(d));
+}
+
+x6100_vfo_t radio_toggle_vfo() {
+    x6100_vfo_t new_vfo = (subject_get_int(cfg_cur.band->vfo.val) == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A;
+
+    subject_set_int(cfg_cur.band->vfo.val, new_vfo);
+    // TODO: move to another file
+    voice_say_text_fmt("V F O %s", (new_vfo == X6100_VFO_A) ? "A" : "B");
+
+    return new_vfo;
+}
+
+void radio_poweroff() {
+    if (params.charger.x == RADIO_CHARGER_SHADOW) {
+        WITH_RADIO_LOCK(x6100_control_charger_set(true));
+    }
+
+    state = RADIO_POWEROFF;
+}
+
+void radio_set_charger(bool on) {
+    WITH_RADIO_LOCK(x6100_control_charger_set(on));
+}
+
+void radio_set_ptt(bool tx) {
+    WITH_RADIO_LOCK(x6100_control_ptt_set(tx));
+}
+
+void radio_set_modem(bool tx) {
+    WITH_RADIO_LOCK(x6100_control_modem_set(tx));
+}
+
+void radio_set_line_in(uint8_t d) {
+    CHANGE_PARAM(d, params.line_in, params.dirty.line_in, x6100_control_linein_set);
+}
+
+void radio_set_line_out(uint8_t d) {
+    CHANGE_PARAM(d, params.line_out, params.dirty.line_out, x6100_control_lineout_set);
+}
+
+void radio_set_morse_key(bool on) {
+    x6100_gpio_set(x6100_pin_morse_key, on ? 0 : 1);
+}
+
+/**********************
+ *   STATIC FUNCTIONS
+ **********************/
+
+ static void radio_lock() {
     pthread_mutex_lock(&control_mux);
 }
 
 static void radio_unlock() {
     idle_time = get_time();
     pthread_mutex_unlock(&control_mux);
-}
-
-#include <math.h>
-/**
- * Restore "listening" of main board and USB soundcard after ATU
- */
-static void recover_processing_audio_inputs() {
-    usleep(10000);
-    x6100_vfo_t vfo = subject_get_int(cfg_cur.band->vfo.val);
-    radio_lock();
-    x6100_control_vfo_mode_set(vfo, x6100_mode_usb_dig);
-    x6100_control_txpwr_set(0.1f);
-    x6100_control_modem_set(true);
-    usleep(50000);
-    x6100_control_modem_set(false);
-    x6100_control_txpwr_set(subject_get_float(cfg.pwr.val));
-    x6100_control_vfo_mode_set(vfo, subject_get_int(cfg_cur.mode));
-    radio_unlock();
-}
-
-static uint32_t min_tx;
-static uint32_t max_tx;
-
-bool radio_tick() {
-    if (now_time < prev_time) {
-        prev_time = now_time;
-    }
-
-    int32_t d = now_time - prev_time;
-
-    if (x6100_flow_read(pack)) {
-        prev_time = now_time;
-
-        static uint8_t delay;
-        bool vary_freq = false;
-
-        if (delay++ > 10) {
-            delay = 0;
-            clock_update_power(pack->vext * 0.1f, pack->vbat*0.1f, pack->batcap, pack->flag.charging);
-            if (low_power_cb) {
-                low_power_cb(!pack->flag.vext && (pack->vbat <= 60));
-            }
-        }
-        flow_info_t *flow_info = (flow_info_t*)pack->reserved_3;
-
-        uint32_t base_freq = 0;
-        uint8_t fft_dec = 0;
-        if (base_ver.rev >= 8) {
-            base_freq = flow_info->lo_freq;
-            fft_dec = 1U << flow_info->fft_dec;
-        }
-
-        cfloat *flow_samples = (cfloat*)((char *)pack + offsetof(x6100_flow_t, samples));
-        cfloat *samples;
-        size_t n_samples;
-
-        if (base_ver.rev >= 8) {
-            if (flow_info->flow_fmt == x6100_flow_fp32) {
-                samples = flow_samples;
-                n_samples = RADIO_SAMPLES;
-            } else if (flow_info->flow_fmt == x6100_flow_bf16) {
-                n_samples = RADIO_SAMPLES * 2;
-                uint16_t *u16_flow_samples = (uint16_t*)flow_samples;
-                uint32_t *u32_samples_buf = (uint32_t*)samples_buf;
-                for (size_t i = 0; i < n_samples * 2; i+=4) {
-                    u32_samples_buf[i] = (uint32_t)u16_flow_samples[i] << 16;
-                    u32_samples_buf[i+1] = (uint32_t)u16_flow_samples[i+1] << 16;
-                    u32_samples_buf[i+2] = (uint32_t)u16_flow_samples[i+2] << 16;
-                    u32_samples_buf[i+3] = (uint32_t)u16_flow_samples[i+3] << 16;
-                }
-                samples = samples_buf;
-            }
-            vary_freq = flow_info->vary_freq;
-        } else {
-            samples = flow_samples;
-            n_samples = RADIO_SAMPLES;
-        }
-        // printf("%d from %d, freq: %d, vary_freq: %d\n", flow_info->flow_seq_n, seq_total, base_freq, vary_freq);
-        // union {
-        //     uint32_t i;
-        //     float f;
-        // } fuint = {flow_info->_pad2};
-        // printf("audio rms: %f\n", 20.0f * log10f(fuint.f));
-        // printf("audio mul: %.*g\n", fuint.f);
-        dsp_samples(samples, n_samples, pack->flag.tx, base_freq, flow_info->vary_freq, fft_dec);
-
-        switch (state) {
-            case RADIO_RX:
-                if (pack->flag.tx) {
-                    state = RADIO_TX;
-                    if (notify_rx_tx) {
-                        notify_rx_tx(true);
-                    }
-                }
-                break;
-
-            case RADIO_TX:
-                if (!pack->flag.tx) {
-                    state = RADIO_RX;
-                    if (notify_rx_tx) {
-                        notify_rx_tx(false);
-                    }
-                } else {
-                    // printf("%d, %d\n", pack->tx_power, pack->alc_level);
-                    tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
-                }
-                break;
-
-            case RADIO_ATU_START:
-                WITH_RADIO_LOCK(x6100_control_atu_tune(true));
-                state = RADIO_ATU_WAIT;
-                break;
-
-            case RADIO_ATU_WAIT:
-                if (pack->flag.tx) {
-                    if (notify_rx_tx) {
-                        notify_rx_tx(true);
-                    }
-                    state = RADIO_ATU_RUN;
-                }
-                break;
-
-            case RADIO_ATU_RUN:
-                if (pack->flag.atu_status && !pack->flag.tx) {
-                    cfg_atu_save_network(pack->atu_params);
-                    WITH_RADIO_LOCK(x6100_control_atu_tune(false));
-                    subject_set_int(cfg.atu_enabled.val, true);
-                    recover_processing_audio_inputs();
-                    if (notify_rx_tx) {
-                        notify_rx_tx(false);
-                    }
-
-                    // TODO: change with observer on atu->loaded change
-                    WITH_RADIO_LOCK(x6100_control_cmd(x6100_atu_network, pack->atu_params));
-                    state = RADIO_RX;
-                } else if (pack->flag.tx) {
-                    tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
-                }
-                break;
-
-            case RADIO_SWRSCAN:
-                dialog_swrscan_update(pack->vswr * 0.1f);
-                break;
-
-            case RADIO_POWEROFF:
-                x6100_control_poweroff();
-                state = RADIO_OFF;
-                break;
-
-            case RADIO_OFF:
-                break;
-        }
-
-        hkey_put(pack->hkey);
-    } else {
-        if (d > FLOW_RESTART_TIMEOUT) {
-            LV_LOG_WARN("Flow reset");
-            prev_time = now_time;
-            x6100_flow_restart();
-            dsp_reset();
-        }
-        return true;
-    }
-    return false;
-}
-
-static void * radio_thread(void *arg) {
-    while (true) {
-        now_time = get_time();
-
-        if (radio_tick()) {
-            usleep(2000);
-        }
-
-        int32_t idle = now_time - idle_time;
-
-        if (idle > IDLE_TIMEOUT && state == RADIO_RX) {
-            WITH_RADIO_LOCK(x6100_control_idle());
-
-            idle_time = now_time;
-        }
-    }
 }
 
 static void on_change_bool(Subject *subj, void *user_data) {
@@ -449,7 +473,7 @@ static void on_high_filter_change(Subject *subj, void *user_data) {
     radio_unlock();
 }
 
-void on_change_comp_ratio(Subject *subj, void *user_data) {
+static void on_change_comp_ratio(Subject *subj, void *user_data) {
     uint8_t ratio = subject_get_int(subj);
     if (ratio < 1) {
         ratio = 1;
@@ -465,7 +489,7 @@ void on_change_comp_ratio(Subject *subj, void *user_data) {
     }
 }
 
-void on_fw_zoom_change(Subject *subj, void *user_data) {
+static void on_fw_zoom_change(Subject *subj, void *user_data) {
     uint8_t zoom = subject_get_int(subj);
     uint8_t val = 0;
     while (zoom > 1) {
@@ -475,7 +499,7 @@ void on_fw_zoom_change(Subject *subj, void *user_data) {
     WITH_RADIO_LOCK(x6100_control_fftdec_set(val));
 }
 
-void on_if_shift_change(Subject *subj, void *user_data) {
+static void on_if_shift_change(Subject *subj, void *user_data) {
     int32_t shift = subject_get_int(subj);
     int32_t cur_freq = subject_get_int(cfg_cur.fg_freq);
 
@@ -492,7 +516,7 @@ void on_if_shift_change(Subject *subj, void *user_data) {
     on_vfo_freq_change(NULL, (void*)vfo);
 }
 
-void on_band_change(Subject *subj, void *user_data) {
+static void on_band_change(Subject *subj, void *user_data) {
     // Workaround for bug with ignored IQ offset on band change from BASE
     int32_t i_val = subject_get_int(cfg_cur.band->tx_i_offset.val);
     int32_t q_val = subject_get_int(cfg_cur.band->tx_q_offset.val);
@@ -510,28 +534,177 @@ void on_band_change(Subject *subj, void *user_data) {
     radio_unlock();
 }
 
-void base_control_command(Subject *subj, void *user_data) {
+static void base_control_command(Subject *subj, void *user_data) {
     uint32_t val = subject_get_int(subj);
     x6100_cmd_enum_t cmd = (x6100_cmd_enum_t)user_data;
     WITH_RADIO_LOCK(x6100_control_cmd(cmd, val));
 }
 
-void radio_bb_reset() {
-    x6100_gpio_set(x6100_pin_bb_reset, 1);
-    usleep(100000);
-    x6100_gpio_set(x6100_pin_bb_reset, 0);
+/**
+ * Restore "listening" of main board and USB soundcard after ATU
+ */
+static void recover_processing_audio_inputs() {
+    usleep(10000);
+    x6100_vfo_t vfo = subject_get_int(cfg_cur.band->vfo.val);
+    radio_lock();
+    x6100_control_vfo_mode_set(vfo, x6100_mode_usb_dig);
+    x6100_control_txpwr_set(0.1f);
+    x6100_control_modem_set(true);
+    usleep(50000);
+    x6100_control_modem_set(false);
+    x6100_control_txpwr_set(subject_get_float(cfg.pwr.val));
+    x6100_control_vfo_mode_set(vfo, subject_get_int(cfg_cur.mode));
+    radio_unlock();
 }
 
-void radio_init() {
-    if (!x6100_gpio_init())
-        return;
+static bool radio_tick() {
+    if (now_time < prev_time) {
+        prev_time = now_time;
+    }
+
+    int32_t d = now_time - prev_time;
+
+    if (x6100_flow_read(pack)) {
+        prev_time = now_time;
+
+        static uint8_t delay;
+        bool vary_freq = false;
+
+        if (delay++ > 10) {
+            delay = 0;
+            clock_update_power(pack->vext * 0.1f, pack->vbat*0.1f, pack->batcap, pack->flag.charging);
+            if (low_power_cb) {
+                low_power_cb(!pack->flag.vext && (pack->vbat <= 60));
+            }
+        }
+        flow_info_t *flow_info = (flow_info_t*)pack->reserved_3;
+
+        uint32_t base_freq = 0;
+        uint8_t fft_dec = 0;
+        if (base_ver.rev >= 8) {
+            base_freq = flow_info->lo_freq;
+            fft_dec = 1U << flow_info->fft_dec;
+        }
+
+        cfloat *flow_samples = (cfloat*)((char *)pack + offsetof(x6100_flow_t, samples));
+        cfloat *samples;
+        size_t n_samples;
+
+        if (base_ver.rev >= 8) {
+            if (flow_info->flow_fmt == x6100_flow_fp32) {
+                samples = flow_samples;
+                n_samples = RADIO_SAMPLES;
+            } else if (flow_info->flow_fmt == x6100_flow_bf16) {
+                n_samples = RADIO_SAMPLES * 2;
+                uint16_t *u16_flow_samples = (uint16_t*)flow_samples;
+                uint32_t *u32_samples_buf = (uint32_t*)samples_buf;
+                for (size_t i = 0; i < n_samples * 2; i+=4) {
+                    u32_samples_buf[i] = (uint32_t)u16_flow_samples[i] << 16;
+                    u32_samples_buf[i+1] = (uint32_t)u16_flow_samples[i+1] << 16;
+                    u32_samples_buf[i+2] = (uint32_t)u16_flow_samples[i+2] << 16;
+                    u32_samples_buf[i+3] = (uint32_t)u16_flow_samples[i+3] << 16;
+                }
+                samples = samples_buf;
+            }
+            vary_freq = flow_info->vary_freq;
+        } else {
+            samples = flow_samples;
+            n_samples = RADIO_SAMPLES;
+        }
+        // printf("%d from %d, freq: %d, vary_freq: %d\n", flow_info->flow_seq_n, seq_total, base_freq, vary_freq);
+        // union {
+        //     uint32_t i;
+        //     float f;
+        // } fuint = {flow_info->_pad2};
+        // printf("max signal: %g\n", fuint.f);
+        // printf("audio mul: %.*g\n", fuint.f);
+        dsp_samples(samples, n_samples, pack->flag.tx, base_freq, flow_info->vary_freq, fft_dec);
+
+        switch (state) {
+            case RADIO_RX:
+                if (pack->flag.tx) {
+                    state = RADIO_TX;
+                    if (notify_rx_tx) {
+                        notify_rx_tx(true);
+                    }
+                }
+                break;
+
+            case RADIO_TX:
+                if (!pack->flag.tx) {
+                    state = RADIO_RX;
+                    if (notify_rx_tx) {
+                        notify_rx_tx(false);
+                    }
+                } else {
+                    // printf("%d, %d\n", pack->tx_power, pack->alc_level);
+                    tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
+                }
+                break;
+
+            case RADIO_ATU_START:
+                WITH_RADIO_LOCK(x6100_control_atu_tune(true));
+                state = RADIO_ATU_WAIT;
+                break;
+
+            case RADIO_ATU_WAIT:
+                if (pack->flag.tx) {
+                    if (notify_rx_tx) {
+                        notify_rx_tx(true);
+                    }
+                    state = RADIO_ATU_RUN;
+                }
+                break;
+
+            case RADIO_ATU_RUN:
+                if (pack->flag.atu_status && !pack->flag.tx) {
+                    cfg_atu_save_network(pack->atu_params);
+                    WITH_RADIO_LOCK(x6100_control_atu_tune(false));
+                    subject_set_int(cfg.atu_enabled.val, true);
+                    recover_processing_audio_inputs();
+                    if (notify_rx_tx) {
+                        notify_rx_tx(false);
+                    }
+
+                    // TODO: change with observer on atu->loaded change
+                    WITH_RADIO_LOCK(x6100_control_cmd(x6100_atu_network, pack->atu_params));
+                    state = RADIO_RX;
+                } else if (pack->flag.tx) {
+                    tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
+                }
+                break;
+
+            case RADIO_SWRSCAN:
+                dialog_swrscan_update(pack->vswr * 0.1f);
+                break;
+
+            case RADIO_POWEROFF:
+                x6100_control_poweroff();
+                state = RADIO_OFF;
+                break;
+
+            case RADIO_OFF:
+                break;
+        }
+
+        hkey_put(pack->hkey);
+    } else {
+        if (d > FLOW_RESTART_TIMEOUT) {
+            LV_LOG_WARN("Flow reset");
+            prev_time = now_time;
+            x6100_flow_restart();
+            dsp_reset();
+        }
+        return true;
+    }
+    return false;
+}
+
+static void * radio_thread(void *arg) {
 
     while (!x6100_control_init()) {
         usleep(100000);
     }
-
-    if (!x6100_flow_init())
-        return;
 
     base_ver = x6100_control_get_base_ver();
 
@@ -539,8 +712,6 @@ void radio_init() {
     if ((util_compare_version(base_ver, (x6100_base_ver_t){1, 1, 9, 0}) >= 0) || (base_ver.rev >= 8)) {
         x6100_control_if_shift_set(false);
     }
-
-    x6100_gpio_set(x6100_pin_morse_key, 1);     /* Morse key off */
 
     pack = malloc(sizeof(x6100_flow_t));
 
@@ -647,150 +818,19 @@ void radio_init() {
     prev_time = get_time();
     idle_time = prev_time;
 
-    pthread_mutex_init(&control_mux, NULL);
+    while (true) {
+        now_time = get_time();
 
-    pthread_t thread;
+        if (radio_tick()) {
+            usleep(2000);
+        }
 
-    pthread_create(&thread, NULL, radio_thread, NULL);
-    pthread_detach(thread);
-}
+        int32_t idle = now_time - idle_time;
 
-void radio_set_rx_tx_notify_fn(radio_rx_tx_change_t cb) {
-    notify_rx_tx = cb;
-}
+        if (idle > IDLE_TIMEOUT && state == RADIO_RX) {
+            WITH_RADIO_LOCK(x6100_control_idle());
 
-void radio_set_low_power_cb(void (*cb)(bool)) {
-    low_power_cb = cb;
-}
-
-radio_state_t radio_get_state() {
-    return state;
-}
-
-void radio_set_freq(int32_t freq) {
-    if (!radio_check_freq(freq)) {
-        LV_LOG_ERROR("Freq %i incorrect", freq);
-        return;
+            idle_time = now_time;
+        }
     }
-    x6100_vfo_t vfo = subject_get_int(cfg_cur.band->vfo.val);
-    int32_t shift = cfg_transverter_get_shift(freq);
-    WITH_RADIO_LOCK(x6100_control_vfo_freq_set(vfo, freq - shift));
-}
-
-bool radio_check_freq(int32_t freq) {
-    if (freq >= 500000 && freq <= 55000000) {
-        return true;
-    }
-    return cfg_transverter_get_shift(freq) != 0;
-}
-
-uint16_t radio_change_vol(int16_t df) {
-    int32_t vol = subject_get_int(cfg.vol.val);
-    if (df == 0) {
-        return vol;
-    }
-
-    mute = false;
-
-    uint16_t new_val = limit(vol + df, 0, 55);
-
-    if (new_val != vol) {
-        subject_set_int(cfg.vol.val, new_val);
-    };
-
-    return new_val;
-}
-
-void radio_change_mute() {
-    mute = !mute;
-    x6100_control_rxvol_set(mute ? 0 : subject_get_int(cfg.vol.val));
-}
-
-bool radio_change_spmode(int16_t df) {
-    if (df == 0) {
-        return params.spmode.x;
-    }
-
-    params_bool_set(&params.spmode, df > 0);
-
-    WITH_RADIO_LOCK(x6100_control_spmode_set(params.spmode.x));
-
-    return params.spmode.x;
-}
-
-void radio_start_atu() {
-    if (state == RADIO_RX) {
-        state = RADIO_ATU_START;
-    }
-}
-
-bool radio_start_swrscan() {
-    if (state != RADIO_RX) {
-        return false;
-    }
-
-    subject_set_int(cfg_cur.mode, x6100_mode_am);
-    radio_lock();
-    x6100_control_txpwr_set(5.0f);
-    x6100_control_swrscan_set(true);
-    radio_unlock();
-    state = RADIO_SWRSCAN;
-
-    return true;
-}
-
-void radio_stop_swrscan() {
-    if (state == RADIO_SWRSCAN) {
-        state = RADIO_RX;
-        radio_lock();
-        x6100_control_swrscan_set(false);
-        x6100_control_txpwr_set(subject_get_float(cfg.pwr.val));
-        radio_unlock();
-    }
-}
-
-void radio_set_pwr(float d) {
-    WITH_RADIO_LOCK(x6100_control_txpwr_set(d));
-}
-
-x6100_vfo_t radio_toggle_vfo() {
-    x6100_vfo_t new_vfo = (subject_get_int(cfg_cur.band->vfo.val) == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A;
-
-    subject_set_int(cfg_cur.band->vfo.val, new_vfo);
-    // TODO: move to another file
-    voice_say_text_fmt("V F O %s", (new_vfo == X6100_VFO_A) ? "A" : "B");
-
-    return new_vfo;
-}
-
-void radio_poweroff() {
-    if (params.charger.x == RADIO_CHARGER_SHADOW) {
-        WITH_RADIO_LOCK(x6100_control_charger_set(true));
-    }
-
-    state = RADIO_POWEROFF;
-}
-
-void radio_set_charger(bool on) {
-    WITH_RADIO_LOCK(x6100_control_charger_set(on));
-}
-
-void radio_set_ptt(bool tx) {
-    WITH_RADIO_LOCK(x6100_control_ptt_set(tx));
-}
-
-void radio_set_modem(bool tx) {
-    WITH_RADIO_LOCK(x6100_control_modem_set(tx));
-}
-
-void radio_set_line_in(uint8_t d) {
-    CHANGE_PARAM(d, params.line_in, params.dirty.line_in, x6100_control_linein_set);
-}
-
-void radio_set_line_out(uint8_t d) {
-    CHANGE_PARAM(d, params.line_out, params.dirty.line_out, x6100_control_lineout_set);
-}
-
-void radio_set_morse_key(bool on) {
-    x6100_gpio_set(x6100_pin_morse_key, on ? 0 : 1);
 }
