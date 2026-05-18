@@ -10,9 +10,11 @@
 #include "cw_decoder.h"
 #include "params/params.h"
 #include "cfg/cfg.h"
+#include "cfg/subjects.h"
 #include "radio.h"
 #include "msg.h"
 #include "buttons.h"
+#include "tx_log.h"
 
 #include "lvgl/lvgl.h"
 #include <unistd.h>
@@ -129,6 +131,13 @@ static void * endecode_thread(void *arg) {
 
 void cw_encoder_stop() {
     if (state != CW_ENCODER_IDLE) {
+        tx_log_event(
+            "TX_ATTEMPT_CW_STOP",
+            subject_get_int(cfg_cur.fg_freq),
+            subject_get_int(cfg_cur.mode),
+            subject_get_float(cfg.pwr.val),
+            NULL
+        );
         pthread_cancel(thread);
         pthread_join(thread, NULL);
 
@@ -139,6 +148,14 @@ void cw_encoder_stop() {
 
 void cw_encoder_send(const char *text, bool beacon) {
     cw_encoder_stop();
+
+    tx_log_event(
+        beacon ? "TX_ATTEMPT_CW_BEACON" : "TX_ATTEMPT_CW_SEND",
+        subject_get_int(cfg_cur.fg_freq),
+        subject_get_int(cfg_cur.mode),
+        subject_get_float(cfg.pwr.val),
+        text
+    );
 
     if (current_msg) {
         free(current_msg);

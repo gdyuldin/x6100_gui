@@ -61,3 +61,8 @@ void vol_set_ctrl(cfg_ctrl_t ctrl) {
     control_name_say(ctrl);
     vol_update(0);
 }
+
+vol_state_t vol_get_state(void) {
+    if (!vol) return VOL_STATE_EDIT;
+    return (vol_state_t)vol->state;
+}

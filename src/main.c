@@ -38,6 +38,9 @@
 #include "scheduler.h"
 #include "wifi.h"
 #include "usb_devices.h"
+#include "tx_log.h"
+#include "remote_control.h"
+#include "remote_screen.h"
 
 #define DISP_BUF_SIZE (800 * 480 * 4)
 
@@ -78,6 +81,7 @@ int main(void) {
     lv_disp_set_bg_opa(lv_disp_get_default(), LV_OPA_COVER);
 
     keyboard_init();
+    remote_control_init();
 
     keypad_init("/dev/input/event0");
     keypad_init("/dev/input/event4");
@@ -95,6 +99,7 @@ int main(void) {
     vol->state = VOL_STATE_EDIT;
 
     params_init();
+    tx_log_init();
     audio_set_play_vol(params.play_gain_db_f.x);
     audio_set_rec_vol(params.rec_gain_db_f.x);
     mfk_init();
@@ -132,6 +137,8 @@ int main(void) {
     while (1) {
         observer_delayed_notify_all();
         event_obj_check();
+        remote_control_poll();
+        remote_screen_tick();
         scheduler_work();
         lv_timer_handler_run_in_period(5);
         usleep(1000);
