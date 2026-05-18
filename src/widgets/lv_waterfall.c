@@ -85,13 +85,22 @@ void lv_waterfall_clear_data(lv_obj_t * obj) {
 
     memset(waterfall->dsc->data, 0, waterfall->dsc->data_size);
     lv_img_cache_invalidate_src(waterfall->dsc);
+    lv_obj_invalidate(obj);
 }
 
 void lv_waterfall_add_data(lv_obj_t * obj, float * data, uint16_t cnt) {
+    struct timespec ts = {0, 0};
+    lv_waterfall_add_data_with_ts(obj, data, cnt, ts);
+}
+
+void lv_waterfall_add_data_with_ts(lv_obj_t * obj, float * data, uint16_t cnt, struct timespec ts) {
     LV_ASSERT_OBJ(obj, MY_CLASS);
 
     lv_waterfall_t  *waterfall = (lv_waterfall_t *)obj;
     lv_img_dsc_t    *dsc = waterfall->dsc;
+
+    /* Store timestamp for time-aligned processing (e.g. DNF). */
+    waterfall->frame_ts = ts;
 
     if (!dsc || !waterfall->palette) {
         return;
@@ -120,6 +129,39 @@ void lv_waterfall_add_data(lv_obj_t * obj, float * data, uint16_t cnt) {
 
         lv_img_buf_set_px_color(dsc, x, 0, waterfall->palette[id]);
     }
+
+    lv_img_cache_invalidate_src(dsc);
+    lv_obj_invalidate(obj);
+}
+
+struct timespec lv_waterfall_get_frame_ts(lv_obj_t * obj) {
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_waterfall_t *waterfall = (lv_waterfall_t *)obj;
+    return waterfall->frame_ts;
+}
+
+void lv_waterfall_add_marker_line(lv_obj_t * obj, lv_color_t color) {
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+
+    lv_waterfall_t  *waterfall = (lv_waterfall_t *)obj;
+    lv_img_dsc_t    *dsc = waterfall->dsc;
+
+    if (!dsc) {
+        return;
+    }
+
+    uint32_t line_len = waterfall->line_len;
+
+    /* Scroll down */
+    memmove(dsc->data + line_len, dsc->data, dsc->data_size - line_len);
+
+    /* Paint marker */
+    for (uint32_t x = 0; x < dsc->header.w; x++) {
+        lv_img_buf_set_px_color(dsc, x, 0, color);
+    }
+
+    lv_img_cache_invalidate_src(dsc);
+    lv_obj_invalidate(obj);
 }
 
 void lv_waterfall_set_min(lv_obj_t * obj, int16_t val) {

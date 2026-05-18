@@ -82,5 +82,12 @@ qso_log_record_t qso_log_record_create(const char *local_call, const char *remot
  */
 qso_log_search_worked_t qso_log_search_worked(const char *callsign, qso_log_mode_t mode, qso_log_band_t band);
 
+/**
+ * Check whether a given grid square has been worked (any callsign).
+ * Returns true if there is at least one QSO with `remote_grid` matching the provided grid
+ * (prefix match, so passing "FN31" will match "FN31xx").
+ */
+bool qso_log_search_worked_grid(const char *grid, qso_log_mode_t mode, qso_log_band_t band);
+
 
 qso_log_band_t qso_log_freq_to_band(uint64_t freq_hz);

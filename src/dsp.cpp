@@ -662,3 +662,12 @@ static void dsp_update_min_max(float *data_buf, uint16_t size) {
     spectrum_update_max(max);
     waterfall_update_max(max);
 }
+
+extern "C" {
+void dsp_set_waterfall_enabled(bool enabled) {
+    (void)enabled;
+}
+void dsp_set_spectrum_enabled(bool enabled) {
+    (void)enabled;
+}
+}

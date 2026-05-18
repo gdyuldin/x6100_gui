@@ -163,6 +163,9 @@ typedef struct {
     cfg_item_t ft8_show_all;
     cfg_item_t ft8_protocol;
     cfg_item_t ft8_auto;
+    cfg_item_t ft8_auto_dnf;
+    cfg_item_t ft8_xit;
+    cfg_item_t ft8_omit_cq_qth;
     cfg_item_t ft8_hold_freq;
     cfg_item_t ft8_max_repeats;
 } cfg_t;

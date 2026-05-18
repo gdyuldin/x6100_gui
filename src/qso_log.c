@@ -20,7 +20,9 @@
 #include <stdio.h>
 
 static sqlite3_stmt     *search_callsign_stmt=NULL;
+static sqlite3_stmt     *search_grid_stmt=NULL;
 static sqlite3          *db = NULL;
+static pthread_mutex_t   db_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 static bool create_tables();
@@ -38,10 +40,20 @@ bool qso_log_init() {
 }
 
 void qso_log_destruct() {
+    pthread_mutex_lock(&db_mutex);
+    if (search_callsign_stmt) {
+        sqlite3_finalize(search_callsign_stmt);
+        search_callsign_stmt = NULL;
+    }
+    if (search_grid_stmt) {
+        sqlite3_finalize(search_grid_stmt);
+        search_grid_stmt = NULL;
+    }
     if (db) {
         sqlite3_close(db);
         db = NULL;
     }
+    pthread_mutex_unlock(&db_mutex);
 }
 
 void qso_log_import_adif(const char * path) {
@@ -361,4 +373,44 @@ static bool create_tables() {
     }
 
     return true;
+}
+
+bool qso_log_search_worked_grid(const char *grid, qso_log_mode_t mode, qso_log_band_t band)
+{
+    if (!db || !grid || strlen(grid) == 0) return false;
+
+    pthread_mutex_lock(&db_mutex);
+
+    int rc;
+    if (!search_grid_stmt) {
+        rc = sqlite3_prepare_v3(
+            db,
+            "SELECT 1 FROM qso_log WHERE remote_grid LIKE ? AND band = ? AND mode = ? LIMIT 1",
+            -1,
+            SQLITE_PREPARE_PERSISTENT,
+            &search_grid_stmt,
+            NULL);
+        if (rc != SQLITE_OK) {
+            pthread_mutex_unlock(&db_mutex);
+            return false;
+        }
+    } else {
+        sqlite3_reset(search_grid_stmt);
+        sqlite3_clear_bindings(search_grid_stmt);
+    }
+
+    /* Use prefix match so grid "FN31" matches "FN31" or "FN31xx" */
+    char pattern[32] = {0};
+    snprintf(pattern, sizeof(pattern), "%s%%", grid);
+
+    rc = sqlite3_bind_text(search_grid_stmt, 1, pattern, -1, SQLITE_TRANSIENT);
+    if (rc != SQLITE_OK) { pthread_mutex_unlock(&db_mutex); return false; }
+    rc = sqlite3_bind_int(search_grid_stmt, 2, band);
+    if (rc != SQLITE_OK) { pthread_mutex_unlock(&db_mutex); return false; }
+    rc = sqlite3_bind_int(search_grid_stmt, 3, mode);
+    if (rc != SQLITE_OK) { pthread_mutex_unlock(&db_mutex); return false; }
+
+    bool found = (sqlite3_step(search_grid_stmt) == SQLITE_ROW);
+    pthread_mutex_unlock(&db_mutex);
+    return found;
 }

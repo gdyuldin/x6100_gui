@@ -31,6 +31,7 @@ typedef struct {
 typedef struct {
     char msg[35];
     int  repeats;
+    bool force_free_text;  ///< when true, encode as FT8 free text only (e.g. Free MSG)
 } ftx_tx_msg_t;
 
 typedef void (*save_qso_cb_t)(const char *remote_callsign, const char *remote_grid, const int r_snr, const int s_snr);
@@ -92,6 +93,7 @@ class FTxQsoProcessor {
 
     bool can_save_qso();
     bool force_save_qso();
+    bool has_current();
 
   private:
     bool          _auto    = true;
@@ -127,6 +129,7 @@ extern void ftx_qso_processor_start_qso(FTxQsoProcessor *p, ftx_msg_meta_t *meta
 
 extern bool ftx_qso_processor_can_save_qso(FTxQsoProcessor *p);
 extern bool ftx_qso_processor_force_save_qso(FTxQsoProcessor *p);
+extern bool ftx_qso_processor_has_current(FTxQsoProcessor *p);
 
 #ifdef __cplusplus
 }
