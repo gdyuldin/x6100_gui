@@ -508,11 +508,15 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
         push.add_marker = true;
     }
 
-    /* Auto DNF. */
+    /* Auto DNF: compute frame_ts as the wall-clock time of this PSD frame
+     * (slot_start + sec_since_slot_start), not the bare slot boundary.
+     * The PSD represents audio accumulated since the last spgramcf_reset,
+     * which happened at approximately this wall-clock time. */
     if (s_auto_dnf && state == RX_PROCESS) {
         struct timespec frame_ts;
-        frame_ts.tv_sec  = (time_t)info->slot_start;
-        frame_ts.tv_nsec = 0;
+        double frame_time = (double)info->slot_start + (double)sec_since_slot_start;
+        frame_ts.tv_sec  = (time_t)frame_time;
+        frame_ts.tv_nsec = (long)((frame_time - (double)frame_ts.tv_sec) * 1.0e9);
         float dummy_sec;
         bool have_tx_msg    = tx_msg.msg[0] != '\0';
         bool is_our_tx_slot = (subject_get_int(tx_enabled) && have_tx_msg &&
