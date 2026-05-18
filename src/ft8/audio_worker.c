@@ -204,7 +204,7 @@ static void *worker_main(void *arg) {
         double now_f       = (double)now.tv_sec + (double)now.tv_nsec / 1.0e9;
         double slot_start_f = now_f - (double)sec_since_slot_start;
         if (new_slot) slot_start_f -= (double)slot_period;
-        info.slot_start = (time_t)slot_start_f;
+        info.slot_start = (time_t)llround(slot_start_f);
 
         rx_consume_frames(w, &info, sec_since_slot_start);
 
