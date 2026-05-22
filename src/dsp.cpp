@@ -89,7 +89,7 @@ static int32_t filter_to   = 3000;
 static x6100_mode_t cur_mode;
 static float noise_level = S_MIN;
 
-static void dsp_update_min_max(float *data_buf, uint16_t size);
+static void dsp_update_min_max(float *psd_lin, uint16_t size);
 static void update_zoom(int32_t new_zoom);
 static void on_zoom_change(Subject *subj, void *user_data);
 static void update_filter_from(Subject *subj, void *user_data);
@@ -593,7 +593,7 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
     }
 }
 
-static void dsp_update_min_max(float *data_buf, uint16_t size) {
+static void dsp_update_min_max(float *psd_lin, uint16_t size) {
     if (min_max_delay) {
         min_max_delay--;
         return;
@@ -607,25 +607,28 @@ static void dsp_update_min_max(float *data_buf, uint16_t size) {
     uint32_t win_size_hz = 2500;
 
     int window_size = (size * win_size_hz) / bw_hz;
-    float power_sum[size - window_size];
+
+    // Skip borders
+    size_t start = size * 0.04f;
+    size_t stop = size * (1 - 0.04f);
+
+    float power_sum[stop - start - window_size];
 
     // Sum with window
-    for (size_t i = 0; i < size - window_size; i++) {
+    for (size_t i = 0; i < stop - start - window_size; i++) {
         power_sum[i] = 0.0f;
         for (size_t j = 0; j < window_size; j++) {
-            power_sum[i] += data_buf[i + j];
+            power_sum[i] += psd_lin[i + j + start];
         }
     }
 
     // Search minimum
     float min = MAXFLOAT;
-    for (size_t i = 0; i < size - window_size; i++) {
+    for (size_t i = 0; i < stop - start - window_size; i++) {
         if (min > power_sum[i]) {
             min = power_sum[i];
         }
     }
-    // Scale noise for 1 Hz
-    min /= win_size_hz;
 
     // Get Minimum Statistics offset for the noise level
     float offset;
@@ -646,14 +649,16 @@ static void dsp_update_min_max(float *data_buf, uint16_t size) {
     }
 
     // Convert to db
-    min = 10.0f * log10f(min * (filter_to - filter_from)) + DB_OFFSET + offset;
+    min = 10.0f * log10f(min) + DB_OFFSET + offset;
 
     lpf(&noise_level, min, 0.8f, S_MIN);
 
     min = noise_level;
-    meter_set_noise(min);
+    // Use win size for min/max and bandwidth for noise level on S-meter
+    float noise_bw_offset = 10.0f * log10f(((float)filter_to - filter_from) / win_size_hz);
+    meter_set_noise(min + noise_bw_offset);
 
-    min -= 15.0f;
+    min -= 19.0f;
 
     if (min < S_MIN) {
         min = S_MIN;
