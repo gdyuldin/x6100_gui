@@ -325,6 +325,7 @@ int32_t cfg_mode_set_low_filter(int32_t val) {
     switch (mode) {
         case x6100_mode_am:
         case x6100_mode_nfm:
+            subject_set_int(cfg_cur.filter.low, 0);
             return 0;
         default:
             if ((val >= 0) & (val < high)) {
