@@ -182,7 +182,7 @@ typedef struct {
     struct {
         Subject *low;
         Subject *high;
-        Subject *bw;
+        Subject *bw;  // Do not to set directly in a user code
         struct {
             Subject *from;
             Subject *to;

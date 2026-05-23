@@ -207,8 +207,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg) {
                 int32_t bw = subject_get_int(cfg_cur.filter.bw);
                 if (diff) {
                     bw = align_int(bw + diff * 20, 20);
-                    bw = clip(bw, 50, 7500);
-                    subject_set_int(cfg_cur.filter.bw, bw);
+                    bw = cfg_mode_set_bw_filter(bw);
                 }
                 snprintf(msg.data(), msg.capacity(), "Filter bw: %i Hz", bw);
 

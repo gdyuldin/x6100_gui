@@ -7,11 +7,12 @@ extern "C" {
 #endif
 
 
-#define MAX_FILTER_FREQ 10000
+#define MAX_FILTER_FREQ 6000
 
 int32_t cfg_mode_change_freq_step(bool up);
 int32_t cfg_mode_set_low_filter(int32_t val);
 int32_t cfg_mode_set_high_filter(int32_t val);
+int32_t cfg_mode_set_bw_filter(int32_t bw);
 
 
 #ifdef __cplusplus
