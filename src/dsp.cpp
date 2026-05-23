@@ -399,12 +399,7 @@ static bool update_waterfall(ChunkedSpgram *wf_sg, uint64_t now, bool tx, uint32
         liquid_vectorf_addscalar(waterfall_psd, WATERFALL_NFFT, DB_OFFSET + zoom_level_offset, waterfall_psd);
         uint32_t width_hz = FULL_BW_HZ;
         if (waterfall_fft_decim) {
-            // Use cfg_cur.zoom directly: on new firmware (rev>=8) spectrum_factor is
-            // updated only when flow_info->fft_dec arrives. That feedback link can lag
-            // or stay at 0 if the firmware never reports it back, leaving spectrum_factor
-            // stuck at 1 even though the firmware did decimate. cfg_cur.zoom is always
-            // in sync with the user's setting, so we use it directly.
-            width_hz /= subject_get_int(cfg_cur.zoom);
+            width_hz /= spectrum_factor;
         }
         waterfall_data(waterfall_psd, WATERFALL_NFFT, tx, base_freq, width_hz);
         waterfall_time = now;
@@ -418,7 +413,7 @@ static void update_s_meter() {
         int32_t from, to, center;
         int32_t bw = FULL_BW_HZ;
         if (fw_decim) {
-            bw /= subject_get_int(cfg_cur.zoom);
+            bw /= spectrum_factor;
         }
         center = WATERFALL_NFFT / 2;
         from = center + filter_from * WATERFALL_NFFT / bw;
@@ -533,6 +528,12 @@ static void on_zoom_change(Subject *subj, void *user_data) {
         update_zoom(new_zoom);
     } else {
         zoom_level_offset = log2f(new_zoom) * 3.0f;
+        if (base_ver.rev < 8) {
+            // OEM BASE >= 1.1.9 decimates in firmware but does not report fft_dec
+            // back via flow_info, so the feedback path in dsp_samples() never fires
+            // and spectrum_factor stays at 1. Sync it locally instead.
+            update_zoom(new_zoom);
+        }
     }
 }
 
