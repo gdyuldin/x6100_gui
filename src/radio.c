@@ -18,6 +18,7 @@
 #include "dialog_swrscan.h"
 #include "cw.h"
 #include "pubsub_ids.h"
+#include "tx_log.h"
 
 #include <aether_radio/x6100_control/low/flow.h>
 #include <aether_radio/x6100_control/low/gpio.h>
@@ -48,6 +49,18 @@ static uint64_t         now_time;
 static uint64_t         prev_time;
 static uint64_t         idle_time;
 static bool             mute = false;
+static bool             last_pack_tx = false;
+static bool             morse_key_on = false;
+
+static uint64_t         tx_active_since = 0;
+static uint64_t         tx_active_last_watchdog_log = 0;
+
+static void tx_log_radio_event(const char *event, const char *detail, float pwr_override) {
+    int32_t freq_hz = subject_get_int(cfg_cur.fg_freq);
+    int32_t mode = subject_get_int(cfg_cur.mode);
+    float pwr = (pwr_override >= 0.0f) ? pwr_override : subject_get_float(cfg.pwr.val);
+    tx_log_event(event, freq_hz, mode, pwr, detail);
+}
 
 static cfloat           samples_buf[RADIO_SAMPLES*2];
 
@@ -99,8 +112,10 @@ static void recover_processing_audio_inputs() {
     radio_lock();
     x6100_control_vfo_mode_set(vfo, x6100_mode_usb_dig);
     x6100_control_txpwr_set(0.1f);
+    tx_log_radio_event("TX_ATTEMPT_MODEM_ON", "atu_recover", 0.1f);
     x6100_control_modem_set(true);
     usleep(50000);
+    tx_log_radio_event("TX_ATTEMPT_MODEM_OFF", "atu_recover", 0.1f);
     x6100_control_modem_set(false);
     x6100_control_txpwr_set(subject_get_float(cfg.pwr.val));
     x6100_control_vfo_mode_set(vfo, subject_get_int(cfg_cur.mode));
@@ -119,6 +134,31 @@ bool radio_tick() {
 
     if (x6100_flow_read(pack)) {
         prev_time = now_time;
+
+        if (pack->flag.tx != last_pack_tx) {
+            last_pack_tx = pack->flag.tx;
+            tx_log_radio_event(pack->flag.tx ? "TX_ACTIVE_ON" : "TX_ACTIVE_OFF", "flow", pack->tx_power * 0.1f);
+
+            if (pack->flag.tx) {
+                tx_active_since = now_time;
+                tx_active_last_watchdog_log = now_time;
+            } else {
+                tx_active_since = 0;
+                tx_active_last_watchdog_log = 0;
+            }
+        }
+
+        /* If TX stays active for an unusually long time without a new edge,
+         * emit a low-rate log so we can prove TX activity even when no
+         * transition happened in the observation window. */
+        if (pack->flag.tx && tx_active_since) {
+            const uint64_t tx_active_ms = now_time - tx_active_since;
+            const uint64_t since_last_ms = now_time - tx_active_last_watchdog_log;
+            if (tx_active_ms > 20000 && since_last_ms > 10000) {
+                tx_active_last_watchdog_log = now_time;
+                tx_log_radio_event("TX_ACTIVE_STILL_ON", "flow_watchdog", pack->tx_power * 0.1f);
+            }
+        }
 
         static uint8_t delay;
         bool vary_freq = false;

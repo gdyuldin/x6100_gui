@@ -11,6 +11,8 @@
 #include "panel.h"
 #include "params/params.h"
 #include "util.h"
+#include "cfg/subjects.h"
+#include "tx_log.h"
 
 #include "lvgl/lvgl.h"
 
@@ -274,7 +276,26 @@ void rtty_put_audio_samples(unsigned int n, cfloat *samples) {
 }
 
 void rtty_set_state(rtty_state_t x) {
-    state = x;
+    if (state != x) {
+        state = x;
+        if (x == RTTY_TX) {
+            tx_log_event(
+                "TX_ATTEMPT_RTTY_ON",
+                subject_get_int(cfg_cur.fg_freq),
+                subject_get_int(cfg_cur.mode),
+                subject_get_float(cfg.pwr.val),
+                NULL
+            );
+        } else {
+            tx_log_event(
+                "TX_ATTEMPT_RTTY_OFF",
+                subject_get_int(cfg_cur.fg_freq),
+                subject_get_int(cfg_cur.mode),
+                subject_get_float(cfg.pwr.val),
+                NULL
+            );
+        }
+    }
 }
 
 rtty_state_t rtty_get_state() {

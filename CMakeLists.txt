@@ -5,6 +5,7 @@ project(x6100_gui)
 include_directories(.)
 include_directories(third-party/rapidxml)
 include_directories(third-party/utf8)
+include_directories(third-party/stb)
 
 if(NOT ENABLE_TESTING)
 add_compile_options(-mtune=cortex-a7 -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4)
