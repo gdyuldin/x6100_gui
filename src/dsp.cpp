@@ -528,6 +528,12 @@ static void on_zoom_change(Subject *subj, void *user_data) {
         update_zoom(new_zoom);
     } else {
         zoom_level_offset = log2f(new_zoom) * 3.0f;
+        if (base_ver.rev < 8) {
+            // OEM BASE >= 1.1.9 decimates in firmware but does not report fft_dec
+            // back via flow_info, so the feedback path in dsp_samples() never fires
+            // and spectrum_factor stays at 1. Sync it locally instead.
+            update_zoom(new_zoom);
+        }
     }
 }
 
