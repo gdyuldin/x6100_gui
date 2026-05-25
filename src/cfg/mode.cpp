@@ -32,7 +32,6 @@ static void on_cur_mode_change(Subject *subj, void *user_data);
 
 static void on_cur_filter_low_change(Subject *subj, void *user_data);
 static void on_cur_filter_high_change(Subject *subj, void *user_data);
-// static void on_cur_filter_bw_change(Subject *subj, void *user_data);
 static void on_cur_freq_step_change(Subject *subj, void *user_data);
 static void on_cur_zoom_change(Subject *subj, void *user_data);
 
@@ -80,7 +79,6 @@ void cfg_mode_params_init(sqlite3 *database) {
 
     subject_add_observer(cfg_cur.filter.low, on_cur_filter_low_change, NULL);
     subject_add_observer(cfg_cur.filter.high, on_cur_filter_high_change, NULL);
-    // subject_add_observer(cfg_cur.filter.bw, on_cur_filter_bw_change, NULL);
     subject_add_observer(cfg_cur.freq_step, on_cur_freq_step_change, NULL);
     subject_add_observer(cfg_cur.zoom, on_cur_zoom_change, NULL);
 

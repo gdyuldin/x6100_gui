@@ -82,13 +82,6 @@ typedef struct {
     params_bool_t       spmode;
     params_uint8_t      freq_accel;
 
-    /* VOX */
-
-    bool                vox;
-    uint8_t             vox_ag;
-    uint16_t            vox_delay;
-    uint8_t             vox_gain;
-
     /* main screen */
 
     params_uint8_t      spectrum_beta;

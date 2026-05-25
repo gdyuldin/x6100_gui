@@ -68,6 +68,11 @@ typedef enum {
     CTRL_XIT,
     CTRL_IF_SHIFT,
 
+    CTRL_VOX_ON,
+    CTRL_VOX_GAIN,
+    CTRL_VOX_AG,
+    CTRL_VOX_DELAY,
+
     CTRL_FAST_ACCESS_LAST,
 
     /* APPs */
@@ -81,9 +86,11 @@ typedef enum {
 
 } cfg_ctrl_t;
 
-extern cfg_ctrl_t cfg_encoder_vol_modes_default[11];
+extern cfg_ctrl_t cfg_encoder_vol_modes_default[];
+extern size_t cfg_encoder_vol_modes_default_size;
 
-extern cfg_ctrl_t cfg_encoder_mfk_modes_default[31];
+extern cfg_ctrl_t cfg_encoder_mfk_modes_default[];
+extern size_t cfg_encoder_mfk_modes_default_size;
 
 
 /* configuration structs. Should contain same types (for correct initialization) */
@@ -104,9 +111,21 @@ typedef struct {
     cfg_item_t band_id;
     cfg_item_t ant_id;
     cfg_item_t atu_enabled;
+
+    // Compressor
+
     cfg_item_t comp;
     cfg_item_t comp_threshold_offset;
     cfg_item_t comp_makeup_offset;
+
+    // VOX
+
+    struct {
+        cfg_item_t on;
+        cfg_item_t gain;
+        cfg_item_t ag;
+        cfg_item_t delay;
+    } vox;
 
     cfg_item_t rit;
     cfg_item_t xit;

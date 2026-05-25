@@ -208,9 +208,17 @@ void radio_init() {
     subject_add_observer_and_call(cfg_cur.band->dac_offset.val, on_change_float, x6100_control_dac_gain_set);
     subject_add_observer_and_call(cfg.atu_enabled.val, on_change_uint8, x6100_control_atu_set);
     subject_add_observer_and_call(cfg_cur.atu->network, on_atu_network_change, NULL);
+
+    /* Compressor */
     subject_add_observer_and_call(cfg.comp.val, on_change_comp_ratio, NULL);
     subject_add_observer_and_call(cfg.comp_threshold_offset.val, on_change_float, x6100_control_comp_threshold_set);
     subject_add_observer_and_call(cfg.comp_makeup_offset.val, on_change_float, x6100_control_comp_makeup_set);
+
+    /* VOX */
+    subject_add_observer_and_call(cfg.vox.on.val, on_change_uint8, x6100_control_vox_set);
+    subject_add_observer_and_call(cfg.vox.gain.val, on_change_uint8, x6100_control_vox_gain_set);
+    subject_add_observer_and_call(cfg.vox.ag.val, on_change_uint8, x6100_control_vox_ag_set);
+    subject_add_observer_and_call(cfg.vox.delay.val, on_change_uint16, x6100_control_vox_delay_set);
 
     subject_add_observer_and_call(cfg.mic.val, on_change_uint8, x6100_control_mic_set);
     subject_add_observer_and_call(cfg.hmic.val, on_change_uint8, x6100_control_hmic_set);
@@ -256,11 +264,6 @@ void radio_init() {
     x6100_control_bias_final_set(params.bias_final);
 
     x6100_control_spmode_set(params.spmode.x);
-
-    x6100_control_vox_set(params.vox);
-    x6100_control_vox_ag_set(params.vox_ag);
-    x6100_control_vox_delay_set(params.vox_delay);
-    x6100_control_vox_gain_set(params.vox_gain);
 
     x6100_control_linein_set(params.line_in);
     x6100_control_lineout_set(params.line_out);

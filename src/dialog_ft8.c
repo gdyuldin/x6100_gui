@@ -68,8 +68,6 @@
 
 #define WAIT_SYNC_TEXT "Wait sync"
 
-#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
-
 typedef enum {
     RX_PROCESS,
     TX_PROCESS,

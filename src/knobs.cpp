@@ -222,6 +222,12 @@ static std::map<int, Control*> controls = {
     {CTRL_MONI, new ControlSubjInt("Moni level", &cfg.moni.val)},
     {CTRL_SPECTRUM_FACTOR, new ControlSubjInt("Zoom", &cfg_cur.zoom)},
     {CTRL_COMP, new ControlComp("Compressor", &cfg.comp.val)},
+
+    {CTRL_VOX_ON, new ControlSubjOnOff("VOX", &cfg.vox.on.val)},
+    {CTRL_VOX_GAIN, new ControlSubjInt("VOX gain", &cfg.vox.gain.val)},
+    {CTRL_VOX_AG, new ControlSubjInt("VOX a-gain", &cfg.vox.ag.val)},
+    {CTRL_VOX_DELAY, new ControlSubjInt("VOX delay", &cfg.vox.delay.val)},
+
     {CTRL_ANT, new ControlSubjInt("Ant", &cfg.ant_id.val)},
     {CTRL_RIT, new ControlSubjInt("RIT", &cfg.rit.val)},
     {CTRL_XIT, new ControlSubjInt("XIT", &cfg.xit.val)},

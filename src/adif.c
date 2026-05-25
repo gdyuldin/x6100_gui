@@ -24,7 +24,6 @@
 #define MHZ 1000000
 #define KHZ 1000
 
-#define ARRAY_SIZE(arr) (sizeof((arr)) / sizeof((arr)[0]))
 #define COPY_STR(dst, src, len) (copy_str(dst, src, len, sizeof(dst)))
 
 struct adif_log_s {

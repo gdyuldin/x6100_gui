@@ -38,6 +38,10 @@ static std::map<cfg_ctrl_t, std::string> control_name_voice{
 
     {CTRL_SPECTRUM_FACTOR, "Zoom level"},
     {CTRL_COMP, "Compressor ratio"},
+    {CTRL_VOX_ON, "VOX switcher"},
+    {CTRL_VOX_GAIN, "VOX gain"},
+    {CTRL_VOX_AG, "VOX anti gain"},
+    {CTRL_VOX_DELAY, "VOX delay"},
     {CTRL_KEY_SPEED, "CW key speed"},
     {CTRL_KEY_MODE, "CW key mode selector"},
     {CTRL_IAMBIC_MODE, "Iambic mode selector"},
@@ -127,6 +131,11 @@ void controls_toggle_nb(button_item_t *btn) {
 void controls_toggle_nr(button_item_t *btn) {
     bool new_val = toggle_subj(cfg.nr.val);
     voice_say_bool("NR", new_val);
+}
+
+void controls_toggle_vox(button_item_t *btn) {
+    bool new_val = toggle_subj(cfg.vox.on.val);
+    voice_say_bool("VOX", new_val);
 }
 
 void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg) {
@@ -296,6 +305,45 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg) {
                     voice_say_text_fmt("Compressor disabled");
                 }
             }
+            break;
+
+        case CTRL_VOX_ON:
+            b = subject_get_int(cfg.vox.on.val);
+            if (diff) {
+                b = !b;
+                subject_set_int(cfg.vox.on.val, b);
+            }
+            snprintf(msg.data(), msg.capacity(), "VOX: %s", (b ? "On" : "Off"));
+
+            if (diff) {
+                voice_say_bool("VOX", b);
+            }
+            break;
+
+        case CTRL_VOX_GAIN:
+            i = update_subject<int32_t>(cfg.vox.gain.val, diff, 0, 100);
+            snprintf(msg.data(), msg.capacity(), "VOX gain: %i", i);
+
+            if (diff) {
+                voice_say_int("VOX gain", i);
+            }
+            break;
+        case CTRL_VOX_AG:
+            i = update_subject<int32_t>(cfg.vox.ag.val, diff, 0, 100);
+            snprintf(msg.data(), msg.capacity(), "VOX anti-gain: %i", i);
+
+            if (diff) {
+                voice_say_int("VOX anti gain", i);
+            }
+            break;
+        case CTRL_VOX_DELAY:
+            i = update_subject<int32_t>(cfg.vox.delay.val, diff * 50, 100, 2000);
+            snprintf(msg.data(), msg.capacity(), "VOX delay: %i ms", i);
+
+            if (diff) {
+                voice_say_int("VOX delay", i);
+            }
+
             break;
 
         case CTRL_KEY_SPEED:

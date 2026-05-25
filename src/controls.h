@@ -25,6 +25,8 @@ void controls_toggle_dnf_auto(button_item_t *btn);
 void controls_toggle_nb(button_item_t *btn);
 void controls_toggle_nr(button_item_t *btn);
 
+void controls_toggle_vox(button_item_t *btn);
+
 #ifdef __cplusplus
 }
 #endif

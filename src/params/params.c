@@ -57,11 +57,6 @@ params_t params = {
     .spmode                 = { .x = false,             .name = "spmode",           .voice = "Speaker mode" },
     .freq_accel             = { .x = FREQ_ACCEL_LITE,   .name = "freq_accel",       .voice = "Frequency acceleration" },
 
-    .vox                    = false,
-    .vox_ag                 = 0,
-    .vox_delay              = 100,
-    .vox_gain               = 50,
-
     .cw_encoder_period      = 10,
     .voice_msg_period       = 10,
 
