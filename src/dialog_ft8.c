@@ -1530,8 +1530,7 @@ static bool get_time_slot(struct timespec now, float *sec_since_start) {
  */
 static void make_cq_msg(const char *callsign, const char *qth, const char *cq_mod, char *text) {
     cq_make_message(callsign, qth, cq_mod,
-                    text, FTX_MAX_MESSAGE_LENGTH,
-                    subject_get_int(cfg.ft8_omit_cq_qth.val));
+                    text, FTX_MAX_MESSAGE_LENGTH);
 }
 
 /* Bridge to ft8/tx_worker.c - the actual TX play loop and ALC-driven gain

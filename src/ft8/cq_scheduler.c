@@ -31,8 +31,7 @@ void cq_state_reset(cq_state_t *cq) {
 void cq_make_message(const char *callsign,
                      const char *qth,
                      const char *cq_mod,
-                     char *out, size_t out_sz,
-                     bool omit_qth) {
+                     char *out, size_t out_sz) {
     if (!out || out_sz == 0) return;
     if (!callsign) callsign = "";
     if (!qth)      qth      = "";
@@ -44,11 +43,9 @@ void cq_make_message(const char *callsign,
         snprintf(out, out_sz, "CQ %s", callsign);
     }
 
-    if (!omit_qth) {
-        size_t len = strlen(out);
-        if (len + 6 < out_sz) {
-            snprintf(out + len, out_sz - len, " %.4s", qth);
-        }
+    size_t len = strlen(out);
+    if (len + 6 < out_sz) {
+        snprintf(out + len, out_sz - len, " %.4s", qth);
     }
 
     /* Validate the message fits in a 77-bit FT8 frame.
@@ -88,8 +85,7 @@ bool cq_schedule_if_needed(cq_state_t   *cq,
     cq_make_message(params.callsign.x,
                     params.qth.x,
                     params.ft8_cq_modifier.x,
-                    m.msg, sizeof(m.msg),
-                    subject_get_int(cfg.ft8_omit_cq_qth.val));
+                    m.msg, sizeof(m.msg));
     m.repeats         = subject_get_int(cfg.ft8_max_repeats.val);
     m.force_free_text = false;
 

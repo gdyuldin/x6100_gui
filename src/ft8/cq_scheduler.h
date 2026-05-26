@@ -37,8 +37,7 @@ void cq_state_reset(cq_state_t *cq);
 void cq_make_message(const char *callsign,
                      const char *qth,
                      const char *cq_mod,
-                     char *out, size_t out_sz,
-                     bool omit_qth);
+                     char *out, size_t out_sz);
 
 /* Try to schedule a CQ TX into qso_state. Returns true if the CQ was queued
  * (tx_msg populated, tx_time_slot set). Does nothing if any precondition
