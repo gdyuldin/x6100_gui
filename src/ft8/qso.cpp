@@ -76,9 +76,10 @@ std::string Candidate::get_tx_text(std::string local_callsign, std::string local
 }
 
 void Candidate::save_qso(save_qso_cb_t save_qso_cb) {
-    if (can_be_saved())
+    if (save_qso_cb && can_be_saved()) {
         save_qso_cb(_remote_callsign.c_str(), _grid.c_str(), _rcvd_snr, _sent_snr);
         _saved = true;
+    }
 }
 
 FTxQsoProcessor::FTxQsoProcessor(std::string local_callsign, std::string local_qth, save_qso_cb_t save_qso_cb, int max_repeats) {
@@ -107,6 +108,10 @@ void FTxQsoProcessor::add_rx_text(std::string text, const int snr, ftx_msg_meta_
 
     std::vector<std::string> tokens = split_text(text);
 
+    if (tokens.empty()) {
+        return;
+    }
+
     if ((tokens.size() >= 5) && (text.find(';') != text.npos)) {
         // "A2AA RR73; R2RFE <RP79AA> +05"
         std::vector<std::string> new_tokens;
@@ -122,12 +127,15 @@ void FTxQsoProcessor::add_rx_text(std::string text, const int snr, ftx_msg_meta_
         tokens = new_tokens;
     }
 
-    for (auto it = tokens.begin(); it != tokens.end(); it++) {
-        if (it->at(0) == '<') {
-            *it = it->substr(1, it->length() - 2);
-        }
+    if (tokens.empty()) {
+        return;
     }
 
+    for (auto &token : tokens) {
+        if (!token.empty() && token[0] == '<') {
+            token = token.substr(1, token.length() - 2);
+        }
+    }
 
     if (tokens[0] == "CQ") {
         process_cq(meta, tokens, snr);
@@ -429,4 +437,13 @@ bool ftx_qso_processor_can_save_qso(FTxQsoProcessor *p) {
 
 bool ftx_qso_processor_force_save_qso(FTxQsoProcessor *p) {
     return p->force_save_qso();
+}
+
+bool FTxQsoProcessor::has_current() {
+    return _cur_candidate != NULL;
+}
+
+bool ftx_qso_processor_has_current(FTxQsoProcessor *p) {
+    if (!p) return false;
+    return p->has_current();
 }
