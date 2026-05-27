@@ -14,6 +14,7 @@
 #include "cfg/subjects.h"
 
 #include <algorithm>
+#include <atomic>
 #include <numeric>
 
 extern "C" {
@@ -72,6 +73,12 @@ static float          waterfall_psd_lin[WATERFALL_NFFT];
 static float          waterfall_psd[WATERFALL_NFFT];
 static uint8_t        waterfall_fps_ms = (1000 / 15);
 static uint64_t       waterfall_time;
+
+/* CPU savers used by the FT8 dialog while it owns the audio pipe. When
+ * the corresponding flag is false, the heavy spectrum/waterfall FFT and
+ * UI paint pass is skipped entirely. */
+static std::atomic<bool> waterfall_enabled{true};
+static std::atomic<bool> spectrum_enabled{true};
 
 static cfloat buf_filtered[RADIO_SAMPLES * 2];
 
@@ -335,18 +342,20 @@ static void process_samples(cfloat *buf_samples, uint16_t size, firdecim_crcf sp
     size_t wf_n_samples = size;
     size_t sp_n_samples = size;
 
-    if ((spectrum_factor > 1) && !fw_decim) {
-        sp_n_samples = size / spectrum_factor;
-        firdecim_crcf_execute_block(sp_decim, buf_filtered, sp_n_samples, spectrum_dec_buf);
-        sp_sg->execute_block(spectrum_dec_buf, sp_n_samples);
-        if (waterfall_fft_decim) {
-            samples_for_wf = spectrum_dec_buf;
-            wf_n_samples = sp_n_samples;
+    if (spectrum_enabled.load(std::memory_order_relaxed)) {
+        if ((spectrum_factor > 1) && !fw_decim) {
+            sp_n_samples = size / spectrum_factor;
+            firdecim_crcf_execute_block(sp_decim, buf_filtered, sp_n_samples, spectrum_dec_buf);
+            sp_sg->execute_block(spectrum_dec_buf, sp_n_samples);
+            if (waterfall_fft_decim) {
+                samples_for_wf = spectrum_dec_buf;
+                wf_n_samples = sp_n_samples;
+            }
+        } else {
+            sp_sg->execute_block(buf_filtered, sp_n_samples);
         }
-    } else {
-        sp_sg->execute_block(buf_filtered, sp_n_samples);
     }
-    if (wf_sg) {
+    if (wf_sg && waterfall_enabled.load(std::memory_order_relaxed)) {
         wf_sg->execute_block(samples_for_wf, wf_n_samples);
     }
 }
@@ -473,9 +482,11 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
         wf_sg = NULL;
     }
     process_samples(buf_samples, size, sp_decim, sp_sg, wf_sg, tx);
-    update_spectrum(sp_sg, now, tx, base_freq);
+    if (spectrum_enabled.load(std::memory_order_relaxed)) {
+        update_spectrum(sp_sg, now, tx, base_freq);
+    }
     pthread_mutex_unlock(&spectrum_mux);
-    if (wf_sg) {
+    if (wf_sg && waterfall_enabled.load(std::memory_order_relaxed)) {
         if (update_waterfall(wf_sg, now, tx, base_freq)) {
             update_s_meter();
             // TODO: skip on disabled auto min/max
@@ -672,4 +683,21 @@ static void dsp_update_min_max(float *psd_lin, uint16_t size) {
 
     spectrum_update_max(max);
     waterfall_update_max(max);
+}
+
+extern "C" {
+void dsp_set_waterfall_enabled(bool enabled) {
+    waterfall_enabled.store(enabled, std::memory_order_relaxed);
+    if (enabled) {
+        psd_delay = 4;
+        waterfall_time = get_time();
+    }
+}
+void dsp_set_spectrum_enabled(bool enabled) {
+    spectrum_enabled.store(enabled, std::memory_order_relaxed);
+    if (enabled) {
+        psd_delay = 4;
+        spectrum_time = get_time();
+    }
+}
 }
