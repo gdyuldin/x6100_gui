@@ -73,6 +73,9 @@ typedef enum {
     CTRL_VOX_AG,
     CTRL_VOX_DELAY,
 
+    CTRL_CW_PEAK_ON,
+    CTRL_CW_PEAK_Q,
+
     CTRL_FAST_ACCESS_LAST,
 
     /* APPs */
@@ -148,6 +151,8 @@ typedef struct {
     cfg_item_t key_train;
     cfg_item_t qsk_time;
     cfg_item_t key_ratio;
+    cfg_item_t cw_peak_on;
+    cfg_item_t cw_peak_q;
 
     /* CW decoder */
     cfg_item_t cw_decoder;

@@ -229,6 +229,8 @@ void radio_init() {
     subject_add_observer_and_call(cfg.key_train.val, on_change_uint8, x6100_control_key_train_set);
     subject_add_observer_and_call(cfg.qsk_time.val, on_change_uint16, x6100_control_qsk_time_set);
     subject_add_observer_and_call(cfg.key_ratio.val, on_change_float, x6100_control_key_ratio_set);
+    subject_add_observer_and_call(cfg.cw_peak_on.val, on_change_bool, x6100_control_cw_peak_set);
+    subject_add_observer_and_call(cfg.cw_peak_q.val, on_change_uint8, x6100_control_cw_peak_q_set);
 
     subject_add_observer_and_call(cfg.agc_hang.val, on_change_uint8, x6100_control_agc_hang_set);
     subject_add_observer_and_call(cfg.agc_knee.val, on_change_int8, x6100_control_agc_knee_set);

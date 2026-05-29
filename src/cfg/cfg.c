@@ -93,6 +93,9 @@ cfg_ctrl_t cfg_encoder_mfk_modes_default[] = {
     CTRL_VOX_AG,
     CTRL_VOX_DELAY,
 
+    CTRL_CW_PEAK_ON,
+    CTRL_CW_PEAK_Q,
+
     CTRL_IF_SHIFT,
 };
 
@@ -388,6 +391,8 @@ static int init_params_cfg(sqlite3 *db) {
     fill_cfg_item_int(&cfg.key_train, subject_create_int(false), "key_train");
     fill_cfg_item_int(&cfg.qsk_time, subject_create_int(100), "qsk_time");
     fill_cfg_item_float(&cfg.key_ratio, subject_create_float(3.0f), 0.1f, "key_ratio");
+    fill_cfg_item_int(&cfg.cw_peak_on, subject_create_int(false), "cw_peak_on");
+    fill_cfg_item_int(&cfg.cw_peak_q, subject_create_int(1), "cw_peak_q");
 
     /* CW decoder */
     fill_cfg_item_int(&cfg.cw_decoder, subject_create_int(true), "cw_decoder");

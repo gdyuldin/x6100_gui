@@ -113,6 +113,11 @@ void controls_toggle_cw_tuner(button_item_t *btn) {
     voice_say_bool("CW Decoder", new_val);
 }
 
+void controls_toggle_cw_peak(button_item_t *btn) {
+    bool new_val = toggle_subj(cfg.cw_peak_on.val);
+    voice_say_bool("CW Peak", new_val);
+}
+
 void controls_toggle_dnf(button_item_t *btn) {
     bool new_val = toggle_subj(cfg.dnf.val);
     voice_say_bool("DNF", new_val);
@@ -429,6 +434,28 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg) {
 
             if (diff) {
                 voice_say_float("CW key ratio", f);
+            }
+            break;
+
+        case CTRL_CW_PEAK_ON:
+            b = subject_get_int(cfg.cw_peak_on.val);
+            if (diff) {
+                b = !b;
+                subject_set_int(cfg.cw_peak_on.val, b);
+            }
+            snprintf(msg.data(), msg.capacity(), "CW peak: %s", (b ? "On" : "Off"));
+
+            if (diff) {
+                voice_say_bool("CW peak", b);
+            }
+            break;
+
+        case CTRL_CW_PEAK_Q:
+            i = update_subject<int32_t>(cfg.cw_peak_q.val, diff, 1, 64);
+            snprintf(msg.data(), msg.capacity(), "CW peak Q: %i", i);
+
+            if (diff) {
+                voice_say_int("CW peak Q", i);
             }
             break;
 

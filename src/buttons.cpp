@@ -101,6 +101,8 @@ static const char * cw_snr_label_getter();
 
 static const char * cw_peak_beta_label_getter();
 static const char * cw_noise_beta_label_getter();
+static const char * cw_peak_on_label_getter();
+static const char * cw_peak_q_label_getter();
 
 static const char * dnf_label_getter();
 static const char * dnf_center_label_getter();
@@ -261,6 +263,15 @@ static button_item_t btn_cw_peak_beta =
 static button_item_t btn_cw_noise_beta =
     make_encoder_btn(cw_noise_beta_label_getter, CTRL_CW_DECODER_NOISE_BETA, &cfg.cw_decoder_noise_beta.val);
 
+static button_item_t btn_cw_peak_on = {.type            = BTN_TEXT_FN,
+                                       .label_fn        = cw_peak_on_label_getter,
+                                       .press           = controls_toggle_cw_peak,
+                                       .hold            = button_encoder_hold_update_cb,
+                                       .data            = CTRL_CW_PEAK_ON,
+                                       .encoder_allowed = true,
+                                       .subj            = &cfg.cw_peak_on.val};
+static button_item_t btn_cw_peak_q = make_encoder_btn(cw_peak_q_label_getter, CTRL_CW_PEAK_Q, &cfg.cw_peak_q.val);
+
 /* DSP */
 
 static button_item_t btn_dnf        = {.type            = BTN_TEXT_FN,
@@ -404,10 +415,10 @@ static buttons_page_t page_key_2 = {
     {&btn_key_p2, &btn_key_mode, &btn_key_iambic_mode, &btn_key_qsk_time, &btn_key_ratio}
 };
 static buttons_page_t page_cw_decoder_1 = {
-    {&btn_cw_p1, &btn_cw_decoder, &btn_cw_tuner, &btn_cw_snr}
+    {&btn_cw_p1, &btn_cw_decoder, &btn_cw_tuner, &btn_cw_peak_on, &btn_cw_peak_q}
 };
 static buttons_page_t page_cw_decoder_2 = {
-    {&btn_cw_p2, &btn_cw_peak_beta, &btn_cw_noise_beta}
+    {&btn_cw_p2,&btn_cw_snr, &btn_cw_peak_beta, &btn_cw_noise_beta}
 };
 
 /* DFN pages */
@@ -1010,6 +1021,18 @@ static const char * cw_peak_beta_label_getter() {
 static const char * cw_noise_beta_label_getter() {
     static char buf[22];
     sprintf(buf, "Noise beta:\n%0.2f", subject_get_float(cfg.cw_decoder_noise_beta.val));
+    return buf;
+}
+
+static const char * cw_peak_on_label_getter() {
+    static char buf[22];
+    sprintf(buf, "CW peak:\n%s", subject_get_int(cfg.cw_peak_on.val) ? "On": "Off");
+    return buf;
+}
+
+static const char * cw_peak_q_label_getter() {
+    static char buf[22];
+    sprintf(buf, "CW peak Q:\n%i", subject_get_int(cfg.cw_peak_q.val));
     return buf;
 }
 

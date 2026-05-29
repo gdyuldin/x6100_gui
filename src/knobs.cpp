@@ -261,6 +261,8 @@ static std::map<int, Control*> controls = {
     {CTRL_CW_DECODER_PEAK_BETA, new ControlSubjFloat("CW decoder peak beta", &cfg.cw_decoder_peak_beta.val, "%0.2f")},
     {CTRL_CW_DECODER_NOISE_BETA,
      new ControlSubjFloat("CW decoder noise beta", &cfg.cw_decoder_noise_beta.val, "%0.2f")},
+    {CTRL_CW_PEAK_ON, new ControlSubjOnOff("CW peak", &cfg.cw_peak_on.val)},
+    {CTRL_CW_PEAK_Q, new ControlSubjInt("CW peak Q", &cfg.cw_peak_q.val)},
     // {MFK_RTTY_RATE, Control("RTTY rate", []() { return to_str((float)params.rtty_rate / 100.0f, "%0.2f"); })},
     // {MFK_RTTY_SHIFT, Control("RTTY shift", []() { return std::to_string(params.rtty_shift); })},
     // {MFK_RTTY_CENTER, Control("RTTY center", []() { return std::to_string(params.rtty_center); })},
