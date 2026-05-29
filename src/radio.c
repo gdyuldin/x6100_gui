@@ -577,8 +577,7 @@ static void on_low_filter_change(Subject *subj, void *user_data) {
     switch (subject_get_int(cfg_cur.mode)) {
         case x6100_mode_am:
         case x6100_mode_nfm:
-            low = 0;
-            low2 = 0;
+            return;
             break;
 
         default:
@@ -595,6 +594,20 @@ static void on_high_filter_change(Subject *subj, void *user_data) {
     int32_t high = subject_get_int(subj);
     int32_t high2 = high + FILTER_2_OFFSET_OUT;
     high -= FILTER_2_OFFSET_IN;
+    switch (subject_get_int(cfg_cur.mode)) {
+        case x6100_mode_am:
+        case x6100_mode_nfm:
+            // For AM BASE uses absolute low and high values to choose LPF filters for I and Q
+            radio_lock();
+            LV_LOG_USER("Radio set filter_low=%i, low2=%i", -high, -high2);
+            x6100_control_cmd(x6100_filter1_low, -high);
+            x6100_control_cmd(x6100_filter2_low, -high2);
+            radio_unlock();
+            break;
+
+        default:
+            break;
+    }
     LV_LOG_USER("Radio set filter_high=%i, high2=%i", high, high2);
     radio_lock();
     x6100_control_cmd(x6100_filter1_high, high);
