@@ -355,8 +355,8 @@ static void process_samples(cfloat *buf_samples, uint16_t size, firdecim_crcf sp
             sp_sg->execute_block(buf_filtered, sp_n_samples);
         }
     }
-    if (wf_sg && waterfall_enabled.load(std::memory_order_relaxed)) {
-        wf_sg->execute_block(samples_for_wf, wf_n_samples);
+    if (wf_sg) {
+        wf_sg->execute_block(samples_for_wf, wf_n_samples);  // always run FFT for S-meter
     }
 }
 
@@ -399,18 +399,17 @@ static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_
     return false;
 }
 
-static bool update_waterfall(ChunkedSpgram *wf_sg, uint64_t now, bool tx, uint32_t base_freq) {
+/**
+ * Refresh waterfall PSD buffers (common to both S-meter and waterfall UI).
+ * Returns true when fresh linear / dB PSD data is ready.
+ */
+static bool update_waterfall_psd(ChunkedSpgram *wf_sg, uint64_t now) {
     if ((now - waterfall_time > waterfall_fps_ms) && (!psd_delay) & wf_sg->ready()) {
         wf_sg->get_psd(waterfall_psd_lin, true);
         for (size_t i = 0; i < WATERFALL_NFFT; i++) {
             waterfall_psd[i] = 10.0f * log10f(waterfall_psd_lin[i]);
         }
         liquid_vectorf_addscalar(waterfall_psd, WATERFALL_NFFT, DB_OFFSET + zoom_level_offset, waterfall_psd);
-        uint32_t width_hz = FULL_BW_HZ;
-        if (waterfall_fft_decim) {
-            width_hz /= spectrum_factor;
-        }
-        waterfall_data(waterfall_psd, WATERFALL_NFFT, tx, base_freq, width_hz);
         waterfall_time = now;
         return true;
     }
@@ -486,15 +485,25 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
         update_spectrum(sp_sg, now, tx, base_freq);
     }
     pthread_mutex_unlock(&spectrum_mux);
-    if (wf_sg && waterfall_enabled.load(std::memory_order_relaxed)) {
-        if (update_waterfall(wf_sg, now, tx, base_freq)) {
-            update_s_meter();
-            // TODO: skip on disabled auto min/max
-            if (!tx) {
-                dsp_update_min_max(waterfall_psd_lin, WATERFALL_NFFT);
-            } else {
-                min_max_delay = 2;
+
+    if (wf_sg && update_waterfall_psd(wf_sg, now)) {
+        /* S-meter runs every PSD refresh regardless of waterfall UI state. */
+        update_s_meter();
+
+        bool waterfall_on = waterfall_enabled.load(std::memory_order_relaxed);
+        if (waterfall_on) {
+            uint32_t width_hz = FULL_BW_HZ;
+            if (waterfall_fft_decim) {
+                width_hz /= spectrum_factor;
             }
+            waterfall_data(waterfall_psd, WATERFALL_NFFT, tx, base_freq, width_hz);
+        }
+
+        // TODO: skip on disabled auto min/max
+        if (!tx) {
+            dsp_update_min_max(waterfall_psd_lin, WATERFALL_NFFT);
+        } else {
+            min_max_delay = 2;
         }
     }
 }
@@ -685,7 +694,6 @@ static void dsp_update_min_max(float *psd_lin, uint16_t size) {
     waterfall_update_max(max);
 }
 
-extern "C" {
 void dsp_set_waterfall_enabled(bool enabled) {
     waterfall_enabled.store(enabled, std::memory_order_relaxed);
     if (enabled) {
@@ -699,5 +707,4 @@ void dsp_set_spectrum_enabled(bool enabled) {
         psd_delay = 4;
         spectrum_time = get_time();
     }
-}
 }

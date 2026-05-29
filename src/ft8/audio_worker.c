@@ -18,6 +18,7 @@
 #include <time.h>
 
 #include <liquid/liquid.h>
+#include "util.h"
 #include <ft8lib/constants.h>
 
 #include "worker.h"
@@ -64,12 +65,6 @@ struct audio_worker_s {
 
 /* ---------- small helpers ---------------------------------------------- */
 
-static uint64_t now_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000L);
-}
-
 static bool get_time_slot(ftx_protocol_t proto, struct timespec now, float *sec_since_start) {
     float sec = (now.tv_sec % 60) + now.tv_nsec / 1.0e9f;
     float slot_time = (proto == FTX_PROTOCOL_FT4) ? FT4_SLOT_TIME : FT8_SLOT_TIME;
@@ -106,7 +101,7 @@ static void drain_audio_buf(audio_worker_t *w) {
 
 static void maybe_emit_psd(audio_worker_t *w, const slot_info_t *info,
                            float sec_since_slot_start) {
-    uint64_t now = now_ms();
+    uint64_t now = get_time();
     if ((now - w->last_psd_time_ms) < w->fps_ms) return;
     w->last_psd_time_ms = now;
 

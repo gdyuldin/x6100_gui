@@ -71,25 +71,13 @@ static void ftx_min_score_load_or_create(void) {
         ft8lib_min_score = FTXLIB_MIN_SCORE_DEFAULT;
         return;
     }
-    char buf[64] = {0};
-    bool ok = false;
-    if (fgets(buf, sizeof(buf), f)) {
-        char *end = NULL;
-        errno = 0;
-        long v = strtol(buf, &end, 10);
-        if ((errno == 0) && (end != buf) && (v >= 0) && (v <= 32767)) {
-            while (end && *end && isspace((unsigned char)*end)) end++;
-            if ((end != NULL) && (*end == '\0')) {
-                ft8lib_min_score = (int)v;
-                ok = true;
-            }
-        }
-    }
+    int val = FTXLIB_MIN_SCORE_DEFAULT;
+    if (fscanf(f, "%d", &val) != 1)
+        val = FTXLIB_MIN_SCORE_DEFAULT;
     fclose(f);
-    if (!ok) {
-        ft8lib_min_score = FTXLIB_MIN_SCORE_DEFAULT;
+    ft8lib_min_score = val;
+    if (val == FTXLIB_MIN_SCORE_DEFAULT)
         ftx_min_score_write_default();
-    }
 }
 
 static int             num_candidates;
@@ -141,13 +129,6 @@ void ftx_worker_init(int sample_rate, ftx_protocol_t protocol) {
     const int max_blocks = (int)(slot_period / symbol_period);
     // TODO: skip bins outside filter
     const int num_bins = sample_rate * symbol_period / 2;
-
-    /* Guard against zero/negative dimensions and size_t multiplication
-     * overflow before we hand mag_size to malloc. */
-    if (max_blocks <= 0 || num_bins <= 0) {
-        LV_LOG_ERROR("FT8 worker: invalid dimensions (max_blocks=%d, num_bins=%d)", max_blocks, num_bins);
-        goto error_cleanup;
-    }
 
     const size_t mag_stride = (size_t)TIME_OSR * (size_t)FREQ_OSR * (size_t)num_bins * sizeof(WF_ELEM_T);
     if (mag_stride == 0 || (size_t)max_blocks > SIZE_MAX / mag_stride) {
@@ -355,9 +336,11 @@ static void decode_messages(const ftx_waterfall_t *wf, int *num_candidates, ftx_
                             decoded_msg_cb msg_cb, void *user_data) {
     // Go over candidates and attempt to decode messages
 
+    if (!num_candidates || *num_candidates <= 0) return;
+
     /* Use fixed-size array sized to MAX_CANDIDATES instead of a VLA based
      * on *num_candidates so a zero value cannot create a zero-length VLA
-     * (undefined behaviour). */
+     * (undefined behaviour). The early-return guard above makes this safe. */
     int to_delete_idx[MAX_CANDIDATES];
     int to_delete_size = 0;
 
@@ -367,12 +350,6 @@ static void decode_messages(const ftx_waterfall_t *wf, int *num_candidates, ftx_
         // Skip candidates, that are not fully received
         if ((cand->time_offset + n_tones - sync_num) >= wf->num_blocks) {
             continue;
-        }
-
-        /* Defensive: to_delete_idx is bounded by MAX_CANDIDATES. */
-        if (to_delete_size >= MAX_CANDIDATES) {
-            LV_LOG_WARN("Too many candidates to delete, truncating to %d", MAX_CANDIDATES);
-            break;
         }
 
         to_delete_idx[to_delete_size++] = idx;

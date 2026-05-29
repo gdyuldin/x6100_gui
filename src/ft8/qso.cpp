@@ -127,10 +127,6 @@ void FTxQsoProcessor::add_rx_text(std::string text, const int snr, ftx_msg_meta_
         tokens = new_tokens;
     }
 
-    if (tokens.empty()) {
-        return;
-    }
-
     for (auto &token : tokens) {
         if (!token.empty() && token[0] == '<') {
             token = token.substr(1, token.length() - 2);
@@ -377,6 +373,10 @@ Candidate *FTxQsoProcessor::get_or_create_cur_candidate(std::string remote_calls
     return _cur_candidate;
 }
 
+bool FTxQsoProcessor::has_current() {
+    return _cur_candidate != NULL;
+}
+
 static std::string make_answer_text(ftx_msg_type_t last_rx_type, std::string remote_callsign,
                                     std::string local_callsign, const int local_snr, std::string grid) {
     char answer[35];
@@ -437,10 +437,6 @@ bool ftx_qso_processor_can_save_qso(FTxQsoProcessor *p) {
 
 bool ftx_qso_processor_force_save_qso(FTxQsoProcessor *p) {
     return p->force_save_qso();
-}
-
-bool FTxQsoProcessor::has_current() {
-    return _cur_candidate != NULL;
 }
 
 bool ftx_qso_processor_has_current(FTxQsoProcessor *p) {
