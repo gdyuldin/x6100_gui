@@ -6,5 +6,6 @@ add_library(FT8 STATIC
     audio_worker.c
 )
 
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/..")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../qth")
 
