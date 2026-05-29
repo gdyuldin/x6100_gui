@@ -72,3 +72,5 @@ void radio_set_line_in(uint8_t d);
 void radio_set_line_out(uint8_t d);
 
 void radio_set_morse_key(bool on);
+
+int8_t radio_get_audio_in_lvl();

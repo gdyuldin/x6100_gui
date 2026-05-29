@@ -62,18 +62,6 @@
  *      TYPEDEFS
  **********************/
 
-typedef struct __attribute__((__packed__)) {
-    uint32_t lo_freq;
-    uint8_t flow_fmt;
-    uint8_t flow_seq_n: 4;
-    uint8_t flow_seq_total: 4;
-    uint8_t vary_freq: 1;
-    uint8_t fft_dec: 3;
-    uint32_t _pad1: 12;
-    uint32_t _pad2;
-} flow_info_t;
-
-
 typedef enum {
     x6100_flow_fp32 = 0,
     x6100_flow_bf16,
@@ -123,8 +111,9 @@ static void(*low_power_cb)(bool) = NULL;
 
 static pthread_mutex_t  control_mux;
 
-static x6100_flow_t     *pack;
+static x6100_flow_t    *pack;
 static x6100_base_ver_t base_ver;
+static int8_t           audio_in_lvl;
 
 static radio_state_t    state = RADIO_RX;
 static uint64_t         now_time;
@@ -710,7 +699,6 @@ static bool radio_tick() {
         prev_time = now_time;
 
         static uint8_t delay;
-        bool vary_freq = false;
 
         if (delay++ > 10) {
             delay = 0;
@@ -719,13 +707,13 @@ static bool radio_tick() {
                 low_power_cb(!pack->flag.vext && (pack->vbat <= 60));
             }
         }
-        flow_info_t *flow_info = (flow_info_t*)pack->reserved_3;
+        flow_info_t flow_info = pack->flow_info;
 
         uint32_t base_freq = 0;
         uint8_t fft_dec = 0;
         if (base_ver.rev >= 8) {
-            base_freq = flow_info->lo_freq;
-            fft_dec = 1U << flow_info->fft_dec;
+            base_freq = flow_info.lo_freq;
+            fft_dec = 1U << flow_info.fft_dec;
         }
 
         cfloat *flow_samples = (cfloat*)((char *)pack + offsetof(x6100_flow_t, samples));
@@ -733,10 +721,10 @@ static bool radio_tick() {
         size_t n_samples;
 
         if (base_ver.rev >= 8) {
-            if (flow_info->flow_fmt == x6100_flow_fp32) {
+            if (flow_info.flow_fmt == x6100_flow_fp32) {
                 samples = flow_samples;
                 n_samples = RADIO_SAMPLES;
-            } else if (flow_info->flow_fmt == x6100_flow_bf16) {
+            } else if (flow_info.flow_fmt == x6100_flow_bf16) {
                 n_samples = RADIO_SAMPLES * 2;
                 uint16_t *u16_flow_samples = (uint16_t*)flow_samples;
                 uint32_t *u32_samples_buf = (uint32_t*)samples_buf;
@@ -748,7 +736,6 @@ static bool radio_tick() {
                 }
                 samples = samples_buf;
             }
-            vary_freq = flow_info->vary_freq;
         } else {
             samples = flow_samples;
             n_samples = RADIO_SAMPLES;
@@ -760,7 +747,7 @@ static bool radio_tick() {
         // } fuint = {flow_info->_pad2};
         // printf("max signal: %g\n", fuint.f);
         // printf("audio mul: %.*g\n", fuint.f);
-        dsp_samples(samples, n_samples, pack->flag.tx, base_freq, flow_info->vary_freq, fft_dec);
+        dsp_samples(samples, n_samples, pack->flag.tx, base_freq, flow_info.vary_freq, fft_dec);
 
         switch (state) {
             case RADIO_RX:
