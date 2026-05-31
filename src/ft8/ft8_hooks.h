@@ -14,13 +14,18 @@
  *  via __attribute__((constructor)) or during application startup).
  *  Hooks registered after construct_cb will not receive lifecycle
  *  events for the current session.
+ *
+ *  Include convention:
+ *  - From src/*.c (e.g. dialog_ft8.c):  #include "ft8/ft8_hooks.h"
+ *  - From src/ft8/*.c (feature modules): #include "ft8_hooks.h"
+ *  - Inside src/ft8/*.h: use "qso.h" not "ft8/qso.h" (same-dir headers)
  */
 
 #pragma once
 
-#include "ft8/audio_worker.h"   /* slot_info_t */
-#include "ft8/qso.h"            /* FTxQsoProcessor, ftx_tx_msg_t, ftx_msg_meta_t */
-#include "ft8/tx_worker.h"      /* ft8_tx_config_t, tx_abort_fn_t */
+#include "audio_worker.h"       /* slot_info_t */
+#include "qso.h"                /* FTxQsoProcessor, ftx_tx_msg_t, ftx_msg_meta_t */
+#include "tx_worker.h"          /* ft8_tx_config_t, tx_abort_fn_t */
 #include "lvgl/lvgl.h"          /* lv_obj_t */
 
 /* ---- Hook chain limits ----------------------------------------------- */

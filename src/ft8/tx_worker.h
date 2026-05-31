@@ -56,7 +56,7 @@ typedef struct {
 
 /* Transmit using a config struct. Returns true on normal completion;
  * false if the abort callback fired mid-transmit. */
-bool tx_worker_run_with_config(const ft8_tx_config_t *cfg);
+bool tx_worker_run_with_config(const ft8_tx_config_t *tx_cfg);
 
 /* Legacy positional-parameter wrapper. Kept for callers that haven't
  * migrated to ft8_tx_config_t yet. */
