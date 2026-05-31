@@ -38,7 +38,6 @@
 #include "widgets/lv_waterfall.h"
 #include "widgets/lv_finder.h"
 
-#include "ft8/worker.h"
 #include "adif.h"
 #include "qso_log.h"
 #include "scheduler.h"
@@ -358,33 +357,57 @@ static void destruct_cb() {
 /* ---- Hook registration helpers --------------------------------------- */
 
 void ft8_register_init_hook(ft8_lifecycle_fn_t fn) {
-    if (init_hook_cnt < FT8_MAX_HOOKS)
+    if (!fn) return;
+    if (init_hook_cnt < FT8_MAX_HOOKS) {
         init_hooks[init_hook_cnt++] = fn;
+    } else {
+        LV_LOG_WARN("ft8: init_hook overflow (max %d)", FT8_MAX_HOOKS);
+    }
 }
 
 void ft8_register_cleanup_hook(ft8_lifecycle_fn_t fn) {
-    if (cleanup_hook_cnt < FT8_MAX_HOOKS)
+    if (!fn) return;
+    if (cleanup_hook_cnt < FT8_MAX_HOOKS) {
         cleanup_hooks[cleanup_hook_cnt++] = fn;
+    } else {
+        LV_LOG_WARN("ft8: cleanup_hook overflow (max %d)", FT8_MAX_HOOKS);
+    }
 }
 
 void ft8_register_rx_msg_hook(ft8_rx_msg_fn_t fn) {
-    if (rx_msg_hook_cnt < FT8_MAX_HOOKS)
+    if (!fn) return;
+    if (rx_msg_hook_cnt < FT8_MAX_HOOKS) {
         rx_msg_hooks[rx_msg_hook_cnt++] = fn;
+    } else {
+        LV_LOG_WARN("ft8: rx_msg_hook overflow (max %d)", FT8_MAX_HOOKS);
+    }
 }
 
 void ft8_register_psd_hook(ft8_psd_fn_t fn) {
-    if (psd_hook_cnt < FT8_MAX_HOOKS)
+    if (!fn) return;
+    if (psd_hook_cnt < FT8_MAX_HOOKS) {
         psd_hooks[psd_hook_cnt++] = fn;
+    } else {
+        LV_LOG_WARN("ft8: psd_hook overflow (max %d)", FT8_MAX_HOOKS);
+    }
 }
 
 void ft8_register_slot_end_hook(ft8_slot_end_fn_t fn) {
-    if (slot_end_hook_cnt < FT8_MAX_HOOKS)
+    if (!fn) return;
+    if (slot_end_hook_cnt < FT8_MAX_HOOKS) {
         slot_end_hooks[slot_end_hook_cnt++] = fn;
+    } else {
+        LV_LOG_WARN("ft8: slot_end_hook overflow (max %d)", FT8_MAX_HOOKS);
+    }
 }
 
 void ft8_register_pre_tx_hook(ft8_pre_tx_fn_t fn) {
-    if (pre_tx_hook_cnt < FT8_MAX_HOOKS)
+    if (!fn) return;
+    if (pre_tx_hook_cnt < FT8_MAX_HOOKS) {
         pre_tx_hooks[pre_tx_hook_cnt++] = fn;
+    } else {
+        LV_LOG_WARN("ft8: pre_tx_hook overflow (max %d)", FT8_MAX_HOOKS);
+    }
 }
 
 static void load_band(int8_t dir) {
@@ -1152,4 +1175,10 @@ void ft8_schedule_cq_tx(void) {
     subject_set_int(cq_enabled, true);
     ftx_qso_processor_reset(qso_processor);
     lv_finder_clear_cursor(finder);
+
+    if (tx_msg.msg[2] == '_') {
+        msg_schedule_text_fmt("Next TX: CQ %s", tx_msg.msg + 3);
+    } else {
+        msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
+    }
 }
