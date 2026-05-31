@@ -7,6 +7,7 @@
  */
 
 #include "dialog_ft8.h"
+#include "ft8/ft8_hooks.h"
 
 #include "ft8/worker.h"
 #include "ft8/qso.h"
@@ -65,6 +66,35 @@
 #define FT4_WIDTH_HZ    83
 
 #define MAX_TX_START_DELAY 1.5f
+
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+
+/* ---- Hook chains ---------------------------------------------------- */
+static ft8_lifecycle_fn_t init_hooks[FT8_MAX_HOOKS];
+static uint8_t            init_hook_cnt = 0;
+
+static ft8_lifecycle_fn_t cleanup_hooks[FT8_MAX_HOOKS];
+static uint8_t            cleanup_hook_cnt = 0;
+
+static ft8_rx_msg_fn_t    rx_msg_hooks[FT8_MAX_HOOKS];
+static uint8_t            rx_msg_hook_cnt = 0;
+
+static ft8_psd_fn_t       psd_hooks[FT8_MAX_HOOKS];
+static uint8_t            psd_hook_cnt = 0;
+
+static ft8_slot_end_fn_t  slot_end_hooks[FT8_MAX_HOOKS];
+static uint8_t            slot_end_hook_cnt = 0;
+
+static ft8_pre_tx_fn_t    pre_tx_hooks[FT8_MAX_HOOKS];
+static uint8_t            pre_tx_hook_cnt = 0;
+
+/* ---- Button registry ------------------------------------------------ */
+static ft8_button_def_t   button_registry[FT8_BUTTON_MAX_PAGES * FT8_BUTTON_SLOTS];
+static uint8_t            button_registry_cnt = 0;
+
+/* Last decoded message meta, set by add_rx_text() and consumed by
+ * on_message_cb's hook chain. Single-threaded (worker thread only). */
+static ftx_msg_meta_t     last_rx_meta;
 
 typedef enum {
     RX_PROCESS,
@@ -162,21 +192,24 @@ static bool get_time_slot(struct timespec now, float *time_since_start);
 static buttons_page_t btn_page_1;
 static buttons_page_t btn_page_2;
 static buttons_page_t btn_page_3;
+static buttons_page_t btn_page_4;
 
-static button_item_t button_page_1 = { .type=BTN_TEXT, .label = "(Page: 1:3)", .press = button_next_page_cb, .next=&btn_page_2};
+static button_item_t button_page_1 = { .type=BTN_TEXT, .label = "(Page: 1:4)", .press = button_next_page_cb, .next=&btn_page_2};
 static button_item_t button_show_cq_all = { .type=BTN_TEXT_FN, .label_fn = cq_all_label_getter, .press = show_cq_all_cb, .subj=&cfg.ft8_show_all.val};
 static button_item_t button_mode_ft4_ft8 = { .type=BTN_TEXT_FN, .label_fn = protocol_label_getter, .press = mode_ft4_ft8_cb, .subj=&cfg.ft8_protocol.val };
 static button_item_t button_tx_cq_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_cq_label_getter, .press = tx_cq_en_dis_cb };
 static button_item_t button_tx_call_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_call_label_getter, .press = tx_call_en_dis_cb};
 
-static button_item_t button_page_2 = { .type=BTN_TEXT, .label = "(Page: 2:3)", .press = button_next_page_cb, .next=&btn_page_3};
+static button_item_t button_page_2 = { .type=BTN_TEXT, .label = "(Page: 2:4)", .press = button_next_page_cb, .next=&btn_page_3};
 static button_item_t button_hold_freq = { .type=BTN_TEXT_FN, .label_fn = hold_freq_label_getter, .press = hold_tx_freq_cb, .subj=&cfg.ft8_hold_freq.val };
 static button_item_t button_auto_en_dis = { .type=BTN_TEXT_FN, .label_fn = auto_label_getter, .press = mode_auto_cb, .subj=&cfg.ft8_auto.val };
 static button_item_t button_force_save = { .type=BTN_TEXT, .label = "Force QSO\nsave", .press = force_save_qso };
 
-static button_item_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:3)", .press = button_next_page_cb, .next=&btn_page_1};
+static button_item_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:4)", .press = button_next_page_cb, .next=&btn_page_4};
 static button_item_t button_cq_mod = { .type=BTN_TEXT, .label = "CQ\nModifier", .press = cq_modifier_cb };
 static button_item_t button_time_sync = { .type=BTN_TEXT, .label = "Time\nSync", .press = time_sync };
+
+static button_item_t button_page_4 = { .type=BTN_TEXT, .label = "(Page: 4:4)", .press = button_next_page_cb, .next=&btn_page_1};
 
 static buttons_page_t btn_page_1 = {
     {&button_page_1, &button_show_cq_all, &button_mode_ft4_ft8, &button_tx_cq_en_dis, &button_tx_call_en_dis}
@@ -188,6 +221,10 @@ static buttons_page_t btn_page_2 = {
 
 static buttons_page_t btn_page_3 = {
     {&button_page_3, &button_cq_mod, &button_time_sync}
+};
+
+static buttons_page_t btn_page_4 = {
+    {&button_page_4}
 };
 
 static dialog_t dialog = {
@@ -296,6 +333,11 @@ static void key_cb(lv_event_t * e) {
 static void destruct_cb() {
     // TODO: check free mem
     keyboard_close();
+
+    /* Inverse-order cleanup hooks: last registered, first torn down. */
+    for (int i = cleanup_hook_cnt - 1; i >= 0; i--)
+        cleanup_hooks[i]();
+
     worker_done();
     table_view_destroy();
 
@@ -311,6 +353,38 @@ static void destruct_cb() {
 
     radio_set_pwr(subject_get_float(cfg.pwr.val));
     adif_log_close(ft8_log);
+}
+
+/* ---- Hook registration helpers --------------------------------------- */
+
+void ft8_register_init_hook(ft8_lifecycle_fn_t fn) {
+    if (init_hook_cnt < FT8_MAX_HOOKS)
+        init_hooks[init_hook_cnt++] = fn;
+}
+
+void ft8_register_cleanup_hook(ft8_lifecycle_fn_t fn) {
+    if (cleanup_hook_cnt < FT8_MAX_HOOKS)
+        cleanup_hooks[cleanup_hook_cnt++] = fn;
+}
+
+void ft8_register_rx_msg_hook(ft8_rx_msg_fn_t fn) {
+    if (rx_msg_hook_cnt < FT8_MAX_HOOKS)
+        rx_msg_hooks[rx_msg_hook_cnt++] = fn;
+}
+
+void ft8_register_psd_hook(ft8_psd_fn_t fn) {
+    if (psd_hook_cnt < FT8_MAX_HOOKS)
+        psd_hooks[psd_hook_cnt++] = fn;
+}
+
+void ft8_register_slot_end_hook(ft8_slot_end_fn_t fn) {
+    if (slot_end_hook_cnt < FT8_MAX_HOOKS)
+        slot_end_hooks[slot_end_hook_cnt++] = fn;
+}
+
+void ft8_register_pre_tx_hook(ft8_pre_tx_fn_t fn) {
+    if (pre_tx_hook_cnt < FT8_MAX_HOOKS)
+        pre_tx_hooks[pre_tx_hook_cnt++] = fn;
 }
 
 static void load_band(int8_t dir) {
@@ -532,6 +606,10 @@ static void construct_cb(lv_obj_t *parent) {
     } else {
         base_gain_offset = -16.4f + log10f(target_pwr) * 10.0f;
     }
+
+    /* Run all registered init hooks after base setup is complete. */
+    for (uint8_t i = 0; i < init_hook_cnt; i++)
+        init_hooks[i]();
 }
 
 /* Buttons */
@@ -864,14 +942,15 @@ static void add_tx_text(const char * text) {
  */
 static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, float freq_hz, float time_sec) {
 
-    ftx_msg_meta_t meta;
-    meta.freq_hz = freq_hz;
-    meta.time_sec = time_sec;
+    ftx_msg_meta_t *meta = &last_rx_meta;
+    memset(meta, 0, sizeof(*meta));
+    meta->freq_hz = freq_hz;
+    meta->time_sec = time_sec;
     char * old_msg = strdup(tx_msg.msg);
-    ftx_qso_processor_add_rx_text(qso_processor, text, snr, &meta, &tx_msg);
+    ftx_qso_processor_add_rx_text(qso_processor, text, snr, meta, &tx_msg);
 
     if ((strlen(tx_msg.msg) > 0) && (strcmp(old_msg, tx_msg.msg) != 0)) {
-        lv_finder_set_cursor(finder, meta.freq_hz);
+        lv_finder_set_cursor(finder, meta->freq_hz);
         if (!subject_get_int(cfg.ft8_hold_freq.val)) {
             set_freq(freq_hz);
         }
@@ -884,9 +963,9 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     free(old_msg);
 
     ft8_cell_type_t cell_type;
-    if (meta.to_me) {
+    if (meta->to_me) {
         cell_type = CELL_RX_TO_ME;
-    } else if (meta.type == FTX_MSG_TYPE_CQ) {
+    } else if (meta->type == FTX_MSG_TYPE_CQ) {
         cell_type = CELL_RX_CQ;
     } else if (!subject_get_int(cfg.ft8_show_all.val)) {
         return;
@@ -895,9 +974,9 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     }
 
     cell_data_t  cell_data;
-    if (meta.type == FTX_MSG_TYPE_CQ) {
+    if (meta->type == FTX_MSG_TYPE_CQ) {
         cell_data.worked_type = qso_log_search_worked(
-            meta.call_de,
+            meta->call_de,
             subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
             qso_log_freq_to_band(subject_get_int(cfg_cur.fg_freq))
         );
@@ -905,12 +984,12 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
 
     cell_data.cell_type = cell_type;
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
-    cell_data.meta = meta;
+    cell_data.meta = *meta;
     cell_data.odd = s_info->odd;
     if (params.qth.x[0] != 0) {
-        if (strlen(meta.grid) > 0) {
+        if (strlen(meta->grid) > 0) {
             double lat, lon;
-            qth_str_to_pos(meta.grid, &lat, &lon);
+            qth_str_to_pos(meta->grid, &lat, &lon);
             cell_data.dist = qth_pos_dist(lat, lon, cur_lat, cur_lon);
         } else {
             cell_data.dist = 0;
@@ -927,6 +1006,11 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
                           const slot_info_t *info, void *ctx) {
     (void)ctx;
     add_rx_text((int16_t)snr, text, (slot_info_t *)info, freq_hz, time_sec);
+
+    /* Let registered RX message hooks inspect the decoded message.
+     * last_rx_meta was set by add_rx_text() above. */
+    for (uint8_t i = 0; i < rx_msg_hook_cnt; i++)
+        rx_msg_hooks[i](text, snr, freq_hz, time_sec, &last_rx_meta);
 }
 
 /**
@@ -956,20 +1040,22 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
     if (high_bin > nfft) high_bin = nfft;
     if (low_bin >= high_bin) return;
 
-    // Schedule waterfall update in main thread
-    struct waterfall_data wf_data;
-    wf_data.size = high_bin - low_bin;
-    wf_data.psd = (float *)calloc(sizeof(float), wf_data.size);
-    memcpy((void*)wf_data.psd, (void*)&psd[low_bin], wf_data.size * sizeof(float));
-    scheduler_put(waterfall_add_data, &wf_data, sizeof(wf_data));
+    lv_waterfall_add_data(waterfall, (float *)&psd[low_bin], (int32_t)(high_bin - low_bin));
+
+    /* PSD hooks: slot markers, auto DNF notch detection, etc. */
+    for (uint8_t i = 0; i < psd_hook_cnt; i++)
+        psd_hooks[i](psd, nfft, sec_since_slot_start, info);
 }
 
 static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
-    (void)info;
     (void)ctx;
     if (qso_processor) {
         ftx_qso_processor_start_new_slot(qso_processor);
     }
+
+    /* Slot-end hooks: ft8_log flush, auto-sel state machine, etc. */
+    for (uint8_t i = 0; i < slot_end_hook_cnt; i++)
+        slot_end_hooks[i](info);
 }
 
 static void on_tick_cb(const slot_info_t *info, bool new_slot,
@@ -980,11 +1066,31 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
 
     if ((sec_since_slot_start < MAX_TX_START_DELAY) && have_tx_msg) {
         if ((tx_time_slot == info->odd) && subject_get_int(tx_enabled)) {
+
+            /* ---- Pre-TX hooks (log, auto-dnf clear, etc.) -----------
+             * [AutoSel hook point] autosel_grid_swap_on_tick() —
+             *   see FT8_HOOK_PLAN.md §3.5.2 */
+            for (uint8_t i = 0; i < pre_tx_hook_cnt; i++)
+                pre_tx_hooks[i](info);
+
             state = TX_PROCESS;
+
+            ft8_tx_config_t tx_cfg = {
+                .tx_text             = tx_msg.msg,
+                .audio_sample_rate   = AUDIO_PLAY_RATE,
+                .base_gain_offset    = base_gain_offset,
+                .force_free_text     = false,
+                .sec_since_slot_start = 0.0f,
+                .abort_check         = tx_should_abort_cb,
+                .abort_check_ctx     = NULL,
+            };
             add_tx_text(tx_msg.msg);
-            tx_worker_run(tx_msg.msg, AUDIO_PLAY_RATE, base_gain_offset,
-                          tx_should_abort_cb, NULL);
+            tx_worker_run_with_config(&tx_cfg);
             state = RX_PROCESS;
+
+            /* [AutoSel hook point] autosel_post_tx() —
+             *   see FT8_HOOK_PLAN.md §3.5.3 */
+
             if (tx_msg.repeats > 0) {
                 tx_msg.repeats--;
             }
@@ -1008,4 +1114,42 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
                      ts->tm_hour, ts->tm_min, ts->tm_sec);
         }
     }
+}
+
+/* ---- Button registration --------------------------------------------- */
+
+void ft8_register_button(const ft8_button_def_t *btn) {
+    if (button_registry_cnt >= FT8_BUTTON_MAX_PAGES * FT8_BUTTON_SLOTS)
+        return;
+    button_registry[button_registry_cnt++] = *btn;
+}
+
+/* ---- AutoSel getters ------------------------------------------------- */
+
+FTxQsoProcessor *ft8_get_qso_processor(void) { return qso_processor; }
+ftx_tx_msg_t    *ft8_get_tx_msg(void)        { return &tx_msg; }
+bool            *ft8_get_tx_time_slot(void)   { return &tx_time_slot; }
+lv_obj_t        *ft8_get_finder(void)         { return finder; }
+lv_obj_t        *ft8_get_waterfall(void)      { return waterfall; }
+bool             ft8_is_tx_enabled(void)       { return subject_get_int(tx_enabled); }
+
+void ft8_schedule_cq_tx(void) {
+    if (strlen(params.callsign.x) == 0)
+        return;
+
+    cq_make_message(params.callsign.x, params.qth.x,
+                    params.ft8_cq_modifier.x, tx_msg.msg);
+
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    float time_since_slot_start;
+    tx_time_slot = !get_time_slot(now, &time_since_slot_start);
+    if (time_since_slot_start < MAX_TX_START_DELAY) {
+        tx_time_slot = !tx_time_slot;
+    }
+    tx_msg.repeats = subject_get_int(cfg.ft8_max_repeats.val);
+    subject_set_int(tx_enabled, true);
+    subject_set_int(cq_enabled, true);
+    ftx_qso_processor_reset(qso_processor);
+    lv_finder_clear_cursor(finder);
 }
