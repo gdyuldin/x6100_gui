@@ -21,13 +21,17 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <errno.h>
+#include <ctype.h>
 
 #define MAX_CANDIDATES 200
 #define MAX_DECODED_MESSAGES 50
 #define LDPC_ITERATIONS 25
 #define TIME_OSR 4               // Time oversampling rate (symbol subdivision)
 #define FREQ_OSR 2               // Frequency oversampling rate (bin subdivision)
-#define MIN_SCORE 10             // Minimum score for candidate
+#define FTXLIB_MIN_SCORE_DEFAULT 10
+#define FTXLIB_MIN_SCORE_PATH "/mnt/ft8lib_min_score.txt"
 #define DECODE_BLOCK_STRIDE 2    // Try to decode each N block
 #define EARLY_LDPC_ITERATIONS 25 // LDPC iterations on early decoding
 
@@ -44,6 +48,37 @@ static int   nfft;
 
 static uint8_t n_tones;  // Number of tones for generate message and check minimal length for rx
 static uint8_t sync_num; // Length of sync
+
+/* Decode score threshold (minimum candidate score). Initialised from
+ * FTXLIB_MIN_SCORE_PATH on first ftx_worker_init() so a power user can
+ * tweak sensitivity vs false-positive rate without a rebuild. The file is
+ * (re)created with the default value when missing or unparsable. */
+static int             ft8lib_min_score = FTXLIB_MIN_SCORE_DEFAULT;
+
+static void ftx_min_score_write_default(void) {
+    FILE *wf = fopen(FTXLIB_MIN_SCORE_PATH, "w");
+    if (!wf) return;
+    fprintf(wf, "%d\n", FTXLIB_MIN_SCORE_DEFAULT);
+    fclose(wf);
+}
+
+static void ftx_min_score_load_or_create(void) {
+    FILE *f = fopen(FTXLIB_MIN_SCORE_PATH, "r");
+    if (!f) {
+        if (errno == ENOENT) {
+            ftx_min_score_write_default();
+        }
+        ft8lib_min_score = FTXLIB_MIN_SCORE_DEFAULT;
+        return;
+    }
+    int val = FTXLIB_MIN_SCORE_DEFAULT;
+    if (fscanf(f, "%d", &val) != 1)
+        val = FTXLIB_MIN_SCORE_DEFAULT;
+    fclose(f);
+    ft8lib_min_score = val;
+    if (val == FTXLIB_MIN_SCORE_DEFAULT)
+        ftx_min_score_write_default();
+}
 
 static int             num_candidates;
 static ftx_candidate_t candidate_list[MAX_CANDIDATES];
@@ -62,6 +97,7 @@ static int get_message_snr(const ftx_waterfall_t *wf, const ftx_candidate_t *can
  * Init worker
  */
 void ftx_worker_init(int sample_rate, ftx_protocol_t protocol) {
+    ftx_min_score_load_or_create();
     float slot_period;
 
     switch (protocol) {
@@ -79,6 +115,7 @@ void ftx_worker_init(int sample_rate, ftx_protocol_t protocol) {
         break;
     default:
         LV_LOG_ERROR("Unsupported protocol: %lu", protocol);
+        return;
     }
     int num_samples = slot_period * sample_rate;
 
@@ -93,7 +130,13 @@ void ftx_worker_init(int sample_rate, ftx_protocol_t protocol) {
     // TODO: skip bins outside filter
     const int num_bins = sample_rate * symbol_period / 2;
 
-    size_t mag_size = max_blocks * TIME_OSR * FREQ_OSR * num_bins * sizeof(WF_ELEM_T);
+    const size_t mag_stride = (size_t)TIME_OSR * (size_t)FREQ_OSR * (size_t)num_bins * sizeof(WF_ELEM_T);
+    if (mag_stride == 0 || (size_t)max_blocks > SIZE_MAX / mag_stride) {
+        LV_LOG_ERROR("FT8 worker: mag_size calculation overflow");
+        goto error_cleanup;
+    }
+
+    size_t mag_size = (size_t)max_blocks * mag_stride;
 
     wf.max_blocks = max_blocks;
     wf.num_bins = num_bins;
@@ -101,6 +144,10 @@ void ftx_worker_init(int sample_rate, ftx_protocol_t protocol) {
     wf.freq_osr = FREQ_OSR;
     wf.block_stride = TIME_OSR * FREQ_OSR * num_bins;
     wf.mag = (uint8_t *)malloc(mag_size);
+    if (!wf.mag) {
+        LV_LOG_ERROR("FT8 worker: wf.mag malloc failed");
+        goto error_cleanup;
+    }
     wf.protocol = protocol;
 
     find_candidates_at = n_tones - sync_num;
@@ -110,10 +157,18 @@ void ftx_worker_init(int sample_rate, ftx_protocol_t protocol) {
     float fft_norm = 2.0f / nfft;
     time_buf = (float complex *)malloc(nfft * sizeof(float complex));
     freq_buf = (float complex *)malloc(nfft * sizeof(float complex));
+    if (!time_buf || !freq_buf) {
+        LV_LOG_ERROR("FT8 worker: time_buf/freq_buf malloc failed");
+        goto error_cleanup;
+    }
     fft = fft_create_plan(nfft, time_buf, freq_buf, LIQUID_FFT_FORWARD, 0);
     frame_window = windowcf_create(nfft);
 
     rx_window = malloc(nfft * sizeof(complex float));
+    if (!rx_window) {
+        LV_LOG_ERROR("FT8 worker: rx_window malloc failed");
+        goto error_cleanup;
+    }
     float window_norm = 2.0f / nfft;
 
     for (uint16_t i = 0; i < nfft; i++) {
@@ -121,20 +176,41 @@ void ftx_worker_init(int sample_rate, ftx_protocol_t protocol) {
     }
 
     ftx_worker_reset();
+    return;
+
+error_cleanup:
+    ftx_worker_free();
 }
 
 /**
- * Cleanup worker
+ * Cleanup worker. Safe to call multiple times or on a half-initialised
+ * worker (partial allocations are skipped via NULL checks).
  */
 void ftx_worker_free() {
-    free(wf.mag);
-    windowcf_destroy(frame_window);
-
-    free(time_buf);
-    free(freq_buf);
-    fft_destroy_plan(fft);
-
-    free(rx_window);
+    if (wf.mag) {
+        free(wf.mag);
+        wf.mag = NULL;
+    }
+    if (frame_window) {
+        windowcf_destroy(frame_window);
+        frame_window = NULL;
+    }
+    if (fft) {
+        fft_destroy_plan(fft);
+        fft = NULL;
+    }
+    if (time_buf) {
+        free(time_buf);
+        time_buf = NULL;
+    }
+    if (freq_buf) {
+        free(freq_buf);
+        freq_buf = NULL;
+    }
+    if (rx_window) {
+        free(rx_window);
+        rx_window = NULL;
+    }
     hashtable_delete();
 }
 
@@ -153,7 +229,8 @@ void ftx_worker_reset() {
 
 bool ftx_worker_generate_tx_samples(const char *text, const uint16_t signal_freq, const uint32_t sample_rate,
                                     int16_t **samples, uint32_t *n_samples) {
-    ftx_message_t    msg;
+    ftx_message_t msg;
+    ftx_message_init(&msg);
     ftx_message_rc_t rc = ftx_message_encode(&msg, &hash_if, text);
 
     if (rc != FTX_MESSAGE_RC_OK) {
@@ -175,7 +252,12 @@ bool ftx_worker_generate_tx_samples(const char *text, const uint16_t signal_freq
         break;
     }
 
-    *samples = gfsk_synth(tones, n_tones, signal_freq, symbol_bt, symbol_period, sample_rate, n_samples);
+    int16_t *out = gfsk_synth(tones, n_tones, signal_freq, symbol_bt, symbol_period, sample_rate, n_samples);
+    if (!out) {
+        LV_LOG_ERROR("gfsk_synth allocation failed");
+        return false;
+    }
+    *samples = out;
     return true;
 }
 
@@ -228,7 +310,7 @@ void ftx_worker_put_rx_samples(float complex *samples, uint32_t n_samples) {
 void ftx_worker_decode(decoded_msg_cb msg_cb, bool last, void *user_data) {
     if (wf.num_blocks >= find_candidates_at) {
         if (num_candidates == 0) {
-            num_candidates = ftx_find_candidates(&wf, MAX_CANDIDATES, candidate_list, MIN_SCORE);
+            num_candidates = ftx_find_candidates(&wf, MAX_CANDIDATES, candidate_list, ft8lib_min_score);
         } else if (last) {
             // Last decoding
             decode_messages(&wf, &num_candidates, candidate_list, decoded, decoded_hashtable, LDPC_ITERATIONS, msg_cb,
@@ -254,7 +336,12 @@ static void decode_messages(const ftx_waterfall_t *wf, int *num_candidates, ftx_
                             decoded_msg_cb msg_cb, void *user_data) {
     // Go over candidates and attempt to decode messages
 
-    int to_delete_idx[*num_candidates];
+    if (!num_candidates || *num_candidates <= 0) return;
+
+    /* Use fixed-size array sized to MAX_CANDIDATES instead of a VLA based
+     * on *num_candidates so a zero value cannot create a zero-length VLA
+     * (undefined behaviour). The early-return guard above makes this safe. */
+    int to_delete_idx[MAX_CANDIDATES];
     int to_delete_size = 0;
 
     for (int idx = 0; idx < *num_candidates; ++idx) {
@@ -264,6 +351,7 @@ static void decode_messages(const ftx_waterfall_t *wf, int *num_candidates, ftx_
         if ((cand->time_offset + n_tones - sync_num) >= wf->num_blocks) {
             continue;
         }
+
         to_delete_idx[to_delete_size++] = idx;
 
         ftx_message_t       message;
@@ -284,6 +372,7 @@ static void decode_messages(const ftx_waterfall_t *wf, int *num_candidates, ftx_
         int  idx_hash = message.hash % MAX_DECODED_MESSAGES;
         bool found_empty_slot = false;
         bool found_duplicate = false;
+        int  probes = 0;
         do {
             if (decoded_hashtable[idx_hash] == NULL) {
                 LV_LOG_INFO("Found an empty slot");
@@ -294,10 +383,10 @@ static void decode_messages(const ftx_waterfall_t *wf, int *num_candidates, ftx_
                 found_duplicate = true;
             } else {
                 LV_LOG_INFO("Hash table clash!");
-                // Move on to check the next entry in hash table
                 idx_hash = (idx_hash + 1) % MAX_DECODED_MESSAGES;
+                probes++;
             }
-        } while (!found_empty_slot && !found_duplicate);
+        } while (!found_empty_slot && !found_duplicate && probes < MAX_DECODED_MESSAGES);
 
         if (found_empty_slot) {
             // Fill the empty hashtable slot

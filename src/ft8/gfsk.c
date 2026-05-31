@@ -32,6 +32,9 @@ int16_t *gfsk_synth(const uint8_t *symbols, uint16_t n_sym, float f0, float symb
     float    dphi_peak = 2 * M_PI * hmod / n_spsym;
     float    dphi[n_wave + 2 * n_spsym];
     int16_t *samples = malloc(sizeof(int16_t) * n_wave);
+    if (!samples) {
+        return NULL;
+    }
 
     *n_samples = n_wave;
 
