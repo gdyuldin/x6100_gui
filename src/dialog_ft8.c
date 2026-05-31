@@ -719,7 +719,8 @@ static void on_table_press(const cell_data_t *cell_data) {
 
     if ((cell_data == NULL) ||
         (cell_data->cell_type == CELL_TX_MSG) ||
-        (cell_data->cell_type == CELL_RX_INFO)
+        (cell_data->cell_type == CELL_RX_INFO) ||
+        (cell_data->cell_type == CELL_START_QSO)
     ) {
         msg_schedule_text_fmt("What should I do about it?");
         return;
@@ -733,7 +734,12 @@ static void on_table_press(const cell_data_t *cell_data) {
         }
         tx_time_slot = !cell_data->odd;
         subject_set_int(tx_enabled, true);
-        add_info("Start QSO with %s", cell_data->meta.call_de);
+        {
+            cell_data_t cd;
+            cd.cell_type = CELL_START_QSO;
+            snprintf(cd.text, sizeof(cd.text), "Start QSO with %s", cell_data->meta.call_de);
+            scheduler_put(table_view_add_msg_cb, &cd, sizeof(cell_data_t));
+        }
         msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
     } else {
         msg_schedule_text_fmt("Invalid message");

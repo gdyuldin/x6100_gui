@@ -100,10 +100,9 @@ static void truncate_oldest(void) {
     lv_obj_scroll_by_bounded(s_table, 0, removed_height, LV_ANIM_OFF);
 }
 
-/* Return true if this cell_data_t matches an RX-header row ("RX ..."). */
+/* Return true if this cell_data_t matches an RX-header row. */
 static bool is_rx_header(const cell_data_t *cd) {
-    return cd && (cd->cell_type == CELL_RX_INFO) &&
-           (strncmp(cd->text, "RX ", 3) == 0);
+    return cd && (cd->cell_type == CELL_RX_INFO);
 }
 
 void table_view_push_ui(const cell_data_t *src) {
@@ -182,6 +181,7 @@ static void draw_part_begin_cb(lv_event_t *e) {
         dsc->rect_dsc->bg_color = lv_color_hex(0x303030);
     } else {
         switch (cd->cell_type) {
+        case CELL_START_QSO:
         case CELL_RX_INFO:
             dsc->label_dsc->align = LV_TEXT_ALIGN_CENTER;
             dsc->rect_dsc->bg_color = lv_color_hex(0x303030);
