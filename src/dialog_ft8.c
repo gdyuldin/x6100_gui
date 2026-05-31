@@ -1076,7 +1076,7 @@ static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
         ftx_qso_processor_start_new_slot(qso_processor);
     }
 
-    /* Slot-end hooks: ft8_log flush, auto-sel state machine, etc. */
+    /* Slot-end hooks: log flush, QSO state machines, etc. */
     for (uint8_t i = 0; i < slot_end_hook_cnt; i++)
         slot_end_hooks[i](info);
 }
@@ -1090,8 +1090,9 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
     if ((sec_since_slot_start < MAX_TX_START_DELAY) && have_tx_msg) {
         if ((tx_time_slot == info->odd) && subject_get_int(tx_enabled)) {
 
-            /* ---- Pre-TX hooks (log, auto-dnf clear, etc.) -----------
-             * [AutoSel hook point] autosel_grid_swap_on_tick() —
+            /* ---- Pre-TX hooks (log, DNF clear, etc.) ---------------
+             * [Module hook point] grid-swap / pre-TX logic that needs
+             *   to modify tx_msg or defer this tick —
              *   see FT8_HOOK_PLAN.md §3.5.2 */
             for (uint8_t i = 0; i < pre_tx_hook_cnt; i++)
                 pre_tx_hooks[i](info);
@@ -1111,7 +1112,7 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             tx_worker_run_with_config(&tx_cfg);
             state = RX_PROCESS;
 
-            /* [AutoSel hook point] autosel_post_tx() —
+            /* [Module hook point] post-TX repeat/QSO exhaustion logic —
              *   see FT8_HOOK_PLAN.md §3.5.3 */
 
             if (tx_msg.repeats > 0) {
@@ -1151,7 +1152,7 @@ void ft8_register_button(const ft8_button_def_t *btn) {
     }
 }
 
-/* ---- AutoSel getters ------------------------------------------------- */
+/* ---- Internal state getters for external modules ---------------------- */
 
 FTxQsoProcessor *ft8_get_qso_processor(void) { return qso_processor; }
 ftx_tx_msg_t    *ft8_get_tx_msg(void)        { return &tx_msg; }

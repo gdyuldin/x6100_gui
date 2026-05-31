@@ -106,13 +106,13 @@ typedef struct {
 void ft8_register_button(const ft8_button_def_t *btn);
 
 /* ======================================================================
- *  AutoSel Module Interface (getters for cross-module access)
+ *  Internal State Accessors (for external modules)
  *
- *  auto-sel's state machine needs read/write access to several
- *  dialog_ft8.c static variables (qso_processor, tx_msg, finder,
- *  tx_time_slot, etc.). These getters and setters expose a stable
- *  API so auto-sel can be implemented in a separate source file and
- *  linked in without touching dialog_ft8.c internals.
+ *  Feature modules that need read/write access to dialog_ft8.c static
+ *  variables (qso_processor, tx_msg, finder, tx_time_slot, etc.) can
+ *  use these getters instead of reaching into the dialog internals.
+ *  This keeps module implementations in separate source files without
+ *  touching dialog_ft8.c.
  * ====================================================================== */
 
 FTxQsoProcessor *ft8_get_qso_processor(void);
