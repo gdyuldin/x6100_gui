@@ -1033,7 +1033,7 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
     /* Let registered RX message hooks inspect the decoded message.
      * last_rx_meta was set by add_rx_text() above. */
     for (uint8_t i = 0; i < rx_msg_hook_cnt; i++)
-        rx_msg_hooks[i](text, snr, freq_hz, time_sec, &last_rx_meta);
+        rx_msg_hooks[i](text, snr, freq_hz, time_sec, &last_rx_meta, info);
 }
 
 /**
@@ -1160,6 +1160,16 @@ bool            *ft8_get_tx_time_slot(void)   { return &tx_time_slot; }
 lv_obj_t        *ft8_get_finder(void)         { return finder; }
 lv_obj_t        *ft8_get_waterfall(void)      { return waterfall; }
 bool             ft8_is_tx_enabled(void)       { return subject_get_int(tx_enabled); }
+
+void ft8_get_filter_range(int *low_hz, int *high_hz) {
+    if (low_hz)  *low_hz  = filter_low;
+    if (high_hz) *high_hz = filter_high;
+}
+
+void ft8_get_qth(double *lat, double *lon) {
+    if (lat) *lat = cur_lat;
+    if (lon) *lon = cur_lon;
+}
 
 void ft8_schedule_cq_tx(void) {
     if (strlen(params.callsign.x) == 0)

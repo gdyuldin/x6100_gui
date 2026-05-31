@@ -43,10 +43,12 @@ typedef void (*ft8_lifecycle_fn_t)(void);
 
 /** RX message hook: called after add_rx_text() for every decoded
  *  FT8/FT4 message. meta may be NULL if the decoding context did not
- *  produce a full meta (edge case — callers should guard). */
+ *  produce a full meta (edge case — callers should guard).
+ *  info carries the slot metadata including slot_start (FW-1: Wave 0 infra). */
 typedef void (*ft8_rx_msg_fn_t)(const char *text, int snr,
                                 float freq_hz, float time_sec,
-                                ftx_msg_meta_t *meta);
+                                ftx_msg_meta_t *meta,
+                                const slot_info_t *info);
 
 /** PSD frame hook: called after the waterfall data has been pushed.
  *  Runs on the worker thread — LVGL mutations must go through
@@ -125,3 +127,11 @@ bool             ft8_is_tx_enabled(void);
 /** Schedule a CQ TX using the current callsign/grid/modifier.
  *  Equivalent to the user pressing the TX CQ button. */
 void             ft8_schedule_cq_tx(void);
+
+/** Return the current FT8 filter range in Hz (FW-2: Wave 0 infra).
+ *  Used by DNF/PSD hooks that need the visible band limits. */
+void             ft8_get_filter_range(int *low_hz, int *high_hz);
+
+/** Return the current QTH position (lat, lon) parsed from params.qth
+ *  (FW-3: Wave 0 infra). Used by auto_sel to compute distances. */
+void             ft8_get_qth(double *lat, double *lon);
