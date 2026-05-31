@@ -174,7 +174,7 @@ static void rx_consume_frames(audio_worker_t *w, const slot_info_t *info,
 
 static void *worker_main(void *arg) {
     audio_worker_t *w = (audio_worker_t *)arg;
-    slot_info_t     info = { .odd = false, .answer_generated = false };
+    slot_info_t     info = { .odd = false, .answer_generated = false, .slot_start = 0 };
     decode_ctx_t    dc   = { .w = w, .info = &info };
 
     atomic_store(&w->thread_running, true);
@@ -186,6 +186,20 @@ static void *worker_main(void *arg) {
         float sec_since_slot_start = 0.0f;
         bool  new_odd  = get_time_slot(w->proto, now, &sec_since_slot_start);
         bool  new_slot = (new_odd != info.odd);
+
+        /* Compute slot boundary timestamp. On a slot transition `info` still
+         * represents the slot that just ended, so step back one slot period
+         * to keep slot_start consistent with info.odd until the transition
+         * has been published to callbacks below.
+         *
+         * llround() (vs implicit float truncation) avoids ~1s jitter at the
+         * boundary when now.tv_nsec is large.
+         */
+        double now_f        = (double)now.tv_sec + (double)now.tv_nsec / 1.0e9;
+        float  slot_period  = (w->proto == FTX_PROTOCOL_FT4) ? FT4_SLOT_TIME : FT8_SLOT_TIME;
+        double slot_start_f = now_f - (double)sec_since_slot_start;
+        if (new_slot) slot_start_f -= (double)slot_period;
+        info.slot_start = (time_t)llround(slot_start_f);
 
         rx_consume_frames(w, &info, sec_since_slot_start);
 

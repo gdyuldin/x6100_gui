@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <complex.h>
+#include <time.h>
 
 #include <ft8lib/constants.h>
 
@@ -36,10 +37,18 @@
 extern "C" {
 #endif
 
-/* Per-RX-slot metadata exposed to callbacks. Kept minimal on purpose. */
+/* Per-RX-slot metadata exposed to callbacks.
+ *
+ * slot_start is the wall-clock UTC time of the slot boundary, computed
+ * with llround() to avoid sub-second jitter from float truncation; it
+ * stays stable for the duration of a single slot. Consumers (e.g. RX
+ * header timestamps, ft8_log) should prefer this over time(NULL) so
+ * messages from the same slot always render with the same timestamp.
+ */
 typedef struct {
-    bool odd;
-    bool answer_generated;
+    bool   odd;
+    bool   answer_generated;
+    time_t slot_start;
 } slot_info_t;
 
 typedef struct audio_worker_s audio_worker_t;
