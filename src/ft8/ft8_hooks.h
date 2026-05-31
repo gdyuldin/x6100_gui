@@ -8,6 +8,12 @@
  *  Internal header: included by dialog_ft8.c and by future feature PRs
  *  that register hooks. Do NOT include from generic UI files — use
  *  dialog_ft8.h for the dialog pointer only.
+ *
+ *  IMPORTANT: all ft8_register_* calls MUST complete before the FT8
+ *  dialog's first construct_cb fires (i.e. at module init time, e.g.
+ *  via __attribute__((constructor)) or during application startup).
+ *  Hooks registered after construct_cb will not receive lifecycle
+ *  events for the current session.
  */
 
 #pragma once
@@ -89,6 +95,9 @@ typedef struct {
     int   slot;
 } ft8_button_def_t;
 
+/** Register a button for placement on one of the 4 FT8 button pages.
+ *  @note PR1: storage only — button registry → physical button_item_t
+ *        assembly is deferred to the first external button PR. */
 void ft8_register_button(const ft8_button_def_t *btn);
 
 /* ======================================================================
