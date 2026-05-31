@@ -1142,9 +1142,13 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
 /* ---- Button registration --------------------------------------------- */
 
 void ft8_register_button(const ft8_button_def_t *btn) {
-    if (button_registry_cnt >= FT8_BUTTON_MAX_PAGES * FT8_BUTTON_SLOTS)
-        return;
-    button_registry[button_registry_cnt++] = *btn;
+    if (!btn) return;
+    if (button_registry_cnt < FT8_BUTTON_MAX_PAGES * FT8_BUTTON_SLOTS) {
+        button_registry[button_registry_cnt++] = *btn;
+    } else {
+        LV_LOG_WARN("ft8: button_registry overflow (max %d)",
+                    FT8_BUTTON_MAX_PAGES * FT8_BUTTON_SLOTS);
+    }
 }
 
 /* ---- AutoSel getters ------------------------------------------------- */
