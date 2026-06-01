@@ -102,8 +102,10 @@ int main(void) {
     styles_init(params.theme.x);
 
     radio_init();
+    audio_mixer_setup(x6100_control_get_base_ver());
     dsp_init();
     lv_obj_t *main_obj = main_screen();
+    radio_start();
 
     cw_init();
     rtty_init();

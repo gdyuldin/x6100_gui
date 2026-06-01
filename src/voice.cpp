@@ -131,10 +131,10 @@ static void * say_thread(void *arg) {
     doc->speech_settings.relative.volume = params.voice_volume.x / 100.0;
     doc->set_owner(player);
 
-    audio_play_en(true);
+    audio_set_play_mode(AUDIO_PLAY_ON);
     doc->synthesize();
     player.finish();
-    audio_play_en(false);
+    audio_set_play_mode(AUDIO_PLAY_OFF);
 
     run = false;
     sure = false;

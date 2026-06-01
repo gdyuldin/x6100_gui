@@ -86,6 +86,7 @@ static uint32_t cur_freq;
 static uint8_t  psd_delay;
 static uint8_t  min_max_delay;
 
+static iirfilt_rrrf audio_dc_blocker;
 static firhilbf audio_hilb;
 static cfloat  *audio;
 
@@ -299,8 +300,9 @@ void dsp_init() {
         psd_delay = R8_PSD_DELAY;
     }
 
-    audio      = (cfloat *)malloc(AUDIO_CAPTURE_RATE * sizeof(cfloat));
-    audio_hilb = firhilbf_create(7, 60.0f);
+    audio            = (cfloat *)malloc(AUDIO_CAPTURE_RATE * sizeof(cfloat));
+    audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 30.0f / AUDIO_CAPTURE_RATE);
+    audio_hilb       = firhilbf_create(7, 60.0f);
 
     subject_add_observer_and_call(cfg_cur.zoom, on_zoom_change, NULL);
     subject_add_observer(cfg_cur.band->if_shift.val, update_filter_to, NULL);
@@ -600,9 +602,14 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
     if (recorder_is_on()) {
         recorder_put_audio_samples(nsamples, samples);
     }
-
-    for (uint16_t i = 0; i < nsamples; i++)
-        firhilbf_r2c_execute(audio_hilb, samples[i] / 32768.0f, &audio[i]);
+    float k = 1.0f / (1 << 15);
+    for (uint16_t i = 0; i < nsamples; i++) {
+        float sample = samples[i] * k;
+        float dc_blocked;
+        // dc blocker
+        iirfilt_rrrf_execute(audio_dc_blocker, sample, &dc_blocked);
+        firhilbf_r2c_execute(audio_hilb, dc_blocked, &audio[i]);
+    }
 
     if (rtty_get_state() == RTTY_RX) {
         rtty_put_audio_samples(nsamples, audio);

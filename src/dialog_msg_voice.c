@@ -292,9 +292,9 @@ static void * play_thread(void *arg) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    audio_play_en(true);
+    audio_set_play_mode(AUDIO_PLAY_ON);
     play_item();
-    audio_play_en(false);
+    audio_set_play_mode(AUDIO_PLAY_OFF);
 
     if (dialog.run) {
         buttons_unload_page();
@@ -439,7 +439,7 @@ static void construct_cb(lv_obj_t *parent) {
 }
 
 static void destruct_cb() {
-    audio_play_en(false);
+    audio_set_play_mode(AUDIO_PLAY_OFF);
 
     if (beacon == VOICE_BEACON_IDLE) {
         pthread_cancel(thread);
@@ -545,7 +545,7 @@ void dialog_msg_voice_period_cb(button_item_t *item) {
 void dialog_msg_voice_rec_cb(button_item_t *item) {
     if (state == MSG_VOICE_OFF) {
         if (create_file()) {
-            audio_play_en(true);
+            audio_set_play_mode(AUDIO_PLAY_VOICE_REC);
             state = MSG_VOICE_RECORD;
 
             buttons_unload_page();
@@ -558,7 +558,7 @@ static void rec_stop_cb(button_item_t *item) {
     buttons_unload_page();
     buttons_load_page(&page_msg_voice_2);
 
-    audio_play_en(false);
+    audio_set_play_mode(AUDIO_PLAY_OFF);
     state = MSG_VOICE_OFF;
     close_file();
     load_table();

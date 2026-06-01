@@ -54,30 +54,10 @@ static void read_callback(pa_stream *s, size_t nbytes, void *udata) {
     pa_stream_drop(s);
 }
 
-static void mixer_setup() {
-    int res;
-    // overall level
-    res = system("amixer sset 'Headphone',0 58,58");
-    // Play level from app to radio (for FT8)
-    res = system("amixer sset 'AIF1 DA0',0 160,160");
-
-    // capture audio from radio
-    res = system("amixer sset 'Mic1',0 0,0 cap");
-    // mic boost
-    res = system("amixer sset 'Mic1 Boost',0 1");
-    // disable capturing from mixer
-    res = system("amixer sset 'Mixer',0 nocap");
-    res = system("amixer sset 'ADC Gain',0 3");
-    res = system("amixer sset 'AIF1 AD0',0 160,160");
-    res = system("amixer sset 'AIF1 AD0 Stereo',0 'Mix Mono'");
-    res = system("amixer sset 'AIF1 Data Digital ADC',0 cap");
-
+void audio_init() {
     audio_set_rec_vol(0.0f);
     audio_set_play_vol(0.0f);
-}
 
-void audio_init() {
-    mixer_setup();
     mloop = pa_threaded_mainloop_new();
     pa_threaded_mainloop_start(mloop);
 
@@ -103,6 +83,7 @@ void audio_init() {
     };
 
     memset(&attr, 0xff, sizeof(attr));
+    int res;
 
     /* Play */
 
@@ -113,7 +94,10 @@ void audio_init() {
     play_stm = pa_stream_new(ctx, "X6100 GUI Play", &spec, NULL);
 
     pa_threaded_mainloop_lock(mloop);
-    pa_stream_connect_playback(play_stm, play_device, &attr, PA_STREAM_ADJUST_LATENCY, NULL, NULL);
+    res = pa_stream_connect_playback(play_stm, play_device, &attr, PA_STREAM_ADJUST_LATENCY, NULL, NULL);
+    if (res < 0) {
+        LV_LOG_ERROR("pa_stream_connect_playback() failed: %s", pa_strerror(pa_context_errno(ctx)));
+    }
     pa_threaded_mainloop_unlock(mloop);
 
     /* Capture */
@@ -125,10 +109,37 @@ void audio_init() {
 
     pa_threaded_mainloop_lock(mloop);
     pa_stream_set_read_callback(capture_stm, read_callback, NULL);
-    pa_stream_connect_record(capture_stm, capture_device, &attr, PA_STREAM_ADJUST_LATENCY);
+    res = pa_stream_connect_record(capture_stm, capture_device, &attr, PA_STREAM_ADJUST_LATENCY);
+    if (res < 0) {
+        LV_LOG_ERROR("pa_stream_connect_record() failed: %s", pa_strerror(pa_context_errno(ctx)));
+    }
     pa_threaded_mainloop_unlock(mloop);
 
     record_monitor_setup();
+}
+
+void audio_mixer_setup(x6100_base_ver_t base_ver) {
+    int res;
+    // overall level
+    res = system("amixer sset 'Headphone',0 63,63"); // max output level
+    // Play level from app to radio (for FT8)
+    res = system("amixer sset 'AIF1 DA0',0 160,160");
+
+    // capture audio from radio
+    res = system("amixer sset 'Mic1',0 0,0 cap");
+    // mic boost
+    if (base_ver.rev >= 12) {
+        // no need for mic boost on r12 and later
+        res = system("amixer sset 'Mic1 Boost',0 0");
+    } else {
+        res = system("amixer sset 'Mic1 Boost',0 1");
+    }
+    // disable capturing from mixer
+    res = system("amixer sset 'Mixer',0 nocap");
+    res = system("amixer sset 'ADC Gain',0 3");
+    res = system("amixer sset 'AIF1 AD0',0 160,160");
+    res = system("amixer sset 'AIF1 AD0 Stereo',0 'Mix Mono'"); // Another option - Sum Mono
+    res = system("amixer sset 'AIF1 Data Digital ADC',0 cap");
 }
 
 int audio_play(int16_t *samples_buf, size_t samples) {
@@ -138,7 +149,6 @@ int audio_play(int16_t *samples_buf, size_t samples) {
         pa_threaded_mainloop_lock(mloop);
         size = pa_stream_writable_size(play_stm);
         pa_threaded_mainloop_unlock(mloop);
-
         if (size >= (samples * 2)) {
             break;
         }
@@ -218,15 +228,24 @@ void audio_gain_db_transition(int16_t *buf, size_t samples, float gain1, float g
     }
 }
 
-void audio_play_en(bool on) {
-    if (on) {
-        x6100_control_hmic_set(0);
-        x6100_control_imic_set(0);
-        x6100_control_record_set(true);
-    } else {
+void audio_set_play_mode(audio_play_mode_t mode) {
+    switch (mode)
+    {
+    case AUDIO_PLAY_OFF:
         x6100_control_record_set(false);
         x6100_control_hmic_set(subject_get_int(cfg.hmic.val));
         x6100_control_imic_set(subject_get_int(cfg.imic.val));
+        break;
+
+    case AUDIO_PLAY_ON:
+        x6100_control_hmic_set(0);
+    case AUDIO_PLAY_VOICE_REC:
+        x6100_control_imic_set(0);
+        x6100_control_record_set(true);
+        break;
+
+    default:
+        break;
     }
 }
 
@@ -280,13 +299,13 @@ float audio_get_peak_db() {
     return peak_db;
 }
 
-static void monitor_cb(pa_stream *stream, size_t length, void *udata) {
+static void monitor_cb(pa_stream *stream, size_t nbytes, void *udata) {
     int16_t *buf = NULL;
 
-    pa_stream_peek(stream, (const void**) &buf, &length);
+    pa_stream_peek(stream, (const void**) &buf, &nbytes);
     int16_t max_val = 1;
     int16_t cur_val;
-    for (size_t i=0; i < length / 2; i++) {
+    for (size_t i=0; i < nbytes / 2; i++) {
         cur_val = buf[i];
         if (cur_val > max_val) {
             max_val = cur_val;
@@ -301,10 +320,9 @@ static void record_monitor_setup() {
 
     pa_sample_spec  spec = {
         .format = PA_SAMPLE_S16NE,
-        .channels = 1
+        .channels = 1,
+        .rate = AUDIO_CAPTURE_RATE,
     };
-
-    spec.rate = 30;
 
     monitor_stm = pa_stream_new(ctx, "X6100 GUI Monitor", &spec, NULL);
 

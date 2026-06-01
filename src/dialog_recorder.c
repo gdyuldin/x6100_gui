@@ -210,9 +210,9 @@ static void * play_thread(void *arg) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    audio_play_en(true);
+    audio_set_play_mode(AUDIO_PLAY_ON);
     play_item();
-    audio_play_en(false);
+    audio_set_play_mode(AUDIO_PLAY_OFF);
 
     if (dialog.run) {
         scheduler_put_noargs(load_btn_page);
@@ -346,7 +346,7 @@ static void construct_cb(lv_obj_t *parent) {
 }
 
 static void destruct_cb() {
-    audio_play_en(false);
+    audio_set_play_mode(AUDIO_PLAY_OFF);
     play_state = false;
     textarea_window_close();
     lv_timer_del(level_timer);

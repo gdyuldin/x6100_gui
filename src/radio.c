@@ -148,6 +148,9 @@ void radio_init() {
     while (!x6100_control_init()) {
         usleep(100000);
     }
+}
+
+void radio_start() {
 
     base_ver = x6100_control_get_base_ver();
 
