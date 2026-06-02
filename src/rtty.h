@@ -21,7 +21,7 @@ typedef enum {
 } rtty_state_t;
 
 void rtty_init();
-void rtty_put_audio_samples(unsigned int n, cfloat *samples);
+void rtty_put_audio_samples(unsigned int n, float *samples);
 
 void rtty_set_state(rtty_state_t state);
 rtty_state_t rtty_get_state();

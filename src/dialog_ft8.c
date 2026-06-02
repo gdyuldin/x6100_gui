@@ -28,6 +28,7 @@
 #include "util.h"
 #include "recorder.h"
 #include "textarea_window.h"
+#include "dsp.h"
 
 #include "ft8/audio_worker.h"
 #include "ft8/cq_scheduler.h"
@@ -52,8 +53,7 @@
 #include <errno.h>
 #include <ctype.h>
 
-#define DECIM           6
-#define SAMPLE_RATE     (AUDIO_CAPTURE_RATE / DECIM)
+#define SAMPLE_RATE     (AUDIO_CAPTURE_RATE / AUDIO_DECIM)
 
 #define WIDTH           771
 
@@ -65,8 +65,6 @@
 #define FT4_WIDTH_HZ    83
 
 #define MAX_TX_START_DELAY 1.5f
-
-#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
 typedef enum {
     RX_PROCESS,
@@ -113,7 +111,7 @@ static float base_gain_offset;
 static void construct_cb(lv_obj_t *parent);
 static void key_cb(lv_event_t * e);
 static void destruct_cb();
-static void audio_cb(unsigned int n, float complex *samples);
+static void audio_cb(unsigned int n, float *samples);
 static void rotary_cb(int32_t diff);
 
 /* audio_worker callbacks (run on worker thread). UI mutations must go
@@ -246,7 +244,7 @@ static void worker_init() {
         .ctx         = NULL,
     };
     audio_worker = audio_worker_create(
-        AUDIO_CAPTURE_RATE, DECIM,
+        SAMPLE_RATE,
         subject_get_int(cfg.ft8_protocol.val),
         filter_low, filter_high,
         &cb);
@@ -797,7 +795,7 @@ static bool keyboard_ok_cb() {
     return true;
 }
 
-static void audio_cb(unsigned int n, float complex *samples) {
+static void audio_cb(unsigned int n, float *samples) {
     if (state == RX_PROCESS) {
         audio_worker_feed(audio_worker, n, samples);
     }

@@ -7,6 +7,7 @@
  */
 #include "rtty.h"
 
+#include "dsp.h"
 #include "audio.h"
 #include "panel.h"
 #include "params/params.h"
@@ -24,6 +25,8 @@
 
 #define RTTY_SYMBOL_CODE (0b11011)
 #define RTTY_LETTER_CODE (0b11111)
+
+#define CAPTURE_RATE_F ((float)AUDIO_CAPTURE_RATE / AUDIO_DECIM)
 
 typedef enum {
     RX_STATE_IDLE,
@@ -43,6 +46,7 @@ static uint16_t symbol_samples;
 static uint16_t symbol_over;
 
 static cbuffercf      rx_buf;
+static firhilbf       hilb;
 static complex float *rx_window = NULL;
 static uint8_t        rx_symbol[SYMBOL_LEN];
 static float          rx_symbol_pwr[SYMBOL_LEN];
@@ -69,15 +73,17 @@ static const char rtty_symbols[32] = {'\0', '3', '\n', '-', ' ', '\0', '8', '7',
 static void on_cur_mode_change(Subject *subj, void *user_data);
 
 static void update_nco() {
-    float radians = 2.0f * (float)M_PI * (float)params.rtty_center / (float)AUDIO_CAPTURE_RATE;
+    float radians = 2.0f * M_PI * params.rtty_center / CAPTURE_RATE_F;
 
     nco_crcf_set_phase(nco, 0.0f);
     nco_crcf_set_frequency(nco, radians);
 }
 
 static void init() {
-    symbol_samples = (float)AUDIO_CAPTURE_RATE / (float)(params.rtty_rate / 100.0f) / (float)SYMBOL_FACTOR + 0.5f;
+    symbol_samples = CAPTURE_RATE_F / ((float)params.rtty_rate / 100.0f) / (float)SYMBOL_FACTOR + 0.5f;
     symbol_over    = symbol_samples / SYMBOL_OVER;
+
+    hilb = firhilbf_create(41, 60.0f);
 
     nco     = nco_crcf_create(LIQUID_NCO);
     nco_buf = (float complex *)malloc(symbol_samples * sizeof(float complex));
@@ -85,7 +91,7 @@ static void init() {
 
     /* RX */
 
-    demod  = fskdem_create(1, symbol_samples, (float)params.rtty_shift / (float)AUDIO_CAPTURE_RATE / 2.0f);
+    demod  = fskdem_create(1, symbol_samples, (float)params.rtty_shift / CAPTURE_RATE_F / 2.0f);
     rx_buf = cbuffercf_create(symbol_samples * 50);
 
     rx_window = malloc(symbol_samples * sizeof(complex float));
@@ -99,12 +105,33 @@ static void init() {
 static void done() {
     ready = false;
 
-    nco_crcf_destroy(nco);
-    free(nco_buf);
+    if (nco) {
+        nco_crcf_destroy(nco);
+        nco = NULL;
+    }
+    if (nco_buf) {
+        free(nco_buf);
+        nco_buf = NULL;
+    }
 
-    fskdem_destroy(demod);
-    cbuffercf_destroy(rx_buf);
-    free(rx_window);
+    if (hilb) {
+        firhilbf_destroy(hilb);
+        hilb = NULL;
+    }
+
+    if (demod) {
+        fskdem_destroy(demod);
+        demod = NULL;
+    }
+
+    if (rx_buf) {
+        cbuffercf_destroy(rx_buf);
+        rx_buf = NULL;
+    }
+    if (rx_window) {
+        free(rx_window);
+        rx_window = NULL;
+    }
 }
 
 static void update() {
@@ -233,7 +260,7 @@ static void add_symbol(float pwr) {
     }
 }
 
-void rtty_put_audio_samples(unsigned int n, cfloat *samples) {
+void rtty_put_audio_samples(unsigned int n, float *samples) {
     pthread_mutex_lock(&rtty_mux);
 
     if (!ready) {
@@ -241,7 +268,11 @@ void rtty_put_audio_samples(unsigned int n, cfloat *samples) {
         return;
     }
 
-    cbuffercf_write(rx_buf, samples, n);
+    for (size_t i = 0; i < n; i++) {
+        cfloat cval;
+        firhilbf_r2c_execute(hilb, samples[i], &cval);
+        cbuffercf_push(rx_buf, cval);
+    }
 
     while (cbuffercf_size(rx_buf) > symbol_samples) {
         unsigned int   symbol;

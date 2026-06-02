@@ -41,7 +41,7 @@ bool ftx_worker_generate_tx_samples(const char *text, const uint16_t signal_freq
 /// @brief Process RX audio samples
 /// @param[in] samples audio samples
 /// @param[in] n_samples count of samples
-void ftx_worker_put_rx_samples(float complex *samples, uint32_t n_samples);
+void ftx_worker_put_rx_samples(float *samples, uint32_t n_samples);
 
 /// @brief Decode messages
 /// @param[in] msg_cb callback for decoded messages

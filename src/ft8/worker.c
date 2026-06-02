@@ -38,8 +38,8 @@
 static float complex *time_buf;
 static float complex *freq_buf;
 static fftplan        fft;
-static windowcf       frame_window;
-static complex float *rx_window = NULL;
+static windowf        frame_window;
+static float         *rx_window = NULL;
 
 static float symbol_period;
 static int   block_size;
@@ -162,9 +162,9 @@ void ftx_worker_init(int sample_rate, ftx_protocol_t protocol) {
         goto error_cleanup;
     }
     fft = fft_create_plan(nfft, time_buf, freq_buf, LIQUID_FFT_FORWARD, 0);
-    frame_window = windowcf_create(nfft);
+    frame_window = windowf_create(nfft);
 
-    rx_window = malloc(nfft * sizeof(complex float));
+    rx_window = malloc(nfft * sizeof(float));
     if (!rx_window) {
         LV_LOG_ERROR("FT8 worker: rx_window malloc failed");
         goto error_cleanup;
@@ -192,7 +192,7 @@ void ftx_worker_free() {
         wf.mag = NULL;
     }
     if (frame_window) {
-        windowcf_destroy(frame_window);
+        windowf_destroy(frame_window);
         frame_window = NULL;
     }
     if (fft) {
@@ -261,7 +261,7 @@ bool ftx_worker_generate_tx_samples(const char *text, const uint16_t signal_freq
     return true;
 }
 
-void ftx_worker_put_rx_samples(float complex *samples, uint32_t n_samples) {
+void ftx_worker_put_rx_samples(float *samples, uint32_t n_samples) {
     if (wf.num_blocks >= wf.max_blocks) {
         LV_LOG_ERROR("FT8 wf is full");
         return;
@@ -272,17 +272,19 @@ void ftx_worker_put_rx_samples(float complex *samples, uint32_t n_samples) {
         return;
     }
 
-    complex float *frame_ptr;
-    int            offset = wf.num_blocks * wf.block_stride;
-    int            frame_pos = 0;
+    float *frame_ptr;
+    int    offset    = wf.num_blocks * wf.block_stride;
+    int    frame_pos = 0;
 
     for (int time_sub = 0; time_sub < wf.time_osr; time_sub++) {
-        windowcf_write(frame_window, &samples[frame_pos], subblock_size);
+        windowf_write(frame_window, &samples[frame_pos], subblock_size);
         frame_pos += subblock_size;
 
-        windowcf_read(frame_window, &frame_ptr);
+        windowf_read(frame_window, &frame_ptr);
 
-        liquid_vectorcf_mul(rx_window, frame_ptr, nfft, time_buf);
+        for (size_t i = 0; i < nfft; i++) {
+            time_buf[i] = rx_window[i] * frame_ptr[i];
+        }
 
         fft_execute(fft);
 

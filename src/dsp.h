@@ -27,8 +27,9 @@ extern "C" {
 }
 #endif
 
-#define WATERFALL_NFFT  (RADIO_SAMPLES * 2)
-#define SPECTRUM_NFFT   800
+#define AUDIO_DECIM 4
+#define WATERFALL_NFFT (RADIO_SAMPLES * 2)
+#define SPECTRUM_NFFT 800
 
 #ifdef __cplusplus
 

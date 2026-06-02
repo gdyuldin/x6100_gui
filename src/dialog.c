@@ -114,8 +114,12 @@ void dialog_item(dialog_t *dialog, lv_obj_t *obj) {
     }
 }
 
-void dialog_audio_samples(unsigned int n, float complex *samples) {
-    if (dialog_is_run() && current_dialog->audio_cb) {
+bool dialog_need_audio() {
+    return dialog_is_run() && current_dialog->audio_cb;
+}
+
+void dialog_audio_samples(unsigned int n, float *samples) {
+    if (dialog_need_audio()) {
         current_dialog->audio_cb(n, samples);
     }
 }

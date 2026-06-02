@@ -30,8 +30,6 @@
 struct audio_worker_s {
     /* Configuration (const after create). */
     int            sample_rate;       /* audio_sample_rate */
-    int            decim;             /* decim_ratio */
-    int            worker_rate;       /* sample_rate / decim */
     ftx_protocol_t proto;
     int32_t        filter_low_hz;
     int32_t        filter_high_hz;
@@ -49,15 +47,13 @@ struct audio_worker_s {
 
     /* Audio buffer (written by audio_worker_feed, read by worker). */
     pthread_mutex_t audio_mux;
-    cbuffercf       audio_buf;
+    cbufferf        audio_buf;
 
     /* DSP state (worker thread only). */
-    firdecim_crcf   decim_dsp;
-    spgramcf        sg;
+    spgramf         sg;
     float          *psd;
     float complex  *audio_frame_buf;
     size_t          audio_frame_buf_len;
-    float complex  *decim_buf;
     int             block_size;
 
     uint64_t        last_psd_time_ms;
@@ -91,8 +87,7 @@ static void msleep_interruptible(audio_worker_t *w, long ms) {
 static void drain_audio_buf(audio_worker_t *w) {
     pthread_mutex_lock(&w->audio_mux);
     if (w->audio_buf) {
-        unsigned int sz = cbuffercf_size(w->audio_buf);
-        if (sz > 0) cbuffercf_release(w->audio_buf, sz);
+        cbufferf_reset(w->audio_buf);
     }
     pthread_mutex_unlock(&w->audio_mux);
 }
@@ -105,16 +100,16 @@ static void maybe_emit_psd(audio_worker_t *w, const slot_info_t *info,
     if ((now - w->last_psd_time_ms) < w->fps_ms) return;
     w->last_psd_time_ms = now;
 
-    spgramcf_get_psd(w->sg, w->psd);
+    spgramf_get_psd(w->sg, w->psd);
     liquid_vectorf_addscalar(w->psd, w->nfft,
-                             -10.f * log10f(sqrtf((float)w->nfft)),
+                             -10.f * log10f(sqrtf(w->nfft)),
                              w->psd);
 
     if (w->cb.on_psd) {
         w->cb.on_psd(w->psd, w->nfft, sec_since_slot_start, info, w->cb.ctx);
     }
 
-    spgramcf_reset(w->sg);
+    spgramf_reset(w->sg);
 }
 
 /* ---------- ftx_worker decode callback trampoline --------------------- */
@@ -135,8 +130,7 @@ static void decode_cb(const char *text, int snr, float freq_hz, float time_sec, 
 
 static void rx_consume_frames(audio_worker_t *w, const slot_info_t *info,
                               float sec_since_slot_start) {
-    const size_t need = (size_t)w->block_size * (size_t)w->decim;
-    decode_ctx_t dc = { .w = w, .info = info };
+    decode_ctx_t dc = {.w = w, .info = info};
 
     for (;;) {
         if (atomic_load(&w->stop_req)) return;
@@ -144,30 +138,28 @@ static void rx_consume_frames(audio_worker_t *w, const slot_info_t *info,
         bool           has_frame = false;
         bool           copied    = false;
         unsigned int   got       = 0;
-        float complex *src       = NULL;
+        float         *block       = NULL;
+        float          block_data[w->block_size];
 
         pthread_mutex_lock(&w->audio_mux);
-        if (cbuffercf_size(w->audio_buf) > (unsigned int)need) {
+        if (cbufferf_size(w->audio_buf) >= w->block_size) {
             has_frame = true;
-            cbuffercf_read(w->audio_buf, (unsigned int)need, &src, &got);
-            if (w->audio_frame_buf && (w->audio_frame_buf_len >= need) && ((size_t)got >= need)) {
-                memcpy(w->audio_frame_buf, src, need * sizeof(float complex));
-                copied = true;
-            }
-            cbuffercf_release(w->audio_buf, (unsigned int)need);
+            cbufferf_read(w->audio_buf, w->block_size, &block, &got);
+            // Copy data to external buffer
+            memcpy((void*)block_data, (void*)block, got * sizeof(float));
+            block = block_data;
+            cbufferf_release(w->audio_buf, got);
         }
         pthread_mutex_unlock(&w->audio_mux);
 
-        if (!has_frame) break;
-        if (!copied)    continue;
+        if (!block) {
+            break;
+        }
 
-        firdecim_crcf_execute_block(w->decim_dsp, w->audio_frame_buf,
-                                    w->block_size, w->decim_buf);
-
-        spgramcf_write(w->sg, w->decim_buf, (unsigned int)w->block_size);
+        spgramf_write(w->sg, block, w->block_size);
         maybe_emit_psd(w, info, sec_since_slot_start);
 
-        ftx_worker_put_rx_samples(w->decim_buf, w->block_size);
+        ftx_worker_put_rx_samples(block, w->block_size);
 
         if (ftx_worker_is_full()) {
             ftx_worker_decode(decode_cb, true, (void *)&dc);
@@ -226,12 +218,11 @@ static void *worker_main(void *arg) {
 /* ---------- public API ------------------------------------------------- */
 
 audio_worker_t *audio_worker_create(int audio_sample_rate,
-                                    int decim_ratio,
                                     ftx_protocol_t proto,
                                     int32_t filter_low_hz,
                                     int32_t filter_high_hz,
                                     const audio_worker_cb_t *cb) {
-    if ((decim_ratio <= 0) || (audio_sample_rate <= 0)) return NULL;
+    if (audio_sample_rate <= 0) return NULL;
     int span = filter_high_hz - filter_low_hz;
     if (span <= 0) return NULL;
 
@@ -239,12 +230,10 @@ audio_worker_t *audio_worker_create(int audio_sample_rate,
     if (!w) return NULL;
 
     w->sample_rate    = audio_sample_rate;
-    w->decim          = decim_ratio;
-    w->worker_rate    = audio_sample_rate / decim_ratio;
     w->proto          = proto;
     w->filter_low_hz  = filter_low_hz;
     w->filter_high_hz = filter_high_hz;
-    w->nfft           = (uint16_t)(WORKER_DISPLAY_WIDTH * w->worker_rate / span);
+    w->nfft           = (uint16_t)(WORKER_DISPLAY_WIDTH * w->sample_rate / span);
     w->fps_ms         = (uint8_t)(1000 / 5);   /* 5 Hz update cap */
     if (cb) w->cb = *cb;
 
@@ -252,27 +241,18 @@ audio_worker_t *audio_worker_create(int audio_sample_rate,
     pthread_mutex_init(&w->sleep_mux, NULL);
     pthread_cond_init(&w->sleep_cv, NULL);
 
-    w->audio_buf = cbuffercf_create((unsigned int)(audio_sample_rate * 3));
+    w->audio_buf = cbufferf_create(audio_sample_rate * 3);
     if (!w->audio_buf) goto fail;
 
-    w->decim_dsp = firdecim_crcf_create_kaiser((unsigned int)decim_ratio, 8, 40.0f);
-    if (!w->decim_dsp) goto fail;
-    firdecim_crcf_set_scale(w->decim_dsp, 1.0f / (float)decim_ratio);
-
-    w->sg = spgramcf_create(w->nfft, LIQUID_WINDOW_HANN, w->nfft, w->nfft / 2);
+    w->sg = spgramf_create(w->nfft, LIQUID_WINDOW_HANN, w->nfft, w->nfft / 2);
     if (!w->sg) goto fail;
 
     w->psd = (float *)malloc(w->nfft * sizeof(float));
     if (!w->psd) goto fail;
 
-    ftx_worker_init(w->worker_rate, proto);
+    ftx_worker_init(w->sample_rate, proto);
     w->block_size          = ftx_worker_get_block_size();
     if (w->block_size <= 0) goto fail;
-
-    w->audio_frame_buf_len = (size_t)w->block_size * (size_t)decim_ratio;
-    w->audio_frame_buf     = (float complex *)malloc(w->audio_frame_buf_len * sizeof(float complex));
-    w->decim_buf           = (float complex *)malloc((size_t)w->block_size * sizeof(float complex));
-    if (!w->audio_frame_buf || !w->decim_buf) goto fail;
 
     atomic_store(&w->stop_req, false);
     atomic_store(&w->thread_running, false);
@@ -310,13 +290,23 @@ void audio_worker_destroy(audio_worker_t *w) {
     if (!w) return;
     audio_worker_stop(w);
 
-    if (w->audio_frame_buf) { free(w->audio_frame_buf); w->audio_frame_buf = NULL; }
-    if (w->decim_buf)       { free(w->decim_buf);       w->decim_buf = NULL; }
-    if (w->psd)             { free(w->psd);             w->psd = NULL; }
+    if (w->audio_frame_buf) {
+        free(w->audio_frame_buf);
+        w->audio_frame_buf = NULL;
+    }
+    if (w->psd) {
+        free(w->psd);
+        w->psd = NULL;
+    }
 
-    if (w->sg)        { spgramcf_destroy(w->sg);              w->sg = NULL; }
-    if (w->decim_dsp) { firdecim_crcf_destroy(w->decim_dsp);  w->decim_dsp = NULL; }
-    if (w->audio_buf) { cbuffercf_destroy(w->audio_buf);      w->audio_buf = NULL; }
+    if (w->sg) {
+        spgramf_destroy(w->sg);
+        w->sg = NULL;
+    }
+    if (w->audio_buf) {
+        cbufferf_destroy(w->audio_buf);
+        w->audio_buf = NULL;
+    }
 
     ftx_worker_free();
 
@@ -327,11 +317,11 @@ void audio_worker_destroy(audio_worker_t *w) {
     free(w);
 }
 
-void audio_worker_feed(audio_worker_t *w, unsigned int n, float complex *samples) {
+void audio_worker_feed(audio_worker_t *w, unsigned int n, float *samples) {
     if (!w || !samples || (n == 0)) return;
     pthread_mutex_lock(&w->audio_mux);
     if (w->audio_buf) {
-        cbuffercf_write(w->audio_buf, samples, n);
+        cbufferf_write(w->audio_buf, samples, n);
     }
     pthread_mutex_unlock(&w->audio_mux);
 }

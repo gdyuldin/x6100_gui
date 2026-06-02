@@ -86,9 +86,9 @@ static uint32_t cur_freq;
 static uint8_t  psd_delay;
 static uint8_t  min_max_delay;
 
+static firdecim_rrrf audio_decim;
 static iirfilt_rrrf audio_dc_blocker;
-static firhilbf audio_hilb;
-static cfloat  *audio;
+static float  *audio;
 
 static bool ready = false;
 
@@ -300,9 +300,10 @@ void dsp_init() {
         psd_delay = R8_PSD_DELAY;
     }
 
-    audio            = (cfloat *)malloc(AUDIO_CAPTURE_RATE * sizeof(cfloat));
-    audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 30.0f / AUDIO_CAPTURE_RATE);
-    audio_hilb       = firhilbf_create(7, 60.0f);
+    audio            = (float *)malloc(AUDIO_CAPTURE_RATE * sizeof(float));
+    audio_decim      = firdecim_rrrf_create_kaiser(AUDIO_DECIM, 7, 60.0f);
+    firdecim_rrrf_set_scale(audio_decim, 1.0f / AUDIO_DECIM);
+    audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 50.0f * AUDIO_DECIM / AUDIO_CAPTURE_RATE);
 
     subject_add_observer_and_call(cfg_cur.zoom, on_zoom_change, NULL);
     subject_add_observer(cfg_cur.band->if_shift.val, update_filter_to, NULL);
@@ -594,6 +595,12 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
         return;
     }
 
+    static float decim_buf[AUDIO_DECIM];
+    static uint8_t decim_i;
+
+    static float hilb_buf[2];
+    static uint8_t hilb_i;
+
     if (dialog_msg_voice_get_state() == MSG_VOICE_RECORD) {
         dialog_msg_voice_put_audio_samples(nsamples, samples);
         return;
@@ -602,22 +609,38 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
     if (recorder_is_on()) {
         recorder_put_audio_samples(nsamples, samples);
     }
-    float k = 1.0f / (1 << 15);
-    for (uint16_t i = 0; i < nsamples; i++) {
-        float sample = samples[i] * k;
-        float dc_blocked;
-        // dc blocker
-        iirfilt_rrrf_execute(audio_dc_blocker, sample, &dc_blocked);
-        firhilbf_r2c_execute(audio_hilb, dc_blocked, &audio[i]);
-    }
+
+    void (*audio_samples_fn)(unsigned int, float *) = NULL;
 
     if (rtty_get_state() == RTTY_RX) {
-        rtty_put_audio_samples(nsamples, audio);
+        audio_samples_fn = rtty_put_audio_samples;
     } else if (cur_mode == x6100_mode_cw || cur_mode == x6100_mode_cwr) {
-        cw_put_audio_samples(nsamples, audio);
-    } else {
-        dialog_audio_samples(nsamples, audio);
+        audio_samples_fn = cw_put_audio_samples;
+    } else if (dialog_need_audio()) {
+        audio_samples_fn = dialog_audio_samples;
     }
+
+    if (audio_samples_fn != NULL) {
+        float k = 1.0f / (1 << 15);
+        size_t nsamples_dec = 0;
+        for (uint16_t i = 0; i < nsamples; i++) {
+            float sample = samples[i] * k;
+            decim_buf[decim_i++] = sample;
+            if (decim_i >= AUDIO_DECIM) {
+                decim_i = 0;
+                float val;
+                // decimate
+                firdecim_rrrf_execute(audio_decim, decim_buf, &val);
+                // dc blocker
+                iirfilt_rrrf_execute(audio_dc_blocker, val, &audio[nsamples_dec++]);
+            }
+        }
+        if (nsamples_dec) {
+            audio_samples_fn(nsamples_dec, audio);
+        }
+    }
+
+
 }
 
 static void dsp_update_min_max(float *psd_lin, uint16_t size) {

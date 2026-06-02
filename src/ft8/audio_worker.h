@@ -65,7 +65,6 @@ typedef struct {
 
 /* Create + configure the worker. Does NOT start the thread. */
 audio_worker_t *audio_worker_create(int audio_sample_rate,
-                                    int decim_ratio,
                                     ftx_protocol_t proto,
                                     int32_t filter_low_hz,
                                     int32_t filter_high_hz,
@@ -81,7 +80,7 @@ void audio_worker_stop(audio_worker_t *w);
 void audio_worker_destroy(audio_worker_t *w);
 
 /* Push audio samples from the radio audio callback (any thread). */
-void audio_worker_feed(audio_worker_t *w, unsigned int n, float complex *samples);
+void audio_worker_feed(audio_worker_t *w, unsigned int n, float *samples);
 
 /* Waterfall FFT size chosen from filter bandwidth at create time. */
 uint16_t audio_worker_nfft(const audio_worker_t *w);

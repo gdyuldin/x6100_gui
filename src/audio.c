@@ -149,6 +149,7 @@ int audio_play(int16_t *samples_buf, size_t samples) {
         pa_threaded_mainloop_lock(mloop);
         size = pa_stream_writable_size(play_stm);
         pa_threaded_mainloop_unlock(mloop);
+
         if (size >= (samples * 2)) {
             break;
         }
