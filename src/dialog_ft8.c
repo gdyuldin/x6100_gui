@@ -929,6 +929,21 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
     add_rx_text((int16_t)snr, text, (slot_info_t *)info, freq_hz, time_sec);
 }
 
+/**
+ * Helper function to update UI in main thread
+ */
+
+struct waterfall_data {
+    float *psd;
+    size_t size;
+};
+
+static void waterfall_add_data(void *data) {
+    struct waterfall_data *wf_data = (struct waterfall_data *)data;
+    lv_waterfall_add_data(waterfall, wf_data->psd, wf_data->size);
+    free(wf_data->psd);
+}
+
 static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_start,
                       const slot_info_t *info, void *ctx) {
     (void)sec_since_slot_start;
@@ -936,12 +951,17 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
     (void)ctx;
     if (!psd || !nfft) return;
 
-    uint32_t low_bin  = (uint32_t)nfft / 2u + (uint32_t)nfft * (uint32_t)filter_low  / (uint32_t)SAMPLE_RATE;
-    uint32_t high_bin = (uint32_t)nfft / 2u + (uint32_t)nfft * (uint32_t)filter_high / (uint32_t)SAMPLE_RATE;
+    uint32_t low_bin  = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_low  / SAMPLE_RATE;
+    uint32_t high_bin = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_high / SAMPLE_RATE;
     if (high_bin > nfft) high_bin = nfft;
     if (low_bin >= high_bin) return;
 
-    lv_waterfall_add_data(waterfall, (float *)&psd[low_bin], (int32_t)(high_bin - low_bin));
+    // Schedule waterfall update in main thread
+    struct waterfall_data wf_data;
+    wf_data.size = high_bin - low_bin;
+    wf_data.psd = (float *)calloc(sizeof(float), wf_data.size);
+    memcpy((void*)wf_data.psd, (void*)&psd[low_bin], wf_data.size * sizeof(float));
+    scheduler_put(waterfall_add_data, &wf_data, sizeof(wf_data));
 }
 
 static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
