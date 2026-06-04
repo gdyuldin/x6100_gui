@@ -45,17 +45,6 @@ uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len);
 uint64_t from_bcd_be(const uint8_t bcd_data[], uint8_t len);
 int sign(int x);
 
-typedef struct wrms_s * wrms_t;
-
-wrms_t wrms_create(size_t n, size_t delay);
-void wrms_destroy(wrms_t wr);
-size_t wrms_size(wrms_t wr);
-size_t wrms_delay(wrms_t wr);
-
-void wrms_pushcf(wrms_t wr, liquid_float_complex x);
-bool wrms_ready(wrms_t wr);
-float wrms_get_val(wrms_t wr);
-
 size_t argmax(float *x, size_t n);
 
 char *util_canonize_callsign(const char *callsign, bool strip_slashes);

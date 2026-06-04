@@ -11,8 +11,7 @@
 #include "helpers.h"
 #include "dsp.h"
 
-#define CW_DETECTOR_DECIM 2
-
+#define SAMPLE_RATE (AUDIO_CAPTURE_RATE / AUDIO_DECIM)
 
 #ifdef __cplusplus
 
@@ -71,34 +70,29 @@ class CWDetector {
     float f0;
     float mu;
     float r;
-
-    float w_min;
-    float w_max;
+    float r2;
 
     // Filter state
-    cfloat x1=0;
-    cfloat y_notch1=0;
-    cfloat y_peak1=0;
-    cfloat a;
+    float x1       = 0.0f;
+    float x2       = 0.0f;
+    float y_notch1 = 0.0f;
+    float y_notch2 = 0.0f;
+    float y_peak1  = 0.0f;
+    float y_peak2  = 0.0f;
+    float a;
 
     // Average instances
-    // freq averaging with 50 ms window
-    ChunkedAverage<50 * AUDIO_CAPTURE_RATE / AUDIO_DECIM / CW_DETECTOR_DECIM / 1000 > avg_freq;
-    // signal averaging with 5ms window
-    ChunkedAverage<5 * AUDIO_CAPTURE_RATE / AUDIO_DECIM / CW_DETECTOR_DECIM / 1000> avg_signal;
-    // noise averaging with 50ms window
-    MovingAverage<50 * AUDIO_CAPTURE_RATE / AUDIO_DECIM / CW_DETECTOR_DECIM / 1000> sma_noise;
+    // freq averaging with 48 ms window
+    ChunkedAverage<48 * SAMPLE_RATE / 1000 > avg_freq;
+    // signal averaging with 4ms window
+    ChunkedAverage<4 * SAMPLE_RATE / 1000> avg_signal;
 
 public:
-    CWDetector(float fs, float mu, float r):
-        fs(fs), mu(mu), r(r)
-        {};
+    CWDetector(float fs, float mu, float r);
     void set_f0(int16_t tone);
-    void set_f_min(float freq);
-    void set_f_max(float freq);
-    void put(cfloat sample);
+    void put(float sample);
     bool get_freq(float *freq);
-    bool get_signal_noise(float *sig_db, float *noise_db);
+    bool get_signal(float *sig_db);
 };
 
 #endif
