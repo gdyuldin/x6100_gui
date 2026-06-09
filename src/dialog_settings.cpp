@@ -1842,6 +1842,63 @@ uint8_t make_tx_filter(uint8_t row) {
     return row;
 }
 
+/* CESSB */
+
+#define CESSB_POWER_UP_STEP 0.1f
+
+static void cessb_power_up_update_cb(lv_event_t * e) {
+    lv_obj_t *obj = lv_event_get_target(e);
+    float val = lv_slider_get_value(obj) * CESSB_POWER_UP_STEP;
+
+    lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
+    char *fmt = (char *)lv_obj_get_user_data(slider_label);
+    lv_label_set_text_fmt(slider_label, fmt, val);
+    Subject *subj = (Subject *)lv_event_get_user_data(e);
+    subject_set_float(subj, val);
+}
+
+uint8_t make_cessb(uint8_t row) {
+    lv_obj_t    *obj;
+    lv_obj_t    *cell;
+
+
+    /* Label */
+    cell = lv_label_create(grid);
+
+    lv_label_set_text(cell, "CESSB on, level");
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+
+    /* on */
+    cell = lv_obj_create(grid);
+
+    lv_obj_set_size(cell, SMALL_2, 56);
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 1, 2, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(cell, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(cell);
+
+    obj = switch_bool(cell, cfg.cessb.on.val);
+    lv_obj_set_width(obj, SMALL_2 - 30);
+
+
+    /* level */
+    cell = lv_obj_create(grid);
+
+    lv_obj_set_size(cell, SMALL_4, 56);
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 3, 4, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(cell, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(cell);
+
+    obj = slider_with_text(cell, subject_get_float(cfg.cessb.power_up.val), 0.0f, 5.0f, CESSB_POWER_UP_STEP,
+                           SMALL_3 - 40, "%0.1f", cessb_power_up_update_cb, (void *)cfg.cessb.power_up.val);
+
+    row++;
+
+    return row;
+}
+
 /* Charger */
 
 uint8_t make_charger(uint8_t row) {
@@ -1980,6 +2037,11 @@ static void make_general_page() {
 
     if (base_ver.rev >= 9) {
         row = make_tx_filter(row);
+        row = make_delimiter(row);
+    }
+
+    if (base_ver.rev >= 12) {
+        row = make_cessb(row);
         row = make_delimiter(row);
     }
 
