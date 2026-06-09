@@ -28,6 +28,8 @@ void controls_toggle_nr(button_item_t *btn);
 
 void controls_toggle_vox(button_item_t *btn);
 
+void controls_cw_zap(button_item_t *btn);
+
 #ifdef __cplusplus
 }
 #endif

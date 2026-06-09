@@ -180,8 +180,8 @@ static void spectrum_draw_cb(lv_event_t *e) {
     int16_t sign_from = (filter_from > 0) ? 1 : -1;
     int16_t sign_to   = (filter_to > 0) ? 1 : -1;
 
-    int32_t f1 = (w * filter_from) / w_hz;
-    int32_t f2 = (w * filter_to) / w_hz;
+    int32_t f1 = (float)(w * filter_from) / w_hz + 1.0f;
+    int32_t f2 = (float)(w * filter_to) / w_hz + 1.0f;
 
     if (!spectrum_tx) {
         x1 += if_shift * zoom_factor * w / width_hz;

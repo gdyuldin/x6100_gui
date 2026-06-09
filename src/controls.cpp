@@ -5,6 +5,7 @@
 #include "cfg/subjects.h"
 #include "util.hpp"
 #include "util.h"
+#include "cw.h"
 
 
 extern "C" {
@@ -141,6 +142,27 @@ void controls_toggle_nr(button_item_t *btn) {
 void controls_toggle_vox(button_item_t *btn) {
     bool new_val = toggle_subj(cfg.vox.on.val);
     voice_say_bool("VOX", new_val);
+}
+
+void controls_cw_zap(button_item_t *btn) {
+    SUBJ_CAST_I32(cfg_cur.mode, mode_subj);
+    SUBJ_CAST_I32(cfg.key_tone.val, key_tone_subj);
+    SUBJ_CAST_I32(cfg_cur.fg_freq, fg_freq_subj);
+    x6100_mode_t mode = (x6100_mode_t)(mode_subj->get());
+    if ((mode != x6100_mode_cw) && (mode != x6100_mode_cwr)) {
+        return;
+    }
+    float tone_freq = cw_get_tone_freq();
+    int32_t key_tone = key_tone_subj->get();
+    int32_t freq = fg_freq_subj->get();
+    printf("tone_freq: %f, key_tone: %i\n", tone_freq, key_tone);
+    if (mode == x6100_mode_cw) {
+        freq += tone_freq - key_tone;
+    } else {
+        freq -= tone_freq - key_tone;
+    }
+    freq = (freq + 5) / 10 * 10;
+    fg_freq_subj->set(freq);
 }
 
 void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg) {
@@ -451,7 +473,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg) {
             break;
 
         case CTRL_CW_PEAK_Q:
-            i = update_subject<int32_t>(cfg.cw_peak_q.val, diff, 1, 64);
+            i = update_subject<int32_t>(cfg.cw_peak_q.val, diff, 1, 16);
             snprintf(msg.data(), msg.capacity(), "CW peak Q: %i", i);
 
             if (diff) {
@@ -654,24 +676,6 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg) {
 
             if (diff) {
                 voice_say_float("CW decoder SNR level", f);
-            }
-            break;
-
-        case CTRL_CW_DECODER_PEAK_BETA:
-            f = update_subject<float>(cfg.cw_decoder_peak_beta.val, diff * 0.01f, 0.1f, 0.95f);
-            snprintf(msg.data(), msg.capacity(), "CW decoder peak beta: %0.2f", f);
-
-            if (diff) {
-                voice_say_float("CW decoder peak beta", f);
-            }
-            break;
-
-        case CTRL_CW_DECODER_NOISE_BETA:
-            f = update_subject<float>(cfg.cw_decoder_noise_beta.val, diff * 0.01f, 0.1f, 0.95f);
-            snprintf(msg.data(), msg.capacity(), "CW decoder noise beta: %0.2f", f);
-
-            if (diff) {
-                voice_say_float("CW decoder noise beta", f);
             }
             break;
 

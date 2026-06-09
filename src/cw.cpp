@@ -31,24 +31,24 @@ typedef struct {
 } fft_item_t;
 
 
-#define TRACK_MIN_MAX_A1 0.005f
-#define TRACK_MIN_MAX_A2 0.0005f
+#define TRACK_MIN_MAX_A1 0.04f
+#define TRACK_MIN_MAX_A2 0.005f
 
 static bool ready = false;
 
 static CWDetector *cw_detector;
 
-static float min_db = S1;
-static float max_db = S9;
+static float min_db = 0.0f;
+static float max_db = 0.0f;
 static float ema_sig_db = S1;
+static float ema_noise_db = S1;
 static float threshold_pulse;
 static float threshold_silence;
 static bool  peak_on = false;
 static size_t samples_counter = 0;
+static float tone_freq;
 
 static int32_t key_tone = 0;
-static float   cw_decoder_peak_beta;
-static float   cw_decoder_noise_beta;
 static float   cw_decoder_snr;
 static float   cw_decoder_snr_gist;
 static bool    cw_decoder;
@@ -61,13 +61,13 @@ static void on_val_float_change(Subject *subj, void *user_data);
 static void on_val_bool_change(Subject *subj, void *user_data);
 static void on_low_filter_change(Subject *subj, void *user_data);
 static void on_high_filter_change(Subject *subj, void *user_data);
+static void update_cw_detector_q(Subject *subj, void *user_data);
 
 
 void cw_init() {
     cfg.key_tone.val->subscribe(on_key_tone_change)->notify();
+    tone_freq = key_tone;
     // TODO: remove peak and noise betas
-    cfg.cw_decoder_peak_beta.val->subscribe(on_val_float_change, (void*)&cw_decoder_peak_beta)->notify();
-    cfg.cw_decoder_noise_beta.val->subscribe(on_val_float_change, (void*)&cw_decoder_noise_beta)->notify();
     cfg.cw_decoder_snr.val->subscribe(on_val_float_change, (void*)&cw_decoder_snr)->notify();
     cfg.cw_decoder_snr_gist.val->subscribe(on_val_float_change, (void*)&cw_decoder_snr_gist)->notify();
     cfg.cw_decoder.val->subscribe(on_val_bool_change, (void*)&cw_decoder)->notify();
@@ -75,6 +75,10 @@ void cw_init() {
 
     cw_detector = new CWDetector((float)SAMPLE_RATE, 0.003f, 0.95f);
     cw_detector->set_f0(subject_get_int(cfg.key_tone.val));
+
+    cfg.cw_peak_q.val->subscribe(update_cw_detector_q)->notify();
+    cfg.cw_peak_on.val->subscribe(update_cw_detector_q)->notify();
+
     cfg_cur.filter.low->subscribe(on_low_filter_change)->notify();
     cfg_cur.filter.high->subscribe(on_high_filter_change)->notify();
 
@@ -97,10 +101,10 @@ static void track_min_max(float sig_db) {
         max_a = TRACK_MIN_MAX_A1;
     }
 
-    min_db+= (sig_db - min_db) * min_a;
-    max_db+= (sig_db - max_db) * max_a;
-    if (min_db + cw_decoder_snr * 2 > max_db) {
-        max_db = min_db + cw_decoder_snr * 2;
+    min_db += (sig_db - min_db) * min_a;
+    max_db += (sig_db - max_db) * max_a;
+    if (min_db + cw_decoder_snr > max_db) {
+        max_db = min_db + cw_decoder_snr;
     }
 }
 
@@ -120,30 +124,39 @@ void cw_put_audio_samples(unsigned int n, float *samples) {
 
     for (size_t i = 0; i < n; i++)
     {
-        float avg_freq, sig_db;
+        float avg_freq, sig_db, noise_db, sig_to_noise;
         cw_detector->put(samples[i]);
-        if (cw_detector->get_signal(&sig_db)) {
+        if (cw_detector->get_signal_noise(&sig_db, &noise_db)) {
 
-            track_min_max(sig_db);
-            float ptp = max_db - min_db;
-            if (ptp < cw_decoder_snr * 2) {
+            ema_sig_db += (sig_db - ema_sig_db) * 0.6f;
+            ema_noise_db += (noise_db - ema_noise_db) * 0.3f;
+
+            sig_to_noise = ema_sig_db - ema_noise_db;
+            sig_to_noise = LV_MAX(0.0f, sig_to_noise);
+
+            track_min_max(sig_to_noise);
+
+            threshold_pulse = (min_db + max_db) * 0.5f;
+            if (threshold_pulse < min_db + cw_decoder_snr) {
                 threshold_pulse = min_db + cw_decoder_snr;
-            } else {
-                threshold_pulse = min_db + ptp * 0.5f;
+            } else if (threshold_pulse > min_db + cw_decoder_snr + 3.0f) {
+                threshold_pulse = min_db + cw_decoder_snr + 3.0f;
             }
+
             threshold_pulse += cw_decoder_snr_gist * 0.5f;
             threshold_silence = threshold_pulse - cw_decoder_snr_gist;
 
-            ema_sig_db += (sig_db - ema_sig_db) * 0.5f;
-
+            // printf("sig_to_noise: %f, threshold_pulse: %f\n", sig_to_noise, threshold_pulse);
             // Detect tones/silence
             if (peak_on) {
-                if (ema_sig_db < threshold_silence) {
+                if (sig_to_noise < threshold_silence) {
                     peak_on = false;
+                    // printf("OFF\n");
                 }
             } else {
-                if (ema_sig_db > threshold_pulse) {
+                if (sig_to_noise > threshold_pulse) {
                     peak_on = true;
+                    // printf("ON\n");
                 }
             }
             cw_decoder_signal(peak_on, samples_counter * 1000.0f / SAMPLE_RATE);
@@ -152,22 +165,53 @@ void cw_put_audio_samples(unsigned int n, float *samples) {
         samples_counter++;
 
         if (cw_detector->get_freq(&avg_freq)) {
+            tone_freq = avg_freq;
             avg_freq = LV_CLAMP(filter_low, avg_freq, filter_high);
             update_peak_freq(key_tone - avg_freq);
         }
     }
 }
 
+float cw_get_tone_freq(void) {
+    return tone_freq;
+}
+
 static void on_key_tone_change(Subject *subj, void *user_data) {
-    key_tone = static_cast<SubjectT<int32_t>*>(subj)->get();
+    SUBJ_CAST_I32(subj, key_tone_subj);
+    key_tone = key_tone_subj->get();
 }
 
 static void on_val_float_change(Subject *subj, void *user_data) {
-    *(float*)user_data = static_cast<SubjectT<float>*>(subj)->get();
+    SUBJ_CAST_F(subj, subj_f);
+    *(float*)user_data = subj_f->get();
 }
 
 static void on_val_bool_change(Subject *subj, void *user_data) {
-    *(bool*)user_data = static_cast<SubjectT<int32_t>*>(subj)->get();
+    SUBJ_CAST_I32(subj, subj_i);
+    *(bool*)user_data = subj_i->get();
+}
+
+void update_cw_detector_q(Subject *subj, void *user_data) {
+    if (x6100_control_get_base_ver().rev < 12) {
+        return;
+    }
+    SUBJ_CAST_I32(cfg.cw_peak_on.val, cw_peak_on_subj);
+    SUBJ_CAST_I32(cfg.cw_peak_q.val, cw_peak_q_subj);
+    bool cw_peak_on = cw_peak_on_subj->get();
+    int32_t cw_peak_q = cw_peak_q_subj->get();
+    if (!cw_peak_on) {
+        cw_peak_q = 0;
+    }
+    // Initial Q of CW detector
+    float cw_det_q = 4.0f;
+    // Decrease Q of CW detector, if cw_peak already applied on the base.
+    cw_det_q = LV_MAX(cw_det_q - cw_peak_q, 1.0f);
+
+    // Use a 700 as a key tone
+    float r = 1 - (M_PIf * 700) / (cw_det_q * SAMPLE_RATE);
+    if (cw_detector) {
+        cw_detector->set_r(r);
+    }
 }
 
 static void on_low_filter_change(Subject *subj, void *user_data) {
@@ -234,9 +278,13 @@ CWDetector::CWDetector(float fs, float mu, float r): fs(fs), mu(mu), r(r) {
 void CWDetector::set_f0(int16_t tone) {
     f0 = tone;
     // perhaps, we should not change it
-    a = -2.0f * cosf(2.0 * M_PIf32 * f0 / fs);
+    a = -2.0f * cosf(2.0 * M_PIf * f0 / fs);
 }
 
+void CWDetector::set_r(float r) {
+    this->r = r;
+    this->r2 = r * r;
+}
 
 void CWDetector::put(float sample) {
     // Get notch output
@@ -260,11 +308,12 @@ void CWDetector::put(float sample) {
     y_peak1 = y_peak;
 
     // Store freq
-    float freq = w * fs / (2 * M_PIf32);
+    float freq = w * fs / (2 * M_PIf);
     avg_freq.put(freq);
 
     // Store signal
     avg_signal.put(y_peak * y_peak);
+    avg_noise.put(y_notch * y_notch);
 }
 
 
@@ -277,10 +326,12 @@ bool CWDetector::get_freq(float *freq) {
     }
 }
 
-bool CWDetector::get_signal(float *sig_db) {
+bool CWDetector::get_signal_noise(float *sig_db, float *noise_db) {
     if (avg_signal.ready()) {
         float sig = avg_signal.get();
         *sig_db = 10.0f * log10f(LV_MAX(sig, 1e-12));
+        float noise = avg_noise.get();
+        *noise_db = 10.0f * log10f(LV_MAX(noise, 1e-12));
         return true;
     }
     return false;

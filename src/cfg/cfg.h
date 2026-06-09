@@ -75,6 +75,7 @@ typedef enum {
 
     CTRL_CW_PEAK_ON,
     CTRL_CW_PEAK_Q,
+    CTRL_CW_ZAP,
 
     CTRL_FAST_ACCESS_LAST,
 
@@ -159,8 +160,6 @@ typedef struct {
     cfg_item_t cw_tune;
     cfg_item_t cw_decoder_snr;
     cfg_item_t cw_decoder_snr_gist;
-    cfg_item_t cw_decoder_peak_beta;
-    cfg_item_t cw_decoder_noise_beta;
 
     cfg_item_t agc_hang;
     cfg_item_t agc_knee;

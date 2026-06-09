@@ -30,6 +30,8 @@ void cw_init();
 
 void cw_put_audio_samples(unsigned int n, float *samples);
 
+float cw_get_tone_freq(void);
+
 #ifdef __cplusplus
 }
 
@@ -86,13 +88,15 @@ class CWDetector {
     ChunkedAverage<48 * SAMPLE_RATE / 1000 > avg_freq;
     // signal averaging with 4ms window
     ChunkedAverage<4 * SAMPLE_RATE / 1000> avg_signal;
+    ChunkedAverage<4 * SAMPLE_RATE / 1000> avg_noise;
 
 public:
     CWDetector(float fs, float mu, float r);
     void set_f0(int16_t tone);
+    void set_r(float r);
     void put(float sample);
     bool get_freq(float *freq);
-    bool get_signal(float *sig_db);
+    bool get_signal_noise(float *sig_db, float *noise_db);
 };
 
 #endif

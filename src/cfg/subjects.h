@@ -11,6 +11,10 @@ enum data_type {
 
 #ifdef __cplusplus
 
+#define SUBJ_CAST(src, dst, T) SubjectT<T> *dst = static_cast<SubjectT<T>*>(src)
+#define SUBJ_CAST_I32(src, dst) SUBJ_CAST(src, dst, int32_t)
+#define SUBJ_CAST_F(src, dst) SUBJ_CAST(src, dst, float)
+
 #include <mutex>
 #include <algorithm>
 #include <list>
