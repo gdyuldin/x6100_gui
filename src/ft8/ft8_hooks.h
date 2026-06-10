@@ -123,15 +123,3 @@ bool            *ft8_get_tx_time_slot(void);
 lv_obj_t        *ft8_get_finder(void);
 lv_obj_t        *ft8_get_waterfall(void);
 bool             ft8_is_tx_enabled(void);
-
-/** Schedule a CQ TX using the current callsign/grid/modifier.
- *  Equivalent to the user pressing the TX CQ button. */
-void             ft8_schedule_cq_tx(void);
-
-/** Return the current FT8 filter range in Hz (FW-2: Wave 0 infra).
- *  Used by DNF/PSD hooks that need the visible band limits. */
-void             ft8_get_filter_range(int *low_hz, int *high_hz);
-
-/** Return the current QTH position (lat, lon) parsed from params.qth
- *  (FW-3: Wave 0 infra). Used by auto_sel to compute distances. */
-void             ft8_get_qth(double *lat, double *lon);

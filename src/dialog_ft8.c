@@ -1167,13 +1167,10 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             state = TX_PROCESS;
 
             ft8_tx_config_t tx_cfg = {
-                .tx_text             = tx_msg.msg,
-                .audio_sample_rate   = AUDIO_PLAY_RATE,
-                .base_gain_offset    = base_gain_offset,
-                .force_free_text     = false,
-                .sec_since_slot_start = 0.0f,
-                .abort_check         = tx_should_abort_cb,
-                .abort_check_ctx     = NULL,
+                .tx_text          = tx_msg.msg,
+                .base_gain_offset = base_gain_offset,
+                .abort_check      = tx_should_abort_cb,
+                .abort_check_ctx  = NULL,
             };
             add_tx_text(tx_msg.msg);
             tx_worker_run_with_config(&tx_cfg);
@@ -1227,40 +1224,3 @@ bool            *ft8_get_tx_time_slot(void)   { return &tx_time_slot; }
 lv_obj_t        *ft8_get_finder(void)         { return finder; }
 lv_obj_t        *ft8_get_waterfall(void)      { return waterfall; }
 bool             ft8_is_tx_enabled(void)       { return subject_get_int(tx_enabled); }
-
-void ft8_get_filter_range(int *low_hz, int *high_hz) {
-    if (low_hz)  *low_hz  = filter_low;
-    if (high_hz) *high_hz = filter_high;
-}
-
-void ft8_get_qth(double *lat, double *lon) {
-    if (lat) *lat = cur_lat;
-    if (lon) *lon = cur_lon;
-}
-
-void ft8_schedule_cq_tx(void) {
-    if (strlen(params.callsign.x) == 0)
-        return;
-
-    cq_make_message(params.callsign.x, params.qth.x,
-                    params.ft8_cq_modifier.x, tx_msg.msg);
-
-    struct timespec now;
-    clock_gettime(CLOCK_REALTIME, &now);
-    float time_since_slot_start;
-    tx_time_slot = !get_time_slot(now, &time_since_slot_start);
-    if (time_since_slot_start < MAX_TX_START_DELAY) {
-        tx_time_slot = !tx_time_slot;
-    }
-    tx_msg.repeats = subject_get_int(cfg.ft8_max_repeats.val);
-    subject_set_int(tx_enabled, true);
-    subject_set_int(cq_enabled, true);
-    ftx_qso_processor_reset(qso_processor);
-    lv_finder_clear_cursor(finder);
-
-    if (tx_msg.msg[2] == '_') {
-        msg_schedule_text_fmt("Next TX: CQ %s", tx_msg.msg + 3);
-    } else {
-        msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
-    }
-}

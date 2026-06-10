@@ -187,19 +187,19 @@ static void *worker_main(void *arg) {
         bool  new_odd  = get_time_slot(w->proto, now, &sec_since_slot_start);
         bool  new_slot = (new_odd != info.odd);
 
-        /* Compute slot boundary timestamp. On a slot transition `info` still
-         * represents the slot that just ended, so step back one slot period
-         * to keep slot_start consistent with info.odd until the transition
-         * has been published to callbacks below.
+        /* slot_start identifies the FT8/FT4 slot boundary for UI timestamps
+         * (e.g. RX list). It is NOT the ADIF QSO start/end time.
          *
-         * llround() (vs implicit float truncation) avoids ~1s jitter at the
-         * boundary when now.tv_nsec is large.
+         * On a slot transition `info` still represents the slot that just
+         * ended, so step back one slot period to keep slot_start consistent
+         * with info.odd until the transition is published to callbacks below.
          */
-        double now_f        = (double)now.tv_sec + (double)now.tv_nsec / 1.0e9;
-        float  slot_period  = (w->proto == FTX_PROTOCOL_FT4) ? FT4_SLOT_TIME : FT8_SLOT_TIME;
-        double slot_start_f = now_f - (double)sec_since_slot_start;
-        if (new_slot) slot_start_f -= (double)slot_period;
-        info.slot_start = (time_t)llround(slot_start_f);
+        info.slot_start = now.tv_sec - (time_t)sec_since_slot_start;
+        if (new_slot) {
+            float slot_period = (w->proto == FTX_PROTOCOL_FT4)
+                                ? FT4_SLOT_TIME : FT8_SLOT_TIME;
+            info.slot_start -= (time_t)slot_period;
+        }
 
         rx_consume_frames(w, &info, sec_since_slot_start);
 

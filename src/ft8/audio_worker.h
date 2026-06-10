@@ -37,18 +37,11 @@
 extern "C" {
 #endif
 
-/* Per-RX-slot metadata exposed to callbacks.
- *
- * slot_start is the wall-clock UTC time of the slot boundary, computed
- * with llround() to avoid sub-second jitter from float truncation; it
- * stays stable for the duration of a single slot. Consumers (e.g. RX
- * header timestamps, ft8_log) should prefer this over time(NULL) so
- * messages from the same slot always render with the same timestamp.
- */
+/* Metadata for the current RX slot passed to worker callbacks. */
 typedef struct {
     bool   odd;
     bool   answer_generated;
-    time_t slot_start;
+    time_t slot_start;   /* UTC wall-clock at this FT8/FT4 slot boundary */
 } slot_info_t;
 
 typedef struct audio_worker_s audio_worker_t;

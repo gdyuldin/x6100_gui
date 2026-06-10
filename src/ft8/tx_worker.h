@@ -32,24 +32,21 @@ typedef bool (*tx_abort_fn_t)(void *ctx);
 /* ---- TX configuration struct ------------------------------------------
  *
  *  Replaces the long positional-parameter list of tx_worker_run() so
- *  future feature PRs (free-msg, tail-align, etc.) can set their own
- *  fields without changing the signature and causing merge conflicts.
+ *  future feature PRs can add fields without changing the signature and
+ *  causing merge conflicts.
  *
  *  Fields:
- *    tx_text             - FT8/FT4 message text (e.g. "CQ BG7NZL OL63")
- *    audio_sample_rate   - audio output sample rate (e.g. AUDIO_PLAY_RATE)
- *    base_gain_offset    - per-band/per-firmware gain offset (dB)
- *    force_free_text     - when true, encode as FT8 free text (free-msg PR)
- *    sec_since_slot_start- seconds since slot boundary, for tail-align (tail-align PR)
- *    abort_check         - polled each block; return true to stop TX
- *    abort_check_ctx     - opaque context passed to abort_check
+ *    tx_text          - FT8/FT4 message text (e.g. "CQ BG7NZL OL63")
+ *    base_gain_offset - per-band/per-firmware gain offset (dB)
+ *    abort_check      - polled each block; return true to stop TX
+ *    abort_check_ctx  - opaque context passed to abort_check
+ *
+ *  TX sample rate is fixed at AUDIO_PLAY_RATE (see src/audio.h); it is
+ *  not configurable at runtime.
  */
 typedef struct {
     const char    *tx_text;
-    int32_t        audio_sample_rate;
     float          base_gain_offset;
-    bool           force_free_text;
-    float          sec_since_slot_start;
     tx_abort_fn_t  abort_check;
     void          *abort_check_ctx;
 } ft8_tx_config_t;
@@ -61,16 +58,12 @@ bool tx_worker_run_with_config(const ft8_tx_config_t *tx_cfg);
 /* Legacy positional-parameter wrapper. Kept for callers that haven't
  * migrated to ft8_tx_config_t yet. */
 static inline bool tx_worker_run(const char    *tx_text,
-                                 int32_t        audio_sample_rate,
                                  float          base_gain_offset,
                                  tx_abort_fn_t  abort_check,
                                  void          *abort_check_ctx) {
     ft8_tx_config_t cfg = {
         .tx_text             = tx_text,
-        .audio_sample_rate   = audio_sample_rate,
         .base_gain_offset    = base_gain_offset,
-        .force_free_text     = false,
-        .sec_since_slot_start = 0.0f,
         .abort_check         = abort_check,
         .abort_check_ctx     = abort_check_ctx,
     };
