@@ -94,7 +94,6 @@ static uint8_t            button_registry_cnt = 0;
 /* Last decoded message meta, set by add_rx_text() and consumed by
  * on_message_cb's hook chain. Single-threaded (worker thread only). */
 static ftx_msg_meta_t     last_rx_meta;
-
 typedef enum {
     RX_PROCESS,
     TX_PROCESS,
@@ -136,6 +135,14 @@ static double cur_lat, cur_lon;
 static int32_t filter_low, filter_high;
 
 static float base_gain_offset;
+
+/* PSD staging for coalesced waterfall updates — written by worker thread,
+ * drained by scheduler callback on LVGL task. */
+#define PSD_STAGING_MAX     1024
+static float             psd_staging[PSD_STAGING_MAX];
+static size_t            psd_staging_len    = 0;
+static bool              psd_flush_pending  = false;
+static pthread_mutex_t   psd_mutex          = PTHREAD_MUTEX_INITIALIZER;
 
 static void construct_cb(lv_obj_t *parent);
 static void key_cb(lv_event_t * e);
@@ -237,6 +244,39 @@ static dialog_t dialog = {
 
 dialog_t *dialog_ft8 = &dialog;
 
+/* ---- async LVGL helpers — safe to call from audio worker thread -------- */
+
+static void set_freq(uint32_t freq);
+
+static void finder_set_cursor_cb(void *data) {
+    int16_t freq = *(int16_t *)data;
+    lv_finder_set_cursor(finder, freq);
+}
+
+static void finder_set_cursor_async(int16_t freq_hz) {
+    scheduler_put(finder_set_cursor_cb, &freq_hz, sizeof(freq_hz));
+}
+
+static void finder_clear_cursor_cb(void *data) {
+    (void)data;
+    lv_finder_clear_cursor(finder);
+}
+
+static void finder_clear_cursor_async(void) {
+    scheduler_put_noargs(finder_clear_cursor_cb);
+}
+
+static void set_freq_async_cb(void *data) {
+    uint32_t freq = *(uint32_t *)data;
+    set_freq(freq);
+}
+
+static void set_freq_async(uint32_t freq_hz) {
+    scheduler_put(set_freq_async_cb, &freq_hz, sizeof(freq_hz));
+}
+
+/* ------------------------------------------------------------------------ */
+
 static void save_qso(const char *remote_callsign, const char *remote_grid, const int r_snr, const int s_snr) {
     time_t now = time(NULL);
 
@@ -264,7 +304,7 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
         msg_schedule_long_text_fmt("Saved QSO de %s %d %d", remote_callsign, s_snr, r_snr);
     }
 
-    lv_finder_clear_cursor(finder);
+    finder_clear_cursor_async();
 }
 
 static void worker_init() {
@@ -973,9 +1013,9 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     ftx_qso_processor_add_rx_text(qso_processor, text, snr, meta, &tx_msg);
 
     if ((strlen(tx_msg.msg) > 0) && (strcmp(old_msg, tx_msg.msg) != 0)) {
-        lv_finder_set_cursor(finder, meta->freq_hz);
+        finder_set_cursor_async(meta->freq_hz);
         if (!subject_get_int(cfg.ft8_hold_freq.val)) {
-            set_freq(freq_hz);
+            set_freq_async(freq_hz);
         }
         tx_time_slot = !s_info->odd;
         msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
@@ -1036,19 +1076,28 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
         rx_msg_hooks[i](text, snr, freq_hz, time_sec, &last_rx_meta, info);
 }
 
-/**
- * Helper function to update UI in main thread
+/*
+ * Coalesced waterfall flush — runs on the LVGL task via scheduler.
+ * Drains psd_staging[] and emits a single lv_waterfall_add_data call.
  */
+static void flush_ft8_waterfall_cb(void *arg) {
+    (void)arg;
 
-struct waterfall_data {
-    float *psd;
-    size_t size;
-};
+    float  local_psd[PSD_STAGING_MAX];
+    size_t local_len;
 
-static void waterfall_add_data(void *data) {
-    struct waterfall_data *wf_data = (struct waterfall_data *)data;
-    lv_waterfall_add_data(waterfall, wf_data->psd, wf_data->size);
-    free(wf_data->psd);
+    pthread_mutex_lock(&psd_mutex);
+    local_len = psd_staging_len;
+    if (local_len > 0) {
+        memcpy(local_psd, psd_staging, local_len * sizeof(float));
+    }
+    psd_staging_len   = 0;
+    psd_flush_pending = false;
+    pthread_mutex_unlock(&psd_mutex);
+
+    if (local_len > 0) {
+        lv_waterfall_add_data(waterfall, local_psd, local_len);
+    }
 }
 
 static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_start,
@@ -1063,9 +1112,27 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
     if (high_bin > nfft) high_bin = nfft;
     if (low_bin >= high_bin) return;
 
-    lv_waterfall_add_data(waterfall, (float *)&psd[low_bin], (int32_t)(high_bin - low_bin));
+    size_t len = high_bin - low_bin;
+    if (len > PSD_STAGING_MAX) len = PSD_STAGING_MAX;
 
-    /* PSD hooks: slot markers, auto DNF notch detection, etc. */
+    /* Write latest PSD row into staging; schedule exactly one flush
+     * when none is pending.  The LVGL task drains staging later. */
+    pthread_mutex_lock(&psd_mutex);
+    memcpy(psd_staging, &psd[low_bin], len * sizeof(float));
+    psd_staging_len = len;
+
+    bool need_flush = !psd_flush_pending;
+    if (need_flush) {
+        psd_flush_pending = true;
+    }
+    pthread_mutex_unlock(&psd_mutex);
+
+    if (need_flush) {
+        scheduler_put_noargs(flush_ft8_waterfall_cb);
+    }
+
+    /* PSD hooks run on worker thread: hook modules MUST use
+     * scheduler_put / *_async for any LVGL operations inside. */
     for (uint8_t i = 0; i < psd_hook_cnt; i++)
         psd_hooks[i](psd, nfft, sec_since_slot_start, info);
 }
