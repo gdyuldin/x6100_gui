@@ -25,11 +25,11 @@ struct item_t {
 static std::queue<item_t> queue;
 static std::mutex m_mutex;
 
-void scheduler_put(scheduler_fn_t fn, void * arg, size_t arg_size) {
+bool scheduler_put(scheduler_fn_t fn, void * arg, size_t arg_size) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (queue.size() > QUEUE_MAX_SIZE){
         LV_LOG_ERROR("Scheduler queue overflow");
-        return;
+        return false;
     }
     void *arg_copy = nullptr;
     if (arg_size) {
@@ -38,10 +38,10 @@ void scheduler_put(scheduler_fn_t fn, void * arg, size_t arg_size) {
     }
     item_t item = {fn, arg_copy};
     queue.push(item);
-    return; // cppcheck-suppress memleak
+    return true; // cppcheck-suppress memleak
 }
 
-void scheduler_put_noargs(scheduler_fn_t fn) {
+bool scheduler_put_noargs(scheduler_fn_t fn) {
     return scheduler_put(fn, NULL, 0);
 }
 
