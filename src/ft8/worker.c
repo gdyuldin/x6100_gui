@@ -227,11 +227,17 @@ void ftx_worker_reset() {
     }
 }
 
-bool ftx_worker_generate_tx_samples(const char *text, const uint16_t signal_freq, const uint32_t sample_rate,
+bool ftx_worker_generate_tx_samples(const char *text, bool force_free_text,
+                                    const uint16_t signal_freq, const uint32_t sample_rate,
                                     int16_t **samples, uint32_t *n_samples) {
     ftx_message_t msg;
     ftx_message_init(&msg);
-    ftx_message_rc_t rc = ftx_message_encode(&msg, &hash_if, text);
+    ftx_message_rc_t rc;
+    if (force_free_text) {
+        rc = ftx_message_encode_free(&msg, text);
+    } else {
+        rc = ftx_message_encode(&msg, &hash_if, text);
+    }
 
     if (rc != FTX_MESSAGE_RC_OK) {
         LV_LOG_ERROR("Cannot parse message %i", rc);

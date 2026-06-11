@@ -38,6 +38,7 @@ typedef bool (*tx_abort_fn_t)(void *ctx);
  *  Fields:
  *    tx_text          - FT8/FT4 message text (e.g. "CQ BG7NZL OL63")
  *    base_gain_offset - per-band/per-firmware gain offset (dB)
+ *    force_free_text  - when true, encode as FT8 free text (free-msg PR)
  *    abort_check      - polled each block; return true to stop TX
  *    abort_check_ctx  - opaque context passed to abort_check
  *
@@ -47,6 +48,7 @@ typedef bool (*tx_abort_fn_t)(void *ctx);
 typedef struct {
     const char    *tx_text;
     float          base_gain_offset;
+    bool           force_free_text;
     tx_abort_fn_t  abort_check;
     void          *abort_check_ctx;
 } ft8_tx_config_t;
@@ -64,6 +66,7 @@ static inline bool tx_worker_run(const char    *tx_text,
     ft8_tx_config_t cfg = {
         .tx_text             = tx_text,
         .base_gain_offset    = base_gain_offset,
+        .force_free_text     = false,
         .abort_check         = abort_check,
         .abort_check_ctx     = abort_check_ctx,
     };
