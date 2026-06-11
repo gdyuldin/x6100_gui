@@ -31,6 +31,7 @@
 #include "dsp.h"
 
 #include "ft8/audio_worker.h"
+#include "ft8/auto_sel.h"
 #include "ft8/cq_scheduler.h"
 #include "ft8/table_view.h"
 #include "ft8/tx_worker.h"
@@ -178,6 +179,8 @@ static void add_info(const char * fmt, ...);
 static void add_tx_text(const char * text);
 static bool get_time_slot(struct timespec now, float *time_since_start);
 
+static const char *auto_sel_label_getter(void);
+static void auto_sel_cb(struct button_item_t *btn);
 
 // button label is current state, press action and name - next state
 
@@ -188,6 +191,7 @@ static buttons_page_t btn_page_4;
 
 static button_item_t button_page_1 = { .type=BTN_TEXT, .label = "(Page: 1:4)", .press = button_next_page_cb, .next=&btn_page_2};
 static button_item_t button_show_cq_all = { .type=BTN_TEXT_FN, .label_fn = cq_all_label_getter, .press = show_cq_all_cb, .subj=&cfg.ft8_show_all.val};
+static button_item_t button_auto_sel = { .type=BTN_TEXT_FN, .label_fn = auto_sel_label_getter, .press = auto_sel_cb };
 static button_item_t button_mode_ft4_ft8 = { .type=BTN_TEXT_FN, .label_fn = protocol_label_getter, .press = mode_ft4_ft8_cb, .subj=&cfg.ft8_protocol.val };
 static button_item_t button_tx_cq_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_cq_label_getter, .press = tx_cq_en_dis_cb };
 static button_item_t button_tx_call_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_call_label_getter, .press = tx_call_en_dis_cb};
@@ -204,11 +208,11 @@ static button_item_t button_time_sync = { .type=BTN_TEXT, .label = "Time\nSync",
 static button_item_t button_page_4 = { .type=BTN_TEXT, .label = "(Page: 4:4)", .press = button_next_page_cb, .next=&btn_page_1};
 
 static buttons_page_t btn_page_1 = {
-    {&button_page_1, &button_show_cq_all, &button_mode_ft4_ft8, &button_tx_cq_en_dis, &button_tx_call_en_dis}
+    {&button_page_1, &button_show_cq_all, &button_auto_sel, &button_tx_cq_en_dis, &button_tx_call_en_dis}
 };
 
 static buttons_page_t btn_page_2 = {
-    {&button_page_2, &button_hold_freq, &button_auto_en_dis, &button_force_save}
+    {&button_page_2, &button_mode_ft4_ft8, &button_hold_freq, &button_auto_en_dis, &button_force_save}
 };
 
 static buttons_page_t btn_page_3 = {
@@ -311,6 +315,7 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
     }
 
     finder_clear_cursor_async();
+    autosel_on_qso_saved();
 }
 
 static void worker_init() {
@@ -414,6 +419,7 @@ static void destruct_cb() {
      *   autosel_cleanup_state(); */
 
     worker_done();
+    autosel_cleanup_state();
     table_view_destroy();
 
     /* The LVGL objects themselves are deleted by dialog_destruct() via
@@ -667,6 +673,7 @@ static void construct_cb(lv_obj_t *parent) {
      * Timing: after worker_init() and base gain setup — audio worker and
      * qso_processor are ready; module init may register buttons or load files.
      * Example: ft8_log_on_init(); ft8_autodnf_on_init(); */
+    autosel_init_state();
 }
 
 /* Buttons */
@@ -707,6 +714,19 @@ const char *auto_label_getter() {
     return buf;
 }
 
+const char *auto_sel_label_getter(void) {
+    static char buf[32];
+    snprintf(buf, sizeof(buf), "AutoSel:\n%s", autosel_get_mode_text());
+    return buf;
+}
+
+static void auto_sel_cb(struct button_item_t *btn) {
+    if (disable_buttons) return;
+    autosel_cycle_mode();
+    msg_schedule_text_fmt("Auto select: %s", autosel_get_mode_text());
+    buttons_refresh(btn);
+}
+
 static void show_cq_all_cb(struct button_item_t *btn) {
     if (disable_buttons) return;
     subject_set_int(cfg.ft8_show_all.val, !subject_get_int(cfg.ft8_show_all.val));
@@ -723,6 +743,8 @@ static void mode_ft4_ft8_cb(struct button_item_t *btn) {
     }
     subject_set_int(cfg.ft8_protocol.val, proto);
     subject_set_int(cq_enabled, false);
+
+    autosel_on_mode_switch();
 
     worker_done();
     worker_init();
@@ -1041,6 +1063,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
         }
         tx_time_slot = !s_info->odd;
         msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
+        autosel_on_tx_msg_updated(meta, s_info->odd);
         if (subject_get_int(cq_enabled)) {
             cq_disable_async();
         }
@@ -1098,6 +1121,7 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
      * valid; tx_msg may have been updated by qso_processor inside add_rx_text.
      * Constraint: no direct lv_* calls; use scheduler_put / *_async helpers.
      * Example: ft8_log_on_rx_msg(text, snr, freq_hz, time_sec, &last_rx_meta, info); */
+    autosel_rx_hook(text, snr, freq_hz, time_sec, &last_rx_meta, info);
 }
 
 /*
@@ -1182,6 +1206,7 @@ static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
      * and final decode flush — info describes the slot that just ended.
      * Constraint: no direct lv_* calls; use scheduler_put / *_async helpers.
      * Example: ft8_log_on_slot_end(info); ft8_autosel_on_slot_end(info); */
+    autosel_slot_end_hook(info);
 }
 
 static void on_tick_cb(const slot_info_t *info, bool new_slot,
@@ -1201,6 +1226,8 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
              * Use for: TX file log open, DNF marker clear, grid-swap on tx_msg.
              * Cannot defer TX from here without modifying core flow below.
              * Example: ft8_log_on_pre_tx(info); */
+            autosel_grid_swap_on_tick(info);
+            /* continue TX this tick — no slot defer */
 
             state = TX_PROCESS;
 
@@ -1223,6 +1250,7 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             if (tx_msg.repeats > 0) {
                 tx_msg.repeats--;
             }
+            autosel_post_tx();
             if (tx_msg.repeats == 0) {
                 if (strncmp(tx_msg.msg, "CQ", 2) == 0) {
                     cq_disable_async();
@@ -1242,5 +1270,64 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             add_info("RX %s %02i:%02i:%02i", cfg_digital_label_get(),
                      ts->tm_hour, ts->tm_min, ts->tm_sec);
         }
+    }
+}
+
+/* ---- Deferred API for AutoSel module (implemented here, declared in auto_sel.h) */
+
+FTxQsoProcessor *ft8_get_qso_processor(void) { return qso_processor; }
+ftx_tx_msg_t    *ft8_get_tx_msg(void)        { return &tx_msg; }
+bool            *ft8_get_tx_time_slot(void)   { return &tx_time_slot; }
+lv_obj_t        *ft8_get_finder(void)         { return finder; }
+lv_obj_t        *ft8_get_waterfall(void)      { return waterfall; }
+bool             ft8_is_tx_enabled(void)      { return subject_get_int(tx_enabled); }
+bool             ft8_is_cq_enabled(void)      { return subject_get_int(cq_enabled); }
+void             ft8_set_cq_enabled(bool on)  { subject_set_int(cq_enabled, on); }
+
+void ft8_get_qth(double *lat, double *lon) {
+    if (lat) *lat = cur_lat;
+    if (lon) *lon = cur_lon;
+}
+
+void ft8_set_dial_freq(uint32_t freq) {
+    set_freq(freq);
+}
+
+void ft8_finder_set_cursor_async(int16_t freq_hz) {
+    finder_set_cursor_async(freq_hz);
+}
+
+void ft8_set_dial_freq_async(uint32_t freq) {
+    set_freq_async(freq);
+}
+
+void ft8_schedule_cq_tx(void) {
+    if (strlen(params.callsign.x) == 0)
+        return;
+
+    cq_make_message(params.callsign.x, params.qth.x,
+                    params.ft8_cq_modifier.x, tx_msg.msg);
+
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    float time_since_slot_start;
+    tx_time_slot = !get_time_slot(now, &time_since_slot_start);
+    if (time_since_slot_start < MAX_TX_START_DELAY) {
+        tx_time_slot = !tx_time_slot;
+    }
+    tx_msg.repeats = subject_get_int(cfg.ft8_max_repeats.val);
+    subject_set_int(tx_enabled, true);
+    subject_set_int(cq_enabled, true);
+    pthread_mutex_lock(&qso_mutex);
+    if (qso_processor) {
+        ftx_qso_processor_reset(qso_processor);
+    }
+    pthread_mutex_unlock(&qso_mutex);
+    finder_clear_cursor_async();
+
+    if (tx_msg.msg[2] == '_') {
+        msg_schedule_text_fmt("Next TX: CQ %s", tx_msg.msg + 3);
+    } else {
+        msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
     }
 }
