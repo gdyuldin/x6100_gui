@@ -63,7 +63,8 @@
 #define FT8_WIDTH_HZ    50
 #define FT4_WIDTH_HZ    83
 
-#define MAX_TX_START_DELAY 1.5f
+#define MAX_TX_START_DELAY     5.0f
+#define MAX_TX_START_DELAY_FT4 1.5f
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
@@ -763,7 +764,9 @@ static void tx_cq_en_dis_cb(struct button_item_t *btn) {
         clock_gettime(CLOCK_REALTIME, &now);
         float time_since_slot_start;
         tx_time_slot = !get_time_slot(now, &time_since_slot_start);
-        if (time_since_slot_start < MAX_TX_START_DELAY) {
+        float max_delay = (subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8)
+                          ? MAX_TX_START_DELAY : MAX_TX_START_DELAY_FT4;
+        if (time_since_slot_start < max_delay) {
             tx_time_slot = !tx_time_slot;
         }
 
@@ -1190,7 +1193,9 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
 
     bool have_tx_msg = tx_msg.msg[0] != '\0';
 
-    if ((sec_since_slot_start < MAX_TX_START_DELAY) && have_tx_msg) {
+    float tx_max_delay = (subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8)
+                         ? MAX_TX_START_DELAY : MAX_TX_START_DELAY_FT4;
+    if ((sec_since_slot_start < tx_max_delay) && have_tx_msg) {
         if ((tx_time_slot == info->odd) && subject_get_int(tx_enabled)) {
 
             /* Module extension point: pre_tx
@@ -1205,10 +1210,11 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             state = TX_PROCESS;
 
             ft8_tx_config_t tx_cfg = {
-                .tx_text          = tx_msg.msg,
-                .base_gain_offset = base_gain_offset,
-                .abort_check      = tx_should_abort_cb,
-                .abort_check_ctx  = NULL,
+                .tx_text              = tx_msg.msg,
+                .base_gain_offset     = base_gain_offset,
+                .sec_since_slot_start = sec_since_slot_start,
+                .abort_check          = tx_should_abort_cb,
+                .abort_check_ctx      = NULL,
             };
             add_tx_text(tx_msg.msg);
             tx_worker_run_with_config(&tx_cfg);

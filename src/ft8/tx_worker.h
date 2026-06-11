@@ -36,10 +36,11 @@ typedef bool (*tx_abort_fn_t)(void *ctx);
  *  causing merge conflicts.
  *
  *  Fields:
- *    tx_text          - FT8/FT4 message text (e.g. "CQ BG7NZL OL63")
- *    base_gain_offset - per-band/per-firmware gain offset (dB)
- *    abort_check      - polled each block; return true to stop TX
- *    abort_check_ctx  - opaque context passed to abort_check
+ *    tx_text              - FT8/FT4 message text (e.g. "CQ BG7NZL OL63")
+ *    base_gain_offset     - per-band/per-firmware gain offset (dB)
+ *    sec_since_slot_start - seconds since slot boundary, for tail-align
+ *    abort_check          - polled each block; return true to stop TX
+ *    abort_check_ctx      - opaque context passed to abort_check
  *
  *  TX sample rate is fixed at AUDIO_PLAY_RATE (see src/audio.h); it is
  *  not configurable at runtime.
@@ -47,6 +48,7 @@ typedef bool (*tx_abort_fn_t)(void *ctx);
 typedef struct {
     const char    *tx_text;
     float          base_gain_offset;
+    float          sec_since_slot_start;
     tx_abort_fn_t  abort_check;
     void          *abort_check_ctx;
 } ft8_tx_config_t;
@@ -62,10 +64,11 @@ static inline bool tx_worker_run(const char    *tx_text,
                                  tx_abort_fn_t  abort_check,
                                  void          *abort_check_ctx) {
     ft8_tx_config_t cfg = {
-        .tx_text             = tx_text,
-        .base_gain_offset    = base_gain_offset,
-        .abort_check         = abort_check,
-        .abort_check_ctx     = abort_check_ctx,
+        .tx_text              = tx_text,
+        .base_gain_offset     = base_gain_offset,
+        .sec_since_slot_start = 0.0f,
+        .abort_check          = abort_check,
+        .abort_check_ctx      = abort_check_ctx,
     };
     return tx_worker_run_with_config(&cfg);
 }

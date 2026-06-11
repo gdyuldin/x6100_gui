@@ -14,6 +14,7 @@
 #include <stdlib.h>
 
 #include "lvgl/lvgl.h"
+#include <ft8lib/constants.h>
 
 #include "../audio.h"
 #include "../cfg/cfg.h"
@@ -28,6 +29,11 @@
 #define MAX_PWR_W        5.0f
 #define GAIN_MIN_DB     (-30.0f)
 #define GAIN_MAX_DB      0.0f
+
+/* FT8 TX must end by 14.5 s into the 15 s slot so the receiver can
+ * resync for the next slot. Allows tail-align to truncate the front
+ * of a late-started burst rather than skipping the TX entirely. */
+#define FT8_TX_END_SEC   14.5f
 
 /* ALC-driven gain correction (legacy formula from dialog_ft8.c). */
 static float get_correction(void) {
@@ -48,10 +54,11 @@ static float get_correction(void) {
 }
 
 bool tx_worker_run_with_config(const ft8_tx_config_t *tx_cfg) {
-    const char    *tx_text          = tx_cfg->tx_text;
-    float          base_gain_offset = tx_cfg->base_gain_offset;
-    tx_abort_fn_t  abort_check      = tx_cfg->abort_check;
-    void          *abort_check_ctx  = tx_cfg->abort_check_ctx;
+    const char    *tx_text             = tx_cfg->tx_text;
+    float          base_gain_offset    = tx_cfg->base_gain_offset;
+    float          sec_since_slot_start = tx_cfg->sec_since_slot_start;
+    tx_abort_fn_t  abort_check         = tx_cfg->abort_check;
+    void          *abort_check_ctx     = tx_cfg->abort_check_ctx;
     int16_t *samples   = NULL;
     uint32_t n_samples = 0;
 
@@ -59,6 +66,29 @@ bool tx_worker_run_with_config(const ft8_tx_config_t *tx_cfg) {
                                         (uint32_t)AUDIO_PLAY_RATE,
                                         &samples, &n_samples)) {
         return true; /* nothing to send; not an abort */
+    }
+
+    /* Tail-align (FT8 only): if we started late in the slot, drop a
+     * matching prefix from the synthesised audio so the burst still
+     * ends by FT8_TX_END_SEC. The receiver demodulates the tail of
+     * the signal, so a clean tail matters more than a clean head.
+     * FT4 slot is short enough that overrun is not an issue. */
+    uint32_t skip_samples = 0;
+    if (subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8) {
+        float remain_sec = FT8_TX_END_SEC - sec_since_slot_start;
+        if (remain_sec <= 0.0f) {
+            free(samples);
+            return false;
+        }
+        float burst_sec = (float)n_samples / (float)AUDIO_PLAY_RATE;
+        float skip_sec  = burst_sec - remain_sec;
+        if (skip_sec > 0.0f) {
+            skip_samples = (uint32_t)(0.5f + skip_sec * (float)AUDIO_PLAY_RATE);
+            if (skip_samples >= n_samples) {
+                free(samples);
+                return false;
+            }
+        }
     }
 
     if (subject_get_float(cfg.pwr.val) > MAX_PWR_W) {
@@ -75,8 +105,9 @@ bool tx_worker_run_with_config(const ft8_tx_config_t *tx_cfg) {
 
     float    prev_gain_offset = gain_offset;
     size_t   counter          = 0;
-    int16_t *ptr              = samples;
+    int16_t *ptr              = samples + skip_samples;
     size_t   part;
+    n_samples                -= skip_samples;
 
     bool aborted = false;
     while (true) {
