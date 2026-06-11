@@ -991,6 +991,11 @@ static void add_info(const char * fmt, ...) {
     vsnprintf(cell_data.text, sizeof(cell_data.text), fmt, args);
     va_end(args);
 
+    pthread_mutex_lock(&qso_mutex);
+    table_view_set_header_collapse(!qso_processor ||
+                                   !ftx_qso_processor_has_current(qso_processor));
+    pthread_mutex_unlock(&qso_mutex);
+
     scheduler_put(table_view_add_msg_cb, &cell_data, sizeof(cell_data_t));
 }
 
