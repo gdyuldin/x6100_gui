@@ -7,7 +7,6 @@
  */
 
 #include "dialog_ft8.h"
-#include "ft8/ft8_hooks.h"
 
 #include "ft8/worker.h"
 #include "ft8/qso.h"
@@ -68,31 +67,8 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
-/* ---- Hook chains ---------------------------------------------------- */
-static ft8_lifecycle_fn_t init_hooks[FT8_MAX_HOOKS];
-static uint8_t            init_hook_cnt = 0;
-
-static ft8_lifecycle_fn_t cleanup_hooks[FT8_MAX_HOOKS];
-static uint8_t            cleanup_hook_cnt = 0;
-
-static ft8_rx_msg_fn_t    rx_msg_hooks[FT8_MAX_HOOKS];
-static uint8_t            rx_msg_hook_cnt = 0;
-
-static ft8_psd_fn_t       psd_hooks[FT8_MAX_HOOKS];
-static uint8_t            psd_hook_cnt = 0;
-
-static ft8_slot_end_fn_t  slot_end_hooks[FT8_MAX_HOOKS];
-static uint8_t            slot_end_hook_cnt = 0;
-
-static ft8_pre_tx_fn_t    pre_tx_hooks[FT8_MAX_HOOKS];
-static uint8_t            pre_tx_hook_cnt = 0;
-
-/* ---- Button registry ------------------------------------------------ */
-static ft8_button_def_t   button_registry[FT8_BUTTON_MAX_PAGES * FT8_BUTTON_SLOTS];
-static uint8_t            button_registry_cnt = 0;
-
-/* Last decoded message meta, set by add_rx_text() and consumed by
- * on_message_cb's hook chain. Single-threaded (worker thread only). */
+/* Last decoded message meta, set by add_rx_text() and available to
+ * on_message_cb extension code. Worker thread only. */
 static ftx_msg_meta_t     last_rx_meta;
 typedef enum {
     RX_PROCESS,
@@ -373,9 +349,12 @@ static void destruct_cb() {
     // TODO: check free mem
     keyboard_close();
 
-    /* Inverse-order cleanup hooks: last registered, first torn down. */
-    for (int i = cleanup_hook_cnt - 1; i >= 0; i--)
-        cleanup_hooks[i]();
+    /* Module extension point: cleanup
+     * Thread: LVGL / main (destruct_cb runs on dialog close).
+     * Timing: before worker_done() — audio worker still exists until
+     * worker_done(); tear down module state that does not need the worker.
+     * Order: reverse of init extension calls if modules depend on each other.
+     * Example: ft8_log_on_cleanup(); ft8_autosel_on_cleanup(); */
 
     worker_done();
     table_view_destroy();
@@ -392,62 +371,6 @@ static void destruct_cb() {
 
     radio_set_pwr(subject_get_float(cfg.pwr.val));
     adif_log_close(ft8_log);
-}
-
-/* ---- Hook registration helpers --------------------------------------- */
-
-void ft8_register_init_hook(ft8_lifecycle_fn_t fn) {
-    if (!fn) return;
-    if (init_hook_cnt < FT8_MAX_HOOKS) {
-        init_hooks[init_hook_cnt++] = fn;
-    } else {
-        LV_LOG_WARN("ft8: init_hook overflow (max %d)", FT8_MAX_HOOKS);
-    }
-}
-
-void ft8_register_cleanup_hook(ft8_lifecycle_fn_t fn) {
-    if (!fn) return;
-    if (cleanup_hook_cnt < FT8_MAX_HOOKS) {
-        cleanup_hooks[cleanup_hook_cnt++] = fn;
-    } else {
-        LV_LOG_WARN("ft8: cleanup_hook overflow (max %d)", FT8_MAX_HOOKS);
-    }
-}
-
-void ft8_register_rx_msg_hook(ft8_rx_msg_fn_t fn) {
-    if (!fn) return;
-    if (rx_msg_hook_cnt < FT8_MAX_HOOKS) {
-        rx_msg_hooks[rx_msg_hook_cnt++] = fn;
-    } else {
-        LV_LOG_WARN("ft8: rx_msg_hook overflow (max %d)", FT8_MAX_HOOKS);
-    }
-}
-
-void ft8_register_psd_hook(ft8_psd_fn_t fn) {
-    if (!fn) return;
-    if (psd_hook_cnt < FT8_MAX_HOOKS) {
-        psd_hooks[psd_hook_cnt++] = fn;
-    } else {
-        LV_LOG_WARN("ft8: psd_hook overflow (max %d)", FT8_MAX_HOOKS);
-    }
-}
-
-void ft8_register_slot_end_hook(ft8_slot_end_fn_t fn) {
-    if (!fn) return;
-    if (slot_end_hook_cnt < FT8_MAX_HOOKS) {
-        slot_end_hooks[slot_end_hook_cnt++] = fn;
-    } else {
-        LV_LOG_WARN("ft8: slot_end_hook overflow (max %d)", FT8_MAX_HOOKS);
-    }
-}
-
-void ft8_register_pre_tx_hook(ft8_pre_tx_fn_t fn) {
-    if (!fn) return;
-    if (pre_tx_hook_cnt < FT8_MAX_HOOKS) {
-        pre_tx_hooks[pre_tx_hook_cnt++] = fn;
-    } else {
-        LV_LOG_WARN("ft8: pre_tx_hook overflow (max %d)", FT8_MAX_HOOKS);
-    }
 }
 
 static void load_band(int8_t dir) {
@@ -670,9 +593,11 @@ static void construct_cb(lv_obj_t *parent) {
         base_gain_offset = -16.4f + log10f(target_pwr) * 10.0f;
     }
 
-    /* Run all registered init hooks after base setup is complete. */
-    for (uint8_t i = 0; i < init_hook_cnt; i++)
-        init_hooks[i]();
+    /* Module extension point: init
+     * Thread: LVGL / main (construct_cb runs on dialog open).
+     * Timing: after worker_init() and base gain setup — audio worker and
+     * qso_processor are ready; module init may register buttons or load files.
+     * Example: ft8_log_on_init(); ft8_autodnf_on_init(); */
 }
 
 /* Buttons */
@@ -1070,10 +995,12 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
     (void)ctx;
     add_rx_text((int16_t)snr, text, (slot_info_t *)info, freq_hz, time_sec);
 
-    /* Let registered RX message hooks inspect the decoded message.
-     * last_rx_meta was set by add_rx_text() above. */
-    for (uint8_t i = 0; i < rx_msg_hook_cnt; i++)
-        rx_msg_hooks[i](text, snr, freq_hz, time_sec, &last_rx_meta, info);
+    /* Module extension point: rx_msg
+     * Thread: audio worker (same as this callback).
+     * Timing: immediately after add_rx_text() — last_rx_meta and info are
+     * valid; tx_msg may have been updated by qso_processor inside add_rx_text.
+     * Constraint: no direct lv_* calls; use scheduler_put / *_async helpers.
+     * Example: ft8_log_on_rx_msg(text, snr, freq_hz, time_sec, &last_rx_meta, info); */
 }
 
 /*
@@ -1131,10 +1058,12 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
         scheduler_put_noargs(flush_ft8_waterfall_cb);
     }
 
-    /* PSD hooks run on worker thread: hook modules MUST use
-     * scheduler_put / *_async for any LVGL operations inside. */
-    for (uint8_t i = 0; i < psd_hook_cnt; i++)
-        psd_hooks[i](psd, nfft, sec_since_slot_start, info);
+    /* Module extension point: psd
+     * Thread: audio worker (same as this callback).
+     * Timing: after core waterfall staging is queued — psd[] and filter bins
+     * are valid; runs once per emitted PSD frame (~10 Hz).
+     * Constraint: no direct lv_* / lv_waterfall_*; use scheduler_put only.
+     * Example: ft8_autodnf_on_psd(psd, nfft, sec_since_slot_start, info); */
 }
 
 static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
@@ -1143,9 +1072,12 @@ static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
         ftx_qso_processor_start_new_slot(qso_processor);
     }
 
-    /* Slot-end hooks: log flush, QSO state machines, etc. */
-    for (uint8_t i = 0; i < slot_end_hook_cnt; i++)
-        slot_end_hooks[i](info);
+    /* Module extension point: slot_end
+     * Thread: audio worker (same as this callback).
+     * Timing: at FT8/FT4 slot boundary, after ftx_qso_processor_start_new_slot()
+     * and final decode flush — info describes the slot that just ended.
+     * Constraint: no direct lv_* calls; use scheduler_put / *_async helpers.
+     * Example: ft8_log_on_slot_end(info); ft8_autosel_on_slot_end(info); */
 }
 
 static void on_tick_cb(const slot_info_t *info, bool new_slot,
@@ -1157,12 +1089,14 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
     if ((sec_since_slot_start < MAX_TX_START_DELAY) && have_tx_msg) {
         if ((tx_time_slot == info->odd) && subject_get_int(tx_enabled)) {
 
-            /* ---- Pre-TX hooks (log, DNF clear, etc.) ---------------
-             * [Module hook point] grid-swap / pre-TX logic that needs
-             *   to modify tx_msg or defer this tick —
-             *   see FT8_HOOK_PLAN.md §3.5.2 */
-            for (uint8_t i = 0; i < pre_tx_hook_cnt; i++)
-                pre_tx_hooks[i](info);
+            /* Module extension point: pre_tx
+             * Thread: audio worker (on_tick_cb).
+             * Timing: sec_since_slot_start < MAX_TX_START_DELAY, tx_time_slot
+             * matches info->odd, TX enabled, and tx_msg non-empty — immediately
+             * before state = TX_PROCESS and tx_worker_run_with_config().
+             * Use for: TX file log open, DNF marker clear, grid-swap on tx_msg.
+             * Cannot defer TX from here without modifying core flow below.
+             * Example: ft8_log_on_pre_tx(info); */
 
             state = TX_PROCESS;
 
@@ -1176,8 +1110,11 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             tx_worker_run_with_config(&tx_cfg);
             state = RX_PROCESS;
 
-            /* [Module hook point] post-TX repeat/QSO exhaustion logic —
-             *   see FT8_HOOK_PLAN.md §3.5.3 */
+            /* Module extension point: post_tx
+             * Thread: audio worker (on_tick_cb).
+             * Timing: immediately after tx_worker_run_with_config() returns —
+             * TX slot finished; tx_msg.repeats not yet decremented.
+             * Example: ft8_autosel_on_post_tx(info); */
 
             if (tx_msg.repeats > 0) {
                 tx_msg.repeats--;
@@ -1203,24 +1140,3 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
         }
     }
 }
-
-/* ---- Button registration --------------------------------------------- */
-
-void ft8_register_button(const ft8_button_def_t *btn) {
-    if (!btn) return;
-    if (button_registry_cnt < FT8_BUTTON_MAX_PAGES * FT8_BUTTON_SLOTS) {
-        button_registry[button_registry_cnt++] = *btn;
-    } else {
-        LV_LOG_WARN("ft8: button_registry overflow (max %d)",
-                    FT8_BUTTON_MAX_PAGES * FT8_BUTTON_SLOTS);
-    }
-}
-
-/* ---- Internal state getters for external modules ---------------------- */
-
-FTxQsoProcessor *ft8_get_qso_processor(void) { return qso_processor; }
-ftx_tx_msg_t    *ft8_get_tx_msg(void)        { return &tx_msg; }
-bool            *ft8_get_tx_time_slot(void)   { return &tx_time_slot; }
-lv_obj_t        *ft8_get_finder(void)         { return finder; }
-lv_obj_t        *ft8_get_waterfall(void)      { return waterfall; }
-bool             ft8_is_tx_enabled(void)       { return subject_get_int(tx_enabled); }
