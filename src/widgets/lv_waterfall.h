@@ -63,6 +63,12 @@ void lv_waterfall_add_data_with_ts(lv_obj_t * obj, float * data, uint16_t cnt, s
 /* Return the timestamp of the most recent PSD frame, or {0,0} if none yet. */
 struct timespec lv_waterfall_get_frame_ts(lv_obj_t * obj);
 
+/* Push a single-pixel-tall solid-colour marker line onto the waterfall.
+ * Scrolls down like a normal PSD row but skips the colour mapping, so the
+ * line shows up at full saturation regardless of min/max. Used by Auto DNF
+ * to flag slot boundaries on the waterfall. */
+void lv_waterfall_add_marker_line(lv_obj_t * obj, lv_color_t color);
+
 void lv_waterfall_set_min(lv_obj_t *obj, int16_t val);
 void lv_waterfall_set_max(lv_obj_t *obj, int16_t val);
 

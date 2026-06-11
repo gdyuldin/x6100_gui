@@ -427,6 +427,7 @@ static int init_params_cfg(sqlite3 *db) {
     fill_cfg_item_int(&cfg.ft8_show_all, subject_create_int(true), "ft8_show_all");
     fill_cfg_item_int(&cfg.ft8_protocol, subject_create_int(FTX_PROTOCOL_FT8), "ft8_protocol");
     fill_cfg_item_int(&cfg.ft8_auto, subject_create_int(true), "ft8_auto");
+    fill_cfg_item_int(&cfg.ft8_auto_dnf, subject_create_int(true), "ft8_auto_dnf");
     fill_cfg_item_int(&cfg.ft8_hold_freq, subject_create_int(true), "ft8_hold_freq");
     fill_cfg_item_int(&cfg.ft8_max_repeats, subject_create_int(6), "ft8_max_repeats");
 
