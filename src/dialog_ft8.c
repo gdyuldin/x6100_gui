@@ -1141,8 +1141,13 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
     }
     pthread_mutex_unlock(&psd_mutex);
 
-    if (need_flush) {
-        scheduler_put_noargs(flush_ft8_waterfall_cb);
+    if (need_flush && !scheduler_put_noargs(flush_ft8_waterfall_cb)) {
+        /* Flush item dropped (queue overflow): roll the flag back so a
+         * later PSD frame can retry, otherwise the waterfall would freeze
+         * with psd_flush_pending stuck at true. */
+        pthread_mutex_lock(&psd_mutex);
+        psd_flush_pending = false;
+        pthread_mutex_unlock(&psd_mutex);
     }
 
     /* Module extension point: psd

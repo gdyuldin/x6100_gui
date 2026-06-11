@@ -215,6 +215,10 @@ static void *worker_main(void *arg) {
                 w->cb.on_slot_end(&info, w->cb.ctx);
             }
             info.odd = new_odd;
+            /* info now describes the new slot; restore its true start so
+             * on_tick (and the TX-start decision it gates) never sees the
+             * new odd paired with the previous slot's slot_start. */
+            info.slot_start = now.tv_sec - (time_t)sec_since_slot_start;
         }
 
         if (w->cb.on_tick) {
