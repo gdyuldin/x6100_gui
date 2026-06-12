@@ -48,9 +48,10 @@ struct audio_worker_s {
     pthread_mutex_t sleep_mux;
     pthread_cond_t  sleep_cv;
 
-    /* Audio buffer (written by audio_worker_feed, read by worker). */
+    /* Odd/even slot ring buffers (written by audio_worker_feed, read by worker).
+     * Index 0 = even slot, 1 = odd — matches mirror parity routing. */
     pthread_mutex_t audio_mux;
-    cbufferf        audio_buf;
+    cbufferf        audio_buf[2];
 
     /* DSP state (worker thread only). */
     spgramf         sg;
@@ -87,10 +88,23 @@ static void msleep_interruptible(audio_worker_t *w, long ms) {
     pthread_mutex_unlock(&w->sleep_mux);
 }
 
-static void drain_audio_buf(audio_worker_t *w) {
+static uint8_t slot_buf_idx(bool odd) {
+    return odd ? 1 : 0;
+}
+
+/* Drop unread tail in the slot buffer that just finished decoding so it
+ * does not leak into the same parity slot on the next cycle. The other
+ * buffer (current slot) is left intact. */
+static void discard_slot_buf_tail(audio_worker_t *w, bool slot_odd) {
+    uint8_t idx = slot_buf_idx(slot_odd);
+
     pthread_mutex_lock(&w->audio_mux);
-    if (w->audio_buf) {
-        cbufferf_reset(w->audio_buf);
+    cbufferf buf = w->audio_buf[idx];
+    if (buf) {
+        unsigned int left = cbufferf_size(buf);
+        if (left > 0) {
+            cbufferf_release(buf, left);
+        }
     }
     pthread_mutex_unlock(&w->audio_mux);
 }
@@ -134,28 +148,28 @@ static void decode_cb(const char *text, int snr, float freq_hz, float time_sec, 
 static void rx_consume_frames(audio_worker_t *w, const slot_info_t *info,
                               float sec_since_slot_start) {
     decode_ctx_t dc = {.w = w, .info = info};
+    const uint8_t read_idx = slot_buf_idx(info->odd);
 
     for (;;) {
         if (atomic_load(&w->stop_req)) return;
 
         bool           has_frame = false;
-        bool           copied    = false;
         unsigned int   got       = 0;
-        float         *block       = NULL;
+        float         *block     = NULL;
         float          block_data[w->block_size];
 
         pthread_mutex_lock(&w->audio_mux);
-        if (cbufferf_size(w->audio_buf) >= w->block_size) {
+        cbufferf rx_buf = w->audio_buf[read_idx];
+        if (rx_buf && cbufferf_size(rx_buf) >= w->block_size) {
             has_frame = true;
-            cbufferf_read(w->audio_buf, w->block_size, &block, &got);
-            // Copy data to external buffer
-            memcpy((void*)block_data, (void*)block, got * sizeof(float));
+            cbufferf_read(rx_buf, w->block_size, &block, &got);
+            memcpy(block_data, block, got * sizeof(float));
             block = block_data;
-            cbufferf_release(w->audio_buf, got);
+            cbufferf_release(rx_buf, got);
         }
         pthread_mutex_unlock(&w->audio_mux);
 
-        if (!block) {
+        if (!has_frame) {
             break;
         }
 
@@ -205,11 +219,12 @@ static void *worker_main(void *arg) {
         rx_consume_frames(w, &info, sec_since_slot_start);
 
         if (new_slot) {
-            /* Slot boundary: flush a final decode, drain stale audio that
-             * accumulated during TX, and fire the slot_end handler. */
+            /* Slot boundary: final decode for the slot in info.odd, then drop
+             * only that buffer's residual tail (new-slot audio feeds the other
+             * buffer and must not be reset). */
             ftx_worker_decode(decode_cb, true, (void *)&dc);
             ftx_worker_reset();
-            drain_audio_buf(w);
+            discard_slot_buf_tail(w, info.odd);
 
             if (w->cb.on_slot_end) {
                 w->cb.on_slot_end(&info, w->cb.ctx);
@@ -259,8 +274,10 @@ audio_worker_t *audio_worker_create(int audio_sample_rate,
     pthread_mutex_init(&w->sleep_mux, NULL);
     pthread_cond_init(&w->sleep_cv, NULL);
 
-    w->audio_buf = cbufferf_create(audio_sample_rate * 3);
-    if (!w->audio_buf) goto fail;
+    for (int i = 0; i < 2; i++) {
+        w->audio_buf[i] = cbufferf_create(audio_sample_rate * 3);
+        if (!w->audio_buf[i]) goto fail;
+    }
 
     w->sg = spgramf_create(w->nfft, LIQUID_WINDOW_HANN, w->nfft, w->nfft / 2);
     if (!w->sg) goto fail;
@@ -322,9 +339,11 @@ void audio_worker_destroy(audio_worker_t *w) {
         spgramf_destroy(w->sg);
         w->sg = NULL;
     }
-    if (w->audio_buf) {
-        cbufferf_destroy(w->audio_buf);
-        w->audio_buf = NULL;
+    for (int i = 0; i < 2; i++) {
+        if (w->audio_buf[i]) {
+            cbufferf_destroy(w->audio_buf[i]);
+            w->audio_buf[i] = NULL;
+        }
     }
 
     ftx_worker_free();
@@ -338,9 +357,17 @@ void audio_worker_destroy(audio_worker_t *w) {
 
 void audio_worker_feed(audio_worker_t *w, unsigned int n, float *samples) {
     if (!w || !samples || (n == 0)) return;
+
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    float sec_since_slot_start = 0.0f;
+    bool  odd = get_time_slot(w->proto, now, &sec_since_slot_start);
+    cbufferf write_buf;
+
     pthread_mutex_lock(&w->audio_mux);
-    if (w->audio_buf) {
-        cbufferf_write(w->audio_buf, samples, n);
+    write_buf = w->audio_buf[slot_buf_idx(odd)];
+    if (write_buf) {
+        cbufferf_write(write_buf, samples, n);
     }
     pthread_mutex_unlock(&w->audio_mux);
 }
