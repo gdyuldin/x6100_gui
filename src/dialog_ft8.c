@@ -403,10 +403,15 @@ static void destruct_cb() {
 
     /* Module extension point: cleanup
      * Thread: LVGL / main (destruct_cb runs on dialog close).
-     * Timing: before worker_done() — audio worker still exists until
-     * worker_done(); tear down module state that does not need the worker.
+     * Timing: AFTER worker_done() — join the audio worker first so
+     * on_message / on_psd / on_slot_end / on_tick callbacks cannot touch
+     * module state while it is being torn down (UAF / race; see P0-2).
      * Order: reverse of init extension calls if modules depend on each other.
-     * Example: ft8_log_on_cleanup(); ft8_autosel_on_cleanup(); */
+     * Example:
+     *   worker_done();
+     *   ft8_log_on_cleanup();
+     *   ft8_autodnf_on_cleanup();
+     *   autosel_cleanup_state(); */
 
     worker_done();
     table_view_destroy();
