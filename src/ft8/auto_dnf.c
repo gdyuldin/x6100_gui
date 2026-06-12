@@ -524,10 +524,12 @@ void auto_dnf_destroy(auto_dnf_ctx_t *ctx) {
 
 /* ---- Module extension-point API (direct call from dialog_ft8.c) ----- */
 
+#include "../audio.h"
+#include "../dsp.h"
 #include "../widgets/lv_waterfall.h"
 
-/* Worker sample rate (AUDIO_CAPTURE_RATE / DECIM from dialog_ft8.c). */
-#define DNF_WORKER_RATE  7350
+/* Must match dialog_ft8.c SAMPLE_RATE (audio_worker PSD path). */
+#define DNF_WORKER_RATE  (AUDIO_CAPTURE_RATE / AUDIO_DECIM)
 
 #define OVERLAY_X        13
 #define OVERLAY_Y        13
