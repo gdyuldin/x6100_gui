@@ -129,6 +129,7 @@ void             ft8_set_dial_freq(uint32_t freq);
 void             ft8_finder_set_cursor_async(int16_t freq_hz);
 void             ft8_set_dial_freq_async(uint32_t freq);
 void             ft8_schedule_cq_tx(void);
+void             ft8_schedule_cq_tx_async(void);
 void             ft8_get_qth(double *lat, double *lon);
 
 #ifdef __cplusplus

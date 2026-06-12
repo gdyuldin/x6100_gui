@@ -624,7 +624,7 @@ extern "C" void autosel_on_qso_saved(void) {
     if (s_cq_paused_for_qso) {
         ft8_set_cq_enabled(true);
         s_cq_paused_for_qso = false;
-        ft8_schedule_cq_tx();
+        ft8_schedule_cq_tx_async();
     }
 }
 

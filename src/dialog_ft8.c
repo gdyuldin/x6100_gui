@@ -1331,3 +1331,12 @@ void ft8_schedule_cq_tx(void) {
         msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
     }
 }
+
+static void ft8_schedule_cq_tx_cb(void *data) {
+    (void)data;
+    ft8_schedule_cq_tx();
+}
+
+void ft8_schedule_cq_tx_async(void) {
+    scheduler_put_noargs(ft8_schedule_cq_tx_cb);
+}
