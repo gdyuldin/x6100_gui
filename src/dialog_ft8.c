@@ -1095,6 +1095,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
 
     cell_data.cell_type = cell_type;
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
+    cell_data.text[sizeof(cell_data.text) - 1] = '\0';
     cell_data.meta = *meta;
     cell_data.odd = s_info->odd;
     if (params.qth.x[0] != 0) {
@@ -1107,6 +1108,26 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
         }
     } else {
         cell_data.dist = 0;
+    }
+    if (meta->grid[0] != '\0') {
+        bool grid_worked = qso_log_search_worked_grid(
+            meta->grid,
+            subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
+            qso_log_freq_to_band(subject_get_int(cfg_cur.fg_freq))
+        );
+        if (!grid_worked) {
+            char tmp[64];
+            char *pos = strstr(cell_data.text, meta->grid);
+            if (pos) {
+                size_t prefix_len = pos - cell_data.text;
+                if (prefix_len >= sizeof(tmp) - 2) prefix_len = sizeof(tmp) - 3;
+                snprintf(tmp, sizeof(tmp), "%.*s*%s", (int)prefix_len, cell_data.text, pos);
+            } else {
+                snprintf(tmp, sizeof(tmp), "*%s", cell_data.text);
+            }
+            strncpy(cell_data.text, tmp, sizeof(cell_data.text) - 1);
+            cell_data.text[sizeof(cell_data.text) - 1] = '\0';
+        }
     }
     scheduler_put(table_view_add_msg_cb, (void*)&cell_data, sizeof(cell_data_t));
 }
