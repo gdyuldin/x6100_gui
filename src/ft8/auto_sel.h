@@ -115,6 +115,12 @@ void autosel_on_qso_saved(void);
  *  FT8/FT4 protocol switch. */
 void autosel_on_mode_switch(void);
 
+/** Called from tx_cq_en_dis_cb when the user toggles TX CQ. */
+void autosel_on_tx_cq_toggle(bool cq_enabling);
+
+/** Called from on_table_press when the user manually starts a QSO. */
+void autosel_on_manual_qso_start(const ftx_msg_meta_t *meta);
+
 /* ---- Deferred dialog getters (implemented in dialog_ft8.c) ------------- */
 
 FTxQsoProcessor *ft8_get_qso_processor(void);

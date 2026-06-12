@@ -628,6 +628,21 @@ extern "C" void autosel_on_qso_saved(void) {
     }
 }
 
+extern "C" void autosel_on_tx_cq_toggle(bool cq_enabling) {
+    if (!cq_enabling)
+        s_cq_paused_for_qso = false;
+    reset_qso_state();
+}
+
+extern "C" void autosel_on_manual_qso_start(const ftx_msg_meta_t *meta) {
+    reset_qso_state();
+    s_qso_active = false;
+    if (meta && meta->call_de[0] != '\0') {
+        strncpy(s_qso_active_call, meta->call_de, sizeof(s_qso_active_call) - 1);
+        s_qso_active_call[sizeof(s_qso_active_call) - 1] = '\0';
+    }
+}
+
 extern "C" void autosel_on_tx_msg_updated(const ftx_msg_meta_t *meta, bool odd_slot) {
     (void)odd_slot;
     if (!meta) return;

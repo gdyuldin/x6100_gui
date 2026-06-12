@@ -801,12 +801,14 @@ static void tx_cq_en_dis_cb(struct button_item_t *btn) {
         }
         pthread_mutex_unlock(&qso_mutex);
         lv_finder_clear_cursor(finder);
+        autosel_on_tx_cq_toggle(true);
     } else {
         if (state == TX_PROCESS) {
             state = RX_PROCESS;
         }
         subject_set_int(cq_enabled, false);
         tx_msg.msg[0] = '\0';
+        autosel_on_tx_cq_toggle(false);
     }
 }
 
@@ -900,6 +902,7 @@ static void on_table_press(const cell_data_t *cell_data) {
     }
     pthread_mutex_unlock(&qso_mutex);
     if (strlen(tx_msg.msg) > 0) {
+        autosel_on_manual_qso_start(&cell_data->meta);
         lv_finder_set_cursor(finder, cell_data->meta.freq_hz);
         if (!subject_get_int(cfg.ft8_hold_freq.val)) {
             set_freq(cell_data->meta.freq_hz);
