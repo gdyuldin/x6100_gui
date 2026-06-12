@@ -97,6 +97,8 @@ static void ft8_log_rx_collect(const slot_info_t *info,
                                const char *text) {
     if (!info || !text || !text[0]) return;
 
+    ensure_file_open();
+
     if (info->slot_start != s_slot_start) {
         rx_queue_clear();
         s_slot_start = info->slot_start;
@@ -124,7 +126,10 @@ static void ft8_log_rx_collect(const slot_info_t *info,
 }
 
 static void ft8_log_rx_flush_slot(const slot_info_t *info) {
-    if (!s_rx_head || !s_file) return;
+    if (!s_rx_head) return;
+
+    ensure_file_open();
+    if (!s_file) return;
 
     char ts_buf[24];
     const char *ts = slot_ts_str(info ? info->slot_start : s_slot_start,
