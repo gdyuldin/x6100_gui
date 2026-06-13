@@ -35,19 +35,6 @@ float cw_get_tone_freq(void);
 #ifdef __cplusplus
 }
 
-/**
- * Simple moving average class for smoothing freq, levels, etc.
- */
-template <std::size_t N>
-class MovingAverage {
-    float sum=0.0f;
-    std::array<float, N> data {0.0f};
-    size_t w=0;
-
-public:
-    void put(float val);
-    float get(void);
-};
 
 /**
  * Chunked average class
@@ -84,11 +71,11 @@ class CWDetector {
     float a;
 
     // Average instances
-    // freq averaging with 48 ms window
-    ChunkedAverage<48 * SAMPLE_RATE / 1000 > avg_freq;
-    // signal averaging with 4ms window
-    ChunkedAverage<4 * SAMPLE_RATE / 1000> avg_signal;
-    ChunkedAverage<4 * SAMPLE_RATE / 1000> avg_noise;
+    // freq averaging with 72 ms window
+    ChunkedAverage<72 * SAMPLE_RATE / 1000 > avg_freq;
+    // signal averaging with 6ms window
+    ChunkedAverage<6 * SAMPLE_RATE / 1000> avg_signal;
+    ChunkedAverage<6 * SAMPLE_RATE / 1000> avg_noise;
 
 public:
     CWDetector(float fs, float mu, float r);
