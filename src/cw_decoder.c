@@ -9,6 +9,7 @@
 /* Based on idea Michael A. Maynard, a.k.a. "K4ICY" */
 
 #include <math.h>
+#include <stdio.h>
 #include "lvgl/lvgl.h"
 #include "cw_decoder.h"
 #include "panel.h"
@@ -132,6 +133,9 @@ static void cw_decoder_ans(const char *ans) {
 }
 
 static void cw_decoder_wpm(uint16_t wpm) {
+    char buf[8];
+    snprintf(buf, 8, "WPM: %d", wpm);
+    panel_set_info(buf);
 }
 
 static void cw_decoder_dict() {

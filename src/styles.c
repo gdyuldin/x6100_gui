@@ -108,6 +108,7 @@ lv_style_t  panel_top_style;
 lv_style_t  panel_mid_style;
 lv_style_t  panel_bottom_style;
 lv_style_t  panel_style;
+lv_style_t  panel_info_style;
 
 lv_style_t  dialog_style;
 lv_style_t  dialog_item_style;
@@ -232,6 +233,13 @@ void styles_init(themes_t theme) {
     lv_style_set_pad_hor(&panel_style, 10);
     lv_style_set_radius(&panel_style, 0);
     lv_style_set_bg_img_opa(&panel_style, LV_OPA_COVER);
+
+    lv_style_init(&panel_info_style);
+    lv_style_set_align(&panel_info_style, LV_ALIGN_OUT_TOP_LEFT);
+    lv_style_set_y(&panel_info_style, -38);
+    lv_style_set_text_font(&panel_info_style, &sony_30);
+    lv_style_set_text_color(&panel_info_style, lv_color_hex(0x808080));
+    lv_style_set_blend_mode(&panel_info_style, LV_BLEND_MODE_ADDITIVE);
 
     lv_style_init(&dialog_style);
     lv_style_set_text_color(&dialog_style, lv_color_white());

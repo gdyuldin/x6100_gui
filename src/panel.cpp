@@ -20,6 +20,7 @@ extern "C" {
 }
 
 static lv_obj_t    *obj;
+static lv_obj_t    *info;
 static lv_anim_t    dim_anim;
 static char         buf[1024] = "";
 static char        *buf_write = buf;
@@ -55,7 +56,7 @@ static void check_lines() {
     }
 }
 
-static void panel_update_cb(const char *text) {
+static void panel_update_text_cb(const char *text) {
     lv_point_t text_size;
     char *old_write;
 
@@ -79,6 +80,10 @@ static void panel_update_cb(const char *text) {
     lv_label_set_text_static(obj, buf);
 }
 
+static void panel_update_info_cb(const char *text) {
+    lv_label_set_text(info, text);
+}
+
 lv_obj_t * panel_init(lv_obj_t *parent) {
     obj = lv_label_create(parent);
 
@@ -86,6 +91,7 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
 
     lv_obj_add_style(obj, &panel_style, 0);
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
     lv_anim_init(&dim_anim);
     lv_anim_set_exec_cb(&dim_anim, set_opa);
@@ -98,11 +104,19 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
     subject_add_delayed_observer_and_call(cfg.cw_decoder.val, update_visibility_cb, NULL);
     subject_add_delayed_observer(cfg_cur.fg_freq, on_freq_change, NULL);
 
+    info = lv_label_create(obj);
+    lv_obj_add_style(info, &panel_info_style, 0);
+    lv_label_set_text(info, "");
+
     return obj;
 }
 
 void panel_add_text(const char * text) {
-    scheduler_put((void(*)(void*))panel_update_cb, (void*)text, strlen(text) + 1);
+    scheduler_put((void(*)(void*))panel_update_text_cb, (void*)text, strlen(text) + 1);
+}
+
+void panel_set_info(const char *text) {
+    scheduler_put((void(*)(void*))panel_update_info_cb, (void*)text, strlen(text) + 1);
 }
 
 void panel_hide() {
