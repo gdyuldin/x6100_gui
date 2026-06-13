@@ -118,6 +118,7 @@ static float base_gain_offset;
 #define PSD_STAGING_MAX     1024
 static float             psd_staging[PSD_STAGING_MAX];
 static size_t            psd_staging_len    = 0;
+static struct timespec   psd_staging_ts     = {0, 0};
 static bool              psd_flush_pending  = false;
 static pthread_mutex_t   psd_mutex          = PTHREAD_MUTEX_INITIALIZER;
 
@@ -141,7 +142,9 @@ static void rotary_cb(int32_t diff);
  * through scheduler_put() to land on the LVGL task. */
 static void on_message_cb(const char *text, int snr, float freq_hz, float time_sec,
                           const slot_info_t *info, void *ctx);
-static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_start,
+static void on_psd_cb(const float *psd, uint16_t nfft,
+                      struct timespec frame_ts,
+                      float sec_since_slot_start,
                       const slot_info_t *info, void *ctx);
 static void on_slot_end_cb(const slot_info_t *info, void *ctx);
 static void on_tick_cb(const slot_info_t *info, bool new_slot,
@@ -1133,26 +1136,31 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
 static void flush_ft8_waterfall_cb(void *arg) {
     (void)arg;
 
-    float  local_psd[PSD_STAGING_MAX];
-    size_t local_len;
+    float           local_psd[PSD_STAGING_MAX];
+    size_t          local_len;
+    struct timespec local_ts;
 
     pthread_mutex_lock(&psd_mutex);
     local_len = psd_staging_len;
     if (local_len > 0) {
         memcpy(local_psd, psd_staging, local_len * sizeof(float));
     }
+    local_ts = psd_staging_ts;
     psd_staging_len   = 0;
     psd_flush_pending = false;
     pthread_mutex_unlock(&psd_mutex);
 
     if ((local_len > 0) && waterfall) {
-        lv_waterfall_add_data(waterfall, local_psd, local_len);
+        lv_waterfall_add_data_with_ts(waterfall, local_psd, local_len, local_ts);
     }
 }
 
-static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_start,
+static void on_psd_cb(const float *psd, uint16_t nfft,
+                      struct timespec frame_ts,
+                      float sec_since_slot_start,
                       const slot_info_t *info, void *ctx) {
     (void)ctx;
+    (void)sec_since_slot_start;
     if (!psd || !nfft) return;
 
     uint32_t low_bin  = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_low  / SAMPLE_RATE;
@@ -1168,6 +1176,7 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
     pthread_mutex_lock(&psd_mutex);
     memcpy(psd_staging, &psd[low_bin], len * sizeof(float));
     psd_staging_len = len;
+    psd_staging_ts = frame_ts;
 
     bool need_flush = !psd_flush_pending;
     if (need_flush) {
@@ -1181,7 +1190,7 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
      * are valid; runs once per emitted PSD frame (~10 Hz).
      * Constraint: no direct lv_* / lv_waterfall_*; use scheduler_put only.
      * Marker is scheduled before the waterfall flush below. */
-    ft8_autodnf_on_psd(psd, nfft, sec_since_slot_start, info);
+    ft8_autodnf_on_psd(psd, nfft, frame_ts, info);
 
     if (need_flush && !scheduler_put_noargs(flush_ft8_waterfall_cb)) {
         /* Flush item dropped (queue overflow): roll the flag back so a

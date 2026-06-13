@@ -61,6 +61,8 @@ struct audio_worker_s {
     int             block_size;
 
     uint64_t        last_psd_time_ms;
+    struct timespec psd_frame_ts;
+    bool            psd_frame_ts_valid;
 };
 
 /* ---------- small helpers ---------------------------------------------- */
@@ -117,16 +119,24 @@ static void maybe_emit_psd(audio_worker_t *w, const slot_info_t *info,
     if ((now - w->last_psd_time_ms) < w->fps_ms) return;
     w->last_psd_time_ms = now;
 
+    if (!w->psd_frame_ts_valid) {
+        clock_gettime(CLOCK_REALTIME, &w->psd_frame_ts);
+        w->psd_frame_ts_valid = true;
+    }
+    struct timespec frame_ts = w->psd_frame_ts;
+
     spgramf_get_psd(w->sg, w->psd);
     liquid_vectorf_addscalar(w->psd, w->nfft,
                              -10.f * log10f(sqrtf(w->nfft)),
                              w->psd);
 
-    if (w->cb.on_psd) {
-        w->cb.on_psd(w->psd, w->nfft, sec_since_slot_start, info, w->cb.ctx);
-    }
-
     spgramf_reset(w->sg);
+    clock_gettime(CLOCK_REALTIME, &w->psd_frame_ts);
+
+    if (w->cb.on_psd) {
+        w->cb.on_psd(w->psd, w->nfft, frame_ts,
+                     sec_since_slot_start, info, w->cb.ctx);
+    }
 }
 
 /* ---------- ftx_worker decode callback trampoline --------------------- */
@@ -193,6 +203,9 @@ static void *worker_main(void *arg) {
     audio_worker_t *w = (audio_worker_t *)arg;
     slot_info_t     info = { .odd = false, .answer_generated = false, .slot_start = 0 };
     decode_ctx_t    dc   = { .w = w, .info = &info };
+
+    clock_gettime(CLOCK_REALTIME, &w->psd_frame_ts);
+    w->psd_frame_ts_valid = true;
 
     while (!atomic_load(&w->stop_req)) {
         struct timespec now;

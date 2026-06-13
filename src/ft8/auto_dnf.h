@@ -86,7 +86,8 @@ void ft8_autodnf_on_init(lv_obj_t *overlay_parent);
 void ft8_autodnf_set_waterfall(lv_obj_t *waterfall_obj);
 void ft8_autodnf_on_cleanup(void);
 void ft8_autodnf_on_psd(const float *psd, uint16_t nfft,
-                        float sec_since_slot_start, const slot_info_t *info);
+                        struct timespec frame_ts,
+                        const slot_info_t *info);
 void ft8_autodnf_on_pre_tx(const slot_info_t *info);
 void ft8_autodnf_restore_entry(void);
 

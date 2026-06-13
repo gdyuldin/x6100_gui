@@ -617,15 +617,11 @@ void ft8_autodnf_on_cleanup(void) {
 }
 
 void ft8_autodnf_on_psd(const float *psd, uint16_t nfft,
-                        float sec_since_slot_start, const slot_info_t *info) {
+                        struct timespec frame_ts,
+                        const slot_info_t *info) {
     if (!s_dnf_ctx || !psd || !nfft || !info) return;
 
     schedule_slot_marker(info);
-
-    struct timespec frame_ts;
-    double frame_time = (double)info->slot_start + (double)sec_since_slot_start;
-    frame_ts.tv_sec  = (time_t)frame_time;
-    frame_ts.tv_nsec = (long)((frame_time - (double)frame_ts.tv_sec) * 1.0e9);
 
     int filt_low = 0, filt_high = 0;
     ft8_get_filter_range(&filt_low, &filt_high);

@@ -51,6 +51,7 @@ typedef struct {
                        float time_sec,
                        const slot_info_t *info, void *ctx);
     void (*on_psd)(const float *psd, uint16_t nfft,
+                   struct timespec frame_ts,
                    float sec_since_slot_start,
                    const slot_info_t *info, void *ctx);
     void (*on_slot_end)(const slot_info_t *info, void *ctx);
