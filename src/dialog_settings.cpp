@@ -25,6 +25,7 @@ extern "C" {
     #include "clock.h"
     #include "audio.h"
     #include "meter.h"
+    #include "main.h"
 
     #include "lvgl/lvgl.h"
     #include <sys/time.h>
@@ -52,10 +53,12 @@ extern "C" {
 static void make_general_page();
 static void make_ui_page();
 static void make_voice_page();
+static void make_info_page();
 
 static void load_general_page(button_item_t *item);
 static void load_ui_page(button_item_t *item);
 static void load_voice_page(button_item_t *item);
+static void load_info_page(button_item_t *item);
 
 static void construct_cb(lv_obj_t *parent);
 static void destruct_cb();
@@ -96,11 +99,18 @@ static button_item_t btn_voice = {
     .press = load_voice_page,
 };
 
+static button_item_t btn_info = {
+    .type  = BTN_TEXT,
+    .label = "Info",
+    .press = load_info_page,
+};
+
 buttons_page_t btn_page = {
     {
      &btn_general,
      &btn_ui,
      &btn_voice,
+     &btn_info,
      }
 };
 
@@ -133,6 +143,14 @@ static void load_ui_page(button_item_t *item) {
 
 static void load_voice_page(button_item_t *item) {
     make_voice_page();
+    for (auto &&btn : btn_page.items) {
+        buttons_mark(btn, false);
+    }
+    buttons_mark(item, true);
+}
+
+static void load_info_page(button_item_t *item) {
+    make_info_page();
     for (auto &&btn : btn_page.items) {
         buttons_mark(btn, false);
     }
@@ -2102,6 +2120,24 @@ static void make_voice_page() {
 
     row_dsc[row] = LV_GRID_TEMPLATE_LAST;
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
+}
+
+static void make_info_page() {
+    grid_delete();
+
+    lv_obj_t    *label;
+
+    grid = lv_obj_create(dialog.obj);
+    lv_obj_set_size(grid, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
+    lv_obj_set_style_text_color(grid, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(grid, 30, 0);
+    lv_obj_set_style_pad_ver(grid, 40, 0);
+
+    label = lv_label_create(grid);
+    lv_obj_set_style_text_line_space(label, 20, LV_PART_MAIN);
+    lv_label_set_text_fmt(label, "App version: %s\nBASE version: %s", VERSION, x6100_control_get_fw_version_str());
 }
 
 static void construct_cb(lv_obj_t *parent) {
