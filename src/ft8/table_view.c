@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdatomic.h>
 
 #include "../events.h"
 
@@ -43,6 +44,7 @@ static cell_data_t           *s_row_cell[TABLE_MAX_ROWS_INTERNAL]; /* row -> poo
 static lv_obj_t              *s_table      = NULL;
 static table_view_press_cb_t  s_press_cb   = NULL;
 static table_view_actions_t   s_actions    = {0};
+static _Atomic bool           s_header_collapse = true;
 
 static inline cell_data_t *row_cell(uint16_t r) {
     if (r >= TABLE_MAX_ROWS_INTERNAL) return NULL;
@@ -123,8 +125,9 @@ void table_view_push_ui(const cell_data_t *src) {
     bool scroll = (rows == (uint16_t)(selected_row + 1));
 
     /* In-place RX-header collapse: replace the last row text instead of
-     * appending another identical "RX ..." marker. */
-    if (is_rx_header(src) && (rows > 0)) {
+     * appending another identical "RX ..." marker.  Disabled while a QSO
+     * is active so empty RX slots do not erase the slot divider. */
+    if (atomic_load(&s_header_collapse) && is_rx_header(src) && (rows > 0)) {
         uint16_t last = (uint16_t)(rows - 1);
         cell_data_t *last_cd = row_cell(last);
         if (last_cd && is_rx_header(last_cd)) {
@@ -149,8 +152,14 @@ void table_view_add_msg_cb(void *data) {
     table_view_push_ui((const cell_data_t *)data);
 }
 
+void table_view_set_header_collapse(bool enable) {
+    atomic_store(&s_header_collapse, enable);
+}
+
 void table_view_reset(void) {
     if (!s_table) return;
+
+    atomic_store(&s_header_collapse, true);
 
     /* Clear our parallel row->cell map; LVGL's user_data slot is never
      * touched (it stays NULL), so there is no stale-pointer free path
@@ -335,6 +344,7 @@ void table_view_destroy(void) {
         lv_obj_del(s_table);
         s_table = NULL;
     }
+    atomic_store(&s_header_collapse, true);
     s_press_cb = NULL;
     memset(&s_actions, 0, sizeof(s_actions));
     memset(s_row_cell, 0, sizeof(s_row_cell));
