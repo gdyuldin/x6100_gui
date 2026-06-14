@@ -31,6 +31,7 @@ typedef struct {
 typedef struct {
     char msg[35];
     int  repeats;
+    bool force_free_text;  ///< when true, encode as FT8 free text only (e.g. Free MSG)
 } ftx_tx_msg_t;
 
 typedef void (*save_qso_cb_t)(const char *remote_callsign, const char *remote_grid, const int r_snr, const int s_snr);

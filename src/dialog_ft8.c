@@ -30,6 +30,8 @@
 #include "textarea_window.h"
 #include "dsp.h"
 
+#include <ft8lib/message.h>
+
 #include "ft8/audio_worker.h"
 #include "ft8/cq_scheduler.h"
 #include "ft8/table_view.h"
@@ -37,7 +39,6 @@
 #include "widgets/lv_waterfall.h"
 #include "widgets/lv_finder.h"
 
-#include "ft8/worker.h"
 #include "adif.h"
 #include "qso_log.h"
 #include "scheduler.h"
@@ -66,6 +67,15 @@
 
 #define MAX_TX_START_DELAY 1.5f
 
+#define FT8_FREETEXT_FILE        "/mnt/ft8_freetext.txt"
+#define FT8_FREETEXT_MAX_LEN     13
+#define FT8_FREETEXT_ACCEPTED_CHARS " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-./?"
+
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+
+/* Last decoded message meta, set by add_rx_text() and available to
+ * on_message_cb extension code. Worker thread only. */
+static ftx_msg_meta_t     last_rx_meta;
 typedef enum {
     RX_PROCESS,
     TX_PROCESS,
@@ -107,6 +117,24 @@ static double cur_lat, cur_lon;
 static int32_t filter_low, filter_high;
 
 static float base_gain_offset;
+
+/* PSD staging for coalesced waterfall updates — written by worker thread,
+ * drained by scheduler callback on LVGL task. */
+#define PSD_STAGING_MAX     1024
+static float             psd_staging[PSD_STAGING_MAX];
+static size_t            psd_staging_len    = 0;
+static bool              psd_flush_pending  = false;
+static pthread_mutex_t   psd_mutex          = PTHREAD_MUTEX_INITIALIZER;
+
+/* Serialises qso_processor (and its Candidate objects) between the audio
+ * worker thread (add_rx_text / slot_end) and the LVGL thread (table press,
+ * buttons, worker re-init). */
+static pthread_mutex_t   qso_mutex          = PTHREAD_MUTEX_INITIALIZER;
+
+/* Protects the audio_worker pointer: the PulseAudio capture thread feeds
+ * samples through audio_cb while the LVGL thread may tear the worker down
+ * (band change, FT4/FT8 switch, dialog close). */
+static pthread_mutex_t   audio_worker_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void construct_cb(lv_obj_t *parent);
 static void key_cb(lv_event_t * e);
@@ -156,38 +184,51 @@ static void add_info(const char * fmt, ...);
 static void add_tx_text(const char * text);
 static bool get_time_slot(struct timespec now, float *time_since_start);
 
+static void free_msg_cb(struct button_item_t *btn);
+static void free_msg_open(void);
+static void free_msg_close(void);
+static bool free_msg_cancel_cb(void);
+static bool free_msg_ok_cb(void);
 
 // button label is current state, press action and name - next state
 
 static buttons_page_t btn_page_1;
 static buttons_page_t btn_page_2;
 static buttons_page_t btn_page_3;
+static buttons_page_t btn_page_4;
 
-static button_item_t button_page_1 = { .type=BTN_TEXT, .label = "(Page: 1:3)", .press = button_next_page_cb, .next=&btn_page_2};
-static button_item_t button_show_cq_all = { .type=BTN_TEXT_FN, .label_fn = cq_all_label_getter, .press = show_cq_all_cb, .subj=&cfg.ft8_show_all.val};
-static button_item_t button_mode_ft4_ft8 = { .type=BTN_TEXT_FN, .label_fn = protocol_label_getter, .press = mode_ft4_ft8_cb, .subj=&cfg.ft8_protocol.val };
+static button_item_t button_page_1 = { .type=BTN_TEXT, .label = "(Page: 1:4)", .press = button_next_page_cb, .next=&btn_page_2};
+static button_item_t button_free_msg = { .type=BTN_TEXT, .label = "Free\nMSG", .press = free_msg_cb };
 static button_item_t button_tx_cq_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_cq_label_getter, .press = tx_cq_en_dis_cb };
 static button_item_t button_tx_call_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_call_label_getter, .press = tx_call_en_dis_cb};
 
-static button_item_t button_page_2 = { .type=BTN_TEXT, .label = "(Page: 2:3)", .press = button_next_page_cb, .next=&btn_page_3};
+static button_item_t button_page_2 = { .type=BTN_TEXT, .label = "(Page: 2:4)", .press = button_next_page_cb, .next=&btn_page_3};
+static button_item_t button_show_cq_all = { .type=BTN_TEXT_FN, .label_fn = cq_all_label_getter, .press = show_cq_all_cb, .subj=&cfg.ft8_show_all.val};
+static button_item_t button_mode_ft4_ft8 = { .type=BTN_TEXT_FN, .label_fn = protocol_label_getter, .press = mode_ft4_ft8_cb, .subj=&cfg.ft8_protocol.val };
 static button_item_t button_hold_freq = { .type=BTN_TEXT_FN, .label_fn = hold_freq_label_getter, .press = hold_tx_freq_cb, .subj=&cfg.ft8_hold_freq.val };
 static button_item_t button_auto_en_dis = { .type=BTN_TEXT_FN, .label_fn = auto_label_getter, .press = mode_auto_cb, .subj=&cfg.ft8_auto.val };
-static button_item_t button_force_save = { .type=BTN_TEXT, .label = "Force QSO\nsave", .press = force_save_qso };
 
-static button_item_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:3)", .press = button_next_page_cb, .next=&btn_page_1};
+static button_item_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:4)", .press = button_next_page_cb, .next=&btn_page_4};
+static button_item_t button_force_save = { .type=BTN_TEXT, .label = "Force QSO\nsave", .press = force_save_qso };
 static button_item_t button_cq_mod = { .type=BTN_TEXT, .label = "CQ\nModifier", .press = cq_modifier_cb };
 static button_item_t button_time_sync = { .type=BTN_TEXT, .label = "Time\nSync", .press = time_sync };
 
+static button_item_t button_page_4 = { .type=BTN_TEXT, .label = "(Page: 4:4)", .press = button_next_page_cb, .next=&btn_page_1};
+
 static buttons_page_t btn_page_1 = {
-    {&button_page_1, &button_show_cq_all, &button_mode_ft4_ft8, &button_tx_cq_en_dis, &button_tx_call_en_dis}
+    {&button_page_1, &button_free_msg, &button_tx_cq_en_dis, &button_tx_call_en_dis, NULL}
 };
 
 static buttons_page_t btn_page_2 = {
-    {&button_page_2, &button_hold_freq, &button_auto_en_dis, &button_force_save}
+    {&button_page_2, &button_show_cq_all, &button_mode_ft4_ft8, &button_hold_freq, &button_auto_en_dis}
 };
 
 static buttons_page_t btn_page_3 = {
-    {&button_page_3, &button_cq_mod, &button_time_sync}
+    {&button_page_3, &button_force_save, &button_cq_mod, &button_time_sync, NULL}
+};
+
+static buttons_page_t btn_page_4 = {
+    {&button_page_4}
 };
 
 static dialog_t dialog = {
@@ -200,6 +241,59 @@ static dialog_t dialog = {
 };
 
 dialog_t *dialog_ft8 = &dialog;
+
+/* ---- async LVGL helpers — safe to call from audio worker thread -------- */
+
+static void set_freq(uint32_t freq);
+
+static void finder_set_cursor_cb(void *data) {
+    /* The dialog may have been destroyed between scheduling and execution;
+     * finder is NULLed in destruct_cb, so a stale item must not touch it. */
+    if (!finder) return;
+    int16_t freq = *(int16_t *)data;
+    lv_finder_set_cursor(finder, freq);
+}
+
+static void finder_set_cursor_async(int16_t freq_hz) {
+    scheduler_put(finder_set_cursor_cb, &freq_hz, sizeof(freq_hz));
+}
+
+static void finder_clear_cursor_cb(void *data) {
+    (void)data;
+    if (!finder) return;
+    lv_finder_clear_cursor(finder);
+}
+
+static void finder_clear_cursor_async(void) {
+    scheduler_put_noargs(finder_clear_cursor_cb);
+}
+
+static void set_freq_async_cb(void *data) {
+    if (!finder) return;   /* dialog already destroyed */
+    uint32_t freq = *(uint32_t *)data;
+    set_freq(freq);
+}
+
+static void set_freq_async(uint32_t freq_hz) {
+    scheduler_put(set_freq_async_cb, &freq_hz, sizeof(freq_hz));
+}
+
+/* cq_enabled is observed by button-label observers whose list is mutated
+ * on the LVGL thread (page switch subscribe/unsubscribe). Setting the
+ * subject from the worker thread would iterate that list concurrently,
+ * so route the write through the scheduler onto the LVGL task. */
+static void cq_disable_cb(void *data) {
+    (void)data;
+    if (cq_enabled) {
+        subject_set_int(cq_enabled, false);
+    }
+}
+
+static void cq_disable_async(void) {
+    scheduler_put_noargs(cq_disable_cb);
+}
+
+/* ------------------------------------------------------------------------ */
 
 static void save_qso(const char *remote_callsign, const char *remote_grid, const int r_snr, const int s_snr) {
     time_t now = time(NULL);
@@ -228,13 +322,15 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
         msg_schedule_long_text_fmt("Saved QSO de %s %d %d", remote_callsign, s_snr, r_snr);
     }
 
-    lv_finder_clear_cursor(finder);
+    finder_clear_cursor_async();
 }
 
 static void worker_init() {
+    pthread_mutex_lock(&qso_mutex);
     qso_processor = ftx_qso_processor_init(params.callsign.x, params.qth.x,
                                            save_qso,
                                            subject_get_int(cfg.ft8_max_repeats.val));
+    pthread_mutex_unlock(&qso_mutex);
 
     audio_worker_cb_t cb = {
         .on_message  = on_message_cb,
@@ -243,29 +339,41 @@ static void worker_init() {
         .on_tick     = on_tick_cb,
         .ctx         = NULL,
     };
-    audio_worker = audio_worker_create(
+    audio_worker_t *w = audio_worker_create(
         SAMPLE_RATE,
         subject_get_int(cfg.ft8_protocol.val),
         filter_low, filter_high,
         &cb);
-    if (audio_worker) {
-        audio_worker_start(audio_worker);
+    pthread_mutex_lock(&audio_worker_mutex);
+    audio_worker = w;
+    pthread_mutex_unlock(&audio_worker_mutex);
+    if (w) {
+        audio_worker_start(w);
     }
 }
 
 static void worker_done() {
     state = RX_PROCESS;
 
-    if (audio_worker) {
-        audio_worker_destroy(audio_worker);
-        audio_worker = NULL;
+    /* Detach the pointer under the mutex first: once audio_worker is NULL,
+     * the PulseAudio capture thread (audio_cb) can no longer reach the
+     * worker, and any in-flight feed has finished before the lock was
+     * granted. Only then is it safe to join and free it. */
+    pthread_mutex_lock(&audio_worker_mutex);
+    audio_worker_t *w = audio_worker;
+    audio_worker = NULL;
+    pthread_mutex_unlock(&audio_worker_mutex);
+    if (w) {
+        audio_worker_destroy(w);
     }
     radio_set_modem(false);
 
+    pthread_mutex_lock(&qso_mutex);
     if (qso_processor) {
         ftx_qso_processor_delete(qso_processor);
         qso_processor = NULL;
     }
+    pthread_mutex_unlock(&qso_mutex);
     lv_finder_clear_cursor(finder);
     tx_msg.msg[0] = '\0';
 }
@@ -296,8 +404,41 @@ static void key_cb(lv_event_t * e) {
 static void destruct_cb() {
     // TODO: check free mem
     keyboard_close();
+
+    /* The 1-shot fade timer from rotary_cb references the table widget;
+     * it must not fire after the table is destroyed. */
+    if (timer) {
+        lv_timer_del(timer);
+        timer = NULL;
+    }
+    fade_run = false;
+
+    /* Module extension point: cleanup
+     * Thread: LVGL / main (destruct_cb runs on dialog close).
+     * Timing: AFTER worker_done() — join the audio worker first so
+     * on_message / on_psd / on_slot_end / on_tick callbacks cannot touch
+     * module state while it is being torn down (UAF / race; see P0-2).
+     * Order: reverse of init extension calls if modules depend on each other.
+     * Example:
+     *   worker_done();
+     *   ft8_log_on_cleanup();
+     *   ft8_autodnf_on_cleanup();
+     *   autosel_cleanup_state(); */
+
     worker_done();
     table_view_destroy();
+
+    /* The LVGL objects themselves are deleted by dialog_destruct() via
+     * lv_obj_del(dialog.obj). NULL the static handles so stale scheduler
+     * items queued by the (already joined) worker thread become no-ops
+     * instead of dereferencing freed widgets. */
+    finder    = NULL;
+    waterfall = NULL;
+
+    pthread_mutex_lock(&psd_mutex);
+    psd_staging_len   = 0;
+    psd_flush_pending = false;
+    pthread_mutex_unlock(&psd_mutex);
 
     dsp_set_waterfall_enabled(true);
     dsp_set_spectrum_enabled(true);
@@ -532,6 +673,12 @@ static void construct_cb(lv_obj_t *parent) {
     } else {
         base_gain_offset = -16.4f + log10f(target_pwr) * 10.0f;
     }
+
+    /* Module extension point: init
+     * Thread: LVGL / main (construct_cb runs on dialog open).
+     * Timing: after worker_init() and base gain setup — audio worker and
+     * qso_processor are ready; module init may register buttons or load files.
+     * Example: ft8_log_on_init(); ft8_autodnf_on_init(); */
 }
 
 /* Buttons */
@@ -599,7 +746,11 @@ static void mode_auto_cb(struct button_item_t *btn) {
     if (disable_buttons) return;
     bool new_val = !subject_get_int(cfg.ft8_auto.val);
     subject_set_int(cfg.ft8_auto.val, new_val);
-    ftx_qso_processor_set_auto(qso_processor, new_val);
+    pthread_mutex_lock(&qso_mutex);
+    if (qso_processor) {
+        ftx_qso_processor_set_auto(qso_processor, new_val);
+    }
+    pthread_mutex_unlock(&qso_mutex);
 }
 
 static void hold_tx_freq_cb(struct button_item_t *btn) {
@@ -619,6 +770,7 @@ static void tx_cq_en_dis_cb(struct button_item_t *btn) {
         subject_set_int(tx_enabled, true);
 
         cq_make_message(params.callsign.x, params.qth.x, params.ft8_cq_modifier.x, tx_msg.msg);
+        tx_msg.force_free_text = false;
 
         struct timespec now;
         clock_gettime(CLOCK_REALTIME, &now);
@@ -634,7 +786,11 @@ static void tx_cq_en_dis_cb(struct button_item_t *btn) {
             msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
         }
         tx_msg.repeats = subject_get_int(cfg.ft8_max_repeats.val);
-        ftx_qso_processor_reset(qso_processor);
+        pthread_mutex_lock(&qso_mutex);
+        if (qso_processor) {
+            ftx_qso_processor_reset(qso_processor);
+        }
+        pthread_mutex_unlock(&qso_mutex);
         lv_finder_clear_cursor(finder);
     } else {
         if (state == TX_PROCESS) {
@@ -702,9 +858,14 @@ static void time_sync(struct button_item_t *btn) {
 }
 
 static void force_save_qso(struct button_item_t *btn) {
-    if (ftx_qso_processor_can_save_qso(qso_processor)) {
+    bool saved = false;
+    pthread_mutex_lock(&qso_mutex);
+    if (qso_processor && ftx_qso_processor_can_save_qso(qso_processor)) {
         ftx_qso_processor_force_save_qso(qso_processor);
-    } else {
+        saved = true;
+    }
+    pthread_mutex_unlock(&qso_mutex);
+    if (!saved) {
         msg_schedule_text_fmt("Can't save incomplete QSO");
     }
 }
@@ -724,7 +885,11 @@ static void on_table_press(const cell_data_t *cell_data) {
         return;
     }
 
-    ftx_qso_processor_start_qso(qso_processor, (ftx_msg_meta_t *)&cell_data->meta, &tx_msg);
+    pthread_mutex_lock(&qso_mutex);
+    if (qso_processor) {
+        ftx_qso_processor_start_qso(qso_processor, (ftx_msg_meta_t *)&cell_data->meta, &tx_msg);
+    }
+    pthread_mutex_unlock(&qso_mutex);
     if (strlen(tx_msg.msg) > 0) {
         lv_finder_set_cursor(finder, cell_data->meta.freq_hz);
         if (!subject_get_int(cfg.ft8_hold_freq.val)) {
@@ -796,9 +961,11 @@ static bool keyboard_ok_cb() {
 }
 
 static void audio_cb(unsigned int n, float *samples) {
-    if (state == RX_PROCESS) {
+    pthread_mutex_lock(&audio_worker_mutex);
+    if ((state == RX_PROCESS) && audio_worker) {
         audio_worker_feed(audio_worker, n, samples);
     }
+    pthread_mutex_unlock(&audio_worker_mutex);
 }
 
 static bool get_time_slot(struct timespec now, float *sec_since_start) {
@@ -842,6 +1009,11 @@ static void add_info(const char * fmt, ...) {
     vsnprintf(cell_data.text, sizeof(cell_data.text), fmt, args);
     va_end(args);
 
+    pthread_mutex_lock(&qso_mutex);
+    table_view_set_header_collapse(!qso_processor ||
+                                   !ftx_qso_processor_has_current(qso_processor));
+    pthread_mutex_unlock(&qso_mutex);
+
     scheduler_put(table_view_add_msg_cb, &cell_data, sizeof(cell_data_t));
 }
 
@@ -864,29 +1036,35 @@ static void add_tx_text(const char * text) {
  */
 static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, float freq_hz, float time_sec) {
 
-    ftx_msg_meta_t meta;
-    meta.freq_hz = freq_hz;
-    meta.time_sec = time_sec;
+    ftx_msg_meta_t *meta = &last_rx_meta;
+    memset(meta, 0, sizeof(*meta));
+    meta->freq_hz = freq_hz;
+    meta->time_sec = time_sec;
     char * old_msg = strdup(tx_msg.msg);
-    ftx_qso_processor_add_rx_text(qso_processor, text, snr, &meta, &tx_msg);
+    pthread_mutex_lock(&qso_mutex);
+    if (qso_processor) {
+        ftx_qso_processor_add_rx_text(qso_processor, text, snr, meta, &tx_msg);
+    }
+    pthread_mutex_unlock(&qso_mutex);
 
     if ((strlen(tx_msg.msg) > 0) && (strcmp(old_msg, tx_msg.msg) != 0)) {
-        lv_finder_set_cursor(finder, meta.freq_hz);
+        tx_msg.force_free_text = false;
+        finder_set_cursor_async(meta->freq_hz);
         if (!subject_get_int(cfg.ft8_hold_freq.val)) {
-            set_freq(freq_hz);
+            set_freq_async(freq_hz);
         }
         tx_time_slot = !s_info->odd;
         msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
         if (subject_get_int(cq_enabled)) {
-            subject_set_int(cq_enabled, false);
+            cq_disable_async();
         }
     }
     free(old_msg);
 
     ft8_cell_type_t cell_type;
-    if (meta.to_me) {
+    if (meta->to_me) {
         cell_type = CELL_RX_TO_ME;
-    } else if (meta.type == FTX_MSG_TYPE_CQ) {
+    } else if (meta->type == FTX_MSG_TYPE_CQ) {
         cell_type = CELL_RX_CQ;
     } else if (!subject_get_int(cfg.ft8_show_all.val)) {
         return;
@@ -895,9 +1073,9 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     }
 
     cell_data_t  cell_data;
-    if (meta.type == FTX_MSG_TYPE_CQ) {
+    if (meta->type == FTX_MSG_TYPE_CQ) {
         cell_data.worked_type = qso_log_search_worked(
-            meta.call_de,
+            meta->call_de,
             subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
             qso_log_freq_to_band(subject_get_int(cfg_cur.fg_freq))
         );
@@ -905,12 +1083,12 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
 
     cell_data.cell_type = cell_type;
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
-    cell_data.meta = meta;
+    cell_data.meta = *meta;
     cell_data.odd = s_info->odd;
     if (params.qth.x[0] != 0) {
-        if (strlen(meta.grid) > 0) {
+        if (strlen(meta->grid) > 0) {
             double lat, lon;
-            qth_str_to_pos(meta.grid, &lat, &lon);
+            qth_str_to_pos(meta->grid, &lat, &lon);
             cell_data.dist = qth_pos_dist(lat, lon, cur_lat, cur_lon);
         } else {
             cell_data.dist = 0;
@@ -927,21 +1105,37 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
                           const slot_info_t *info, void *ctx) {
     (void)ctx;
     add_rx_text((int16_t)snr, text, (slot_info_t *)info, freq_hz, time_sec);
+
+    /* Module extension point: rx_msg
+     * Thread: audio worker (same as this callback).
+     * Timing: immediately after add_rx_text() — last_rx_meta and info are
+     * valid; tx_msg may have been updated by qso_processor inside add_rx_text.
+     * Constraint: no direct lv_* calls; use scheduler_put / *_async helpers.
+     * Example: ft8_log_on_rx_msg(text, snr, freq_hz, time_sec, &last_rx_meta, info); */
 }
 
-/**
- * Helper function to update UI in main thread
+/*
+ * Coalesced waterfall flush — runs on the LVGL task via scheduler.
+ * Drains psd_staging[] and emits a single lv_waterfall_add_data call.
  */
+static void flush_ft8_waterfall_cb(void *arg) {
+    (void)arg;
 
-struct waterfall_data {
-    float *psd;
-    size_t size;
-};
+    float  local_psd[PSD_STAGING_MAX];
+    size_t local_len;
 
-static void waterfall_add_data(void *data) {
-    struct waterfall_data *wf_data = (struct waterfall_data *)data;
-    lv_waterfall_add_data(waterfall, wf_data->psd, wf_data->size);
-    free(wf_data->psd);
+    pthread_mutex_lock(&psd_mutex);
+    local_len = psd_staging_len;
+    if (local_len > 0) {
+        memcpy(local_psd, psd_staging, local_len * sizeof(float));
+    }
+    psd_staging_len   = 0;
+    psd_flush_pending = false;
+    pthread_mutex_unlock(&psd_mutex);
+
+    if ((local_len > 0) && waterfall) {
+        lv_waterfall_add_data(waterfall, local_psd, local_len);
+    }
 }
 
 static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_start,
@@ -956,20 +1150,52 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
     if (high_bin > nfft) high_bin = nfft;
     if (low_bin >= high_bin) return;
 
-    // Schedule waterfall update in main thread
-    struct waterfall_data wf_data;
-    wf_data.size = high_bin - low_bin;
-    wf_data.psd = (float *)calloc(sizeof(float), wf_data.size);
-    memcpy((void*)wf_data.psd, (void*)&psd[low_bin], wf_data.size * sizeof(float));
-    scheduler_put(waterfall_add_data, &wf_data, sizeof(wf_data));
+    size_t len = high_bin - low_bin;
+    if (len > PSD_STAGING_MAX) len = PSD_STAGING_MAX;
+
+    /* Write latest PSD row into staging; schedule exactly one flush
+     * when none is pending.  The LVGL task drains staging later. */
+    pthread_mutex_lock(&psd_mutex);
+    memcpy(psd_staging, &psd[low_bin], len * sizeof(float));
+    psd_staging_len = len;
+
+    bool need_flush = !psd_flush_pending;
+    if (need_flush) {
+        psd_flush_pending = true;
+    }
+    pthread_mutex_unlock(&psd_mutex);
+
+    if (need_flush && !scheduler_put_noargs(flush_ft8_waterfall_cb)) {
+        /* Flush item dropped (queue overflow): roll the flag back so a
+         * later PSD frame can retry, otherwise the waterfall would freeze
+         * with psd_flush_pending stuck at true. */
+        pthread_mutex_lock(&psd_mutex);
+        psd_flush_pending = false;
+        pthread_mutex_unlock(&psd_mutex);
+    }
+
+    /* Module extension point: psd
+     * Thread: audio worker (same as this callback).
+     * Timing: after core waterfall staging is queued — psd[] and filter bins
+     * are valid; runs once per emitted PSD frame (~10 Hz).
+     * Constraint: no direct lv_* / lv_waterfall_*; use scheduler_put only.
+     * Example: ft8_autodnf_on_psd(psd, nfft, sec_since_slot_start, info); */
 }
 
 static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
-    (void)info;
     (void)ctx;
+    pthread_mutex_lock(&qso_mutex);
     if (qso_processor) {
         ftx_qso_processor_start_new_slot(qso_processor);
     }
+    pthread_mutex_unlock(&qso_mutex);
+
+    /* Module extension point: slot_end
+     * Thread: audio worker (same as this callback).
+     * Timing: at FT8/FT4 slot boundary, after ftx_qso_processor_start_new_slot()
+     * and final decode flush — info describes the slot that just ended.
+     * Constraint: no direct lv_* calls; use scheduler_put / *_async helpers.
+     * Example: ft8_log_on_slot_end(info); ft8_autosel_on_slot_end(info); */
 }
 
 static void on_tick_cb(const slot_info_t *info, bool new_slot,
@@ -980,19 +1206,44 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
 
     if ((sec_since_slot_start < MAX_TX_START_DELAY) && have_tx_msg) {
         if ((tx_time_slot == info->odd) && subject_get_int(tx_enabled)) {
+
+            /* Module extension point: pre_tx
+             * Thread: audio worker (on_tick_cb).
+             * Timing: sec_since_slot_start < MAX_TX_START_DELAY, tx_time_slot
+             * matches info->odd, TX enabled, and tx_msg non-empty — immediately
+             * before state = TX_PROCESS and tx_worker_run_with_config().
+             * Use for: TX file log open, DNF marker clear, grid-swap on tx_msg.
+             * Cannot defer TX from here without modifying core flow below.
+             * Example: ft8_log_on_pre_tx(info); */
+
             state = TX_PROCESS;
+
+            ft8_tx_config_t tx_cfg = {
+                .tx_text          = tx_msg.msg,
+                .base_gain_offset = base_gain_offset,
+                .force_free_text  = tx_msg.force_free_text,
+                .abort_check      = tx_should_abort_cb,
+                .abort_check_ctx  = NULL,
+            };
             add_tx_text(tx_msg.msg);
-            tx_worker_run(tx_msg.msg, AUDIO_PLAY_RATE, base_gain_offset,
-                          tx_should_abort_cb, NULL);
+            tx_worker_run_with_config(&tx_cfg);
             state = RX_PROCESS;
+
+            /* Module extension point: post_tx
+             * Thread: audio worker (on_tick_cb).
+             * Timing: immediately after tx_worker_run_with_config() returns —
+             * TX slot finished; tx_msg.repeats not yet decremented.
+             * Example: ft8_autosel_on_post_tx(info); */
+
             if (tx_msg.repeats > 0) {
                 tx_msg.repeats--;
             }
             if (tx_msg.repeats == 0) {
                 if (strncmp(tx_msg.msg, "CQ", 2) == 0) {
-                    subject_set_int(cq_enabled, false);
+                    cq_disable_async();
                 }
                 tx_msg.msg[0] = '\0';
+                tx_msg.force_free_text = false;
             }
             return;
         }
@@ -1008,4 +1259,168 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
                      ts->tm_hour, ts->tm_min, ts->tm_sec);
         }
     }
+}
+
+/* ---- Free MSG helpers (save/load/sanitize) --------------------------- */
+
+static void ft8_freetext_sanitize(const char *in, char *out, size_t out_size) {
+    if (!out || out_size == 0) return;
+    out[0] = '\0';
+    if (!in) return;
+
+    size_t j = 0;
+    for (size_t i = 0; in[i] != '\0'; i++) {
+        char c = in[i];
+        if (c == '\n' || c == '\r') {
+            break;
+        }
+        if (c >= 'a' && c <= 'z') {
+            c = (char)(c - 'a' + 'A');
+        }
+        if (strchr(FT8_FREETEXT_ACCEPTED_CHARS, c) == NULL) {
+            continue;
+        }
+        if (j == 0 && c == ' ') {
+            continue;
+        }
+        if (j + 1 >= out_size) {
+            break;
+        }
+        if (j >= FT8_FREETEXT_MAX_LEN) {
+            break;
+        }
+        out[j++] = c;
+    }
+    while (j > 0 && out[j - 1] == ' ') {
+        j--;
+    }
+    out[j] = '\0';
+}
+
+static void ft8_freetext_load(char *out, size_t out_size) {
+    if (!out || out_size == 0) return;
+    out[0] = '\0';
+
+    FILE *fp = fopen(FT8_FREETEXT_FILE, "r");
+    if (!fp) return;
+
+    char buf[128];
+    buf[0] = '\0';
+    if (fgets(buf, sizeof(buf), fp) == NULL) {
+        buf[0] = '\0';
+    }
+    fclose(fp);
+
+    ft8_freetext_sanitize(buf, out, out_size);
+}
+
+static bool ft8_freetext_save(const char *text) {
+    FILE *fp = fopen(FT8_FREETEXT_FILE, "w");
+    if (!fp) return false;
+    if (text && text[0] != '\0') {
+        fputs(text, fp);
+    }
+    fputc('\n', fp);
+    fclose(fp);
+    return true;
+}
+
+/* ---- Free MSG button / dialog ---------------------------------------- */
+
+static void free_msg_cb(struct button_item_t *btn) {
+    (void)btn;
+    free_msg_open();
+}
+
+static void free_msg_open(void) {
+    if (!table) {
+        return;
+    }
+
+    lv_group_remove_obj(table);
+    textarea_window_open_w_label(free_msg_ok_cb, free_msg_cancel_cb, "Free MSG");
+    lv_obj_t *text = textarea_window_text();
+
+    lv_textarea_set_one_line(text, true);
+    lv_textarea_set_max_length(text, FT8_FREETEXT_MAX_LEN);
+    lv_textarea_set_accepted_chars(text, FT8_FREETEXT_ACCEPTED_CHARS);
+
+    char def[FT8_FREETEXT_MAX_LEN + 1];
+    ft8_freetext_load(def, sizeof(def));
+    if (def[0] != '\0') {
+        textarea_window_set(def);
+    } else {
+        lv_textarea_set_placeholder_text(text, " FREE TEXT");
+    }
+    disable_buttons = true;
+}
+
+static void free_msg_close(void) {
+    textarea_window_close();
+    if (table) {
+        lv_group_add_obj(keyboard_group, table);
+        lv_group_set_editing(keyboard_group, true);
+    }
+    disable_buttons = false;
+}
+
+static bool free_msg_cancel_cb(void) {
+    free_msg_close();
+    return true;
+}
+
+static bool free_msg_ok_cb(void) {
+    const char *raw = textarea_window_get();
+    char clean[FT8_FREETEXT_MAX_LEN + 1];
+    ft8_freetext_sanitize(raw, clean, sizeof(clean));
+    if (clean[0] == '\0') {
+        msg_schedule_text_fmt("Empty Free MSG");
+        return false;
+    }
+
+    if (!ft8_freetext_save(clean)) {
+        msg_schedule_text_fmt("Save Free MSG failed");
+    }
+
+    if (!qso_processor) {
+        msg_schedule_text_fmt("FT8 not ready");
+        return false;
+    }
+
+    if (ftx_qso_processor_has_current(qso_processor)) {
+        msg_schedule_text_fmt("QSO active, cannot Free MSG");
+        return false;
+    }
+    if (tx_msg.msg[0] != '\0') {
+        msg_schedule_text_fmt("TX busy, cannot Free MSG");
+        return false;
+    }
+
+    {
+        ftx_message_t    tmp_msg;
+        ftx_message_rc_t rc = ftx_message_encode_free(&tmp_msg, clean);
+        if (rc != FTX_MESSAGE_RC_OK) {
+            msg_schedule_text_fmt("Free MSG too long for FT8");
+            return false;
+        }
+    }
+
+    strncpy(tx_msg.msg, clean, sizeof(tx_msg.msg) - 1);
+    tx_msg.msg[sizeof(tx_msg.msg) - 1] = '\0';
+    tx_msg.repeats = 1;
+    tx_msg.force_free_text = true;
+
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    float time_since_slot_start = 0.0f;
+    tx_time_slot = !get_time_slot(now, &time_since_slot_start);
+    if (time_since_slot_start < MAX_TX_START_DELAY) {
+        tx_time_slot = !tx_time_slot;
+    }
+
+    subject_set_int(tx_enabled, true);
+    msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
+
+    free_msg_close();
+    return true;
 }
