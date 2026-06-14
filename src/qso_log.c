@@ -20,7 +20,9 @@
 #include <stdio.h>
 
 static sqlite3_stmt     *search_callsign_stmt=NULL;
+static sqlite3_stmt     *search_grid_stmt=NULL;
 static sqlite3          *db = NULL;
+static pthread_mutex_t   db_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 static bool create_tables();
@@ -38,10 +40,20 @@ bool qso_log_init() {
 }
 
 void qso_log_destruct() {
+    pthread_mutex_lock(&db_mutex);
+    if (search_callsign_stmt) {
+        sqlite3_finalize(search_callsign_stmt);
+        search_callsign_stmt = NULL;
+    }
+    if (search_grid_stmt) {
+        sqlite3_finalize(search_grid_stmt);
+        search_grid_stmt = NULL;
+    }
     if (db) {
         sqlite3_close(db);
         db = NULL;
     }
+    pthread_mutex_unlock(&db_mutex);
 }
 
 void qso_log_import_adif(const char * path) {
@@ -151,8 +163,10 @@ static inline int bind_optional_text(sqlite3_stmt * stmt, int pos, const char * 
 }
 
 int qso_log_record_save(qso_log_record_t qso) {
-    sqlite3_stmt    *stmt;
+    sqlite3_stmt    *stmt = NULL;
     int             rc;
+    int             changed = -1;
+    char            *canonized_remote_callsign = NULL;
 
     if (strlen(qso.local_call) == 0) {
         LV_LOG_ERROR("Local callsign is required");
@@ -163,6 +177,8 @@ int qso_log_record_save(qso_log_record_t qso) {
         return -1;
     }
 
+    pthread_mutex_lock(&db_mutex);
+
     rc = sqlite3_prepare_v2(
         db, "INSERT OR IGNORE INTO qso_log ("
                 "ts, freq, band, mode, local_callsign, remote_callsign, rsts, rstr, "
@@ -172,58 +188,55 @@ int qso_log_record_save(qso_log_record_t qso) {
                        -1, &stmt, 0);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR("Error in prepairing query");
-        return -1;
+        goto cleanup;
     }
     rc = sqlite3_bind_int64(stmt, sqlite3_bind_parameter_index(stmt, ":ts"), qso.time);
     if (rc != SQLITE_OK) {
         printf("check point: %i\n", rc);
         printf("column_id: %i\n", sqlite3_bind_parameter_index(stmt, ":ts"));
         fflush(stdout);
-        return -1;
+        goto cleanup;
     }
     rc = sqlite3_bind_double(stmt, sqlite3_bind_parameter_index(stmt, ":freq"), (double) qso.freq_mhz);
-    if (rc != SQLITE_OK) return -1;
+    if (rc != SQLITE_OK) goto cleanup;
     rc = sqlite3_bind_int(stmt, sqlite3_bind_parameter_index(stmt, ":band"), qso.band);
-    if (rc != SQLITE_OK) return -1;
+    if (rc != SQLITE_OK) goto cleanup;
     rc = sqlite3_bind_int(stmt, sqlite3_bind_parameter_index(stmt, ":mode"), qso.mode);
-    if (rc != SQLITE_OK) return -1;
-    rc = sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":local_callsign"), qso.local_call, strlen(qso.local_call), 0);
-    if (rc != SQLITE_OK) return -1;
-    rc = sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":remote_callsign"), qso.remote_call, strlen(qso.remote_call), 0);
-    if (rc != SQLITE_OK) return -1;
+    if (rc != SQLITE_OK) goto cleanup;
+    rc = sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":local_callsign"), qso.local_call, -1, SQLITE_TRANSIENT);
+    if (rc != SQLITE_OK) goto cleanup;
+    rc = sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":remote_callsign"), qso.remote_call, -1, SQLITE_TRANSIENT);
+    if (rc != SQLITE_OK) goto cleanup;
     rc = sqlite3_bind_int(stmt, sqlite3_bind_parameter_index(stmt, ":rsts"), qso.rsts);
-    if (rc != SQLITE_OK) return -1;
+    if (rc != SQLITE_OK) goto cleanup;
     rc = sqlite3_bind_int(stmt, sqlite3_bind_parameter_index(stmt, ":rstr"), qso.rstr);
-    if (rc != SQLITE_OK) return -1;
+    if (rc != SQLITE_OK) goto cleanup;
     rc = bind_optional_text(stmt, sqlite3_bind_parameter_index(stmt, ":local_grid"), qso.local_grid);
-    if (rc != SQLITE_OK) return -1;
+    if (rc != SQLITE_OK) goto cleanup;
     rc = bind_optional_text(stmt, sqlite3_bind_parameter_index(stmt, ":remote_grid"), qso.remote_grid);
-    if (rc != SQLITE_OK) return -1;
+    if (rc != SQLITE_OK) goto cleanup;
     rc = bind_optional_text(stmt, sqlite3_bind_parameter_index(stmt, ":op_name"), qso.name);
-    if (rc != SQLITE_OK) return -1;
+    if (rc != SQLITE_OK) goto cleanup;
 
-    char * canonized_remote_callsign = util_canonize_callsign(qso.remote_call, true);
+    canonized_remote_callsign = util_canonize_callsign(qso.remote_call, true);
 
     rc = bind_optional_text(stmt, sqlite3_bind_parameter_index(stmt, ":canonized_remote_callsign"), canonized_remote_callsign);
-    if (rc != SQLITE_OK) {
-        free(canonized_remote_callsign);
-        return -1;
-    }
+    if (rc != SQLITE_OK) goto cleanup;
 
     if(sqlite3_step(stmt) != SQLITE_DONE) {
         printf("Error during execute: `%s`\n", sqlite3_expanded_sql(stmt));
-        free(canonized_remote_callsign);
-        return -1;
+        goto cleanup;
     }
 
-    int changed = sqlite3_changes(db);
+    changed = sqlite3_changes(db);
     if (changed == 0) {
         printf("Not inserted `%s`\n", sqlite3_expanded_sql(stmt));
     }
 
-    free(canonized_remote_callsign);
-
-    sqlite3_finalize(stmt);
+cleanup:
+    if (canonized_remote_callsign) free(canonized_remote_callsign);
+    if (stmt) sqlite3_finalize(stmt);
+    pthread_mutex_unlock(&db_mutex);
     return changed;
 }
 
@@ -233,10 +246,15 @@ qso_log_search_worked_t qso_log_search_worked(const char *callsign, qso_log_mode
     int                         rc;
     qso_log_search_worked_t     worked = SEARCH_WORKED_NO;
 
+    if (!db || !callsign || strlen(callsign) == 0) return SEARCH_WORKED_NO;
+
+    pthread_mutex_lock(&db_mutex);
+
     if (!search_callsign_stmt) {
         rc = sqlite3_prepare_v3(db, "SELECT DISTINCT band, mode FROM qso_log WHERE canonized_remote_callsign LIKE ?",
                         -1, SQLITE_PREPARE_PERSISTENT, &search_callsign_stmt, 0);
         if (rc != SQLITE_OK) {
+            pthread_mutex_unlock(&db_mutex);
             return -1;
         }
     } else {
@@ -248,9 +266,11 @@ qso_log_search_worked_t qso_log_search_worked(const char *callsign, qso_log_mode
     if (!canonized_callsign) {
         canonized_callsign = strdup(callsign);
     }
-    rc = sqlite3_bind_text(search_callsign_stmt, 1, canonized_callsign, strlen(canonized_callsign), 0);
+    /* Let SQLite make its own copy to avoid lifetime issues with the buffer */
+    rc = sqlite3_bind_text(search_callsign_stmt, 1, canonized_callsign, -1, SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
         free(canonized_callsign);
+        pthread_mutex_unlock(&db_mutex);
         return -1;
     }
 
@@ -265,7 +285,48 @@ qso_log_search_worked_t qso_log_search_worked(const char *callsign, qso_log_mode
     }
 
     free(canonized_callsign);
+    pthread_mutex_unlock(&db_mutex);
     return worked;
+}
+
+bool qso_log_search_worked_grid(const char *grid, qso_log_mode_t mode, qso_log_band_t band)
+{
+    if (!db || !grid || strlen(grid) == 0) return false;
+
+    pthread_mutex_lock(&db_mutex);
+
+    int rc;
+    if (!search_grid_stmt) {
+        rc = sqlite3_prepare_v3(
+            db,
+            "SELECT 1 FROM qso_log WHERE remote_grid LIKE ? AND band = ? AND mode = ? LIMIT 1",
+            -1,
+            SQLITE_PREPARE_PERSISTENT,
+            &search_grid_stmt,
+            NULL);
+        if (rc != SQLITE_OK) {
+            pthread_mutex_unlock(&db_mutex);
+            return false;
+        }
+    } else {
+        sqlite3_reset(search_grid_stmt);
+        sqlite3_clear_bindings(search_grid_stmt);
+    }
+
+    /* Use prefix match so grid "FN31" matches "FN31" or "FN31xx" */
+    char pattern[32] = {0};
+    snprintf(pattern, sizeof(pattern), "%s%%", grid);
+
+    rc = sqlite3_bind_text(search_grid_stmt, 1, pattern, -1, SQLITE_TRANSIENT);
+    if (rc != SQLITE_OK) { pthread_mutex_unlock(&db_mutex); return false; }
+    rc = sqlite3_bind_int(search_grid_stmt, 2, band);
+    if (rc != SQLITE_OK) { pthread_mutex_unlock(&db_mutex); return false; }
+    rc = sqlite3_bind_int(search_grid_stmt, 3, mode);
+    if (rc != SQLITE_OK) { pthread_mutex_unlock(&db_mutex); return false; }
+
+    bool found = (sqlite3_step(search_grid_stmt) == SQLITE_ROW);
+    pthread_mutex_unlock(&db_mutex);
+    return found;
 }
 
 
@@ -306,6 +367,8 @@ static bool create_tables() {
     char    *err = 0;
     int     rc;
 
+    pthread_mutex_lock(&db_mutex);
+
     rc = sqlite3_exec(db,
         "CREATE TABLE IF NOT EXISTS qso_log( "
             "ts              TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
@@ -327,6 +390,7 @@ static bool create_tables() {
         NULL, NULL, &err);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR(err);
+        pthread_mutex_unlock(&db_mutex);
         return false;
     }
 
@@ -335,6 +399,7 @@ static bool create_tables() {
         NULL, NULL, &err);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR(err);
+        pthread_mutex_unlock(&db_mutex);
         return false;
     }
     rc = sqlite3_exec(db,
@@ -342,6 +407,7 @@ static bool create_tables() {
         NULL, NULL, &err);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR(err);
+        pthread_mutex_unlock(&db_mutex);
         return false;
     }
     rc = sqlite3_exec(db,
@@ -349,6 +415,7 @@ static bool create_tables() {
         NULL, NULL, &err);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR(err);
+        pthread_mutex_unlock(&db_mutex);
         return false;
     }
 
@@ -357,8 +424,10 @@ static bool create_tables() {
         NULL, NULL, &err);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR(err);
+        pthread_mutex_unlock(&db_mutex);
         return false;
     }
 
+    pthread_mutex_unlock(&db_mutex);
     return true;
 }
