@@ -140,6 +140,26 @@ struct timespec lv_waterfall_get_frame_ts(lv_obj_t * obj) {
     return waterfall->frame_ts;
 }
 
+void lv_waterfall_add_marker_line(lv_obj_t * obj, lv_color_t color) {
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+
+    lv_waterfall_t *waterfall = (lv_waterfall_t *)obj;
+    lv_img_dsc_t   *dsc       = waterfall->dsc;
+
+    if (!dsc) return;
+
+    uint32_t line_len = waterfall->line_len;
+
+    /* Scroll down one row, then paint the new top row in solid colour. */
+    memmove(dsc->data + line_len, dsc->data, dsc->data_size - line_len);
+    for (uint32_t x = 0; x < dsc->header.w; x++) {
+        lv_img_buf_set_px_color(dsc, x, 0, color);
+    }
+
+    lv_img_cache_invalidate_src(dsc);
+    lv_obj_invalidate(obj);
+}
+
 void lv_waterfall_set_min(lv_obj_t * obj, int16_t val) {
     LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_waterfall_t * waterfall = (lv_waterfall_t *)obj;

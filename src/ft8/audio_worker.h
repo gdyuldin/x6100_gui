@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <complex.h>
+#include <time.h>
 
 #include <ft8lib/constants.h>
 
@@ -36,10 +37,11 @@
 extern "C" {
 #endif
 
-/* Per-RX-slot metadata exposed to callbacks. Kept minimal on purpose. */
+/* Metadata for the current RX slot passed to worker callbacks. */
 typedef struct {
-    bool odd;
-    bool answer_generated;
+    bool   odd;
+    bool   answer_generated;
+    time_t slot_start;   /* UTC wall-clock at this FT8/FT4 slot boundary */
 } slot_info_t;
 
 typedef struct audio_worker_s audio_worker_t;
@@ -49,13 +51,14 @@ typedef struct {
                        float time_sec,
                        const slot_info_t *info, void *ctx);
     void (*on_psd)(const float *psd, uint16_t nfft,
+                   struct timespec frame_ts,
                    float sec_since_slot_start,
                    const slot_info_t *info, void *ctx);
     void (*on_slot_end)(const slot_info_t *info, void *ctx);
     /* End-of-iteration hook. Fires after rx processing and slot-end handling.
      * The caller may perform a blocking TX here; on return, the worker loops
-     * back around and the stale audio accumulated during TX will be drained
-     * at the next slot boundary. */
+     * back around and any residual audio in the finished slot buffer is
+     * discarded at the next slot boundary (the other parity buffer is kept). */
     void (*on_tick)(const slot_info_t *info,
                     bool new_slot,
                     float sec_since_slot_start,
