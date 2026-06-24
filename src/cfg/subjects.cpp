@@ -42,7 +42,7 @@ void ObserverDelayed::notify_all_delayed() {
 }
 
 Observer* Subject::subscribe(void (*fn)(Subject *, void *), void *user_data) {
-    const std::lock_guard<std::mutex> lock(mutex_subscribe);
+    const std::lock_guard<std::recursive_mutex> lock(mutex_subscribe);
 
     auto observer = new Observer(this, fn, user_data);
     observers.push_back(observer);
@@ -50,7 +50,7 @@ Observer* Subject::subscribe(void (*fn)(Subject *, void *), void *user_data) {
 }
 
 ObserverDelayed *Subject::subscribe_delayed(void (*fn)(Subject *, void *), void *user_data) {
-    const std::lock_guard<std::mutex> lock(mutex_subscribe);
+    const std::lock_guard<std::recursive_mutex> lock(mutex_subscribe);
 
     auto observer = new ObserverDelayed(this, fn, user_data);
     observers.push_back(observer);
@@ -58,6 +58,7 @@ ObserverDelayed *Subject::subscribe_delayed(void (*fn)(Subject *, void *), void 
 }
 
 void Subject::unsubscribe(Observer *observer) {
+    const std::lock_guard<std::recursive_mutex> lock(mutex_subscribe);
     observers.erase(std::find(observers.begin(), observers.end(), observer));
 }
 
@@ -67,6 +68,7 @@ void Subject::set_pause_notify(bool val) {
 
 void Subject::force_paused_notify() {
     if (this->pause_notify && this->changed) {
+        const std::lock_guard<std::recursive_mutex> lock(mutex_subscribe);
         for (auto observer : observers) {
             observer->notify();
         }
@@ -104,6 +106,7 @@ void SubjectT<const char *>::set(const char *data) {
         if (this->pause_notify) {
             this->changed = true;
         } else {
+            const std::lock_guard<std::recursive_mutex> lock(mutex_subscribe);
             for (auto observer : observers) {
                 observer->notify();
             }
