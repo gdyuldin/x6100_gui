@@ -49,8 +49,8 @@ class ObserverDelayed : public Observer {
 };
 
 class Subject {
-    std::mutex mutex_subscribe;
     protected:
+    std::recursive_mutex mutex_subscribe;
     std::list<Observer*> observers;
     data_type type;
     // For grouped notify
@@ -83,6 +83,7 @@ template <typename T> class SubjectT : public Subject {
             if (this->pause_notify) {
                 this->changed = true;
             } else {
+                const std::lock_guard<std::recursive_mutex> lock(this->mutex_subscribe);
                 for (auto observer : observers) {
                     observer->notify();
                 }
