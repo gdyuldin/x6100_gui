@@ -136,8 +136,9 @@ static void destruct_cb();
 static void audio_cb(unsigned int n, float *samples);
 static void rotary_cb(int32_t diff);
 
-/* audio_worker callbacks (run on worker thread). UI mutations must go
- * through scheduler_put() to land on the LVGL task. */
+/* audio_worker callbacks (run on worker thread). Direct LVGL widget
+ * access must go through scheduler_put() to land on the LVGL task.
+ * Subject writes (subject_set_int) are thread-safe and run synchronously. */
 static void on_message_cb(const char *text, int snr, float freq_hz, float time_sec,
                           const slot_info_t *info, void *ctx);
 static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_start,
@@ -264,21 +265,6 @@ static void set_freq_async_cb(void *data) {
 
 static void set_freq_async(uint32_t freq_hz) {
     scheduler_put(set_freq_async_cb, &freq_hz, sizeof(freq_hz));
-}
-
-/* cq_enabled is observed by button-label observers whose list is mutated
- * on the LVGL thread (page switch subscribe/unsubscribe). Setting the
- * subject from the worker thread would iterate that list concurrently,
- * so route the write through the scheduler onto the LVGL task. */
-static void cq_disable_cb(void *data) {
-    (void)data;
-    if (cq_enabled) {
-        subject_set_int(cq_enabled, false);
-    }
-}
-
-static void cq_disable_async(void) {
-    scheduler_put_noargs(cq_disable_cb);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1042,7 +1028,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
         tx_time_slot = !s_info->odd;
         msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
         if (subject_get_int(cq_enabled)) {
-            cq_disable_async();
+            subject_set_int(cq_enabled, false);
         }
     }
     free(old_msg);
@@ -1225,7 +1211,7 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             }
             if (tx_msg.repeats == 0) {
                 if (strncmp(tx_msg.msg, "CQ", 2) == 0) {
-                    cq_disable_async();
+                    subject_set_int(cq_enabled, false);
                 }
                 tx_msg.msg[0] = '\0';
             }
