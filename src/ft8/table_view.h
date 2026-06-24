@@ -72,6 +72,10 @@ lv_obj_t *table_view_obj(void);
 void table_view_set_press_cb(table_view_press_cb_t cb);
 void table_view_set_actions(const table_view_actions_t *actions);
 
+/* When false, consecutive RX slot headers are always appended (never
+ * collapsed in place).  Set from dialog_ft8 based on QSO activity. */
+void table_view_set_header_collapse(bool enable);
+
 /* Clear table + ring pool and show a single "Wait sync" placeholder row. */
 void table_view_reset(void);
 

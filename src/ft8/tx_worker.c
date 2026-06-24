@@ -47,16 +47,16 @@ static float get_correction(void) {
     return correction;
 }
 
-bool tx_worker_run(const char    *tx_text,
-                   int32_t        audio_sample_rate,
-                   float          base_gain_offset,
-                   tx_abort_fn_t  abort_check,
-                   void          *abort_check_ctx) {
+bool tx_worker_run_with_config(const ft8_tx_config_t *tx_cfg) {
+    const char    *tx_text          = tx_cfg->tx_text;
+    float          base_gain_offset = tx_cfg->base_gain_offset;
+    tx_abort_fn_t  abort_check      = tx_cfg->abort_check;
+    void          *abort_check_ctx  = tx_cfg->abort_check_ctx;
     int16_t *samples   = NULL;
     uint32_t n_samples = 0;
 
     if (!ftx_worker_generate_tx_samples(tx_text, SIGNAL_FREQ_HZ,
-                                        (uint32_t)audio_sample_rate,
+                                        (uint32_t)AUDIO_PLAY_RATE,
                                         &samples, &n_samples)) {
         return true; /* nothing to send; not an abort */
     }
