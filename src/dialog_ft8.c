@@ -136,8 +136,9 @@ static void destruct_cb();
 static void audio_cb(unsigned int n, float *samples);
 static void rotary_cb(int32_t diff);
 
-/* audio_worker callbacks (run on worker thread). UI mutations must go
- * through scheduler_put() to land on the LVGL task. */
+/* audio_worker callbacks (run on worker thread). Direct LVGL widget
+ * access must go through scheduler_put() to land on the LVGL task.
+ * Subject writes (subject_set_int) are thread-safe and run synchronously. */
 static void on_message_cb(const char *text, int snr, float freq_hz, float time_sec,
                           const slot_info_t *info, void *ctx);
 static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_start,
