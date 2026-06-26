@@ -100,9 +100,10 @@ static void truncate_oldest(void) {
     lv_obj_scroll_by_bounded(s_table, 0, removed_height, LV_ANIM_OFF);
 }
 
-/* Return true if this cell_data_t matches an RX-header row. */
-static bool is_rx_header(const cell_data_t *cd) {
-    return cd && (cd->cell_type == CELL_RX_INFO);
+/* Empty slot headers are collapsed in place until a real message arrives. */
+static bool is_slot_header(const cell_data_t *cd) {
+    return cd && ((cd->cell_type == CELL_RX_INFO) ||
+                  (cd->cell_type == CELL_TX_INFO));
 }
 
 void table_view_push_ui(const cell_data_t *src) {
@@ -122,12 +123,13 @@ void table_view_push_ui(const cell_data_t *src) {
     lv_table_get_selected_cell(s_table, &selected_row, &selected_col);
     bool scroll = (rows == (uint16_t)(selected_row + 1));
 
-    /* In-place RX-header collapse: replace the last row text instead of
-     * appending another identical "RX ..." marker. */
-    if (is_rx_header(src) && (rows > 0)) {
+    /* In-place slot-header collapse: replace an empty previous slot header
+     * instead of appending timestamp spam. Once a message is appended, the
+     * header is no longer the last row and will be preserved. */
+    if (is_slot_header(src) && (rows > 0)) {
         uint16_t last = (uint16_t)(rows - 1);
         cell_data_t *last_cd = row_cell(last);
-        if (last_cd && is_rx_header(last_cd)) {
+        if (last_cd && is_slot_header(last_cd)) {
             strncpy(last_cd->text, src->text, sizeof(last_cd->text) - 1);
             last_cd->text[sizeof(last_cd->text) - 1] = '\0';
             lv_table_set_cell_value(s_table, last, 0, last_cd->text);
@@ -183,6 +185,7 @@ static void draw_part_begin_cb(lv_event_t *e) {
         switch (cd->cell_type) {
         case CELL_START_QSO:
         case CELL_RX_INFO:
+        case CELL_TX_INFO:
             dsc->label_dsc->align = LV_TEXT_ALIGN_CENTER;
             dsc->rect_dsc->bg_color = lv_color_hex(0x303030);
             break;

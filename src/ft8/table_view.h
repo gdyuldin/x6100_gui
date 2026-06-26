@@ -40,6 +40,7 @@ extern "C" {
 
 typedef enum {
     CELL_RX_INFO = 0,
+    CELL_TX_INFO,
     CELL_START_QSO,
     CELL_RX_MSG,
     CELL_RX_CQ,

@@ -152,7 +152,7 @@ static bool keyboard_cancel_cb();
 static bool keyboard_ok_cb();
 static void keyboard_close();
 
-static void add_info(const char * fmt, ...);
+static void add_slot_info(ft8_cell_type_t cell_type, const char *direction);
 static void add_tx_text(const char * text);
 static bool get_time_slot(struct timespec now, float *time_since_start);
 
@@ -718,6 +718,7 @@ static void on_table_press(const cell_data_t *cell_data) {
     if ((cell_data == NULL) ||
         (cell_data->cell_type == CELL_TX_MSG) ||
         (cell_data->cell_type == CELL_RX_INFO) ||
+        (cell_data->cell_type == CELL_TX_INFO) ||
         (cell_data->cell_type == CELL_START_QSO)
     ) {
         msg_schedule_text_fmt("What should I do about it?");
@@ -831,16 +832,18 @@ static bool tx_should_abort_cb(void *ctx) {
 }
 
 /**
- * Add INFO message to the table
+ * Add RX/TX slot header to the table
  */
-static void add_info(const char * fmt, ...) {
-    va_list     args;
-    cell_data_t  cell_data;
-    cell_data.cell_type = CELL_RX_INFO;
+static void add_slot_info(ft8_cell_type_t cell_type, const char *direction) {
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    struct tm *ts = localtime(&now.tv_sec);
+    if (!ts) return;
 
-    va_start(args, fmt);
-    vsnprintf(cell_data.text, sizeof(cell_data.text), fmt, args);
-    va_end(args);
+    cell_data_t cell_data = {0};
+    cell_data.cell_type = cell_type;
+    snprintf(cell_data.text, sizeof(cell_data.text), "%s %s %02i:%02i:%02i",
+             direction, cfg_digital_label_get(), ts->tm_hour, ts->tm_min, ts->tm_sec);
 
     scheduler_put(table_view_add_msg_cb, &cell_data, sizeof(cell_data_t));
 }
@@ -977,35 +980,32 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
     (void)ctx;
 
     bool have_tx_msg = tx_msg.msg[0] != '\0';
+    bool tx_enabled_now = subject_get_int(tx_enabled);
+    bool tx_slot_pending = have_tx_msg && tx_enabled_now && (tx_time_slot == info->odd);
 
-    if ((sec_since_slot_start < MAX_TX_START_DELAY) && have_tx_msg) {
-        if ((tx_time_slot == info->odd) && subject_get_int(tx_enabled)) {
-            state = TX_PROCESS;
-            add_tx_text(tx_msg.msg);
-            tx_worker_run(tx_msg.msg, AUDIO_PLAY_RATE, base_gain_offset,
-                          tx_should_abort_cb, NULL);
-            state = RX_PROCESS;
-            if (tx_msg.repeats > 0) {
-                tx_msg.repeats--;
-            }
-            if (tx_msg.repeats == 0) {
-                if (strncmp(tx_msg.msg, "CQ", 2) == 0) {
-                    subject_set_int(cq_enabled, false);
-                }
-                tx_msg.msg[0] = '\0';
-            }
-            return;
+    if ((sec_since_slot_start < MAX_TX_START_DELAY) && tx_slot_pending) {
+        state = TX_PROCESS;
+        add_slot_info(CELL_TX_INFO, "TX");
+        add_tx_text(tx_msg.msg);
+        tx_worker_run(tx_msg.msg, AUDIO_PLAY_RATE, base_gain_offset,
+                      tx_should_abort_cb, NULL);
+        state = RX_PROCESS;
+        if (tx_msg.repeats > 0) {
+            tx_msg.repeats--;
         }
+        if (tx_msg.repeats == 0) {
+            if (strncmp(tx_msg.msg, "CQ", 2) == 0) {
+                subject_set_int(cq_enabled, false);
+            }
+            tx_msg.msg[0] = '\0';
+        }
+        return;
     }
 
     if (new_slot) {
         state = RX_PROCESS;
-        if (!have_tx_msg || !subject_get_int(tx_enabled)) {
-            struct timespec now;
-            clock_gettime(CLOCK_REALTIME, &now);
-            struct tm *ts = localtime(&now.tv_sec);
-            add_info("RX %s %02i:%02i:%02i", cfg_digital_label_get(),
-                     ts->tm_hour, ts->tm_min, ts->tm_sec);
+        if (!tx_slot_pending) {
+            add_slot_info(CELL_RX_INFO, "RX");
         }
     }
 }
