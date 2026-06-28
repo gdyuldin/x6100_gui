@@ -16,13 +16,17 @@ enum data_type {
 #define SUBJ_CAST_F(src, dst) SUBJ_CAST(src, dst, float)
 
 #include <mutex>
+#include <shared_mutex>
 #include <algorithm>
 #include <list>
 #include <type_traits>
 #include <thread>
 #include <atomic>
+#include <vector>
 
 class Subject;
+
+typedef void (*observer_cb)(Subject *, void *);
 
 class Observer {
   protected:
@@ -31,39 +35,45 @@ class Observer {
     void *user_data;
 
   public:
-    Observer(Subject *subj, void (*fn)(Subject *, void *), void *user_data)
+    Observer(Subject *subj, observer_cb fn, void *user_data)
         : subj(subj), fn(fn), user_data(user_data) {};
-    virtual ~Observer();
+    virtual ~Observer() = default;
     virtual void notify();
 };
 
 class ObserverDelayed : public Observer {
-    static std::list<ObserverDelayed *> instances;
+    static std::list<ObserverDelayed*> delayed_observers_instances;
+    static std::shared_timed_mutex delayed_observers_mutex;
     std::thread::id                     tid;
     std::atomic<bool>                   changed = false;
 
   public:
-    ObserverDelayed(Subject *subj, void (*fn)(Subject *, void *), void *user_data) : Observer(subj, fn, user_data) {
-        tid = std::this_thread::get_id();
-        instances.push_back(this);
-    };
+    ObserverDelayed(Subject *subj, observer_cb fn, void *user_data);
     ~ObserverDelayed();
     void        notify();
     static void notify_all_delayed();
 };
 
 class Subject {
-    std::mutex mutex_subscribe;
-    protected:
+    // Mutex to protect editing observers list
+    std::shared_timed_mutex mutex_subscribe;
+
+
+  protected:
     std::list<Observer*> observers;
     data_type type;
     // For grouped notify
-    bool pause_notify = false;
-    bool changed = false;
-    public:
+    std::atomic<bool> pause_notify = false;
+    std::atomic<bool> changed = false;
+    void notify();
+
+    // Subject should not be deleted
+    ~Subject() = default;
+
+  public:
     virtual data_type dtype();
-    Observer* subscribe(void (*fn)(Subject *, void *), void *user_data=nullptr);
-    ObserverDelayed* subscribe_delayed(void (*fn)(Subject *, void *), void *user_data=nullptr);
+    Observer* subscribe(observer_cb fn, void *user_data=nullptr);
+    ObserverDelayed* subscribe_delayed(observer_cb fn, void *user_data=nullptr);
     void unsubscribe(Observer *o);
     void set_pause_notify(bool val);
     void force_paused_notify();
@@ -78,21 +88,22 @@ template <typename T> class SubjectT : public Subject {
 
   public:
     SubjectT(T val) : val(val) {};
+
     T get() {
         return val;
     };
+
     void set(T val) {
         if (this->val != val) {
             this->val = val;
             if (this->pause_notify) {
                 this->changed = true;
             } else {
-                for (auto observer : observers) {
-                    observer->notify();
-                }
+                this->notify();
             }
         }
     };
+
     data_type dtype() {
         if (std::is_same_v<T, int32_t>)
             return DTYPE_INT;
@@ -109,7 +120,7 @@ template <> class SubjectT<const char*> : public Subject {
     std::string val;
 
   public:
-    SubjectT(const char* data) : val(data) {};
+    SubjectT<const char*>(const char* data) : val(data) {};
     char* get();
     void set(const char* data);
     data_type dtype() {
@@ -117,11 +128,28 @@ template <> class SubjectT<const char*> : public Subject {
     }
 };
 
+
+class SubjectsUpdateLock {
+  private:
+    std::vector<Subject *> subjects;
+  public:
+    SubjectsUpdateLock(std::initializer_list<Subject *> args);
+    ~SubjectsUpdateLock();
+};
+
+using SubjectInt = SubjectT<int32_t>;
+using SubjectUint64 = SubjectT<uint64_t>;
+using SubjectFloat = SubjectT<float>;
+using SubjectText = SubjectT<const char *>;
+
 #else
+
 
 typedef struct Subject Subject;
 typedef struct Observer Observer;
 typedef struct ObserverDelayed ObserverDelayed;
+
+typedef void (*observer_cb)(Subject *, void *);
 
 #endif
 
@@ -138,7 +166,6 @@ Subject *subject_create_int(int32_t val);
 Subject *subject_create_uint64(uint64_t val);
 Subject *subject_create_float(float val);
 Subject *subject_create_text(const char* val);
-// subject_t subject_create_group(subject_t *subjects, uint8_t count);
 
 int32_t  subject_get_int(Subject *subj);
 uint64_t subject_get_uint64(Subject *subj);
@@ -150,11 +177,11 @@ char    *subject_get_text(Subject *subj);
 /// @param fn observer callback
 /// @param user_data pointer to additional user data
 /// @return observer to remove it from subject
-Observer *subject_add_observer(Subject *subj, void (*fn)(Subject *, void *), void *user_data);
-Observer *subject_add_observer_and_call(Subject *subj, void (*fn)(Subject *, void *), void *user_data);
+Observer *subject_add_observer(Subject *subj, observer_cb fn, void *user_data);
+Observer *subject_add_observer_and_call(Subject *subj, observer_cb fn, void *user_data);
 
-ObserverDelayed *subject_add_delayed_observer(Subject *subj, void (*fn)(Subject *, void *), void *user_data);
-ObserverDelayed *subject_add_delayed_observer_and_call(Subject *subj, void (*fn)(Subject *, void *), void *user_data);
+ObserverDelayed *subject_add_delayed_observer(Subject *subj, observer_cb fn, void *user_data);
+ObserverDelayed *subject_add_delayed_observer_and_call(Subject *subj, observer_cb fn, void *user_data);
 
 enum data_type subject_get_dtype(Subject *subj);
 

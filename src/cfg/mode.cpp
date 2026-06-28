@@ -372,12 +372,11 @@ int32_t cfg_mode_set_bw_filter(int32_t bw) {
         default:
             break;
     }
-    cfg_cur.filter.low->set_pause_notify(true);
-    cfg_cur.filter.high->set_pause_notify(true);
-    subject_set_int(cfg_cur.filter.low, low);
-    subject_set_int(cfg_cur.filter.high, high);
-    cfg_cur.filter.low->force_paused_notify();
-    cfg_cur.filter.high->force_paused_notify();
+    {
+        SubjectsUpdateLock update_lock = {cfg_cur.filter.high, cfg_cur.filter.low};
+        subject_set_int(cfg_cur.filter.low, low);
+        subject_set_int(cfg_cur.filter.high, high);
+    }
     return high - low;
 }
 
@@ -417,9 +416,7 @@ static void on_cur_mode_change(Subject *subj, void *user_data) {
         }
     }
     // Load
-    cfg_cur.filter.low->set_pause_notify(true);
-    cfg_cur.filter.high->set_pause_notify(true);
-    cfg_cur.filter.bw->set_pause_notify(true);
+    SubjectsUpdateLock update_lock = {cfg_cur.filter.low, cfg_cur.filter.high, cfg_cur.filter.bw};
     for (size_t i = 0; i < cfg_mode_size; i++) {
         if (cfg_mode_arr[i].pk != db_mode) {
             cfg_mode_arr[i].dirty->val = ITEM_STATE_LOADING;
@@ -428,9 +425,6 @@ static void on_cur_mode_change(Subject *subj, void *user_data) {
             cfg_mode_arr[i].dirty->val = ITEM_STATE_CLEAN;
         }
     }
-    cfg_cur.filter.low->force_paused_notify();
-    cfg_cur.filter.high->force_paused_notify();
-    cfg_cur.filter.bw->force_paused_notify();
 }
 
 static void on_cur_filter_low_change(Subject *subj, void *user_data) {
@@ -613,12 +607,9 @@ static void update_cw_filters(Subject *subj, void *user_data) {
             low = 0;
         }
         high = low + bw;
-        cfg_cur.filter.high->set_pause_notify(true);
-        cfg_cur.filter.low->set_pause_notify(true);
+        SubjectsUpdateLock update_lock = {cfg_cur.filter.high, cfg_cur.filter.low};
         subject_set_int(cfg_cur.filter.high, high);
         subject_set_int(cfg_cur.filter.low, low);
-        cfg_cur.filter.high->force_paused_notify();
-        cfg_cur.filter.low->force_paused_notify();
     }
 }
 
