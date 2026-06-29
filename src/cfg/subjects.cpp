@@ -10,6 +10,9 @@ extern "C" {
 std::list<ObserverDelayed*> ObserverDelayed::delayed_observers_instances;
 std::mutex ObserverDelayed::delayed_observers_mutex;
 
+Observer::~Observer() {
+    subj->unsubscribe(this);
+}
 
 void Observer::notify() {
     this->fn(subj, user_data);

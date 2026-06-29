@@ -653,7 +653,7 @@ void buttons_load_page(buttons_page_t *page) {
 void buttons_unload_page() {
     cur_page = NULL;
     for (uint8_t i = 0; i < BUTTONS; i++) {
-        disp_btn_clear(disp_btns + i);
+        disp_btn_clear(&disp_btns[i]);
     }
 }
 
@@ -1205,6 +1205,7 @@ static void disp_btn_clear(disp_btn_t *btn) {
     lv_obj_add_flag(btn->mfk_mark, LV_OBJ_FLAG_HIDDEN);
 
     if (btn->data) {
+        // Unbind data from display button
         btn->data->disp_btn = NULL;
         if (btn->data->observer) {
             delete btn->data->observer;

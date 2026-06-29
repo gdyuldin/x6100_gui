@@ -36,7 +36,7 @@ class Observer {
   public:
     Observer(Subject *subj, observer_cb fn, void *user_data)
         : subj(subj), fn(fn), user_data(user_data) {};
-    virtual ~Observer() = default;
+    virtual ~Observer();
     virtual void notify();
 };
 
