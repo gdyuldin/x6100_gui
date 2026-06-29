@@ -5,6 +5,11 @@
 
 #include <stdlib.h>
 
+cfg_transverter_t cfg_transverters[TRANSVERTER_NUM];
+
+static cfg_item_t** cfg_arr;
+static size_t cfg_arr_size = sizeof(cfg_transverters) / sizeof(cfg_item_t);
+
 static sqlite3        *db;
 static sqlite3_stmt   *insert_stmt;
 static sqlite3_stmt   *read_stmt;
@@ -15,8 +20,6 @@ static pthread_mutex_t get_by_freq_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int cfg_transverter_load_item(cfg_item_t *item);
 static int cfg_transverter_save_item(cfg_item_t *item);
-
-cfg_transverter_t cfg_transverters[TRANSVERTER_NUM];
 
 void cfg_transverter_init(sqlite3 *database) {
     db = database;
@@ -44,10 +47,9 @@ void cfg_transverter_init(sqlite3 *database) {
         .shift = {.val = subject_create_int(404000000), .db_name = "shift", .pk = 1},
     };
     /* Load values from table */
-    cfg_item_t *cfg_arr  = (cfg_item_t *)&cfg_transverters;
-    uint32_t    cfg_size = sizeof(cfg_transverters) / sizeof(*cfg_arr);
-    init_items(cfg_arr, cfg_size, cfg_transverter_load_item, cfg_transverter_save_item);
-    load_items_from_db(cfg_arr, cfg_size);
+    cfg_arr = make_params_pointers_array((cfg_item_t *)&cfg_transverters, cfg_arr_size);
+    init_items(cfg_arr, cfg_arr_size, cfg_transverter_load_item, cfg_transverter_save_item);
+    load_items_from_db(cfg_arr, cfg_arr_size);
 }
 
 int32_t cfg_transverter_get_shift(int32_t freq) {

@@ -15,6 +15,10 @@
 #include <math.h>
 #include <string.h>
 
+// Configuration item array for load/save purpose
+static cfg_item_t** cfg_arr;
+static size_t cfg_arr_size = sizeof(cfg_band) / sizeof(cfg_item_t);
+
 static sqlite3      *db;
 static sqlite3_stmt *insert_stmt;
 static sqlite3_stmt *read_stmt;
@@ -132,11 +136,10 @@ void cfg_band_params_init(sqlite3 *database) {
     subject_add_observer(cfg_band.vfo.val, on_vfo_change, NULL);
     subject_add_observer(cfg.band_id.val, on_band_id_change, NULL);
 
+    cfg_arr = make_params_pointers_array((cfg_item_t *)&cfg_band, cfg_arr_size);
     /* Load values from table */
-    cfg_item_t *cfg_arr  = (cfg_item_t *)&cfg_band;
-    uint32_t    cfg_size = sizeof(cfg_band) / sizeof(*cfg_arr);
-    init_items(cfg_arr, cfg_size, cfg_band_params_load_item, cfg_band_params_save_item);
-    load_items_from_db(cfg_arr, cfg_size);
+    init_items(cfg_arr, cfg_arr_size, cfg_band_params_load_item, cfg_band_params_save_item);
+    load_items_from_db(cfg_arr, cfg_arr_size);
 }
 
 
@@ -163,7 +166,7 @@ void cfg_band_set_freq_for_vfo(x6100_vfo_t vfo, int32_t freq) {
             cfg_band_params_save_all();
             cfg_band_params_change_pk(new_band_id);
             if (new_band_id != BAND_UNDEFINED) {
-                cfg_band_params_load_all();
+                cfg_band_params_load_all_except_freq(vfo);
             }
         }
         subject_set_int(cfg.band_id.val, new_band_id);
@@ -368,30 +371,57 @@ uint32_t cfg_band_read_all_bands(band_info_t **results, int32_t *cap) {
 }
 
 void cfg_band_params_save_all() {
-    cfg_item_t *cfg_arr      = (cfg_item_t *)&cfg_band;
-    int32_t     cfg_arr_size = sizeof(cfg_band) / sizeof(*cfg_arr);
-
-    LV_LOG_USER("Save band params for pk=%i", cfg_arr[0].pk);
-    for (size_t i = 0; i < cfg_arr_size; i++) {
-        save_item_to_db(&cfg_arr[i], false);
+    if (cfg_arr) {
+        LV_LOG_USER("Save band params for pk=%i", cfg_arr[0]->pk);
+        for (size_t i = 0; i < cfg_arr_size; i++) {
+            save_item_to_db(cfg_arr[i], false);
+        }
+    } else {
+        LV_LOG_ERROR("cfg_arr is null");
     }
 }
 
 void cfg_band_params_change_pk(int32_t pk) {
-    cfg_item_t *cfg_arr      = (cfg_item_t *)&cfg_band;
-    int32_t     cfg_arr_size = sizeof(cfg_band) / sizeof(*cfg_arr);
-
-    LV_LOG_USER("Set pk=%i for band params", pk);
-    for (size_t i = 0; i < cfg_arr_size; i++) {
-        cfg_arr[i].pk = pk;
+    if (cfg_arr) {
+        LV_LOG_USER("Set pk=%i for band params", pk);
+        for (size_t i = 0; i < cfg_arr_size; i++) {
+            cfg_arr[i]->pk = pk;
+        }
+    } else {
+        LV_LOG_ERROR("cfg_arr is null");
     }
 }
 
 void cfg_band_params_load_all() {
-    cfg_item_t *cfg_arr      = (cfg_item_t *)&cfg_band;
-    int32_t     cfg_arr_size = sizeof(cfg_band) / sizeof(*cfg_arr);
-    LV_LOG_USER("Load band params for pk=%i", cfg_arr[0].pk);
-    load_items_from_db(cfg_arr, cfg_arr_size);
+    if (cfg_arr) {
+        LV_LOG_USER("Load band params for pk=%i", cfg_arr[0]->pk);
+        load_items_from_db(cfg_arr, cfg_arr_size);
+    } else {
+        LV_LOG_ERROR("cfg_arr is null");
+    }
+}
+
+void cfg_band_params_load_all_except_freq(x6100_vfo_t vfo) {
+    if (cfg_arr) {
+        cfg_item_t *filtered_cfg[cfg_arr_size - 1];
+        const char *skip_name;
+        if (vfo == X6100_VFO_A) {
+            skip_name = "vfoa_freq";
+        } else {
+            skip_name = "vfob_freq";
+        }
+        size_t filtered_size = 0;
+        for (size_t i = 0; i < cfg_arr_size; i++) {
+            if (strcmp(cfg_arr[i]->db_name, skip_name) != 0) {
+                filtered_cfg[filtered_size++] = cfg_arr[i];
+            }
+        }
+
+        LV_LOG_USER("Load band params for pk=%i, except %s", filtered_cfg[0]->pk, skip_name);
+        load_items_from_db(filtered_cfg, filtered_size);
+    } else {
+        LV_LOG_ERROR("cfg_arr is null");
+    }
 }
 
 int cfg_band_params_load_item(cfg_item_t *item) {

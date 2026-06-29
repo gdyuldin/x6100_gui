@@ -14,6 +14,9 @@ extern "C" {
     #include <string.h>
 }
 
+// Configuration item array for load/save purpose
+static cfg_item_t** cfg_arr;
+static size_t cfg_arr_size = sizeof(cfg_mode) / sizeof(cfg_item_t);
 
 static sqlite3        *db;
 static sqlite3_stmt   *insert_stmt;
@@ -104,14 +107,12 @@ void cfg_mode_params_init(sqlite3 *database) {
 
     subject_add_observer(cfg_mode.freq_step.val, on_freq_step_change, NULL);
 
-
     subject_add_observer(cfg_mode.zoom.val, on_zoom_change, NULL);
 
+    cfg_arr = make_params_pointers_array((cfg_item_t *)&cfg_mode, cfg_arr_size);
     /* Load values from table */
-    cfg_item_t *cfg_arr  = (cfg_item_t *)&cfg_mode;
-    uint32_t    cfg_size = sizeof(cfg_mode) / sizeof(*cfg_arr);
-    init_items(cfg_arr, cfg_size, cfg_mode_params_load_item, cfg_mode_params_save_item);
-    load_items_from_db(cfg_arr, cfg_size);
+    init_items(cfg_arr, cfg_arr_size, cfg_mode_params_load_item, cfg_mode_params_save_item);
+    load_items_from_db(cfg_arr, cfg_arr_size);
 }
 
 int cfg_mode_params_load_item(cfg_item_t *item) {

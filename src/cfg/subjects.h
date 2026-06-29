@@ -16,7 +16,6 @@ enum data_type {
 #define SUBJ_CAST_F(src, dst) SUBJ_CAST(src, dst, float)
 
 #include <mutex>
-#include <shared_mutex>
 #include <algorithm>
 #include <list>
 #include <type_traits>
@@ -43,7 +42,7 @@ class Observer {
 
 class ObserverDelayed : public Observer {
     static std::list<ObserverDelayed*> delayed_observers_instances;
-    static std::shared_timed_mutex delayed_observers_mutex;
+    static std::mutex delayed_observers_mutex;
     std::thread::id                     tid;
     std::atomic<bool>                   changed = false;
 
@@ -56,7 +55,7 @@ class ObserverDelayed : public Observer {
 
 class Subject {
     // Mutex to protect editing observers list
-    std::shared_timed_mutex mutex_subscribe;
+    std::mutex mutex_subscribe;
 
 
   protected:
@@ -65,9 +64,11 @@ class Subject {
     // For grouped notify
     std::atomic<bool> pause_notify = false;
     std::atomic<bool> changed = false;
+
+    std::atomic<bool> is_notifying = false;
     void notify();
 
-    // Subject should not be deleted
+    // Subject is not designed to be deleted
     ~Subject() = default;
 
   public:
@@ -128,7 +129,9 @@ template <> class SubjectT<const char*> : public Subject {
     }
 };
 
-
+/**
+ * Wrapper for locking (pausing) notifications of the subjects until block end
+ */
 class SubjectsUpdateLock {
   private:
     std::vector<Subject *> subjects;

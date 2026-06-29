@@ -8,7 +8,7 @@ extern "C" {
 }
 
 std::list<ObserverDelayed*> ObserverDelayed::delayed_observers_instances;
-std::shared_timed_mutex ObserverDelayed::delayed_observers_mutex;
+std::mutex ObserverDelayed::delayed_observers_mutex;
 
 
 void Observer::notify() {
@@ -16,13 +16,13 @@ void Observer::notify() {
 };
 
 ObserverDelayed::ObserverDelayed(Subject *subj, observer_cb fn, void *user_data) : Observer(subj, fn, user_data) {
-    const std::unique_lock<std::shared_timed_mutex> lock(delayed_observers_mutex);
+    const std::lock_guard<std::mutex> lock(delayed_observers_mutex);
     tid = std::this_thread::get_id();
     delayed_observers_instances.push_back(this);
 };
 
 ObserverDelayed::~ObserverDelayed() {
-    const std::unique_lock<std::shared_timed_mutex> lock(delayed_observers_mutex);
+    const std::lock_guard<std::mutex> lock(delayed_observers_mutex);
     auto item = std::find(delayed_observers_instances.begin(), delayed_observers_instances.end(), this);
     delayed_observers_instances.erase(item);
 }
@@ -38,7 +38,7 @@ void ObserverDelayed::notify() {
 }
 
 void ObserverDelayed::notify_all_delayed() {
-    const std::shared_lock<std::shared_timed_mutex> lock(delayed_observers_mutex);
+    const std::lock_guard<std::mutex> lock(delayed_observers_mutex);
     for (auto& item: ObserverDelayed::delayed_observers_instances) {
         if (item->changed) {
             item->Observer::notify();
@@ -48,7 +48,7 @@ void ObserverDelayed::notify_all_delayed() {
 }
 
 Observer* Subject::subscribe(observer_cb fn, void *user_data) {
-    const std::unique_lock<std::shared_timed_mutex> lock(mutex_subscribe);
+    const std::lock_guard<std::mutex> lock(mutex_subscribe);
 
     auto observer = new Observer(this, fn, user_data);
     observers.push_back(observer);
@@ -56,7 +56,7 @@ Observer* Subject::subscribe(observer_cb fn, void *user_data) {
 }
 
 ObserverDelayed* Subject::subscribe_delayed(observer_cb fn, void *user_data) {
-    const std::unique_lock<std::shared_timed_mutex> lock(mutex_subscribe);
+    const std::lock_guard<std::mutex> lock(mutex_subscribe);
 
     auto observer = new ObserverDelayed(this, fn, user_data);
     observers.push_back(observer);
@@ -64,7 +64,7 @@ ObserverDelayed* Subject::subscribe_delayed(observer_cb fn, void *user_data) {
 }
 
 void Subject::unsubscribe(Observer *observer) {
-    const std::unique_lock<std::shared_timed_mutex> lock(mutex_subscribe);
+    const std::lock_guard<std::mutex> lock(mutex_subscribe);
     observers.erase(std::find(observers.begin(), observers.end(), observer));
 }
 
@@ -81,10 +81,16 @@ void Subject::force_paused_notify() {
 }
 
 void Subject::notify() {
-    const std::shared_lock<std::shared_timed_mutex> lock(mutex_subscribe);
+    if (is_notifying) {
+        LV_LOG_ERROR("Already notifying: %p", this);
+    }
+    is_notifying = true;
+    const std::lock_guard<std::mutex> lock(mutex_subscribe);
     for (auto& observer : observers) {
         observer->notify();
     }
+    is_notifying = false;
+
 }
 
 data_type Subject::dtype() {

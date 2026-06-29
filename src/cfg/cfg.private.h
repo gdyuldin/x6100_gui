@@ -20,11 +20,16 @@ struct dirty_t {
     pthread_mutex_t   mux;
 };
 
-void init_items(cfg_item_t *cfg_arr, uint32_t count, int (*load)(struct cfg_item_t *item),
+/**
+ * Helper for creating cfg_item_t** array
+ */
+cfg_item_t** make_params_pointers_array(cfg_item_t *start, size_t cnt);
+
+void init_items(cfg_item_t **cfg_arr, uint32_t count, int (*load)(struct cfg_item_t *item),
                 int (*save)(struct cfg_item_t *item));
-int  load_items_from_db(cfg_item_t *cfg_arr, uint32_t count);
+int  load_items_from_db(cfg_item_t **cfg_arr, uint32_t count);
 void save_item_to_db(cfg_item_t *item, bool force);
-void save_items_to_db(cfg_item_t *cfg_arr, uint32_t cfg_size);
+void save_items_to_db(cfg_item_t **cfg_arr, uint32_t cfg_size);
 
 void fill_cfg_item_int(cfg_item_t *item, Subject * val, const char * db_name);
 void fill_cfg_item_uint64(cfg_item_t *item, Subject * val, const char * db_name);
