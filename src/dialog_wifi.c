@@ -41,11 +41,11 @@ static void cell_selected_cb(lv_event_t *e);
 static void ap_table_draw_event_cb(lv_event_t *e);
 
 // button callbacks
-static void wifi_bt_toggle_cb(button_item_t *item);
-static void start_scan_cb(button_item_t *item);
-static void connect_cb(button_item_t *item);
-static void con_change_passwd_cb(button_item_t *item);
-static void con_delete_cb(button_item_t *item);
+static void wifi_bt_toggle_cb(button_data_t *btn_data);
+static void start_scan_cb(button_data_t *btn_data);
+static void connect_cb(button_data_t *btn_data);
+static void con_change_passwd_cb(button_data_t *btn_data);
+static void con_delete_cb(button_data_t *btn_data);
 
 // button label getters
 static const char *wifi_on_off_label_getter();
@@ -68,27 +68,27 @@ static void keyboard_close();
 static void update_status_cb(lv_timer_t *);
 static void wifi_state_changed_cb(void *s, lv_msg_t *m);
 
-static button_item_t btn_on_off = {
+static button_data_t btn_on_off = {
     .type     = BTN_TEXT_FN,
     .label_fn = wifi_on_off_label_getter,
     .press    = wifi_bt_toggle_cb,
 };
-static button_item_t btn_scan = {
+static button_data_t btn_scan = {
     .type     = BTN_TEXT_FN,
     .label_fn = wifi_scan_label_getter,
     .press    = start_scan_cb,
 };
-static button_item_t btn_connect = {
+static button_data_t btn_connect = {
     .type     = BTN_TEXT_FN,
     .label_fn = wifi_connected_label_getter,
     .press    = connect_cb,
 };
-static button_item_t btn_change_passwd = {
+static button_data_t btn_change_passwd = {
     .type     = BTN_TEXT_FN,
     .label_fn = wifi_con_change_passwd_label_getter,
     .press    = con_change_passwd_cb,
 };
-static button_item_t btn_con_delete = {
+static button_data_t btn_con_delete = {
     .type     = BTN_TEXT_FN,
     .label_fn = wifi_con_delete_label_getter,
     .press    = con_delete_cb,
@@ -271,7 +271,7 @@ static void cell_selected_cb(lv_event_t *e) {
 
 /* Buttons callbacks */
 
-static void wifi_bt_toggle_cb(button_item_t *item) {
+static void wifi_bt_toggle_cb(button_data_t *btn_data) {
     if (disable_buttons)
         return;
     if (params.wifi_enabled.x) {
@@ -289,7 +289,7 @@ static void wifi_bt_toggle_cb(button_item_t *item) {
     }
 }
 
-static void start_scan_cb(button_item_t *item) {
+static void start_scan_cb(button_data_t *btn_data) {
     wifi_status_t status;
     if (disable_buttons)
         return;
@@ -304,7 +304,7 @@ static void start_scan_cb(button_item_t *item) {
     }
 }
 
-static void connect_cb(button_item_t *item) {
+static void connect_cb(button_data_t *btn_data) {
     uint16_t row, col;
 
     if (disable_buttons)
@@ -335,7 +335,7 @@ static void connect_cb(button_item_t *item) {
     }
 }
 
-static void con_change_passwd_cb(button_item_t *item) {
+static void con_change_passwd_cb(button_data_t *btn_data) {
     uint16_t    row, col;
     const char *con_id;
 
@@ -358,7 +358,7 @@ static void con_change_passwd_cb(button_item_t *item) {
     }
 }
 
-static void con_delete_cb(button_item_t *item) {
+static void con_delete_cb(button_data_t *btn_data) {
     uint16_t    row, col;
     const char *con_id;
 

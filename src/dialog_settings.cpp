@@ -55,10 +55,10 @@ static void make_ui_page();
 static void make_voice_page();
 static void make_info_page();
 
-static void load_general_page(button_item_t *item);
-static void load_ui_page(button_item_t *item);
-static void load_voice_page(button_item_t *item);
-static void load_info_page(button_item_t *item);
+static void load_general_page(button_data_t *btn_data);
+static void load_ui_page(button_data_t *btn_data);
+static void load_voice_page(button_data_t *btn_data);
+static void load_info_page(button_data_t *btn_data);
 
 static void construct_cb(lv_obj_t *parent);
 static void destruct_cb();
@@ -81,25 +81,25 @@ static lv_obj_t     *sec;
 
 static std::vector<Observer*> observers;
 
-static button_item_t btn_general = {
+static button_data_t btn_general = {
     .type  = BTN_TEXT,
     .label = "General",
     .press = load_general_page,
 };
 
-static button_item_t btn_ui = {
+static button_data_t btn_ui = {
     .type  = BTN_TEXT,
     .label = "Interface",
     .press = load_ui_page,
 };
 
-static button_item_t btn_voice = {
+static button_data_t btn_voice = {
     .type  = BTN_TEXT,
     .label = "Voice",
     .press = load_voice_page,
 };
 
-static button_item_t btn_info = {
+static button_data_t btn_info = {
     .type  = BTN_TEXT,
     .label = "Info",
     .press = load_info_page,
@@ -125,36 +125,36 @@ static dialog_t     dialog = {
 
 dialog_t            *dialog_settings = &dialog;
 
-static void load_general_page(button_item_t *item) {
+static void load_general_page(button_data_t *btn_data) {
     make_general_page();
     for (auto &&btn : btn_page.items) {
         buttons_mark(btn, false);
     }
-    buttons_mark(item, true);
+    buttons_mark(btn_data, true);
 }
 
-static void load_ui_page(button_item_t *item) {
+static void load_ui_page(button_data_t *btn_data) {
     make_ui_page();
     for (auto &&btn : btn_page.items) {
         buttons_mark(btn, false);
     }
-    buttons_mark(item, true);
+    buttons_mark(btn_data, true);
 }
 
-static void load_voice_page(button_item_t *item) {
+static void load_voice_page(button_data_t *btn_data) {
     make_voice_page();
     for (auto &&btn : btn_page.items) {
         buttons_mark(btn, false);
     }
-    buttons_mark(item, true);
+    buttons_mark(btn_data, true);
 }
 
-static void load_info_page(button_item_t *item) {
+static void load_info_page(button_data_t *btn_data) {
     make_info_page();
     for (auto &&btn : btn_page.items) {
         buttons_mark(btn, false);
     }
-    buttons_mark(item, true);
+    buttons_mark(btn_data, true);
 }
 
 /* Shared update */

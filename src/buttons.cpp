@@ -34,9 +34,10 @@ struct _disp_button_t {
     lv_obj_t      *label;
     lv_obj_t      *vol_mark;
     lv_obj_t      *mfk_mark;
-    button_item_t *item;  // Link to button item;
+    button_data_t *data;  // Link to button data;
 };
 
+// Array of display buttons (size BUTTONS)
 static disp_btn_t      disp_btns[BUTTONS];
 static buttons_page_t *cur_page = NULL;
 static std::array<char, CTRL_FAST_ACCESS_LAST> fast_binds;
@@ -45,15 +46,15 @@ static std::array<char, CTRL_LAST> binds;
 static void disp_btn_refresh(disp_btn_t *b);
 static void disp_btn_clear(disp_btn_t *b);
 
-static void button_app_page_cb(button_item_t *item);
-static void button_encoder_update_cb(button_item_t *item);
-static void button_mem_load_cb(button_item_t *item);
+static void button_app_page_cb(button_data_t *data);
+static void button_encoder_update_cb(button_data_t *data);
+static void button_mem_load_cb(button_data_t *data);
 
 static void encoder_binds_change_cb(Subject *subj, void *user_data);
 static void label_update_cb(Subject *subj, void *user_data);
 
-static void button_encoder_hold_update_cb(button_item_t *item);
-static void button_mem_save_cb(button_item_t *item);
+static void button_encoder_hold_update_cb(button_data_t *data);
+static void button_mem_save_cb(button_data_t *data);
 
 // Label getters
 
@@ -114,252 +115,252 @@ static const char * nb_width_label_getter();
 static const char * nr_label_getter();
 static const char * nr_level_label_getter();
 
-static void button_action_cb(button_item_t *item);
+static void button_action_cb(button_data_t *data);
 
 /* Make VOL/MFK button functions */
-static button_item_t make_encoder_btn(const char *name, cfg_ctrl_t data) {
-    return button_item_t{.type            = BTN_TEXT,
+static button_data_t make_encoder_btn(const char *name, cfg_ctrl_t ctrl) {
+    return button_data_t{.type            = BTN_TEXT,
                          .label           = name,
                          .press           = button_encoder_update_cb,
                          .hold            = button_encoder_hold_update_cb,
-                         .data            = data,
+                         .ctrl            = ctrl,
                          .encoder_allowed = true};
 }
 
-static button_item_t make_encoder_btn(const char *(*label_fn)(), cfg_ctrl_t data, Subject **subj = nullptr) {
-    return button_item_t{.type            = BTN_TEXT_FN,
+static button_data_t make_encoder_btn(const char *(*label_fn)(), cfg_ctrl_t ctrl, Subject **subj = nullptr) {
+    return button_data_t{.type            = BTN_TEXT_FN,
                          .label_fn        = label_fn,
                          .press           = button_encoder_update_cb,
                          .hold            = button_encoder_hold_update_cb,
-                         .data            = data,
+                         .ctrl            = ctrl,
                          .encoder_allowed = true,
                          .subj            = subj};
 }
 
 /* Make MEM buttons functions */
-static button_item_t make_mem_btn(const char *name, int32_t data) {
-    return button_item_t{
-        .type = BTN_TEXT, .label = name, .press = button_mem_load_cb, .hold = button_mem_save_cb, .data = data};
+static button_data_t make_mem_btn(const char *name, int32_t ctrl) {
+    return button_data_t{
+        .type = BTN_TEXT, .label = name, .press = button_mem_load_cb, .hold = button_mem_save_cb, .ctrl = ctrl};
 }
 
-static button_item_t make_app_btn(const char *name, press_action_t data) {
-    return button_item_t{.type = BTN_TEXT, .label = name, .press = button_app_page_cb, .hold = nullptr, .data = data};
+static button_data_t make_app_btn(const char *name, press_action_t ctrl) {
+    return button_data_t{.type = BTN_TEXT, .label = name, .press = button_app_page_cb, .hold = nullptr, .ctrl = ctrl};
 }
-static button_item_t make_action_btn(const char *name, press_action_t data) {
-    return button_item_t{.type = BTN_TEXT, .label = name, .press = button_action_cb, .hold = nullptr, .data = data};
+static button_data_t make_action_btn(const char *name, press_action_t ctrl) {
+    return button_data_t{.type = BTN_TEXT, .label = name, .press = button_action_cb, .hold = nullptr, .ctrl = ctrl};
 }
 
-static button_item_t make_page_btn(const char *name, const char *voice) {
-    return button_item_t{
+static button_data_t make_page_btn(const char *name, const char *voice) {
+    return button_data_t{
         .type = BTN_TEXT, .label = name, .press = button_next_page_cb, .hold = button_prev_page_cb, .voice = voice};
 }
 
 /* VOL */
 
-static button_item_t btn_vol = {
+static button_data_t btn_vol = {
     .type            = BTN_TEXT_FN,
     .label_fn        = vol_label_getter,
     .press           = button_encoder_update_cb,
-    .data            = CTRL_VOL,
+    .ctrl            = CTRL_VOL,
     .encoder_allowed = true,
     .subj            = &cfg.vol.val,
 };
 
-static button_item_t btn_sql = make_encoder_btn(sql_label_getter, CTRL_SQL, &cfg.sql.val);
-static button_item_t btn_rfg = make_encoder_btn(rfg_label_getter, CTRL_RFG, &cfg_cur.band->rfg.val);
-static button_item_t btn_tx_pwr = make_encoder_btn(tx_power_label_getter, CTRL_PWR, &cfg.pwr.val);
-static button_item_t btn_flt_low  = make_encoder_btn(filter_low_label_getter, CTRL_FILTER_LOW, &cfg_cur.filter.low);
-static button_item_t btn_flt_high = make_encoder_btn(filter_high_label_getter, CTRL_FILTER_HIGH, &cfg_cur.filter.high);
-static button_item_t btn_flt_bw   = make_encoder_btn(filter_bw_label_getter, CTRL_FILTER_BW, &cfg_cur.filter.bw);
-static button_item_t btn_mic_sel   = make_encoder_btn(mic_sel_label_getter, CTRL_MIC, &cfg.mic.val);
-static button_item_t btn_hmic_gain = make_encoder_btn(h_mic_gain_label_getter, CTRL_HMIC, &cfg.hmic.val);
-static button_item_t btn_imic_hain = make_encoder_btn(i_mic_gain_label_getter, CTRL_IMIC, &cfg.imic.val);
-static button_item_t btn_moni_lvl  = make_encoder_btn(moni_level_label_getter, CTRL_MONI, &cfg.moni.val);
+static button_data_t btn_sql = make_encoder_btn(sql_label_getter, CTRL_SQL, &cfg.sql.val);
+static button_data_t btn_rfg = make_encoder_btn(rfg_label_getter, CTRL_RFG, &cfg_cur.band->rfg.val);
+static button_data_t btn_tx_pwr = make_encoder_btn(tx_power_label_getter, CTRL_PWR, &cfg.pwr.val);
+static button_data_t btn_flt_low  = make_encoder_btn(filter_low_label_getter, CTRL_FILTER_LOW, &cfg_cur.filter.low);
+static button_data_t btn_flt_high = make_encoder_btn(filter_high_label_getter, CTRL_FILTER_HIGH, &cfg_cur.filter.high);
+static button_data_t btn_flt_bw   = make_encoder_btn(filter_bw_label_getter, CTRL_FILTER_BW, &cfg_cur.filter.bw);
+static button_data_t btn_mic_sel   = make_encoder_btn(mic_sel_label_getter, CTRL_MIC, &cfg.mic.val);
+static button_data_t btn_hmic_gain = make_encoder_btn(h_mic_gain_label_getter, CTRL_HMIC, &cfg.hmic.val);
+static button_data_t btn_imic_hain = make_encoder_btn(i_mic_gain_label_getter, CTRL_IMIC, &cfg.imic.val);
+static button_data_t btn_moni_lvl  = make_encoder_btn(moni_level_label_getter, CTRL_MONI, &cfg.moni.val);
 
 /* MFK */
 
-static button_item_t btn_zoom      = make_encoder_btn("Spectrum\nZoom", CTRL_SPECTRUM_FACTOR);
-static button_item_t btn_ant       = make_encoder_btn("Antenna", CTRL_ANT);
-static button_item_t btn_rit       = make_encoder_btn(rit_label_getter, CTRL_RIT, &cfg.rit.val);
-static button_item_t btn_xit       = make_encoder_btn(xit_label_getter, CTRL_XIT, &cfg.xit.val);
-static button_item_t btn_agc_hang  = {.type            = BTN_TEXT_FN,
+static button_data_t btn_zoom      = make_encoder_btn("Spectrum\nZoom", CTRL_SPECTRUM_FACTOR);
+static button_data_t btn_ant       = make_encoder_btn("Antenna", CTRL_ANT);
+static button_data_t btn_rit       = make_encoder_btn(rit_label_getter, CTRL_RIT, &cfg.rit.val);
+static button_data_t btn_xit       = make_encoder_btn(xit_label_getter, CTRL_XIT, &cfg.xit.val);
+static button_data_t btn_agc_hang  = {.type            = BTN_TEXT_FN,
                                       .label_fn        = agc_hang_label_getter,
                                       .press           = controls_toggle_agc_hang,
                                       .hold            = button_encoder_hold_update_cb,
-                                      .data            = CTRL_AGC_HANG,
+                                      .ctrl            = CTRL_AGC_HANG,
                                       .encoder_allowed = true,
                                       .subj            = &cfg.agc_hang.val};
-static button_item_t btn_agc_knee  = make_encoder_btn(agc_knee_label_getter, CTRL_AGC_KNEE, &cfg.agc_knee.val);
-static button_item_t btn_agc_slope = make_encoder_btn(agc_slope_label_getter, CTRL_AGC_SLOPE, &cfg.agc_slope.val);
-static button_item_t btn_comp      = make_encoder_btn(comp_label_getter, CTRL_COMP, &cfg.comp.val);
-static button_item_t btn_if_shift  = make_encoder_btn(if_shift_label_getter, CTRL_IF_SHIFT, &cfg_cur.band->if_shift.val);
+static button_data_t btn_agc_knee  = make_encoder_btn(agc_knee_label_getter, CTRL_AGC_KNEE, &cfg.agc_knee.val);
+static button_data_t btn_agc_slope = make_encoder_btn(agc_slope_label_getter, CTRL_AGC_SLOPE, &cfg.agc_slope.val);
+static button_data_t btn_comp      = make_encoder_btn(comp_label_getter, CTRL_COMP, &cfg.comp.val);
+static button_data_t btn_if_shift  = make_encoder_btn(if_shift_label_getter, CTRL_IF_SHIFT, &cfg_cur.band->if_shift.val);
 
 /* VOX */
-static button_item_t btn_vox_on    = {.type            = BTN_TEXT_FN,
+static button_data_t btn_vox_on    = {.type            = BTN_TEXT_FN,
                                       .label_fn        = vox_on_label_getter,
                                       .press           = controls_toggle_vox,
                                       .hold            = button_encoder_hold_update_cb,
-                                      .data            = CTRL_VOX_ON,
+                                      .ctrl            = CTRL_VOX_ON,
                                       .encoder_allowed = true,
                                       .subj            = &cfg.vox.on.val};
-static button_item_t btn_vox_gain  = make_encoder_btn(vox_gain_label_getter, CTRL_VOX_GAIN, &cfg.vox.gain.val);
-static button_item_t btn_vox_ag    = make_encoder_btn(vox_ag_label_getter, CTRL_VOX_AG, &cfg.vox.ag.val);
-static button_item_t btn_vox_delay = make_encoder_btn(vox_delay_label_getter, CTRL_VOX_DELAY, &cfg.vox.delay.val);
+static button_data_t btn_vox_gain  = make_encoder_btn(vox_gain_label_getter, CTRL_VOX_GAIN, &cfg.vox.gain.val);
+static button_data_t btn_vox_ag    = make_encoder_btn(vox_ag_label_getter, CTRL_VOX_AG, &cfg.vox.ag.val);
+static button_data_t btn_vox_delay = make_encoder_btn(vox_delay_label_getter, CTRL_VOX_DELAY, &cfg.vox.delay.val);
 
 /* MEM */
 
-static button_item_t btn_mem_1 = make_mem_btn("Set 1", 1);
-static button_item_t btn_mem_2 = make_mem_btn("Set 2", 2);
-static button_item_t btn_mem_3 = make_mem_btn("Set 3", 3);
-static button_item_t btn_mem_4 = make_mem_btn("Set 4", 4);
-static button_item_t btn_mem_5 = make_mem_btn("Set 5", 5);
-static button_item_t btn_mem_6 = make_mem_btn("Set 6", 6);
-static button_item_t btn_mem_7 = make_mem_btn("Set 7", 7);
-static button_item_t btn_mem_8 = make_mem_btn("Set 8", 8);
+static button_data_t btn_mem_1 = make_mem_btn("Set 1", 1);
+static button_data_t btn_mem_2 = make_mem_btn("Set 2", 2);
+static button_data_t btn_mem_3 = make_mem_btn("Set 3", 3);
+static button_data_t btn_mem_4 = make_mem_btn("Set 4", 4);
+static button_data_t btn_mem_5 = make_mem_btn("Set 5", 5);
+static button_data_t btn_mem_6 = make_mem_btn("Set 6", 6);
+static button_data_t btn_mem_7 = make_mem_btn("Set 7", 7);
+static button_data_t btn_mem_8 = make_mem_btn("Set 8", 8);
 
 /* CW */
 
-static button_item_t btn_key_speed  = make_encoder_btn(key_speed_label_getter, CTRL_KEY_SPEED, &cfg.key_speed.val);
-static button_item_t btn_key_volume = make_encoder_btn(key_volume_label_getter, CTRL_KEY_VOL, &cfg.key_vol.val);
-static button_item_t btn_key_train  = {.type            = BTN_TEXT_FN,
+static button_data_t btn_key_speed  = make_encoder_btn(key_speed_label_getter, CTRL_KEY_SPEED, &cfg.key_speed.val);
+static button_data_t btn_key_volume = make_encoder_btn(key_volume_label_getter, CTRL_KEY_VOL, &cfg.key_vol.val);
+static button_data_t btn_key_train  = {.type            = BTN_TEXT_FN,
                                        .label_fn        = key_train_label_getter,
                                        .press           = controls_toggle_key_train,
                                        .hold            = button_encoder_hold_update_cb,
-                                       .data            = CTRL_KEY_TRAIN,
+                                       .ctrl            = CTRL_KEY_TRAIN,
                                        .encoder_allowed = true,
                                        .subj            = &cfg.key_train.val};
-static button_item_t btn_key_tone   = make_encoder_btn(key_tone_label_getter, CTRL_KEY_TONE, &cfg.key_tone.val);
+static button_data_t btn_key_tone   = make_encoder_btn(key_tone_label_getter, CTRL_KEY_TONE, &cfg.key_tone.val);
 
-static button_item_t btn_key_mode        = make_encoder_btn(key_mode_label_getter, CTRL_KEY_MODE, &cfg.key_mode.val);
-static button_item_t btn_key_iambic_mode = {.type            = BTN_TEXT_FN,
+static button_data_t btn_key_mode        = make_encoder_btn(key_mode_label_getter, CTRL_KEY_MODE, &cfg.key_mode.val);
+static button_data_t btn_key_iambic_mode = {.type            = BTN_TEXT_FN,
                                             .label_fn        = iambic_mode_label_getter,
                                             .press           = controls_toggle_key_iambic_mode,
                                             .hold            = button_encoder_hold_update_cb,
-                                            .data            = CTRL_IAMBIC_MODE,
+                                            .ctrl            = CTRL_IAMBIC_MODE,
                                             .encoder_allowed = true,
                                             .subj            = &cfg.iambic_mode.val};
-static button_item_t btn_key_qsk_time    = make_encoder_btn(qsk_time_label_getter, CTRL_QSK_TIME, &cfg.qsk_time.val);
-static button_item_t btn_key_ratio       = make_encoder_btn(key_ratio_label_getter, CTRL_KEY_RATIO, &cfg.key_ratio.val);
+static button_data_t btn_key_qsk_time    = make_encoder_btn(qsk_time_label_getter, CTRL_QSK_TIME, &cfg.qsk_time.val);
+static button_data_t btn_key_ratio       = make_encoder_btn(key_ratio_label_getter, CTRL_KEY_RATIO, &cfg.key_ratio.val);
 
-static button_item_t btn_cw_decoder = {.type            = BTN_TEXT_FN,
+static button_data_t btn_cw_decoder = {.type            = BTN_TEXT_FN,
                                        .label_fn        = cw_decoder_label_getter,
                                        .press           = controls_toggle_cw_decoder,
                                        .hold            = button_encoder_hold_update_cb,
-                                       .data            = CTRL_CW_DECODER,
+                                       .ctrl            = CTRL_CW_DECODER,
                                        .encoder_allowed = true,
                                        .subj            = &cfg.cw_decoder.val};
-static button_item_t btn_cw_tuner   = {.type            = BTN_TEXT_FN,
+static button_data_t btn_cw_tuner   = {.type            = BTN_TEXT_FN,
                                        .label_fn        = cw_tuner_label_getter,
                                        .press           = controls_toggle_cw_tuner,
                                        .hold            = button_encoder_hold_update_cb,
-                                       .data            = CTRL_CW_TUNE,
+                                       .ctrl            = CTRL_CW_TUNE,
                                        .encoder_allowed = true,
                                        .subj            = &cfg.cw_tune.val};
-static button_item_t btn_cw_snr = make_encoder_btn(cw_snr_label_getter, CTRL_CW_DECODER_SNR, &cfg.cw_decoder_snr.val);
+static button_data_t btn_cw_snr = make_encoder_btn(cw_snr_label_getter, CTRL_CW_DECODER_SNR, &cfg.cw_decoder_snr.val);
 
-static button_item_t btn_cw_peak_on = {.type            = BTN_TEXT_FN,
+static button_data_t btn_cw_peak_on = {.type            = BTN_TEXT_FN,
                                        .label_fn        = cw_peak_on_label_getter,
                                        .press           = controls_toggle_cw_peak,
                                        .hold            = button_encoder_hold_update_cb,
-                                       .data            = CTRL_CW_PEAK_ON,
+                                       .ctrl            = CTRL_CW_PEAK_ON,
                                        .encoder_allowed = true,
                                        .subj            = &cfg.cw_peak_on.val};
-static button_item_t btn_cw_peak_q = make_encoder_btn(cw_peak_q_label_getter, CTRL_CW_PEAK_Q, &cfg.cw_peak_q.val);
+static button_data_t btn_cw_peak_q = make_encoder_btn(cw_peak_q_label_getter, CTRL_CW_PEAK_Q, &cfg.cw_peak_q.val);
 
-static button_item_t btn_cw_zap = {
-    .type = BTN_TEXT, .label = "CW\nZAP", .press = controls_cw_zap, .hold = NULL, .data = CTRL_CW_ZAP};
+static button_data_t btn_cw_zap = {
+    .type = BTN_TEXT, .label = "CW\nZAP", .press = controls_cw_zap, .hold = NULL, .ctrl = CTRL_CW_ZAP};
 
 /* DSP */
 
-static button_item_t btn_dnf        = {.type            = BTN_TEXT_FN,
+static button_data_t btn_dnf        = {.type            = BTN_TEXT_FN,
                                        .label_fn        = dnf_label_getter,
                                        .press           = controls_toggle_dnf,
                                        .hold            = button_encoder_hold_update_cb,
-                                       .data            = CTRL_DNF,
+                                       .ctrl            = CTRL_DNF,
                                        .encoder_allowed = true,
                                        .subj            = &cfg.dnf.val};
-static button_item_t btn_dnf_center = make_encoder_btn(dnf_center_label_getter, CTRL_DNF_CENTER, &cfg.dnf_center.val);
-static button_item_t btn_dnf_width  = make_encoder_btn(dnf_width_label_getter, CTRL_DNF_WIDTH, &cfg.dnf_width.val);
-static button_item_t btn_dnf_auto   = {.type            = BTN_TEXT_FN,
+static button_data_t btn_dnf_center = make_encoder_btn(dnf_center_label_getter, CTRL_DNF_CENTER, &cfg.dnf_center.val);
+static button_data_t btn_dnf_width  = make_encoder_btn(dnf_width_label_getter, CTRL_DNF_WIDTH, &cfg.dnf_width.val);
+static button_data_t btn_dnf_auto   = {.type            = BTN_TEXT_FN,
                                        .label_fn        = dnf_auto_label_getter,
                                        .press           = controls_toggle_dnf_auto,
                                        .hold            = button_encoder_hold_update_cb,
-                                       .data            = CTRL_DNF_AUTO,
+                                       .ctrl            = CTRL_DNF_AUTO,
                                        .encoder_allowed = true,
                                        .subj            = &cfg.dnf_auto.val};
 
-static button_item_t btn_nb       = {.type            = BTN_TEXT_FN,
+static button_data_t btn_nb       = {.type            = BTN_TEXT_FN,
                                      .label_fn        = nb_label_getter,
                                      .press           = controls_toggle_nb,
                                      .hold            = button_encoder_hold_update_cb,
-                                     .data            = CTRL_NB,
+                                     .ctrl            = CTRL_NB,
                                      .encoder_allowed = true,
                                      .subj            = &cfg.nb.val};
-static button_item_t btn_nb_level = make_encoder_btn(nb_level_label_getter, CTRL_NB_LEVEL, &cfg.nb_level.val);
-static button_item_t btn_nb_width = make_encoder_btn(nb_width_label_getter, CTRL_NB_WIDTH, &cfg.nb_width.val);
+static button_data_t btn_nb_level = make_encoder_btn(nb_level_label_getter, CTRL_NB_LEVEL, &cfg.nb_level.val);
+static button_data_t btn_nb_width = make_encoder_btn(nb_width_label_getter, CTRL_NB_WIDTH, &cfg.nb_width.val);
 
-static button_item_t btn_nr       = {.type            = BTN_TEXT_FN,
+static button_data_t btn_nr       = {.type            = BTN_TEXT_FN,
                                      .label_fn        = nr_label_getter,
                                      .press           = controls_toggle_nr,
                                      .hold            = button_encoder_hold_update_cb,
-                                     .data            = CTRL_NR,
+                                     .ctrl            = CTRL_NR,
                                      .encoder_allowed = true,
                                      .subj            = &cfg.nr.val};
-static button_item_t btn_nr_level = make_encoder_btn(nr_level_label_getter, CTRL_NR_LEVEL, &cfg.nr_level.val);
+static button_data_t btn_nr_level = make_encoder_btn(nr_level_label_getter, CTRL_NR_LEVEL, &cfg.nr_level.val);
 
 /* APP */
 
-static button_item_t btn_rtty = make_app_btn("RTTY", ACTION_APP_RTTY);
-static button_item_t btn_ft8  = make_app_btn("FT8", ACTION_APP_FT8);
-static button_item_t btn_swr  = make_app_btn("SWR\nScan", ACTION_APP_SWRSCAN);
-static button_item_t btn_gps  = make_app_btn("GPS", ACTION_APP_GPS);
+static button_data_t btn_rtty = make_app_btn("RTTY", ACTION_APP_RTTY);
+static button_data_t btn_ft8  = make_app_btn("FT8", ACTION_APP_FT8);
+static button_data_t btn_swr  = make_app_btn("SWR\nScan", ACTION_APP_SWRSCAN);
+static button_data_t btn_gps  = make_app_btn("GPS", ACTION_APP_GPS);
 
-static button_item_t btn_rec      = make_app_btn("Recorder", ACTION_APP_RECORDER);
-static button_item_t btn_qth      = make_action_btn("QTH", ACTION_APP_QTH);
-static button_item_t btn_callsign = make_action_btn("Callsign", ACTION_APP_CALLSIGN);
-static button_item_t btn_settings = make_app_btn("Settings", ACTION_APP_SETTINGS);
+static button_data_t btn_rec      = make_app_btn("Recorder", ACTION_APP_RECORDER);
+static button_data_t btn_qth      = make_action_btn("QTH", ACTION_APP_QTH);
+static button_data_t btn_callsign = make_action_btn("Callsign", ACTION_APP_CALLSIGN);
+static button_data_t btn_settings = make_app_btn("Settings", ACTION_APP_SETTINGS);
 
-static button_item_t  btn_wifi   = make_app_btn("WiFi", ACTION_APP_WIFI);
+static button_data_t  btn_wifi   = make_app_btn("WiFi", ACTION_APP_WIFI);
 
 /* RTTY */
-static button_item_t btn_rtty_p1 = {
+static button_data_t btn_rtty_p1 = {
     .type  = BTN_TEXT,
     .label = "(RTTY 1:1)",
     .press = NULL,
 };
-static button_item_t btn_rtty_rate = {
+static button_data_t btn_rtty_rate = {
     .type  = BTN_TEXT,
     .label = "Rate",
     .press = button_encoder_update_cb,
-    .data  = CTRL_RTTY_RATE,
+    .ctrl  = CTRL_RTTY_RATE,
     .encoder_allowed = true,
 };
-static button_item_t btn_rtty_shift = {
+static button_data_t btn_rtty_shift = {
     .type  = BTN_TEXT,
     .label = "Shift",
     .press = button_encoder_update_cb,
-    .data  = CTRL_RTTY_SHIFT,
+    .ctrl  = CTRL_RTTY_SHIFT,
     .encoder_allowed = true,
 };
-static button_item_t btn_rtty_center = {
+static button_data_t btn_rtty_center = {
     .type  = BTN_TEXT,
     .label = "Center",
     .press = button_encoder_update_cb,
-    .data  = CTRL_RTTY_CENTER,
+    .ctrl  = CTRL_RTTY_CENTER,
     .encoder_allowed = true,
 };
-static button_item_t btn_rtty_reverse = {
+static button_data_t btn_rtty_reverse = {
     .type  = BTN_TEXT,
     .label = "Reverse",
     .press = button_encoder_update_cb,
-    .data  = CTRL_RTTY_REVERSE,
+    .ctrl  = CTRL_RTTY_REVERSE,
     .encoder_allowed = true,
 };
 
 
 /* VOL pages */
-static button_item_t btn_vol_p1 = make_page_btn("(VOL 1:2)", "Volume|page 1");
-static button_item_t btn_vol_p2 = make_page_btn("(VOL 2:2)", "Volume|page 2");
+static button_data_t btn_vol_p1 = make_page_btn("(VOL 1:2)", "Volume|page 1");
+static button_data_t btn_vol_p2 = make_page_btn("(VOL 2:2)", "Volume|page 2");
 
 buttons_page_t buttons_page_vol_1 = {
     {&btn_vol_p1, &btn_vol, &btn_sql, &btn_rfg, &btn_tx_pwr}
@@ -369,10 +370,10 @@ static buttons_page_t page_vol_2 = {
 };
 
 /* MFK pages */
-static button_item_t btn_mfk_p1 = make_page_btn("(MFK 1:4)", "MFK|page 1");
-static button_item_t btn_mfk_p2 = make_page_btn("(MFK 2:4)", "MFK|page 2");
-static button_item_t btn_mfk_p3 = make_page_btn("(MFK 3:4)", "MFK|page 3");
-static button_item_t btn_mfk_p4 = make_page_btn("(MFK 4:4)", "MFK|page 4");
+static button_data_t btn_mfk_p1 = make_page_btn("(MFK 1:4)", "MFK|page 1");
+static button_data_t btn_mfk_p2 = make_page_btn("(MFK 2:4)", "MFK|page 2");
+static button_data_t btn_mfk_p3 = make_page_btn("(MFK 3:4)", "MFK|page 3");
+static button_data_t btn_mfk_p4 = make_page_btn("(MFK 4:4)", "MFK|page 4");
 
 static buttons_page_t page_mfk_1 = {
     {&btn_mfk_p1, &btn_rit, &btn_xit, &btn_zoom, &btn_ant}
@@ -389,8 +390,8 @@ static buttons_page_t page_mfk_4 = {
 
 /* MEM pages */
 
-static button_item_t btn_mem_p1 = make_page_btn("(MEM 1:2)", "Memory|page 1");
-static button_item_t btn_mem_p2 = make_page_btn("(MEM 2:2)", "Memory|page 2");
+static button_data_t btn_mem_p1 = make_page_btn("(MEM 1:2)", "Memory|page 1");
+static button_data_t btn_mem_p2 = make_page_btn("(MEM 2:2)", "Memory|page 2");
 
 static buttons_page_t page_mem_1 = {
     {&btn_mem_p1, &btn_mem_1, &btn_mem_2, &btn_mem_3, &btn_mem_4}
@@ -400,10 +401,10 @@ static buttons_page_t page_mem_2 = {
 };
 
 /* KEY pages */
-static button_item_t btn_key_p1 = make_page_btn("(KEY 1:2)", "Key|page 1");
-static button_item_t btn_key_p2 = make_page_btn("(KEY 2:2)", "Key|page 2");
-static button_item_t btn_cw_p1  = make_page_btn("(CW 1:2)", "CW|page 1");
-static button_item_t btn_cw_p2  = make_page_btn("(CW 2:2)", "CW|page 2");
+static button_data_t btn_key_p1 = make_page_btn("(KEY 1:2)", "Key|page 1");
+static button_data_t btn_key_p2 = make_page_btn("(KEY 2:2)", "Key|page 2");
+static button_data_t btn_cw_p1  = make_page_btn("(CW 1:2)", "CW|page 1");
+static button_data_t btn_cw_p2  = make_page_btn("(CW 2:2)", "CW|page 2");
 
 static buttons_page_t page_key_1 = {
     {&btn_key_p1, &btn_key_speed, &btn_key_volume, &btn_key_train, &btn_key_tone}
@@ -419,9 +420,9 @@ static buttons_page_t page_cw_decoder_2 = {
 };
 
 /* DFN pages */
-static button_item_t btn_dfn_p1 = make_page_btn("(DFN 1:3)", "DNF page");
-static button_item_t btn_dfn_p2 = make_page_btn("(DFN 2:3)", "NB page");
-static button_item_t btn_dfn_p3 = make_page_btn("(DFN 3:3)", "NR page");
+static button_data_t btn_dfn_p1 = make_page_btn("(DFN 1:3)", "DNF page");
+static button_data_t btn_dfn_p2 = make_page_btn("(DFN 2:3)", "NB page");
+static button_data_t btn_dfn_p3 = make_page_btn("(DFN 3:3)", "NR page");
 
 static buttons_page_t page_dfn_1 = {
     {&btn_dfn_p1, &btn_dnf, &btn_dnf_center, &btn_dnf_width, &btn_dnf_auto}
@@ -439,9 +440,9 @@ static buttons_page_t page_dfl_1 = {
 };
 
 /* App pages */
-static button_item_t btn_app_p1 = make_page_btn("(APP 1:3)", "Application|page 1");
-static button_item_t btn_app_p2 = make_page_btn("(APP 2:3)", "Application|page 2");
-static button_item_t btn_app_p3 = make_page_btn("(APP 3:3)", "Application|page 3");
+static button_data_t btn_app_p1 = make_page_btn("(APP 1:3)", "Application|page 1");
+static button_data_t btn_app_p2 = make_page_btn("(APP 2:3)", "Application|page 2");
+static button_data_t btn_app_p3 = make_page_btn("(APP 3:3)", "Application|page 3");
 
 static buttons_page_t page_app_1 = {
     {&btn_app_p1, &btn_rtty, &btn_ft8, &btn_swr, &btn_gps}
@@ -592,41 +593,41 @@ void buttons_init(lv_obj_t *parent) {
     subject_add_delayed_observer_and_call(cfg.encoders_binds.val, encoder_binds_change_cb, NULL);
 }
 
-void buttons_refresh(button_item_t *item) {
-    if (item->disp_btn) {
-        disp_btn_refresh(item->disp_btn);
+void buttons_refresh(button_data_t *data) {
+    if (data->disp_btn) {
+        disp_btn_refresh(data->disp_btn);
     } else {
-        LV_LOG_WARN("Button item label obj is null");
+        LV_LOG_WARN("Button data label obj is null");
     }
 }
 
-void buttons_mark(button_item_t *item, bool val) {
-    if (!item) {
-        LV_LOG_INFO("Button item is null, skip mark");
+void buttons_mark(button_data_t *data, bool val) {
+    if (!data) {
+        LV_LOG_INFO("Button data is null, skip mark");
         return;
     }
-    item->mark = val;
-    if (item->disp_btn) {
-        disp_btn_refresh(item->disp_btn);
+    data->mark = val;
+    if (data->disp_btn) {
+        disp_btn_refresh(data->disp_btn);
     }
 }
 
-void buttons_disabled(button_item_t *item, bool val) {
-    item->disabled = val;
-    if (item->disp_btn) {
-        disp_btn_refresh(item->disp_btn);
+void buttons_disabled(button_data_t *data, bool val) {
+    data->disabled = val;
+    if (data->disp_btn) {
+        disp_btn_refresh(data->disp_btn);
     }
 }
 
-void buttons_load(uint8_t n, button_item_t *item) {
-    button_item_t *prev_item = disp_btns[n].item;
+void buttons_load(uint8_t n, button_data_t *data) {
+    button_data_t *prev_data = disp_btns[n].data;
     disp_btn_clear(disp_btns + n);
 
     lv_obj_t *label = disp_btns[n].label;
-    disp_btns[n].item = item;
-    if (item) {
-        item->disp_btn = disp_btns + n;
-        disp_btn_refresh(item->disp_btn);
+    disp_btns[n].data = data;
+    if (data) {
+        data->disp_btn = disp_btns + n;
+        disp_btn_refresh(data->disp_btn);
     } else {
         lv_label_set_text(label, "");
     }
@@ -656,29 +657,29 @@ void buttons_unload_page() {
     }
 }
 
-void button_next_page_cb(button_item_t *item) {
+void button_next_page_cb(button_data_t *data) {
     buttons_unload_page();
-    buttons_load_page(item->next);
+    buttons_load_page(data->next);
 }
 
-void button_prev_page_cb(button_item_t *item) {
+void button_prev_page_cb(button_data_t *data) {
     buttons_unload_page();
-    buttons_load_page(item->prev);
+    buttons_load_page(data->prev);
 }
 
-static void button_app_page_cb(button_item_t *item) {
-    main_screen_start_app((press_action_t)item->data);
+static void button_app_page_cb(button_data_t *data) {
+    main_screen_start_app((press_action_t)data->ctrl);
 }
 
-static void button_action_cb(button_item_t *item) {
-    main_screen_action((press_action_t)item->data);
+static void button_action_cb(button_data_t *data) {
+    main_screen_action((press_action_t)data->ctrl);
 }
 
 
-static void button_encoder_update_cb(button_item_t *item) {
+static void button_encoder_update_cb(button_data_t *data) {
     // set corresponding encoder
     // if already bind - use corresponding encoder. If no - you default
-    cfg_ctrl_t ctrl = (cfg_ctrl_t)item->data;
+    cfg_ctrl_t ctrl = (cfg_ctrl_t)data->ctrl;
     char *binds = subject_get_text(cfg.encoders_binds.val);
     size_t n_binds = strlen((char *)binds);
 
@@ -715,8 +716,8 @@ static void button_encoder_update_cb(button_item_t *item) {
     free(binds);
 }
 
-static void button_encoder_hold_update_cb(button_item_t *item) {
-    cfg_ctrl_t ctrl = (cfg_ctrl_t)item->data;
+static void button_encoder_hold_update_cb(button_data_t *data) {
+    cfg_ctrl_t ctrl = (cfg_ctrl_t)data->ctrl;
     char *binds = (char *)subject_get_text(cfg.encoders_binds.val);
     size_t n_binds = strlen((char *)binds);
     if (n_binds > ctrl){
@@ -748,35 +749,35 @@ static void button_encoder_hold_update_cb(button_item_t *item) {
     free(binds);
 }
 
-static void button_mem_load_cb(button_item_t *item) {
-    mem_load(item->data);
-    voice_say_text_fmt("Memory %i loaded", item->data);
+static void button_mem_load_cb(button_data_t *data) {
+    mem_load(data->ctrl);
+    voice_say_text_fmt("Memory %i loaded", data->ctrl);
 }
 
-static void button_mem_save_cb(button_item_t *item) {
-    mem_save(item->data);
-    voice_say_text_fmt("Memory %i stored", item->data);
+static void button_mem_save_cb(button_data_t *data) {
+    mem_save(data->ctrl);
+    voice_say_text_fmt("Memory %i stored", data->ctrl);
 }
 
 void buttons_press(uint8_t n, bool hold) {
-    button_item_t *item = disp_btns[n].item;
-    if (item == NULL) {
+    button_data_t *btn_data = disp_btns[n].data;
+    if (btn_data == NULL) {
         LV_LOG_WARN("Button %u is NULL", n);
         return;
     }
-    if (item->disabled) {
-        LV_LOG_USER("Button %s disabled", lv_label_get_text(item->disp_btn->label));
+    if (btn_data->disabled) {
+        LV_LOG_USER("Button %s disabled", lv_label_get_text(btn_data->disp_btn->label));
         return;
     }
     if (hold) {
-        if (item->hold) {
-            item->hold(item);
+        if (btn_data->hold) {
+            btn_data->hold(btn_data);
         } else {
             LV_LOG_USER("Button %u hold action is NULL", n);
         }
     } else {
-        if (item->press) {
-            item->press(item);
+        if (btn_data->press) {
+            btn_data->press(btn_data);
         } else {
             LV_LOG_USER("Button %u press action is NULL", n);
         }
@@ -1092,9 +1093,9 @@ static void encoder_binds_change_cb(Subject *subj, void *user_data) {
 }
 
 static void label_update_cb(Subject *subj, void *user_data) {
-    button_item_t *item = (button_item_t*)user_data;
-    if (item->disp_btn) {
-        lv_label_set_text(item->disp_btn->label, item->label_fn());
+    button_data_t *btn_data = (button_data_t*)user_data;
+    if (btn_data->disp_btn) {
+        lv_label_set_text(btn_data->disp_btn->label, btn_data->label_fn());
     } else {
         LV_LOG_WARN("Can't update label: it's NULL");
     }
@@ -1102,22 +1103,24 @@ static void label_update_cb(Subject *subj, void *user_data) {
 
 
 static void disp_btn_refresh(disp_btn_t *b) {
-    button_item_t *bi = b->item;
-    if (!bi) {
+    button_data_t *btn_data = b->data;
+    if (!btn_data) {
         LV_LOG_WARN("Button has no assigned data");
         return;
     }
 
     /* Label */
 
-    if (bi->type == BTN_TEXT) {
-        lv_label_set_text(b->label, bi->label);
-    } else if (bi->type == BTN_TEXT_FN) {
-        lv_label_set_text(b->label, bi->label_fn());
-        if (bi->subj && *bi->subj) {
-            bi->observer = (*bi->subj)->subscribe_delayed(label_update_cb, bi);
+    if (btn_data->type == BTN_TEXT) {
+        // Copy label
+        lv_label_set_text(b->label, btn_data->label);
+    } else if (btn_data->type == BTN_TEXT_FN) {
+        // Update label with btn_data::label_fn
+        lv_label_set_text(b->label, btn_data->label_fn());
+        if (btn_data->subj && *btn_data->subj) {
+            btn_data->observer = (*btn_data->subj)->subscribe_delayed(label_update_cb, btn_data);
         } else {
-            lv_obj_set_user_data(b->label, (void *)bi->label_fn);
+            lv_obj_set_user_data(b->label, (void *)btn_data->label_fn);
         }
     } else {
         lv_label_set_text(b->label, "");
@@ -1125,7 +1128,7 @@ static void disp_btn_refresh(disp_btn_t *b) {
 
     /* Marked button */
 
-    if (bi->mark) {
+    if (btn_data->mark) {
         lv_obj_add_state(b->parent, LV_STATE_CHECKED);
 
     } else {
@@ -1134,7 +1137,7 @@ static void disp_btn_refresh(disp_btn_t *b) {
 
     /* Disabled button */
 
-    if (bi->disabled) {
+    if (btn_data->disabled) {
         lv_obj_add_state(b->parent, LV_STATE_DISABLED);
 
     } else {
@@ -1143,8 +1146,8 @@ static void disp_btn_refresh(disp_btn_t *b) {
 
     /* Encoder */
 
-    if ((bi->data >= 0) && bi->encoder_allowed) {
-        cfg_ctrl_t ctrl = (cfg_ctrl_t)bi->data;
+    if ((btn_data->ctrl >= 0) && btn_data->encoder_allowed) {
+        cfg_ctrl_t ctrl = (cfg_ctrl_t)btn_data->ctrl;
         encoder_binds_t encoder      = ENCODER_BIND_NONE,
                         fast_encoder = ENCODER_BIND_NONE;
 
@@ -1158,7 +1161,7 @@ static void disp_btn_refresh(disp_btn_t *b) {
         } else {
             lv_obj_clear_state(b->vol_mark, STATE_ASSIGNED);
             lv_obj_clear_state(b->mfk_mark, STATE_ASSIGNED);
-            if ((ctrl < std::size(binds)) && (bi->press == button_encoder_update_cb)) {
+            if ((ctrl < std::size(binds)) && (btn_data->press == button_encoder_update_cb)) {
                 encoder = (encoder_binds_t)binds[ctrl];
             }
         }
@@ -1188,25 +1191,25 @@ static void disp_btn_refresh(disp_btn_t *b) {
 }
 
 
-static void disp_btn_clear(disp_btn_t *b) {
-    lv_obj_t *label = b->label;
+static void disp_btn_clear(disp_btn_t *btn) {
+    lv_obj_t *label = btn->label;
 
     lv_label_set_text(label, "");
     lv_obj_set_user_data(label, NULL);
-    lv_obj_clear_state(b->parent, LV_STATE_CHECKED);
-    lv_obj_clear_state(b->parent, LV_STATE_DISABLED);
+    lv_obj_clear_state(btn->parent, LV_STATE_CHECKED);
+    lv_obj_clear_state(btn->parent, LV_STATE_DISABLED);
 
-    lv_obj_clear_state(b->vol_mark, STATE_ASSIGNED);
-    lv_obj_clear_state(b->mfk_mark, STATE_ASSIGNED);
-    lv_obj_add_flag(b->vol_mark, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(b->mfk_mark, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_state(btn->vol_mark, STATE_ASSIGNED);
+    lv_obj_clear_state(btn->mfk_mark, STATE_ASSIGNED);
+    lv_obj_add_flag(btn->vol_mark, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(btn->mfk_mark, LV_OBJ_FLAG_HIDDEN);
 
-    if (b->item) {
-        b->item->disp_btn = NULL;
-        if (b->item->observer) {
-            delete b->item->observer;
-            b->item->observer = NULL;
+    if (btn->data) {
+        btn->data->disp_btn = NULL;
+        if (btn->data->observer) {
+            delete btn->data->observer;
+            btn->data->observer = NULL;
         }
-        b->item = NULL;
+        btn->data = NULL;
     }
 }

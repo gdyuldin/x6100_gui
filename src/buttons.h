@@ -34,29 +34,29 @@ typedef enum {
 
 typedef struct _disp_button_t disp_btn_t;
 
-typedef struct button_item_t {
+typedef struct button_data_t {
     btn_type_t type;
     union {
         const char *label;
         const char *(*label_fn)();
     };
-    void (*press)(struct button_item_t *);
-    void (*hold)(struct button_item_t *);
+    void (*press)(struct button_data_t *);
+    void (*hold)(struct button_data_t *);
     const char *voice;
     // next/prev page
     struct buttons_page_t *next;
     struct buttons_page_t *prev;
-    int32_t                data;
+    int32_t                ctrl;
     bool                   encoder_allowed;
     disp_btn_t            *disp_btn;
     Subject              **subj;
     Observer              *observer;
     bool                   mark;
     bool                   disabled;
-} button_item_t;
+} button_data_t;
 
 typedef struct buttons_page_t {
-    button_item_t *items[BUTTONS];
+    button_data_t *items[BUTTONS];
 } buttons_page_t;
 
 typedef buttons_page_t *buttons_group_t[];
@@ -80,14 +80,14 @@ extern buttons_group_t buttons_group_msg_cw;
 extern buttons_group_t buttons_group_msg_voice;
 
 void            buttons_init(lv_obj_t *parent);
-void            buttons_refresh(button_item_t *item);
-void            buttons_mark(button_item_t *item, bool val);
-void            buttons_disabled(button_item_t *item, bool val);
-void            buttons_load(uint8_t n, button_item_t *item);
+void            buttons_refresh(button_data_t *data);
+void            buttons_mark(button_data_t *data, bool val);
+void            buttons_disabled(button_data_t *data, bool val);
+void            buttons_load(uint8_t n, button_data_t *data);
 void            buttons_load_page(buttons_page_t *page);
 void            buttons_unload_page();
-void            button_next_page_cb(button_item_t *item);
-void            button_prev_page_cb(button_item_t *item);
+void            button_next_page_cb(button_data_t *data);
+void            button_prev_page_cb(button_data_t *data);
 void            buttons_press(uint8_t n, bool hold);
 void            buttons_load_page_group(buttons_group_t group);
 buttons_page_t *buttons_get_cur_page();

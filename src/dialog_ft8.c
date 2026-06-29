@@ -131,17 +131,17 @@ static const char * tx_call_label_getter();
 static const char * hold_freq_label_getter();
 static const char * auto_label_getter();
 
-static void show_cq_all_cb(struct button_item_t *btn);
-static void mode_ft4_ft8_cb(struct button_item_t *btn);
-static void tx_cq_en_dis_cb(struct button_item_t *btn);
-static void tx_call_en_dis_cb(struct button_item_t *btn);
+static void show_cq_all_cb(struct button_data_t *btn_data);
+static void mode_ft4_ft8_cb(struct button_data_t *btn_data);
+static void tx_cq_en_dis_cb(struct button_data_t *btn_data);
+static void tx_call_en_dis_cb(struct button_data_t *btn_data);
 
-static void hold_tx_freq_cb(struct button_item_t *btn);
-static void mode_auto_cb(struct button_item_t *btn);
-static void cq_modifier_cb(struct button_item_t *btn);
-static void time_sync(struct button_item_t *btn);
+static void hold_tx_freq_cb(struct button_data_t *btn_data);
+static void mode_auto_cb(struct button_data_t *btn_data);
+static void cq_modifier_cb(struct button_data_t *btn_data);
+static void time_sync(struct button_data_t *btn_data);
 
-static void force_save_qso(struct button_item_t *btn);
+static void force_save_qso(struct button_data_t *btn_data);
 
 static void on_table_press(const cell_data_t *cell_data);
 static void on_table_close(void);
@@ -163,20 +163,20 @@ static buttons_page_t btn_page_1;
 static buttons_page_t btn_page_2;
 static buttons_page_t btn_page_3;
 
-static button_item_t button_page_1 = { .type=BTN_TEXT, .label = "(Page: 1:3)", .press = button_next_page_cb, .next=&btn_page_2};
-static button_item_t button_show_cq_all = { .type=BTN_TEXT_FN, .label_fn = cq_all_label_getter, .press = show_cq_all_cb, .subj=&cfg.ft8_show_all.val};
-static button_item_t button_mode_ft4_ft8 = { .type=BTN_TEXT_FN, .label_fn = protocol_label_getter, .press = mode_ft4_ft8_cb, .subj=&cfg.ft8_protocol.val };
-static button_item_t button_tx_cq_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_cq_label_getter, .press = tx_cq_en_dis_cb };
-static button_item_t button_tx_call_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_call_label_getter, .press = tx_call_en_dis_cb};
+static button_data_t button_page_1 = { .type=BTN_TEXT, .label = "(Page: 1:3)", .press = button_next_page_cb, .next=&btn_page_2};
+static button_data_t button_show_cq_all = { .type=BTN_TEXT_FN, .label_fn = cq_all_label_getter, .press = show_cq_all_cb, .subj=&cfg.ft8_show_all.val};
+static button_data_t button_mode_ft4_ft8 = { .type=BTN_TEXT_FN, .label_fn = protocol_label_getter, .press = mode_ft4_ft8_cb, .subj=&cfg.ft8_protocol.val };
+static button_data_t button_tx_cq_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_cq_label_getter, .press = tx_cq_en_dis_cb };
+static button_data_t button_tx_call_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx_call_label_getter, .press = tx_call_en_dis_cb};
 
-static button_item_t button_page_2 = { .type=BTN_TEXT, .label = "(Page: 2:3)", .press = button_next_page_cb, .next=&btn_page_3};
-static button_item_t button_hold_freq = { .type=BTN_TEXT_FN, .label_fn = hold_freq_label_getter, .press = hold_tx_freq_cb, .subj=&cfg.ft8_hold_freq.val };
-static button_item_t button_auto_en_dis = { .type=BTN_TEXT_FN, .label_fn = auto_label_getter, .press = mode_auto_cb, .subj=&cfg.ft8_auto.val };
-static button_item_t button_force_save = { .type=BTN_TEXT, .label = "Force QSO\nsave", .press = force_save_qso };
+static button_data_t button_page_2 = { .type=BTN_TEXT, .label = "(Page: 2:3)", .press = button_next_page_cb, .next=&btn_page_3};
+static button_data_t button_hold_freq = { .type=BTN_TEXT_FN, .label_fn = hold_freq_label_getter, .press = hold_tx_freq_cb, .subj=&cfg.ft8_hold_freq.val };
+static button_data_t button_auto_en_dis = { .type=BTN_TEXT_FN, .label_fn = auto_label_getter, .press = mode_auto_cb, .subj=&cfg.ft8_auto.val };
+static button_data_t button_force_save = { .type=BTN_TEXT, .label = "Force QSO\nsave", .press = force_save_qso };
 
-static button_item_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:3)", .press = button_next_page_cb, .next=&btn_page_1};
-static button_item_t button_cq_mod = { .type=BTN_TEXT, .label = "CQ\nModifier", .press = cq_modifier_cb };
-static button_item_t button_time_sync = { .type=BTN_TEXT, .label = "Time\nSync", .press = time_sync };
+static button_data_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:3)", .press = button_next_page_cb, .next=&btn_page_1};
+static button_data_t button_cq_mod = { .type=BTN_TEXT, .label = "CQ\nModifier", .press = cq_modifier_cb };
+static button_data_t button_time_sync = { .type=BTN_TEXT, .label = "Time\nSync", .press = time_sync };
 
 static buttons_page_t btn_page_1 = {
     {&button_page_1, &button_show_cq_all, &button_mode_ft4_ft8, &button_tx_cq_en_dis, &button_tx_call_en_dis}
@@ -572,12 +572,12 @@ const char *auto_label_getter() {
     return buf;
 }
 
-static void show_cq_all_cb(struct button_item_t *btn) {
+static void show_cq_all_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
     subject_set_int(cfg.ft8_show_all.val, !subject_get_int(cfg.ft8_show_all.val));
 }
 
-static void mode_ft4_ft8_cb(struct button_item_t *btn) {
+static void mode_ft4_ft8_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
 
     ftx_protocol_t proto = subject_get_int(cfg.ft8_protocol.val);
@@ -595,19 +595,19 @@ static void mode_ft4_ft8_cb(struct button_item_t *btn) {
     load_band(0);
 }
 
-static void mode_auto_cb(struct button_item_t *btn) {
+static void mode_auto_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
     bool new_val = !subject_get_int(cfg.ft8_auto.val);
     subject_set_int(cfg.ft8_auto.val, new_val);
     ftx_qso_processor_set_auto(qso_processor, new_val);
 }
 
-static void hold_tx_freq_cb(struct button_item_t *btn) {
+static void hold_tx_freq_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
     subject_set_int(cfg.ft8_hold_freq.val, !subject_get_int(cfg.ft8_hold_freq.val));
 }
 
-static void tx_cq_en_dis_cb(struct button_item_t *btn) {
+static void tx_cq_en_dis_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
 
     if (!subject_get_int(cq_enabled)){
@@ -645,7 +645,7 @@ static void tx_cq_en_dis_cb(struct button_item_t *btn) {
     }
 }
 
-static void tx_call_en_dis_cb(struct button_item_t *btn) {
+static void tx_call_en_dis_cb(struct button_data_t *btn_data) {
     if (disable_buttons)
         return;
 
@@ -668,12 +668,12 @@ static void tx_call_off() {
     subject_set_int(tx_enabled, false);
 }
 
-static void cq_modifier_cb(struct button_item_t *btn) {
+static void cq_modifier_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
     keyboard_open();
 }
 
-static void time_sync(struct button_item_t *btn) {
+static void time_sync(struct button_data_t *btn_data) {
     time_t now = time(NULL);
     uint8_t sec = now % 60;
     float drift, slot_time;
@@ -701,7 +701,7 @@ static void time_sync(struct button_item_t *btn) {
     }
 }
 
-static void force_save_qso(struct button_item_t *btn) {
+static void force_save_qso(struct button_data_t *btn_data) {
     if (ftx_qso_processor_can_save_qso(qso_processor)) {
         ftx_qso_processor_force_save_qso(qso_processor);
     } else {
