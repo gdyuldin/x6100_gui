@@ -40,7 +40,6 @@ extern "C" {
 /* Metadata for the current RX slot passed to worker callbacks. */
 typedef struct {
     bool   odd;
-    bool   answer_generated;
     time_t slot_start;   /* UTC wall-clock at this FT8/FT4 slot boundary */
 } slot_info_t;
 

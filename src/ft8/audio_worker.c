@@ -191,7 +191,7 @@ static void rx_consume_frames(audio_worker_t *w, const slot_info_t *info,
 
 static void *worker_main(void *arg) {
     audio_worker_t *w = (audio_worker_t *)arg;
-    slot_info_t     info = { .odd = false, .answer_generated = false, .slot_start = 0 };
+    slot_info_t     info = { .odd = false, .slot_start = 0 };
     decode_ctx_t    dc   = { .w = w, .info = &info };
 
     while (!atomic_load(&w->stop_req)) {

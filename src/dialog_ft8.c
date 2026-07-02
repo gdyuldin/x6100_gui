@@ -86,6 +86,11 @@ static bool        tx_time_slot;
 
 static ftx_tx_msg_t tx_msg;
 
+#define DECODED_SLOT_MSG_MAX 100
+static ftx_decoded_msg_t decoded_slot_msgs[DECODED_SLOT_MSG_MAX];
+static char              decoded_slot_texts[DECODED_SLOT_MSG_MAX][64];
+static size_t            decoded_slot_msg_count = 0;
+
 /* The lv_table widget is owned by ft8/table_view; expose its handle as
  * `table` so existing fade/group/anim call sites need no rename. */
 #define table (table_view_obj())
@@ -104,7 +109,6 @@ static lv_obj_t *waterfall;
 static audio_worker_t *audio_worker = NULL;
 
 static adif_log         ft8_log;
-static FTxQsoProcessor *qso_processor;
 
 static double cur_lat, cur_lon;
 
@@ -119,11 +123,6 @@ static float             psd_staging[PSD_STAGING_MAX];
 static size_t            psd_staging_len    = 0;
 static bool              psd_flush_pending  = false;
 static pthread_mutex_t   psd_mutex          = PTHREAD_MUTEX_INITIALIZER;
-
-/* Serialises qso_processor (and its Candidate objects) between the audio
- * worker thread (add_rx_text / slot_end) and the LVGL thread (table press,
- * buttons, worker re-init). */
-static pthread_mutex_t   qso_mutex          = PTHREAD_MUTEX_INITIALIZER;
 
 /* Protects the audio_worker pointer: the PulseAudio capture thread feeds
  * samples through audio_cb while the LVGL thread may tear the worker down
@@ -267,45 +266,7 @@ static void set_freq_async(uint32_t freq_hz) {
     scheduler_put(set_freq_async_cb, &freq_hz, sizeof(freq_hz));
 }
 
-/* ------------------------------------------------------------------------ */
-
-static void save_qso(const char *remote_callsign, const char *remote_grid, const int r_snr, const int s_snr) {
-    time_t now = time(NULL);
-
-    char * canonized_call = util_canonize_callsign(remote_callsign, false);
-    qso_log_record_t qso = qso_log_record_create(
-        params.callsign.x,
-        canonized_call,
-        now, subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
-        s_snr, r_snr, subject_get_int(cfg_cur.fg_freq), NULL, NULL,
-        params.qth.x, remote_grid
-    );
-    free(canonized_call);
-
-    adif_add_qso(ft8_log, qso);
-
-    // Save QSO to sqlite log
-    qso_log_record_save(qso);
-
-    if (strlen(remote_grid) >= 4) {
-        double lat, lon, dist;
-        qth_str_to_pos(remote_grid, &lat, &lon);
-        dist = qth_pos_dist(lat, lon, cur_lat, cur_lon);
-        msg_schedule_long_text_fmt("Saved QSO de %s %d %d (%.0f km)", remote_callsign, s_snr, r_snr, dist);
-    } else {
-        msg_schedule_long_text_fmt("Saved QSO de %s %d %d", remote_callsign, s_snr, r_snr);
-    }
-
-    finder_clear_cursor_async();
-}
-
 static void worker_init() {
-    pthread_mutex_lock(&qso_mutex);
-    qso_processor = ftx_qso_processor_init(params.callsign.x, params.qth.x,
-                                           save_qso,
-                                           subject_get_int(cfg.ft8_max_repeats.val));
-    pthread_mutex_unlock(&qso_mutex);
-
     audio_worker_cb_t cb = {
         .on_message  = on_message_cb,
         .on_psd      = on_psd_cb,
@@ -342,14 +303,9 @@ static void worker_done() {
     }
     radio_set_modem(false);
 
-    pthread_mutex_lock(&qso_mutex);
-    if (qso_processor) {
-        ftx_qso_processor_delete(qso_processor);
-        qso_processor = NULL;
-    }
-    pthread_mutex_unlock(&qso_mutex);
     lv_finder_clear_cursor(finder);
     tx_msg.msg[0] = '\0';
+    decoded_slot_msg_count = 0;
 }
 
 /* Table widget lifecycle, draw, scroll and message insertion all live
@@ -651,7 +607,7 @@ static void construct_cb(lv_obj_t *parent) {
     /* Module extension point: init
      * Thread: LVGL / main (construct_cb runs on dialog open).
      * Timing: after worker_init() and base gain setup — audio worker and
-     * qso_processor are ready; module init may register buttons or load files.
+     * worker/table state is ready; modules may register buttons or load files.
      * Example: ft8_log_on_init(); ft8_autodnf_on_init(); */
 }
 
@@ -720,11 +676,6 @@ static void mode_auto_cb(struct button_item_t *btn) {
     if (disable_buttons) return;
     bool new_val = !subject_get_int(cfg.ft8_auto.val);
     subject_set_int(cfg.ft8_auto.val, new_val);
-    pthread_mutex_lock(&qso_mutex);
-    if (qso_processor) {
-        ftx_qso_processor_set_auto(qso_processor, new_val);
-    }
-    pthread_mutex_unlock(&qso_mutex);
 }
 
 static void hold_tx_freq_cb(struct button_item_t *btn) {
@@ -759,11 +710,6 @@ static void tx_cq_en_dis_cb(struct button_item_t *btn) {
             msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
         }
         tx_msg.repeats = subject_get_int(cfg.ft8_max_repeats.val);
-        pthread_mutex_lock(&qso_mutex);
-        if (qso_processor) {
-            ftx_qso_processor_reset(qso_processor);
-        }
-        pthread_mutex_unlock(&qso_mutex);
         lv_finder_clear_cursor(finder);
     } else {
         if (state == TX_PROCESS) {
@@ -831,16 +777,8 @@ static void time_sync(struct button_item_t *btn) {
 }
 
 static void force_save_qso(struct button_item_t *btn) {
-    bool saved = false;
-    pthread_mutex_lock(&qso_mutex);
-    if (qso_processor && ftx_qso_processor_can_save_qso(qso_processor)) {
-        ftx_qso_processor_force_save_qso(qso_processor);
-        saved = true;
-    }
-    pthread_mutex_unlock(&qso_mutex);
-    if (!saved) {
-        msg_schedule_text_fmt("Can't save incomplete QSO");
-    }
+    (void)btn;
+    msg_schedule_text_fmt("No QSO state to save");
 }
 
 static void on_table_press(const cell_data_t *cell_data) {
@@ -859,25 +797,22 @@ static void on_table_press(const cell_data_t *cell_data) {
         return;
     }
 
-    pthread_mutex_lock(&qso_mutex);
-    if (qso_processor) {
-        ftx_qso_processor_start_qso(qso_processor, (ftx_msg_meta_t *)&cell_data->meta, &tx_msg);
-    }
-    pthread_mutex_unlock(&qso_mutex);
-    if (strlen(tx_msg.msg) > 0) {
-        lv_finder_set_cursor(finder, cell_data->meta.freq_hz);
-        if (!subject_get_int(cfg.ft8_hold_freq.val)) {
-            set_freq(cell_data->meta.freq_hz);
-        }
-        tx_time_slot = !cell_data->odd;
-        subject_set_int(tx_enabled, true);
+    ftx_qso_context_t ctx = qso_context();
+    ftx_qso_response_t response;
+    ftx_qso_on_user_message(&ctx,
+                            cell_data->text,
+                            cell_data->meta.local_snr,
+                            cell_data->meta.freq_hz,
+                            cell_data->odd,
+                            &response);
+    if (response.action == FTX_QSO_ACTION_TX) {
+        apply_qso_response(&response, false);
         {
             cell_data_t cd;
             cd.cell_type = CELL_START_QSO;
             snprintf(cd.text, sizeof(cd.text), "Start QSO with %s", cell_data->meta.call_de);
             scheduler_put(table_view_add_msg_cb, &cd, sizeof(cell_data_t));
         }
-        msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
     } else {
         msg_schedule_text_fmt("Invalid message");
         tx_call_off();
@@ -1002,34 +937,72 @@ static void add_tx_text(const char * text) {
     scheduler_put(table_view_add_msg_cb, &cell_data, sizeof(cell_data_t));
 }
 
+static ftx_qso_context_t qso_context(void) {
+    ftx_qso_context_t ctx = {
+        .local_callsign = params.callsign.x,
+        .local_qth      = params.qth.x,
+    };
+    return ctx;
+}
+
+static void decoded_slot_push(const char *text, int snr,
+                              float freq_hz, float time_sec,
+                              bool odd) {
+    if (decoded_slot_msg_count >= DECODED_SLOT_MSG_MAX) return;
+
+    size_t idx = decoded_slot_msg_count++;
+    strncpy(decoded_slot_texts[idx], text, sizeof(decoded_slot_texts[idx]) - 1);
+    decoded_slot_texts[idx][sizeof(decoded_slot_texts[idx]) - 1] = '\0';
+
+    decoded_slot_msgs[idx].text     = decoded_slot_texts[idx];
+    decoded_slot_msgs[idx].snr      = snr;
+    decoded_slot_msgs[idx].freq_hz  = freq_hz;
+    decoded_slot_msgs[idx].time_sec = time_sec;
+    decoded_slot_msgs[idx].odd      = odd;
+}
+
+static void apply_qso_response(const ftx_qso_response_t *response,
+                               bool async_ui) {
+    if (!response || response->action != FTX_QSO_ACTION_TX || response->tx_msg[0] == '\0') return;
+
+    /* One-shot: transmit exactly once in the requested parity slot, then
+     * wait for the next engine response. Retry policy is engine-internal. */
+    strncpy(tx_msg.msg, response->tx_msg, sizeof(tx_msg.msg) - 1);
+    tx_msg.msg[sizeof(tx_msg.msg) - 1] = '\0';
+    tx_msg.repeats = 1;
+    tx_time_slot = response->tx_odd;
+    subject_set_int(tx_enabled, true);
+    if (subject_get_int(cq_enabled)) {
+        subject_set_int(cq_enabled, false);
+    }
+
+    float freq_hz = response->freq_hz;
+    if (freq_hz > 0.0f) {
+        if (async_ui) {
+            finder_set_cursor_async(freq_hz);
+            if (!subject_get_int(cfg.ft8_hold_freq.val)) {
+                set_freq_async(freq_hz);
+            }
+        } else {
+            lv_finder_set_cursor(finder, freq_hz);
+            if (!subject_get_int(cfg.ft8_hold_freq.val)) {
+                set_freq(freq_hz);
+            }
+        }
+    }
+
+    msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
+}
+
 /**
  * Parse and add RX messages to the table
  */
 static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, float freq_hz, float time_sec) {
 
     ftx_msg_meta_t *meta = &last_rx_meta;
-    memset(meta, 0, sizeof(*meta));
-    meta->freq_hz = freq_hz;
-    meta->time_sec = time_sec;
-    char * old_msg = strdup(tx_msg.msg);
-    pthread_mutex_lock(&qso_mutex);
-    if (qso_processor) {
-        ftx_qso_processor_add_rx_text(qso_processor, text, snr, meta, &tx_msg);
-    }
-    pthread_mutex_unlock(&qso_mutex);
-
-    if ((strlen(tx_msg.msg) > 0) && (strcmp(old_msg, tx_msg.msg) != 0)) {
-        finder_set_cursor_async(meta->freq_hz);
-        if (!subject_get_int(cfg.ft8_hold_freq.val)) {
-            set_freq_async(freq_hz);
-        }
-        tx_time_slot = !s_info->odd;
-        msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
-        if (subject_get_int(cq_enabled)) {
-            subject_set_int(cq_enabled, false);
-        }
-    }
-    free(old_msg);
+    ftx_qso_context_t ctx = qso_context();
+    ftx_qso_parse_rx_text(&ctx, text, snr, freq_hz, time_sec, meta);
+    decoded_slot_push(text, snr, freq_hz, time_sec, s_info->odd);
 
     ft8_cell_type_t cell_type;
     if (meta->to_me) {
@@ -1079,7 +1052,7 @@ static void on_message_cb(const char *text, int snr, float freq_hz, float time_s
     /* Module extension point: rx_msg
      * Thread: audio worker (same as this callback).
      * Timing: immediately after add_rx_text() — last_rx_meta and info are
-     * valid; tx_msg may have been updated by qso_processor inside add_rx_text.
+     * valid; decoded_slot_msgs has the raw message for slot-end processing.
      * Constraint: no direct lv_* calls; use scheduler_put / *_async helpers.
      * Example: ft8_log_on_rx_msg(text, snr, freq_hz, time_sec, &last_rx_meta, info); */
 }
@@ -1154,16 +1127,27 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
 
 static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
     (void)ctx;
-    pthread_mutex_lock(&qso_mutex);
-    if (qso_processor) {
-        ftx_qso_processor_start_new_slot(qso_processor);
+
+    /* Always consult the engine, even for a slot with zero decodes: an
+     * empty slot is itself a signal (e.g. the peer stopped sending). */
+    {
+        ftx_qso_context_t qctx = qso_context();
+        ftx_qso_response_t response;
+        ftx_qso_on_decoded_messages(&qctx,
+                                    decoded_slot_msgs,
+                                    decoded_slot_msg_count,
+                                    info->odd,
+                                    &response);
+        if (response.action == FTX_QSO_ACTION_TX) {
+            apply_qso_response(&response, true);
+        }
+        decoded_slot_msg_count = 0;
     }
-    pthread_mutex_unlock(&qso_mutex);
 
     /* Module extension point: slot_end
      * Thread: audio worker (same as this callback).
-     * Timing: at FT8/FT4 slot boundary, after ftx_qso_processor_start_new_slot()
-     * and final decode flush — info describes the slot that just ended.
+     * Timing: at FT8/FT4 slot boundary, after final decode flush — info
+     * describes the slot that just ended.
      * Constraint: no direct lv_* calls; use scheduler_put / *_async helpers.
      * Example: ft8_log_on_slot_end(info); ft8_autosel_on_slot_end(info); */
 }
@@ -1187,31 +1171,41 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
          * Example: ft8_log_on_pre_tx(info); */
         state = TX_PROCESS;
 
+        /* Snapshot the message: the UI thread (on_table_press) may overwrite
+         * tx_msg while the blocking TX below is in flight. */
+        char tx_text[sizeof(tx_msg.msg)];
+        strncpy(tx_text, tx_msg.msg, sizeof(tx_text) - 1);
+        tx_text[sizeof(tx_text) - 1] = '\0';
+
         ft8_tx_config_t tx_cfg = {
-            .tx_text          = tx_msg.msg,
+            .tx_text          = tx_text,
             .base_gain_offset = base_gain_offset,
             .abort_check      = tx_should_abort_cb,
             .abort_check_ctx  = NULL,
         };
         add_slot_info(CELL_TX_INFO, "TX");
-        add_tx_text(tx_msg.msg);
+        add_tx_text(tx_text);
         tx_worker_run_with_config(&tx_cfg);
         state = RX_PROCESS;
 
         /* Module extension point: post_tx
          * Thread: audio worker (on_tick_cb).
          * Timing: immediately after tx_worker_run_with_config() returns —
-         * TX slot finished; tx_msg.repeats not yet decremented.
+         * TX slot finished; CQ repeats have not yet been decremented.
          * Example: ft8_autosel_on_post_tx(info); */
 
-        if (tx_msg.repeats > 0) {
-            tx_msg.repeats--;
-        }
-        if (tx_msg.repeats == 0) {
-            if (strncmp(tx_msg.msg, "CQ", 2) == 0) {
-                subject_set_int(cq_enabled, false);
+        /* Skip repeats bookkeeping if the user queued a different message
+         * during the TX above; it has its own fresh counter. */
+        if (strcmp(tx_text, tx_msg.msg) == 0) {
+            if (tx_msg.repeats > 0) {
+                tx_msg.repeats--;
             }
-            tx_msg.msg[0] = '\0';
+            if (tx_msg.repeats == 0) {
+                if (strncmp(tx_msg.msg, "CQ", 2) == 0) {
+                    subject_set_int(cq_enabled, false);
+                }
+                tx_msg.msg[0] = '\0';
+            }
         }
         return;
     }
