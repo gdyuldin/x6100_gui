@@ -85,6 +85,10 @@ static Subject    *cq_enabled;
 static bool        tx_time_slot;
 
 static ftx_tx_msg_t tx_msg;
+/* True when tx_msg came from the QSO engine: valid for exactly one slot of
+ * tx_time_slot parity, dropped if the TX start window is missed. CQ messages
+ * (engine-external) keep the classic repeat-until-count behaviour instead. */
+static bool         tx_msg_oneshot;
 
 #define DECODED_SLOT_MSG_MAX 100
 static ftx_decoded_msg_t decoded_slot_msgs[DECODED_SLOT_MSG_MAX];
@@ -267,6 +271,8 @@ static void set_freq_async(uint32_t freq_hz) {
 }
 
 static void worker_init() {
+    ftx_qso_reset();
+
     audio_worker_cb_t cb = {
         .on_message  = on_message_cb,
         .on_psd      = on_psd_cb,
@@ -305,6 +311,7 @@ static void worker_done() {
 
     lv_finder_clear_cursor(finder);
     tx_msg.msg[0] = '\0';
+    tx_msg_oneshot = false;
     decoded_slot_msg_count = 0;
 }
 
@@ -644,8 +651,13 @@ const char *hold_freq_label_getter() {
 }
 
 const char *auto_label_getter() {
+    static const char *mode_names[] = {"Off", "SNR", "Dist", "Rnd"};
     static char buf[32];
-    sprintf(buf, "Auto:\n%s", subject_get_int(cfg.ft8_auto.val) ? "Enabled": "Disabled");
+    int mode = subject_get_int(cfg.ft8_auto.val);
+    if ((mode < FTX_QSO_MODE_MANUAL) || (mode > FTX_QSO_MODE_RANDOM)) {
+        mode = FTX_QSO_MODE_MANUAL;
+    }
+    sprintf(buf, "Auto:\n%s", mode_names[mode]);
     return buf;
 }
 
@@ -674,8 +686,13 @@ static void mode_ft4_ft8_cb(struct button_item_t *btn) {
 
 static void mode_auto_cb(struct button_item_t *btn) {
     if (disable_buttons) return;
-    bool new_val = !subject_get_int(cfg.ft8_auto.val);
-    subject_set_int(cfg.ft8_auto.val, new_val);
+    int mode = subject_get_int(cfg.ft8_auto.val);
+    if ((mode < FTX_QSO_MODE_MANUAL) || (mode >= FTX_QSO_MODE_RANDOM)) {
+        mode = FTX_QSO_MODE_MANUAL;
+    } else {
+        mode++;
+    }
+    subject_set_int(cfg.ft8_auto.val, mode);
 }
 
 static void hold_tx_freq_cb(struct button_item_t *btn) {
@@ -695,6 +712,7 @@ static void tx_cq_en_dis_cb(struct button_item_t *btn) {
         subject_set_int(tx_enabled, true);
 
         cq_make_message(params.callsign.x, params.qth.x, params.ft8_cq_modifier.x, tx_msg.msg);
+        tx_msg_oneshot = false;
 
         struct timespec now;
         clock_gettime(CLOCK_REALTIME, &now);
@@ -938,9 +956,14 @@ static void add_tx_text(const char * text) {
 }
 
 static ftx_qso_context_t qso_context(void) {
+    int mode = subject_get_int(cfg.ft8_auto.val);
+    if ((mode < FTX_QSO_MODE_MANUAL) || (mode > FTX_QSO_MODE_RANDOM)) {
+        mode = FTX_QSO_MODE_MANUAL;
+    }
     ftx_qso_context_t ctx = {
         .local_callsign = params.callsign.x,
         .local_qth      = params.qth.x,
+        .mode           = (ftx_qso_mode_t)mode,
     };
     return ctx;
 }
@@ -970,6 +993,7 @@ static void apply_qso_response(const ftx_qso_response_t *response,
     strncpy(tx_msg.msg, response->tx_msg, sizeof(tx_msg.msg) - 1);
     tx_msg.msg[sizeof(tx_msg.msg) - 1] = '\0';
     tx_msg.repeats = 1;
+    tx_msg_oneshot = true;
     tx_time_slot = response->tx_odd;
     subject_set_int(tx_enabled, true);
     if (subject_get_int(cq_enabled)) {
@@ -1138,7 +1162,9 @@ static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
                                     decoded_slot_msg_count,
                                     info->odd,
                                     &response);
-        if (response.action == FTX_QSO_ACTION_TX) {
+        /* Respect the TX Call switch: the user can pause engine-driven
+         * transmissions without leaving the mode. */
+        if ((response.action == FTX_QSO_ACTION_TX) && subject_get_int(tx_enabled)) {
             apply_qso_response(&response, true);
         }
         decoded_slot_msg_count = 0;
@@ -1208,6 +1234,15 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             }
         }
         return;
+    }
+
+    /* Engine responses are one-shot: once the start window of their target
+     * slot has passed, drop the message instead of deferring it. The engine
+     * re-decides at the next slot end (sticky retry regenerates it). */
+    if (tx_msg_oneshot && have_tx_msg && (tx_time_slot == info->odd) &&
+        (sec_since_slot_start >= MAX_TX_START_DELAY)) {
+        tx_msg.msg[0] = '\0';
+        tx_msg_oneshot = false;
     }
 
     if (new_slot) {
