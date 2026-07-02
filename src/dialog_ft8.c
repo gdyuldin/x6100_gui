@@ -168,6 +168,7 @@ static void cq_modifier_cb(struct button_item_t *btn);
 static void time_sync(struct button_item_t *btn);
 
 static void force_save_qso(struct button_item_t *btn);
+static void save_qso_record(const ftx_qso_record_t *rec);
 
 static void on_table_press(const cell_data_t *cell_data);
 static void on_table_close(void);
@@ -796,7 +797,13 @@ static void time_sync(struct button_item_t *btn) {
 
 static void force_save_qso(struct button_item_t *btn) {
     (void)btn;
-    msg_schedule_text_fmt("No QSO state to save");
+    ftx_qso_context_t ctx = qso_context();
+    ftx_qso_record_t record;
+    if (ftx_qso_force_save(&ctx, &record)) {
+        save_qso_record(&record);
+    } else {
+        msg_schedule_text_fmt("No QSO to save");
+    }
 }
 
 static void on_table_press(const cell_data_t *cell_data) {
@@ -823,6 +830,9 @@ static void on_table_press(const cell_data_t *cell_data) {
                             cell_data->meta.freq_hz,
                             cell_data->odd,
                             &response);
+    if (response.save) {
+        save_qso_record(&response.qso);
+    }
     if (response.action == FTX_QSO_ACTION_TX) {
         apply_qso_response(&response, false);
         {
@@ -964,8 +974,41 @@ static ftx_qso_context_t qso_context(void) {
         .local_callsign = params.callsign.x,
         .local_qth      = params.qth.x,
         .mode           = (ftx_qso_mode_t)mode,
+        .now            = time(NULL),
     };
     return ctx;
+}
+
+/* Persist a QSO record produced by the engine (ADIF file + sqlite log).
+ * Safe from both the LVGL and the audio worker threads: UI feedback goes
+ * through the scheduler/async helpers. */
+static void save_qso_record(const ftx_qso_record_t *rec) {
+    char *canonized_call = util_canonize_callsign(rec->call, false);
+    qso_log_record_t qso = qso_log_record_create(
+        params.callsign.x,
+        canonized_call,
+        rec->end_time,
+        subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
+        rec->rst_sent, rec->rst_rcvd, subject_get_int(cfg_cur.fg_freq), NULL, NULL,
+        params.qth.x, rec->grid
+    );
+    free(canonized_call);
+
+    adif_add_qso(ft8_log, qso);
+    qso_log_record_save(qso);
+
+    if (strlen(rec->grid) >= 4) {
+        double lat, lon, dist;
+        qth_str_to_pos(rec->grid, &lat, &lon);
+        dist = qth_pos_dist(lat, lon, cur_lat, cur_lon);
+        msg_schedule_long_text_fmt("Saved QSO de %s %d %d (%.0f km)",
+                                   rec->call, rec->rst_sent, rec->rst_rcvd, dist);
+    } else {
+        msg_schedule_long_text_fmt("Saved QSO de %s %d %d",
+                                   rec->call, rec->rst_sent, rec->rst_rcvd);
+    }
+
+    finder_clear_cursor_async();
 }
 
 static void decoded_slot_push(const char *text, int snr,
@@ -1162,6 +1205,11 @@ static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
                                     decoded_slot_msg_count,
                                     info->odd,
                                     &response);
+        /* A QSO can complete with no TX scheduled (received final 73),
+         * so the save flag is handled independently of the action. */
+        if (response.save) {
+            save_qso_record(&response.qso);
+        }
         /* Respect the TX Call switch: the user can pause engine-driven
          * transmissions without leaving the mode. */
         if ((response.action == FTX_QSO_ACTION_TX) && subject_get_int(tx_enabled)) {

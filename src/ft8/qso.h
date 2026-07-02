@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <time.h>
 
 typedef enum {
     // "CQ CALL ..." or "CQ DX CALL ..." or "CQ EU CALL ..."
@@ -51,6 +52,9 @@ typedef struct {
     const char    *local_callsign;
     const char    *local_qth;
     ftx_qso_mode_t mode;
+    /* Wall clock of the call (the engine itself never reads the clock);
+     * used for QSO start/end timestamps. */
+    time_t         now;
 } ftx_qso_context_t;
 
 typedef struct {
@@ -66,15 +70,33 @@ typedef enum {
     FTX_QSO_ACTION_TX,
 } ftx_qso_action_t;
 
+/* A completed QSO ready for the logbook. rst_sent is the report we actually
+ * transmitted to the peer (matches the peer's log); rst_rcvd is the report
+ * the peer gave us. */
+typedef struct {
+    char   call[13];
+    char   grid[9];
+    int    rst_sent;
+    int    rst_rcvd;
+    time_t start_time;
+    time_t end_time;
+} ftx_qso_record_t;
+
 /* Engine output for exactly one upcoming slot. The caller transmits tx_msg
  * once in the next slot of tx_odd parity and then waits for the next engine
- * response; any retry/repeat policy lives inside the engine. */
+ * response; any retry/repeat policy lives inside the engine.
+ *
+ * `save` is independent of `action`: a QSO can complete on a received
+ * final 73 with no reply scheduled (action stays RX). */
 typedef struct {
     ftx_qso_action_t action;
     bool  tx_odd;
     char  tx_msg[35];
     /* Peer frequency for finder cursor / QSY; 0 = keep current. */
     float freq_hz;
+
+    bool             save;
+    ftx_qso_record_t qso;
 } ftx_qso_response_t;
 
 #ifdef __cplusplus
@@ -110,8 +132,14 @@ void ftx_qso_on_user_message(const ftx_qso_context_t *ctx,
                              bool rx_odd,
                              ftx_qso_response_t *response);
 
+/* Force-save the QSO in progress (manual target, or the last station we
+ * transmitted to). Succeeds only when both reports have been exchanged;
+ * fills `record` and clears the QSO bookkeeping like a normal save. */
+bool ftx_qso_force_save(const ftx_qso_context_t *ctx, ftx_qso_record_t *record);
+
 /* Drop all internal engine state (manual target, sticky retry, auto-mode
- * blacklist and last-call stickiness). Call on FT8 session start. */
+ * blacklist, last-call stickiness and QSO bookkeeping). Call on FT8
+ * session start. */
 void ftx_qso_reset(void);
 
 #ifdef __cplusplus

@@ -42,6 +42,21 @@ struct BlacklistEntry {
     int  count;
 };
 
+/* Per-callsign QSO bookkeeping (shared by manual and auto modes).
+ * grid survives a save; the rest is cleared once the QSO is logged.
+ * rst_sent can only be (re)armed by us actually transmitting a report,
+ * which makes duplicate logging structurally impossible: after a save the
+ * stateless replies to re-sent R+nn are bare RR73s. */
+struct PeerEntry {
+    char   call[13];
+    char   grid[9];
+    bool   has_rst_sent;
+    int    rst_sent;
+    bool   has_rst_rcvd;
+    int    rst_rcvd;
+    time_t qso_start;
+};
+
 struct EngineState {
     /* Manual mode (armed by a user click). */
     bool  has_target;
@@ -58,6 +73,12 @@ struct EngineState {
     BlacklistEntry blacklist[64];
     int            blacklist_len;
     int            blacklist_next;
+
+    /* QSO logging. LRU: front = most recently touched, the tail entry is
+     * evicted when full (a busy band can bring 60+ decodes per slot, so an
+     * active QSO must not be flushed out by a flood of one-shot CQs). */
+    PeerEntry peers[256];
+    int       peers_len;
 };
 
 EngineState g_state;
@@ -179,6 +200,131 @@ void fill_tx(ftx_qso_response_t *response, const char *msg, float freq_hz) {
     copy_str(response->tx_msg, sizeof(response->tx_msg), msg);
 }
 
+/* ---------- QSO bookkeeping (peers dict) --------------------------------- */
+
+/* Look up (or create) the peer's entry and move it to the front, so the
+ * table evicts the least recently touched callsign. */
+PeerEntry *peer_get(const char *call) {
+    PeerEntry *peers = g_state.peers;
+    int cap = (int)(sizeof(g_state.peers) / sizeof(g_state.peers[0]));
+
+    for (int i = 0; i < g_state.peers_len; i++) {
+        if (!ieq(peers[i].call, call)) continue;
+        if (i > 0) {
+            PeerEntry found = peers[i];
+            std::memmove(&peers[1], &peers[0], i * sizeof(PeerEntry));
+            peers[0] = found;
+        }
+        return &peers[0];
+    }
+
+    if (g_state.peers_len < cap) {
+        g_state.peers_len++;
+    }
+    /* Shift everything down one slot; when full this drops the tail. */
+    std::memmove(&peers[1], &peers[0], (g_state.peers_len - 1) * sizeof(PeerEntry));
+    std::memset(&peers[0], 0, sizeof(peers[0]));
+    copy_str(peers[0].call, sizeof(peers[0].call), call);
+    return &peers[0];
+}
+
+/* Clear everything except the grid, which stays useful for later QSOs. */
+void peer_close_qso(PeerEntry *peer) {
+    peer->has_rst_sent = false;
+    peer->has_rst_rcvd = false;
+    peer->rst_sent     = 0;
+    peer->rst_rcvd     = 0;
+    peer->qso_start    = 0;
+}
+
+bool peer_qso_complete(const PeerEntry *peer) {
+    return peer->has_rst_sent && peer->has_rst_rcvd;
+}
+
+void peer_fill_record(const PeerEntry *peer, time_t end_time, ftx_qso_record_t *rec) {
+    std::memset(rec, 0, sizeof(*rec));
+    copy_str(rec->call, sizeof(rec->call), peer->call);
+    copy_str(rec->grid, sizeof(rec->grid), peer->grid);
+    rec->rst_sent   = peer->rst_sent;
+    rec->rst_rcvd   = peer->rst_rcvd;
+    rec->start_time = peer->qso_start ? peer->qso_start : end_time;
+    rec->end_time   = end_time;
+}
+
+/* Try to log the QSO with `peer`; on success fills response->qso and
+ * closes the peer's bookkeeping. */
+void peer_try_save(PeerEntry *peer, time_t end_time, ftx_qso_response_t *response) {
+    if (!peer_qso_complete(peer)) return;
+    peer_fill_record(peer, end_time, &response->qso);
+    response->save = true;
+    peer_close_qso(peer);
+}
+
+/* Every decoded message feeds the peers dict: grids from any message that
+ * carries one, reports from messages addressed to us, and the received
+ * final 73 (the peer may skip RR73) which can complete a QSO with no
+ * reply scheduled. */
+void analyze_rx(const ftx_qso_context_t *ctx,
+                const ftx_decoded_msg_t *msgs,
+                size_t msg_count,
+                ftx_qso_response_t *response) {
+    for (size_t i = 0; i < msg_count; i++) {
+        if (!msgs[i].text) continue;
+
+        ftx_msg_meta_t meta;
+        ftx_qso_parse_rx_text(ctx, msgs[i].text, msgs[i].snr,
+                              msgs[i].freq_hz, msgs[i].time_sec, &meta);
+        if (meta.call_de[0] == '\0') continue;
+        if (ieq(meta.call_de, ctx->local_callsign)) continue;
+
+        PeerEntry *peer = peer_get(meta.call_de);
+        if (meta.grid[0] != '\0') {
+            copy_str(peer->grid, sizeof(peer->grid), meta.grid);
+        }
+        if (!meta.to_me) continue;
+
+        if ((meta.type == FTX_MSG_TYPE_REPORT) || (meta.type == FTX_MSG_TYPE_R_REPORT)) {
+            peer->has_rst_rcvd = true;
+            peer->rst_rcvd     = meta.remote_snr;
+        } else if (meta.type == FTX_MSG_TYPE_73) {
+            peer_try_save(peer, ctx->now, response);
+        }
+    }
+}
+
+/* Bookkeeping attached to every transmitted reply.
+ * - Replying to a CQ (tx1) or grid (tx2) starts a fresh QSO;
+ * - order 3/4 arms rst_sent with the exact value we put on the air;
+ * - our RR73 / 73 completes the QSO when both reports were exchanged.
+ * Sticky retransmits never restart the QSO clock. */
+void emit_candidate(const ftx_qso_context_t *ctx,
+                    const Candidate *cand,
+                    bool sticky,
+                    ftx_qso_response_t *response) {
+    PeerEntry *peer = peer_get(cand->call);
+
+    /* The click entry point bypasses analyze_rx: keep the grid fresh here too. */
+    if (cand->grid[0] != '\0') {
+        copy_str(peer->grid, sizeof(peer->grid), cand->grid);
+    }
+
+    if (!sticky && ((cand->type == FTX_MSG_TYPE_CQ) || (cand->type == FTX_MSG_TYPE_GRID))) {
+        peer->qso_start = ctx->now;
+    } else if (peer->qso_start == 0) {
+        peer->qso_start = ctx->now;
+    }
+
+    if ((cand->order == 3) || (cand->order == 4)) {
+        peer->has_rst_sent = true;
+        peer->rst_sent     = clamp_snr(cand->snr);
+    }
+    if ((cand->order == 5) || (cand->order == 6)) {
+        peer_try_save(peer, ctx->now, response);
+    }
+
+    fill_tx(response, cand->text, cand->freq_hz);
+}
+
 /* ---------- pure reply generator (ft8d compute_tx, one message) --------- */
 
 /* Map one decoded message to at most one reply. Returns false when the
@@ -290,7 +436,7 @@ void manual_reply_real(const ftx_qso_context_t *ctx,
     } else {
         sticky_store(msg->text, msg->snr, msg->freq_hz);
     }
-    fill_tx(response, cand.text, cand.freq_hz);
+    emit_candidate(ctx, &cand, false, response);
 }
 
 void manual_decide(const ftx_qso_context_t *ctx,
@@ -332,7 +478,7 @@ void manual_decide(const ftx_qso_context_t *ctx,
         if (compute_one(ctx, g_state.sticky_text, g_state.sticky_snr,
                         g_state.sticky_freq, &cand)) {
             g_state.sticky_count++;
-            fill_tx(response, cand.text, cand.freq_hz);
+            emit_candidate(ctx, &cand, true, response);
         }
     }
 }
@@ -452,7 +598,7 @@ void auto_decide(const ftx_qso_context_t *ctx,
 
     blacklist_bump(cands[pick].text);
     copy_str(g_state.last_call, sizeof(g_state.last_call), cands[pick].call);
-    fill_tx(response, cands[pick].text, cands[pick].freq_hz);
+    emit_candidate(ctx, &cands[pick], false, response);
 }
 
 void decide(const ftx_qso_context_t *ctx,
@@ -464,6 +610,10 @@ void decide(const ftx_qso_context_t *ctx,
     if (!ctx || !ctx->local_callsign || ctx->local_callsign[0] == '\0' || !response) {
         return;
     }
+    /* Feed the peers dict from every decoded message regardless of mode
+     * (grids, received reports, received final 73). */
+    analyze_rx(ctx, msgs, msg_count, response);
+
     if (ctx->mode == FTX_QSO_MODE_MANUAL) {
         manual_decide(ctx, msgs, msg_count, rx_odd, response);
     } else {
@@ -592,10 +742,34 @@ void ftx_qso_on_user_message(const ftx_qso_context_t *ctx,
             sticky_store(text, snr, freq_hz);
         }
         copy_str(g_state.last_call, sizeof(g_state.last_call), cand.call);
-        fill_tx(response, cand.text, cand.freq_hz);
+        emit_candidate(ctx, &cand, false, response);
     }
 
     pthread_mutex_unlock(&engine_mutex);
+}
+
+bool ftx_qso_force_save(const ftx_qso_context_t *ctx, ftx_qso_record_t *record) {
+    if (!ctx || !record) return false;
+
+    pthread_mutex_lock(&engine_mutex);
+
+    const char *call = g_state.has_target ? g_state.target_call : g_state.last_call;
+    bool saved = false;
+    if (call[0] != '\0') {
+        for (int i = 0; i < g_state.peers_len; i++) {
+            PeerEntry *peer = &g_state.peers[i];
+            if (!ieq(peer->call, call)) continue;
+            if (peer_qso_complete(peer)) {
+                peer_fill_record(peer, ctx->now, record);
+                peer_close_qso(peer);
+                saved = true;
+            }
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&engine_mutex);
+    return saved;
 }
 
 void ftx_qso_reset(void) {

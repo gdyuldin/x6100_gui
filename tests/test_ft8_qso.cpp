@@ -7,12 +7,15 @@
 
 using Catch::Matchers::Equals;
 
+static constexpr time_t TEST_NOW = 1700000000;
+
 static ftx_qso_context_t test_ctx(ftx_qso_mode_t mode = FTX_QSO_MODE_MANUAL) {
     ftx_qso_reset();
     ftx_qso_context_t ctx = {
         .local_callsign = "R2RFE",
         .local_qth      = "LO02rq",
         .mode           = mode,
+        .now            = TEST_NOW,
     };
     return ctx;
 }
@@ -304,6 +307,167 @@ TEST_CASE("Auto mode random picks a valid candidate", "[ft8_qso]") {
     bool ok = (strcmp(response.tx_msg, "EA0DX R2RFE LO02") == 0) ||
               (strcmp(response.tx_msg, "VK5COL R2RFE LO02") == 0);
     REQUIRE(ok);
+}
+
+TEST_CASE("QSO logging", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx();
+    ftx_qso_response_t response;
+
+    SECTION("Answered CQ, our final 73 saves the QSO") {
+        ftx_qso_on_user_message(&ctx, "CQ EA0DX KO12", 9, 1000.0f, true, &response);
+        REQUIRE(!response.save);
+
+        ctx.now = TEST_NOW + 30;
+        slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE R+04"));
+        REQUIRE(!response.save);
+
+        ctx.now = TEST_NOW + 60;
+        slot(&ctx, {make_msg("R2RFE EA0DX RR73", 4)}, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE 73"));
+        REQUIRE(response.save);
+        REQUIRE_THAT(response.qso.call, Equals("EA0DX"));
+        REQUIRE_THAT(response.qso.grid, Equals("KO12"));
+        REQUIRE(response.qso.rst_sent == 4);   /* our R+04 */
+        REQUIRE(response.qso.rst_rcvd == -8);  /* their -08 */
+        REQUIRE(response.qso.start_time == TEST_NOW);
+        REQUIRE(response.qso.end_time == TEST_NOW + 60);
+
+        /* Peer missed the 73 and repeats RR73: reply again, no duplicate log. */
+        slot(&ctx, {make_msg("R2RFE EA0DX RR73", 4)}, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE 73"));
+        REQUIRE(!response.save);
+    }
+
+    SECTION("Called by their grid, our RR73 saves the QSO") {
+        ftx_qso_on_user_message(&ctx, "R2RFE EA0DX KO12", -5, 0.0f, true, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE -05"));
+        REQUIRE(!response.save);
+
+        ctx.now = TEST_NOW + 30;
+        slot(&ctx, {make_msg("R2RFE EA0DX R-11", 4)}, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE RR73"));
+        REQUIRE(response.save);
+        REQUIRE(response.qso.rst_sent == -5);
+        REQUIRE(response.qso.rst_rcvd == -11);
+        REQUIRE(response.qso.start_time == TEST_NOW);
+        REQUIRE(response.qso.end_time == TEST_NOW + 30);
+
+        /* Peer missed our RR73 and resends R-11: bare RR73, no duplicate. */
+        slot(&ctx, {make_msg("R2RFE EA0DX R-11", 4)}, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE RR73"));
+        REQUIRE(!response.save);
+    }
+
+    SECTION("Received direct 73 saves with no TX scheduled") {
+        ftx_qso_on_user_message(&ctx, "CQ EA0DX KO12", 9, 0.0f, true, &response);
+        slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE R+04"));
+
+        /* Peer skips RR73 and closes directly. */
+        ctx.now = TEST_NOW + 45;
+        slot(&ctx, {make_msg("R2RFE EA0DX 73", 4)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_RX);
+        REQUIRE(response.save);
+        REQUIRE_THAT(response.qso.call, Equals("EA0DX"));
+        REQUIRE(response.qso.rst_sent == 4);
+        REQUIRE(response.qso.rst_rcvd == -8);
+        REQUIRE(response.qso.end_time == TEST_NOW + 45);
+    }
+
+    SECTION("No report exchanged means no log") {
+        ftx_qso_on_user_message(&ctx, "R2RFE EA0DX KO12", -5, 0.0f, true, &response);
+        /* Peer gives up and closes without ever sending R-nn. */
+        slot(&ctx, {make_msg("R2RFE EA0DX 73", 4)}, &response);
+        REQUIRE(!response.save);
+    }
+
+    SECTION("Grid survives the save for the next QSO") {
+        ftx_qso_on_user_message(&ctx, "CQ EA0DX KO12", 9, 0.0f, true, &response);
+        slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
+        slot(&ctx, {make_msg("R2RFE EA0DX RR73", 4)}, &response);
+        REQUIRE(response.save);
+
+        /* Second QSO: their CQ carries no grid this time. */
+        ftx_qso_on_user_message(&ctx, "CQ EA0DX", 9, 0.0f, true, &response);
+        slot(&ctx, {make_msg("R2RFE EA0DX -02", 1)}, &response);
+        slot(&ctx, {make_msg("R2RFE EA0DX RR73", 1)}, &response);
+        REQUIRE(response.save);
+        REQUIRE_THAT(response.qso.grid, Equals("KO12"));
+    }
+
+    SECTION("Force save requires both reports") {
+        ftx_qso_record_t record;
+        ftx_qso_on_user_message(&ctx, "CQ EA0DX KO12", 9, 0.0f, true, &response);
+        REQUIRE(!ftx_qso_force_save(&ctx, &record));
+
+        slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
+        REQUIRE(ftx_qso_force_save(&ctx, &record));
+        REQUIRE_THAT(record.call, Equals("EA0DX"));
+        REQUIRE(record.rst_sent == 4);
+        REQUIRE(record.rst_rcvd == -8);
+
+        /* Bookkeeping closed: a second force save has nothing to do. */
+        REQUIRE(!ftx_qso_force_save(&ctx, &record));
+    }
+}
+
+TEST_CASE("Peers table keeps an active QSO alive under a CQ flood (LRU)", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx();
+    ftx_qso_response_t response;
+
+    /* QSO in progress: reports already exchanged. */
+    ftx_qso_on_user_message(&ctx, "CQ EA0DX KO12", 9, 0.0f, true, &response);
+    slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE R+04"));
+
+    /* Flood: 320 distinct callsigns, more than the table capacity. The
+     * target keeps re-sending its report, so its entry stays fresh. */
+    int call_num = 0;
+    for (int s = 0; s < 40; s++) {
+        char texts[8][32];
+        ftx_decoded_msg_t batch[9];
+        for (int i = 0; i < 8; i++) {
+            snprintf(texts[i], sizeof(texts[i]), "CQ T%03dXX KO%02d",
+                     call_num, call_num % 90);
+            batch[i] = make_msg(texts[i], -10);
+            call_num++;
+        }
+        batch[8] = make_msg("R2RFE EA0DX -08", 4);
+        ftx_qso_on_decoded_messages(&ctx, batch, 9, true, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE R+04"));
+    }
+
+    /* The account survived the flood: RR73 still closes with both reports. */
+    slot(&ctx, {make_msg("R2RFE EA0DX RR73", 4)}, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE 73"));
+    REQUIRE(response.save);
+    REQUIRE_THAT(response.qso.call, Equals("EA0DX"));
+    REQUIRE_THAT(response.qso.grid, Equals("KO12"));
+    REQUIRE(response.qso.rst_sent == 4);
+    REQUIRE(response.qso.rst_rcvd == -8);
+}
+
+TEST_CASE("QSO logging in auto mode", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_SNR);
+    ftx_qso_response_t response;
+
+    slot(&ctx, {make_msg("CQ EA0DX KO12", 5)}, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE LO02"));
+
+    slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE R+04"));
+
+    ctx.now = TEST_NOW + 90;
+    slot(&ctx, {make_msg("R2RFE EA0DX RR73", 4)}, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE 73"));
+    REQUIRE(response.save);
+    REQUIRE_THAT(response.qso.call, Equals("EA0DX"));
+    REQUIRE_THAT(response.qso.grid, Equals("KO12"));
+    REQUIRE(response.qso.rst_sent == 4);
+    REQUIRE(response.qso.rst_rcvd == -8);
+    REQUIRE(response.qso.start_time == TEST_NOW);
+    REQUIRE(response.qso.end_time == TEST_NOW + 90);
 }
 
 TEST_CASE("Reset clears the armed target", "[ft8_qso]") {
