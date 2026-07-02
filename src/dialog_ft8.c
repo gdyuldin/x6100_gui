@@ -169,6 +169,8 @@ static void time_sync(struct button_item_t *btn);
 
 static void force_save_qso(struct button_item_t *btn);
 static void save_qso_record(const ftx_qso_record_t *rec);
+static ftx_qso_context_t qso_context(void);
+static void apply_qso_response(const ftx_qso_response_t *response, bool async_ui);
 
 static void on_table_press(const cell_data_t *cell_data);
 static void on_table_close(void);
