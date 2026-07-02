@@ -39,13 +39,15 @@ typedef struct {
 
 /* Engine behaviour selector (the "Auto" button).
  * MANUAL: reply only within the QSO armed by a user click.
- * SNR/DISTANCE/RANDOM: full-auto (ft8d model); the value picks the
- * tie-break used when several candidates share the best QSO progress. */
+ * SNR/DISTANCE/RANDOM/NEW_GRID: full-auto (ft8d model); the value picks the
+ * tie-break used when several candidates share the best QSO progress.
+ * NEW_GRID prefers grids not worked yet, then picks at random. */
 typedef enum {
     FTX_QSO_MODE_MANUAL = 0,
     FTX_QSO_MODE_SNR,
     FTX_QSO_MODE_DISTANCE,
     FTX_QSO_MODE_RANDOM,
+    FTX_QSO_MODE_NEW_GRID,
 } ftx_qso_mode_t;
 
 typedef struct {
@@ -63,6 +65,14 @@ typedef struct {
     float       freq_hz;
     float       time_sec;
     bool        odd;
+    /* Logbook flags filled by the caller (the engine never touches the
+     * database). worked: this station (call + grid tuple) was already
+     * worked on the current band/mode from the current grid — auto modes
+     * won't initiate a new QSO with it (replies to it keep working).
+     * grid_worked: the sender's grid was worked already (unknown grid
+     * counts as worked); drives the NEW_GRID tie-break. */
+    bool        worked;
+    bool        grid_worked;
 } ftx_decoded_msg_t;
 
 typedef enum {

@@ -20,6 +20,8 @@
 #include <stdio.h>
 
 static sqlite3_stmt     *search_callsign_stmt=NULL;
+static sqlite3_stmt     *worked_pair_stmt=NULL;
+static sqlite3_stmt     *worked_grid_stmt=NULL;
 static sqlite3          *db = NULL;
 
 
@@ -268,6 +270,98 @@ qso_log_search_worked_t qso_log_search_worked(const char *callsign, qso_log_mode
     return worked;
 }
 
+
+/* Both worked_* queries fix four dimensions of the tuple (local call,
+ * local grid4, band, mode); grids are compared by their first 4 chars. */
+#define WORKED_TUPLE_SQL \
+    "local_callsign = :lc COLLATE NOCASE " \
+    "AND substr(COALESCE(local_grid,''),1,4) = :lg COLLATE NOCASE " \
+    "AND band = :band AND mode = :mode "
+
+static void bind_worked_tuple(sqlite3_stmt *stmt, const char *local_call,
+                              const char *local_grid4, qso_log_mode_t mode,
+                              qso_log_band_t band) {
+    sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":lc"),
+                      local_call, strlen(local_call), 0);
+    sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":lg"),
+                      local_grid4, strlen(local_grid4), 0);
+    sqlite3_bind_int(stmt, sqlite3_bind_parameter_index(stmt, ":band"), band);
+    sqlite3_bind_int(stmt, sqlite3_bind_parameter_index(stmt, ":mode"), mode);
+}
+
+bool qso_log_worked_pair(const char *local_call, const char *local_grid4,
+                         qso_log_mode_t mode, qso_log_band_t band,
+                         const char *remote_call, const char *remote_grid4)
+{
+    static sqlite3_stmt *stmt = NULL;
+
+    if (!db || !local_call || !remote_call) return false;
+
+    if (!stmt) {
+        int rc = sqlite3_prepare_v3(db,
+            "SELECT 1 FROM qso_log WHERE " WORKED_TUPLE_SQL
+                "AND canonized_remote_callsign = :rc COLLATE NOCASE "
+                /* Empty candidate grid or a logged record without a grid
+                 * falls back to a match by callsign alone (conservative). */
+                "AND (:rg = '' OR COALESCE(remote_grid,'') = '' "
+                    "OR substr(remote_grid,1,4) = :rg COLLATE NOCASE) "
+            "LIMIT 1",
+            -1, SQLITE_PREPARE_PERSISTENT, &stmt, 0);
+        if (rc != SQLITE_OK) {
+            LV_LOG_ERROR("Can't prepare worked_pair query");
+            stmt = NULL;
+            return false;
+        }
+    } else {
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+
+    bind_worked_tuple(stmt, local_call, local_grid4, mode, band);
+
+    char *canonized = util_canonize_callsign(remote_call, true);
+    const char *rc_val = canonized ? canonized : remote_call;
+    sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":rc"),
+                      rc_val, strlen(rc_val), 0);
+    const char *rg = remote_grid4 ? remote_grid4 : "";
+    sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":rg"),
+                      rg, strlen(rg), 0);
+
+    bool worked = (sqlite3_step(stmt) == SQLITE_ROW);
+    free(canonized);
+    return worked;
+}
+
+bool qso_log_worked_grid(const char *local_call, const char *local_grid4,
+                         qso_log_mode_t mode, qso_log_band_t band,
+                         const char *remote_grid4)
+{
+    static sqlite3_stmt *stmt = NULL;
+
+    if (!db || !local_call || !remote_grid4 || remote_grid4[0] == '\0') return false;
+
+    if (!stmt) {
+        int rc = sqlite3_prepare_v3(db,
+            "SELECT 1 FROM qso_log WHERE " WORKED_TUPLE_SQL
+                "AND substr(COALESCE(remote_grid,''),1,4) = :rg COLLATE NOCASE "
+            "LIMIT 1",
+            -1, SQLITE_PREPARE_PERSISTENT, &stmt, 0);
+        if (rc != SQLITE_OK) {
+            LV_LOG_ERROR("Can't prepare worked_grid query");
+            stmt = NULL;
+            return false;
+        }
+    } else {
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+
+    bind_worked_tuple(stmt, local_call, local_grid4, mode, band);
+    sqlite3_bind_text(stmt, sqlite3_bind_parameter_index(stmt, ":rg"),
+                      remote_grid4, strlen(remote_grid4), 0);
+
+    return sqlite3_step(stmt) == SQLITE_ROW;
+}
 
 static void * import_adif_thread(void* args) {
 

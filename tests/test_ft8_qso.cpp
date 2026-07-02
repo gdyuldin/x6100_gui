@@ -21,13 +21,16 @@ static ftx_qso_context_t test_ctx(ftx_qso_mode_t mode = FTX_QSO_MODE_MANUAL) {
 }
 
 static ftx_decoded_msg_t make_msg(const char *text, int snr = 0,
-                                  float freq_hz = 0.0f, bool odd = true) {
+                                  float freq_hz = 0.0f, bool odd = true,
+                                  bool worked = false, bool grid_worked = false) {
     ftx_decoded_msg_t msg = {
-        .text     = text,
-        .snr      = snr,
-        .freq_hz  = freq_hz,
-        .time_sec = 0.0f,
-        .odd      = odd,
+        .text        = text,
+        .snr         = snr,
+        .freq_hz     = freq_hz,
+        .time_sec    = 0.0f,
+        .odd         = odd,
+        .worked      = worked,
+        .grid_worked = grid_worked,
     };
     return msg;
 }
@@ -294,6 +297,65 @@ TEST_CASE("Auto mode distance", "[ft8_qso]") {
                     make_msg("CQ VK5COL", 10)}, &response);
         REQUIRE(response.action == FTX_QSO_ACTION_TX);
         REQUIRE_THAT(response.tx_msg, Equals("VK5COL R2RFE LO02"));
+    }
+}
+
+TEST_CASE("Auto modes never initiate with a worked station", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_SNR);
+    ftx_qso_response_t response;
+
+    SECTION("Worked CQ is not answered") {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", 5, 0.0f, true, true)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_RX);
+    }
+
+    SECTION("Unworked CQ beats a louder worked one") {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", 20, 0.0f, true, true),
+                    make_msg("CQ VK5COL PF84", -10)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        REQUIRE_THAT(response.tx_msg, Equals("VK5COL R2RFE LO02"));
+    }
+
+    SECTION("Worked tail-end is not initiated") {
+        slot(&ctx, {make_msg("JA1XYZ EA0DX RR73", 5, 0.0f, true, true)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_RX);
+    }
+
+    SECTION("A worked station calling me still gets replies") {
+        slot(&ctx, {make_msg("R2RFE EA0DX -08", 4, 0.0f, true, true)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE R+04"));
+    }
+}
+
+TEST_CASE("Auto mode new grid", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_NEW_GRID);
+    ftx_qso_response_t response;
+
+    SECTION("A new grid beats a louder worked grid") {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", 20, 0.0f, true, false, true),
+                    make_msg("CQ VK5COL PF84", -20, 0.0f, true, false, false)},
+             &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        REQUIRE_THAT(response.tx_msg, Equals("VK5COL R2RFE LO02"));
+    }
+
+    SECTION("All grids worked: preference degrades to a random pick") {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", 5, 0.0f, true, false, true),
+                    make_msg("CQ VK5COL PF84", 5, 0.0f, true, false, true)},
+             &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        bool ok = (strcmp(response.tx_msg, "EA0DX R2RFE LO02") == 0) ||
+                  (strcmp(response.tx_msg, "VK5COL R2RFE LO02") == 0);
+        REQUIRE(ok);
+    }
+
+    SECTION("QSO progress still beats the grid preference") {
+        slot(&ctx, {make_msg("R2RFE EA0DX R-05", 4, 0.0f, true, false, true),
+                    make_msg("CQ VK5COL PF84", 20, 0.0f, true, false, false)},
+             &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE RR73"));
     }
 }
 

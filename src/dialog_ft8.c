@@ -652,10 +652,10 @@ const char *hold_freq_label_getter() {
 }
 
 const char *auto_label_getter() {
-    static const char *mode_names[] = {"Off", "SNR", "Dist", "Rnd"};
+    static const char *mode_names[] = {"Off", "SNR", "Dist", "Rnd", "Grid"};
     static char buf[32];
     int mode = subject_get_int(cfg.ft8_auto.val);
-    if ((mode < FTX_QSO_MODE_MANUAL) || (mode > FTX_QSO_MODE_RANDOM)) {
+    if ((mode < FTX_QSO_MODE_MANUAL) || (mode > FTX_QSO_MODE_NEW_GRID)) {
         mode = FTX_QSO_MODE_MANUAL;
     }
     sprintf(buf, "Auto:\n%s", mode_names[mode]);
@@ -688,7 +688,7 @@ static void mode_ft4_ft8_cb(struct button_item_t *btn) {
 static void mode_auto_cb(struct button_item_t *btn) {
     if (disable_buttons) return;
     int mode = subject_get_int(cfg.ft8_auto.val);
-    if ((mode < FTX_QSO_MODE_MANUAL) || (mode >= FTX_QSO_MODE_RANDOM)) {
+    if ((mode < FTX_QSO_MODE_MANUAL) || (mode >= FTX_QSO_MODE_NEW_GRID)) {
         mode = FTX_QSO_MODE_MANUAL;
     } else {
         mode++;
@@ -967,7 +967,7 @@ static void add_tx_text(const char * text) {
 
 static ftx_qso_context_t qso_context(void) {
     int mode = subject_get_int(cfg.ft8_auto.val);
-    if ((mode < FTX_QSO_MODE_MANUAL) || (mode > FTX_QSO_MODE_RANDOM)) {
+    if ((mode < FTX_QSO_MODE_MANUAL) || (mode > FTX_QSO_MODE_NEW_GRID)) {
         mode = FTX_QSO_MODE_MANUAL;
     }
     ftx_qso_context_t ctx = {
@@ -1011,9 +1011,35 @@ static void save_qso_record(const ftx_qso_record_t *rec) {
     finder_clear_cursor_async();
 }
 
+/* Fill the logbook flags for one decoded message (remove_worked and the
+ * NEW_GRID tie-break run on these; the engine never queries the db).
+ * The sender's grid falls back to "worked" when unknown. */
+static void worked_flags(const ftx_msg_meta_t *meta,
+                         bool *worked, bool *grid_worked) {
+    *worked      = false;
+    *grid_worked = true;
+    if (meta->call_de[0] == '\0') return;
+
+    qso_log_mode_t mode = subject_get_int(cfg.ft8_protocol.val) == FTX_PROTOCOL_FT8
+        ? MODE_FT8 : MODE_FT4;
+    qso_log_band_t band = qso_log_freq_to_band(subject_get_int(cfg_cur.fg_freq));
+
+    char local_grid4[5] = "";
+    strncpy(local_grid4, params.qth.x, sizeof(local_grid4) - 1);
+    char remote_grid4[5] = "";
+    strncpy(remote_grid4, meta->grid, sizeof(remote_grid4) - 1);
+
+    *worked = qso_log_worked_pair(params.callsign.x, local_grid4, mode, band,
+                                  meta->call_de, remote_grid4);
+    if (remote_grid4[0] != '\0') {
+        *grid_worked = qso_log_worked_grid(params.callsign.x, local_grid4,
+                                           mode, band, remote_grid4);
+    }
+}
+
 static void decoded_slot_push(const char *text, int snr,
                               float freq_hz, float time_sec,
-                              bool odd) {
+                              bool odd, const ftx_msg_meta_t *meta) {
     if (decoded_slot_msg_count >= DECODED_SLOT_MSG_MAX) return;
 
     size_t idx = decoded_slot_msg_count++;
@@ -1025,6 +1051,9 @@ static void decoded_slot_push(const char *text, int snr,
     decoded_slot_msgs[idx].freq_hz  = freq_hz;
     decoded_slot_msgs[idx].time_sec = time_sec;
     decoded_slot_msgs[idx].odd      = odd;
+    worked_flags(meta,
+                 &decoded_slot_msgs[idx].worked,
+                 &decoded_slot_msgs[idx].grid_worked);
 }
 
 static void apply_qso_response(const ftx_qso_response_t *response,
@@ -1069,7 +1098,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     ftx_msg_meta_t *meta = &last_rx_meta;
     ftx_qso_context_t ctx = qso_context();
     ftx_qso_parse_rx_text(&ctx, text, snr, freq_hz, time_sec, meta);
-    decoded_slot_push(text, snr, freq_hz, time_sec, s_info->odd);
+    decoded_slot_push(text, snr, freq_hz, time_sec, s_info->odd, meta);
 
     ft8_cell_type_t cell_type;
     if (meta->to_me) {

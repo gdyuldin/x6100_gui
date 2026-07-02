@@ -92,6 +92,7 @@ struct Candidate {
     char           text[35];
     int            snr;
     float          freq_hz;
+    bool           grid_worked;
 };
 
 /* ---------- small helpers ---------------------------------------------- */
@@ -533,9 +534,14 @@ void auto_decide(const ftx_qso_context_t *ctx,
         if (!compute_one(ctx, msgs[i].text, msgs[i].snr, msgs[i].freq_hz, &cand)) {
             continue;
         }
+        /* remove_worked (always on in auto modes): never initiate a QSO
+         * with an already worked tuple; replies (order >= 3) keep flowing
+         * once the peer calls us. */
+        if (msgs[i].worked && (cand.order <= 2)) continue;
         /* ft8d tx_blacklist: same TX text at most AUTO_TX_TEXT_MAX times. */
         BlacklistEntry *e = blacklist_find(cand.text);
         if (e && e->count >= AUTO_TX_TEXT_MAX) continue;
+        cand.grid_worked = msgs[i].grid_worked;
         cands[n++] = cand;
     }
     if (n == 0) return;
@@ -563,6 +569,16 @@ void auto_decide(const ftx_qso_context_t *ctx,
     /* Level 3: mode tie-break. */
     size_t pick = 0;
     switch (ctx->mode) {
+        case FTX_QSO_MODE_NEW_GRID:
+            /* Prefer grids never worked from here; a preference, not a
+             * filter — when everything is worked, pick among all. */
+            m = 0;
+            for (size_t i = 0; i < n; i++) {
+                if (!cands[i].grid_worked) cands[m++] = cands[i];
+            }
+            if (m > 0) n = m;
+            pick = (size_t)(std::rand() % (int)n);
+            break;
         case FTX_QSO_MODE_DISTANCE: {
             bool have_local = ctx->local_qth && ctx->local_qth[0] != '\0';
             double local_lat = 0, local_lon = 0;
