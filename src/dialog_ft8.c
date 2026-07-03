@@ -187,6 +187,7 @@ static void time_sync(struct button_item_t *btn);
 
 static void force_save_qso(struct button_item_t *btn);
 static void save_qso_record(const ftx_qso_record_t *rec);
+static size_t flush_unfinished_qsos(void);
 static ftx_qso_context_t qso_context(void);
 static void apply_qso_response(const ftx_qso_response_t *response, bool async_ui);
 
@@ -316,6 +317,11 @@ static void worker_init() {
 }
 
 static void worker_done() {
+    /* The engine state is about to be dropped (dialog close, FT4/FT8 or
+     * band switch re-inits the worker): silently log any QSO that has both
+     * reports but never got its final RR73/73. */
+    flush_unfinished_qsos();
+
     state = RX_PROCESS;
 
     /* Detach the pointer under the mutex first: once audio_worker is NULL,
@@ -880,10 +886,10 @@ static void time_sync(struct button_item_t *btn) {
 
 static void force_save_qso(struct button_item_t *btn) {
     (void)btn;
-    ftx_qso_context_t ctx = qso_context();
-    ftx_qso_record_t record;
-    if (ftx_qso_force_save(&ctx, &record)) {
-        save_qso_record(&record);
+    size_t n = flush_unfinished_qsos();
+    if (n > 0) {
+        msg_schedule_text_fmt("Saved %u QSO%s", (unsigned)n, (n > 1) ? "s" : "");
+        finder_clear_cursor_async();
     } else {
         msg_schedule_text_fmt("No QSO to save");
     }
@@ -1072,10 +1078,9 @@ static ftx_qso_context_t qso_context(void) {
     return ctx;
 }
 
-/* Persist a QSO record produced by the engine (ADIF file + sqlite log).
- * Safe from both the LVGL and the audio worker threads: UI feedback goes
- * through the scheduler/async helpers. */
-static void save_qso_record(const ftx_qso_record_t *rec) {
+/* Persist a QSO record produced by the engine (ADIF file + sqlite log),
+ * no UI. Safe from both the LVGL and the audio worker threads. */
+static void save_qso_record_db(const ftx_qso_record_t *rec) {
     char *canonized_call = util_canonize_callsign(rec->call, false);
     qso_log_record_t qso = qso_log_record_create(
         params.callsign.x,
@@ -1089,6 +1094,12 @@ static void save_qso_record(const ftx_qso_record_t *rec) {
 
     adif_add_qso(ft8_log, qso);
     qso_log_record_save(qso);
+}
+
+/* db save + UI feedback (popup goes through the async helpers, so this
+ * one is also fine from the audio worker thread). */
+static void save_qso_record(const ftx_qso_record_t *rec) {
+    save_qso_record_db(rec);
 
     if (strlen(rec->grid) >= 4) {
         double lat, lon, dist;
@@ -1102,6 +1113,22 @@ static void save_qso_record(const ftx_qso_record_t *rec) {
     }
 
     finder_clear_cursor_async();
+}
+
+/* Log every QSO that has both reports but never got its final RR73/73
+ * (peer vanished mid-QSO). Quiet — the callers own the UI feedback. */
+static size_t flush_unfinished_qsos(void) {
+    ftx_qso_record_t records[16];
+    size_t total = 0;
+    size_t n;
+
+    while ((n = ftx_qso_flush_complete(records, 16)) > 0) {
+        for (size_t i = 0; i < n; i++) {
+            save_qso_record_db(&records[i]);
+        }
+        total += n;
+    }
+    return total;
 }
 
 /* Fill the logbook flags for one decoded message (remove_worked and the

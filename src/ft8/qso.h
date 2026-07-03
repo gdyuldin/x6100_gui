@@ -154,10 +154,13 @@ void ftx_qso_on_user_message(const ftx_qso_context_t *ctx,
                              bool rx_odd,
                              ftx_qso_response_t *response);
 
-/* Force-save the QSO in progress (manual target, or the last station we
- * transmitted to). Succeeds only when both reports have been exchanged;
- * fills `record` and clears the QSO bookkeeping like a normal save. */
-bool ftx_qso_force_save(const ftx_qso_context_t *ctx, ftx_qso_record_t *record);
+/* Pop every complete-but-unclosed QSO out of the peers ledger: both
+ * reports exchanged but the final RR73/73 never happened. Fills up to
+ * `max` records (end_time = start_time + 5 min) and clears each QSO's
+ * bookkeeping like a normal save; returns the count. Drives the Force
+ * QSO save button and the automatic flush before the engine is reset
+ * (dialog close, FT4/FT8 switch, band change). */
+size_t ftx_qso_flush_complete(ftx_qso_record_t *records, size_t max);
 
 /* Drop all internal engine state (manual target, sticky retry, auto-mode
  * blacklist, last-call stickiness and QSO bookkeeping). Call on FT8

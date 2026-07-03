@@ -772,28 +772,25 @@ void ftx_qso_on_user_message(const ftx_qso_context_t *ctx,
     pthread_mutex_unlock(&engine_mutex);
 }
 
-bool ftx_qso_force_save(const ftx_qso_context_t *ctx, ftx_qso_record_t *record) {
-    if (!ctx || !record) return false;
+size_t ftx_qso_flush_complete(ftx_qso_record_t *records, size_t max) {
+    if (!records || (max == 0)) return 0;
 
     pthread_mutex_lock(&engine_mutex);
 
-    const char *call = g_state.has_target ? g_state.target_call : g_state.last_call;
-    bool saved = false;
-    if (call[0] != '\0') {
-        for (int i = 0; i < g_state.peers_len; i++) {
-            PeerEntry *peer = &g_state.peers[i];
-            if (!ieq(peer->call, call)) continue;
-            if (peer_qso_complete(peer)) {
-                peer_fill_record(peer, ctx->now, record);
-                peer_close_qso(peer);
-                saved = true;
-            }
-            break;
-        }
+    size_t n = 0;
+    for (int i = 0; (i < g_state.peers_len) && (n < max); i++) {
+        PeerEntry *peer = &g_state.peers[i];
+        if (!peer_qso_complete(peer)) continue;
+        /* No final RR73/73 was ever seen, so there is no real end moment:
+         * approximate it as start + 5 minutes (a typical FT8 QSO span).
+         * qso_start is always set here — rst_sent is only armed by a real
+         * transmission, which fills the start time. */
+        peer_fill_record(peer, peer->qso_start + 300, &records[n++]);
+        peer_close_qso(peer);
     }
 
     pthread_mutex_unlock(&engine_mutex);
-    return saved;
+    return n;
 }
 
 void ftx_qso_reset(void) {

@@ -466,20 +466,46 @@ TEST_CASE("QSO logging", "[ft8_qso]") {
         REQUIRE_THAT(response.qso.grid, Equals("KO12"));
     }
 
-    SECTION("Force save requires both reports") {
-        ftx_qso_record_t record;
+    SECTION("Flush saves only complete-but-unclosed QSOs") {
+        ftx_qso_record_t records[4];
         ftx_qso_on_user_message(&ctx, "CQ EA0DX KO12", 9, 0.0f, true, &response);
-        REQUIRE(!ftx_qso_force_save(&ctx, &record));
+        /* Only a grid reply went out so far: nothing to flush. */
+        REQUIRE(ftx_qso_flush_complete(records, 4) == 0);
 
         slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
-        REQUIRE(ftx_qso_force_save(&ctx, &record));
-        REQUIRE_THAT(record.call, Equals("EA0DX"));
-        REQUIRE(record.rst_sent == 4);
-        REQUIRE(record.rst_rcvd == -8);
+        REQUIRE(ftx_qso_flush_complete(records, 4) == 1);
+        REQUIRE_THAT(records[0].call, Equals("EA0DX"));
+        REQUIRE(records[0].rst_sent == 4);
+        REQUIRE(records[0].rst_rcvd == -8);
+        /* No 73 was seen: the end is approximated as start + 5 min. */
+        REQUIRE(records[0].end_time == records[0].start_time + 300);
 
-        /* Bookkeeping closed: a second force save has nothing to do. */
-        REQUIRE(!ftx_qso_force_save(&ctx, &record));
+        /* Bookkeeping closed: a second flush has nothing to do. */
+        REQUIRE(ftx_qso_flush_complete(records, 4) == 0);
     }
+}
+
+TEST_CASE("Flush collects every unfinished QSO", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_PRE);
+    ftx_qso_response_t response;
+    ftx_qso_record_t records[4];
+
+    /* First QSO reaches both-reports, then the peer vanishes. */
+    slot(&ctx, {make_msg("CQ EA0DX KO12", 5)}, &response);
+    slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE R+04"));
+
+    /* Second QSO with another station stalls at the same point. */
+    slot(&ctx, {make_msg("CQ UB2BBB LO31", 5)}, &response);
+    slot(&ctx, {make_msg("R2RFE UB2BBB +01", 3)}, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("UB2BBB R2RFE R+03"));
+
+    size_t n = ftx_qso_flush_complete(records, 4);
+    REQUIRE(n == 2);
+    bool both = ((strcmp(records[0].call, "EA0DX") == 0) && (strcmp(records[1].call, "UB2BBB") == 0)) ||
+                ((strcmp(records[0].call, "UB2BBB") == 0) && (strcmp(records[1].call, "EA0DX") == 0));
+    REQUIRE(both);
+    REQUIRE(ftx_qso_flush_complete(records, 4) == 0);
 }
 
 TEST_CASE("Peers table keeps an active QSO alive under a CQ flood (LRU)", "[ft8_qso]") {
