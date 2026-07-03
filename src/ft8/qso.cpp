@@ -534,6 +534,11 @@ void auto_decide(const ftx_qso_context_t *ctx,
         if (!compute_one(ctx, msgs[i].text, msgs[i].snr, msgs[i].freq_hz, &cand)) {
             continue;
         }
+        /* Behaviour level: RES never initiates (no answering other CQs,
+         * no tail-ending — order >= 3 replies to stations calling me are
+         * its whole point); FULL initiates but never tail-ends. */
+        if ((ctx->auto_level == FTX_QSO_AUTO_RES) && (cand.order <= 2)) continue;
+        if ((ctx->auto_level == FTX_QSO_AUTO_FULL) && (cand.order == 0)) continue;
         /* remove_worked (always on in auto modes): never initiate a QSO
          * with an already worked tuple; replies (order >= 3) keep flowing
          * once the peer calls us. */
@@ -568,18 +573,21 @@ void auto_decide(const ftx_qso_context_t *ctx,
 
     /* Level 3: mode tie-break. */
     size_t pick = 0;
-    switch (ctx->mode) {
-        case FTX_QSO_MODE_NEW_GRID:
+    switch (ctx->sel) {
+        case FTX_QSO_SEL_NEW_GRID:
             /* Prefer grids never worked from here; a preference, not a
-             * filter — when everything is worked, pick among all. */
+             * filter — when everything is worked, pick among all. Ties
+             * within the pool break by SNR either way. */
             m = 0;
             for (size_t i = 0; i < n; i++) {
                 if (!cands[i].grid_worked) cands[m++] = cands[i];
             }
             if (m > 0) n = m;
-            pick = (size_t)(std::rand() % (int)n);
+            for (size_t i = 1; i < n; i++) {
+                if (cands[i].snr > cands[pick].snr) pick = i;
+            }
             break;
-        case FTX_QSO_MODE_DISTANCE: {
+        case FTX_QSO_SEL_DISTANCE: {
             bool have_local = ctx->local_qth && ctx->local_qth[0] != '\0';
             double local_lat = 0, local_lon = 0;
             if (have_local) {
@@ -601,13 +609,13 @@ void auto_decide(const ftx_qso_context_t *ctx,
             if (found) break;
         } /* no distance data: fall through to SNR */
         /* fallthrough */
-        case FTX_QSO_MODE_SNR:
+        case FTX_QSO_SEL_SNR:
         default:
             for (size_t i = 1; i < n; i++) {
                 if (cands[i].snr > cands[pick].snr) pick = i;
             }
             break;
-        case FTX_QSO_MODE_RANDOM:
+        case FTX_QSO_SEL_RANDOM:
             pick = (size_t)(std::rand() % (int)n);
             break;
     }
@@ -630,7 +638,7 @@ void decide(const ftx_qso_context_t *ctx,
      * (grids, received reports, received final 73). */
     analyze_rx(ctx, msgs, msg_count, response);
 
-    if (ctx->mode == FTX_QSO_MODE_MANUAL) {
+    if (ctx->auto_level == FTX_QSO_AUTO_OFF) {
         manual_decide(ctx, msgs, msg_count, rx_odd, response);
     } else {
         auto_decide(ctx, msgs, msg_count, response);
@@ -791,5 +799,19 @@ bool ftx_qso_force_save(const ftx_qso_context_t *ctx, ftx_qso_record_t *record) 
 void ftx_qso_reset(void) {
     pthread_mutex_lock(&engine_mutex);
     std::memset(&g_state, 0, sizeof(g_state));
+    pthread_mutex_unlock(&engine_mutex);
+}
+
+void ftx_qso_clear_decision_state(void) {
+    pthread_mutex_lock(&engine_mutex);
+
+    g_state.has_target     = false;
+    g_state.target_call[0] = '\0';
+    sticky_clear();
+
+    g_state.last_call[0]   = '\0';
+    g_state.blacklist_len  = 0;
+    g_state.blacklist_next = 0;
+
     pthread_mutex_unlock(&engine_mutex);
 }

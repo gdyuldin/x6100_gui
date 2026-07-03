@@ -190,7 +190,7 @@ typedef struct {
     // FT8
     cfg_item_t ft8_show_all;
     cfg_item_t ft8_protocol;
-    cfg_item_t ft8_auto;
+    cfg_item_t ft8_auto_mode;
     cfg_item_t ft8_hold_freq;
     cfg_item_t ft8_max_repeats;
 } cfg_t;

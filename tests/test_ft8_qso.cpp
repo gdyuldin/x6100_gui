@@ -9,12 +9,14 @@ using Catch::Matchers::Equals;
 
 static constexpr time_t TEST_NOW = 1700000000;
 
-static ftx_qso_context_t test_ctx(ftx_qso_mode_t mode = FTX_QSO_MODE_MANUAL) {
+static ftx_qso_context_t test_ctx(ftx_qso_auto_t level = FTX_QSO_AUTO_OFF,
+                                  ftx_qso_sel_t sel = FTX_QSO_SEL_SNR) {
     ftx_qso_reset();
     ftx_qso_context_t ctx = {
         .local_callsign = "R2RFE",
         .local_qth      = "LO02rq",
-        .mode           = mode,
+        .auto_level     = level,
+        .sel            = sel,
         .now            = TEST_NOW,
     };
     return ctx;
@@ -232,7 +234,7 @@ TEST_CASE("Manual QSO progression", "[ft8_qso]") {
 }
 
 TEST_CASE("Auto mode SNR", "[ft8_qso]") {
-    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_SNR);
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_PRE);
     ftx_qso_response_t response;
 
     SECTION("Louder CQ wins") {
@@ -281,7 +283,7 @@ TEST_CASE("Auto mode SNR", "[ft8_qso]") {
 }
 
 TEST_CASE("Auto mode distance", "[ft8_qso]") {
-    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_DISTANCE);
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_PRE, FTX_QSO_SEL_DISTANCE);
     ftx_qso_response_t response;
 
     SECTION("Farther grid wins over louder signal") {
@@ -301,7 +303,7 @@ TEST_CASE("Auto mode distance", "[ft8_qso]") {
 }
 
 TEST_CASE("Auto modes never initiate with a worked station", "[ft8_qso]") {
-    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_SNR);
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_PRE);
     ftx_qso_response_t response;
 
     SECTION("Worked CQ is not answered") {
@@ -329,7 +331,7 @@ TEST_CASE("Auto modes never initiate with a worked station", "[ft8_qso]") {
 }
 
 TEST_CASE("Auto mode new grid", "[ft8_qso]") {
-    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_NEW_GRID);
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_PRE, FTX_QSO_SEL_NEW_GRID);
     ftx_qso_response_t response;
 
     SECTION("A new grid beats a louder worked grid") {
@@ -340,14 +342,20 @@ TEST_CASE("Auto mode new grid", "[ft8_qso]") {
         REQUIRE_THAT(response.tx_msg, Equals("VK5COL R2RFE LO02"));
     }
 
-    SECTION("All grids worked: preference degrades to a random pick") {
-        slot(&ctx, {make_msg("CQ EA0DX KO12", 5, 0.0f, true, false, true),
-                    make_msg("CQ VK5COL PF84", 5, 0.0f, true, false, true)},
+    SECTION("Two new grids: the louder one wins") {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", -7, 0.0f, true, false, false),
+                    make_msg("CQ VK5COL PF84", 6, 0.0f, true, false, false)},
              &response);
         REQUIRE(response.action == FTX_QSO_ACTION_TX);
-        bool ok = (strcmp(response.tx_msg, "EA0DX R2RFE LO02") == 0) ||
-                  (strcmp(response.tx_msg, "VK5COL R2RFE LO02") == 0);
-        REQUIRE(ok);
+        REQUIRE_THAT(response.tx_msg, Equals("VK5COL R2RFE LO02"));
+    }
+
+    SECTION("All grids worked: preference degrades to an SNR pick") {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", 5, 0.0f, true, false, true),
+                    make_msg("CQ VK5COL PF84", -2, 0.0f, true, false, true)},
+             &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE LO02"));
     }
 
     SECTION("QSO progress still beats the grid preference") {
@@ -360,7 +368,7 @@ TEST_CASE("Auto mode new grid", "[ft8_qso]") {
 }
 
 TEST_CASE("Auto mode random picks a valid candidate", "[ft8_qso]") {
-    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_RANDOM);
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_PRE, FTX_QSO_SEL_RANDOM);
     ftx_qso_response_t response;
 
     slot(&ctx, {make_msg("CQ EA0DX KO12", 5),
@@ -511,7 +519,7 @@ TEST_CASE("Peers table keeps an active QSO alive under a CQ flood (LRU)", "[ft8_
 }
 
 TEST_CASE("QSO logging in auto mode", "[ft8_qso]") {
-    ftx_qso_context_t ctx = test_ctx(FTX_QSO_MODE_SNR);
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_PRE);
     ftx_qso_response_t response;
 
     slot(&ctx, {make_msg("CQ EA0DX KO12", 5)}, &response);
@@ -542,4 +550,102 @@ TEST_CASE("Reset clears the armed target", "[ft8_qso]") {
     ftx_qso_reset();
     slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
     REQUIRE(response.action == FTX_QSO_ACTION_RX);
+}
+
+TEST_CASE("Responder level never initiates", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_RES);
+    ftx_qso_response_t response;
+
+    SECTION("Other CQs and tail-end chances are ignored") {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", 20),
+                    make_msg("UA1AAA UB2BBB RR73", 15)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_RX);
+    }
+
+    SECTION("A responder to my CQ gets a report; ties break by SNR") {
+        slot(&ctx, {make_msg("R2RFE EA0DX KO12", -5),
+                    make_msg("R2RFE UB2BBB LO31", 7),
+                    make_msg("CQ DL1XYZ JO62", 25)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        REQUIRE_THAT(response.tx_msg, Equals("UB2BBB R2RFE +07"));
+    }
+
+    SECTION("A worked responder is still answered") {
+        slot(&ctx, {make_msg("R2RFE EA0DX KO12", 3, 0.0f, true, true, true)},
+             &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE +03"));
+    }
+
+    SECTION("QSO progress beats a fresh responder") {
+        slot(&ctx, {make_msg("R2RFE EA0DX KO12", -5)}, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE -05"));
+        slot(&ctx, {make_msg("R2RFE EA0DX R-08", -5),
+                    make_msg("R2RFE UB2BBB LO31", 20)}, &response);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE RR73"));
+    }
+}
+
+TEST_CASE("Clear decision state keeps the peers ledger", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx();
+    ftx_qso_response_t response;
+
+    /* Manual QSO up to both reports exchanged. */
+    ftx_qso_on_user_message(&ctx, "CQ EA0DX KO12", 9, 0.0f, true, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE LO02"));
+    slot(&ctx, {make_msg("R2RFE EA0DX -08", 4)}, &response);
+    REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE R+04"));
+
+    ftx_qso_clear_decision_state();
+
+    /* Decision state is gone: the peer's next message is not answered
+     * (no target) and no sticky retry fires on an empty slot. */
+    slot(&ctx, {make_msg("R2RFE EA0DX R-08", 4)}, &response);
+    REQUIRE(response.action == FTX_QSO_ACTION_RX);
+    slot(&ctx, {}, &response);
+    REQUIRE(response.action == FTX_QSO_ACTION_RX);
+
+    /* The ledger survived: the peer's direct 73 still closes and saves
+     * the QSO with both reports. */
+    ctx.now = TEST_NOW + 120;
+    slot(&ctx, {make_msg("R2RFE EA0DX 73", 4)}, &response);
+    REQUIRE(response.action == FTX_QSO_ACTION_RX);
+    REQUIRE(response.save);
+    REQUIRE_THAT(response.qso.call, Equals("EA0DX"));
+    REQUIRE(response.qso.rst_sent == 4);
+    REQUIRE(response.qso.rst_rcvd == -8);
+    REQUIRE(response.qso.end_time == TEST_NOW + 120);
+}
+
+TEST_CASE("Full level answers CQ but never tail-ends", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_FULL);
+    ftx_qso_response_t response;
+
+    SECTION("Tail-end chance is ignored") {
+        slot(&ctx, {make_msg("JA1XYZ EA0DX RR73", 5)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_RX);
+    }
+
+    SECTION("A CQ is still answered") {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", 5)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+        REQUIRE_THAT(response.tx_msg, Equals("EA0DX R2RFE LO02"));
+    }
+}
+
+TEST_CASE("Clear decision state resets the auto blacklist", "[ft8_qso]") {
+    ftx_qso_context_t ctx = test_ctx(FTX_QSO_AUTO_PRE);
+    ftx_qso_response_t response;
+
+    /* The same reply text is allowed three times, then blacklisted. */
+    for (int i = 0; i < 3; i++) {
+        slot(&ctx, {make_msg("CQ EA0DX KO12", 5)}, &response);
+        REQUIRE(response.action == FTX_QSO_ACTION_TX);
+    }
+    slot(&ctx, {make_msg("CQ EA0DX KO12", 5)}, &response);
+    REQUIRE(response.action == FTX_QSO_ACTION_RX);
+
+    ftx_qso_clear_decision_state();
+    slot(&ctx, {make_msg("CQ EA0DX KO12", 5)}, &response);
+    REQUIRE(response.action == FTX_QSO_ACTION_TX);
 }

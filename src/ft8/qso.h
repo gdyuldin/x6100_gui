@@ -37,23 +37,35 @@ typedef struct {
     int  repeats;
 } ftx_tx_msg_t;
 
-/* Engine behaviour selector (the "Auto" button).
- * MANUAL: reply only within the QSO armed by a user click.
- * SNR/DISTANCE/RANDOM/NEW_GRID: full-auto (ft8d model); the value picks the
- * tie-break used when several candidates share the best QSO progress.
- * NEW_GRID prefers grids not worked yet, then picks at random. */
+/* Engine behaviour level (the "Auto" button): how far the engine may go
+ * on its own. OFF replies only within the QSO armed by a user click; the
+ * other levels run the ft8d auto pipeline with a widening candidate pool. */
 typedef enum {
-    FTX_QSO_MODE_MANUAL = 0,
-    FTX_QSO_MODE_SNR,
-    FTX_QSO_MODE_DISTANCE,
-    FTX_QSO_MODE_RANDOM,
-    FTX_QSO_MODE_NEW_GRID,
-} ftx_qso_mode_t;
+    FTX_QSO_AUTO_OFF = 0,
+    /* Answer stations calling me, never initiate (no answering other CQs,
+     * no tail-ending). The CQ loop runs on this level. */
+    FTX_QSO_AUTO_RES,
+    /* Also answer other stations' CQs, but no tail-ending. */
+    FTX_QSO_AUTO_FULL,
+    /* Preemptive: additionally tail-end stations freed by a RR73/73. */
+    FTX_QSO_AUTO_PRE,
+} ftx_qso_auto_t;
+
+/* Tie-break (the "Auto Mode" button) used when several candidates share
+ * the best QSO progress. NEW_GRID prefers grids not worked yet, then
+ * picks at random. */
+typedef enum {
+    FTX_QSO_SEL_SNR = 0,
+    FTX_QSO_SEL_DISTANCE,
+    FTX_QSO_SEL_RANDOM,
+    FTX_QSO_SEL_NEW_GRID,
+} ftx_qso_sel_t;
 
 typedef struct {
     const char    *local_callsign;
     const char    *local_qth;
-    ftx_qso_mode_t mode;
+    ftx_qso_auto_t auto_level;
+    ftx_qso_sel_t  sel;
     /* Wall clock of the call (the engine itself never reads the clock);
      * used for QSO start/end timestamps. */
     time_t         now;
@@ -151,6 +163,12 @@ bool ftx_qso_force_save(const ftx_qso_context_t *ctx, ftx_qso_record_t *record);
  * blacklist, last-call stickiness and QSO bookkeeping). Call on FT8
  * session start. */
 void ftx_qso_reset(void);
+
+/* Drop only the decision state (manual target + sticky, auto blacklist +
+ * last-call). The peers ledger survives so an in-progress QSO can still be
+ * logged. Call when the operating mode changes under the engine's feet:
+ * CQ start, a user click, or an Auto mode switch. */
+void ftx_qso_clear_decision_state(void);
 
 #ifdef __cplusplus
 }

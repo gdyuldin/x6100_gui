@@ -81,7 +81,22 @@ typedef enum {
 
 static ft8_state_t state = RX_PROCESS;
 static Subject    *tx_enabled;
+
+/* TX CQ button tri-state: Off, or an explicit TX slot parity picked by
+ * the user (no clock guessing). Non-zero means the CQ loop is running;
+ * the value doubles as the parity anchor the loop resumes to after an
+ * interleaved QSO. Session-local: every dialog run starts at Off. */
+typedef enum {
+    CQ_OFF = 0,
+    CQ_EVEN,
+    CQ_ODD,
+} cq_state_t;
 static Subject    *cq_enabled;
+
+/* Auto behaviour level (ftx_qso_auto_t). Session-local, starts at Off;
+ * only the Auto Mode tie-break (cfg.ft8_auto_mode) persists. */
+static Subject    *auto_level;
+
 static bool        tx_time_slot;
 
 static ftx_tx_msg_t tx_msg;
@@ -156,14 +171,17 @@ static const char * tx_cq_label_getter();
 static const char * tx_call_label_getter();
 static const char * hold_freq_label_getter();
 static const char * auto_label_getter();
+static const char * auto_mode_label_getter();
 
 static void show_cq_all_cb(struct button_item_t *btn);
 static void mode_ft4_ft8_cb(struct button_item_t *btn);
 static void tx_cq_en_dis_cb(struct button_item_t *btn);
+static void cq_rearm(void);
 static void tx_call_en_dis_cb(struct button_item_t *btn);
 
 static void hold_tx_freq_cb(struct button_item_t *btn);
 static void mode_auto_cb(struct button_item_t *btn);
+static void mode_auto_sel_cb(struct button_item_t *btn);
 static void cq_modifier_cb(struct button_item_t *btn);
 static void time_sync(struct button_item_t *btn);
 
@@ -201,7 +219,8 @@ static button_item_t button_tx_call_en_dis = { .type=BTN_TEXT_FN, .label_fn = tx
 
 static button_item_t button_page_2 = { .type=BTN_TEXT, .label = "(Page: 2:4)", .press = button_next_page_cb, .next=&btn_page_3};
 static button_item_t button_hold_freq = { .type=BTN_TEXT_FN, .label_fn = hold_freq_label_getter, .press = hold_tx_freq_cb, .subj=&cfg.ft8_hold_freq.val };
-static button_item_t button_auto_en_dis = { .type=BTN_TEXT_FN, .label_fn = auto_label_getter, .press = mode_auto_cb, .subj=&cfg.ft8_auto.val };
+static button_item_t button_auto_en_dis = { .type=BTN_TEXT_FN, .label_fn = auto_label_getter, .press = mode_auto_cb };
+static button_item_t button_auto_mode = { .type=BTN_TEXT_FN, .label_fn = auto_mode_label_getter, .press = mode_auto_sel_cb, .subj=&cfg.ft8_auto_mode.val };
 static button_item_t button_force_save = { .type=BTN_TEXT, .label = "Force QSO\nsave", .press = force_save_qso };
 
 static button_item_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:4)", .press = button_next_page_cb, .next=&btn_page_4};
@@ -215,7 +234,7 @@ static buttons_page_t btn_page_1 = {
 };
 
 static buttons_page_t btn_page_2 = {
-    {&button_page_2, &button_hold_freq, &button_auto_en_dis, &button_force_save}
+    {&button_page_2, &button_hold_freq, &button_auto_en_dis, &button_auto_mode, &button_force_save}
 };
 
 static buttons_page_t btn_page_3 = {
@@ -365,6 +384,8 @@ static void destruct_cb() {
      *   ft8_autodnf_on_cleanup();
      *   autosel_cleanup_state(); */
 
+    subject_set_int(cq_enabled, CQ_OFF);
+
     worker_done();
     table_view_destroy();
 
@@ -508,10 +529,16 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_add_event_cb(dialog.obj, band_cb, EVENT_BAND_DOWN, NULL);
 
     if (!cq_enabled) {
-        cq_enabled = subject_create_int(false);
+        cq_enabled = subject_create_int(CQ_OFF);
         button_tx_cq_en_dis.subj = &cq_enabled;
     } else {
-        subject_set_int(cq_enabled, false);
+        subject_set_int(cq_enabled, CQ_OFF);
+    }
+    if (!auto_level) {
+        auto_level = subject_create_int(FTX_QSO_AUTO_OFF);
+        button_auto_en_dis.subj = &auto_level;
+    } else {
+        subject_set_int(auto_level, FTX_QSO_AUTO_OFF);
     }
     if (!tx_enabled) {
         tx_enabled = subject_create_int(true);
@@ -636,8 +663,13 @@ const char *protocol_label_getter() {
 }
 
 const char *tx_cq_label_getter() {
+    static const char *cq_names[] = {"Off", "Even", "Odd"};
     static char buf[32];
-    sprintf(buf, "TX CQ:\n%s", subject_get_int(cq_enabled) ? "Enabled": "Disabled");
+    int cq = subject_get_int(cq_enabled);
+    if ((cq < CQ_OFF) || (cq > CQ_ODD)) {
+        cq = CQ_OFF;
+    }
+    sprintf(buf, "TX CQ:\n%s", cq_names[cq]);
     return buf;
 }
 
@@ -654,13 +686,24 @@ const char *hold_freq_label_getter() {
 }
 
 const char *auto_label_getter() {
-    static const char *mode_names[] = {"Off", "SNR", "Dist", "Rnd", "Grid"};
+    static const char *level_names[] = {"Off", "Res", "Full", "Pre"};
     static char buf[32];
-    int mode = subject_get_int(cfg.ft8_auto.val);
-    if ((mode < FTX_QSO_MODE_MANUAL) || (mode > FTX_QSO_MODE_NEW_GRID)) {
-        mode = FTX_QSO_MODE_MANUAL;
+    int level = subject_get_int(auto_level);
+    if ((level < FTX_QSO_AUTO_OFF) || (level > FTX_QSO_AUTO_PRE)) {
+        level = FTX_QSO_AUTO_OFF;
     }
-    sprintf(buf, "Auto:\n%s", mode_names[mode]);
+    sprintf(buf, "Auto:\n%s", level_names[level]);
+    return buf;
+}
+
+const char *auto_mode_label_getter() {
+    static const char *sel_names[] = {"SNR", "Dist", "Rnd", "Grid"};
+    static char buf[32];
+    int sel = subject_get_int(cfg.ft8_auto_mode.val);
+    if ((sel < FTX_QSO_SEL_SNR) || (sel > FTX_QSO_SEL_NEW_GRID)) {
+        sel = FTX_QSO_SEL_SNR;
+    }
+    sprintf(buf, "Auto Mode:\n%s", sel_names[sel]);
     return buf;
 }
 
@@ -679,7 +722,7 @@ static void mode_ft4_ft8_cb(struct button_item_t *btn) {
         proto = FTX_PROTOCOL_FT8;
     }
     subject_set_int(cfg.ft8_protocol.val, proto);
-    subject_set_int(cq_enabled, false);
+    subject_set_int(cq_enabled, CQ_OFF);
 
     worker_done();
     worker_init();
@@ -687,15 +730,43 @@ static void mode_ft4_ft8_cb(struct button_item_t *btn) {
     load_band(0);
 }
 
+/* Any Auto / Auto Mode / click change ends the CQ loop and restarts the
+ * engine decision state; a pending engine one-shot belongs to the old
+ * setting and is dropped. The peers ledger survives (see qso.h). */
+static void qso_setting_changed(void) {
+    if (subject_get_int(cq_enabled) != CQ_OFF) {
+        subject_set_int(cq_enabled, CQ_OFF);
+        tx_msg.msg[0] = '\0';
+    }
+    if (tx_msg_oneshot) {
+        tx_msg.msg[0] = '\0';
+        tx_msg_oneshot = false;
+    }
+    ftx_qso_clear_decision_state();
+}
+
 static void mode_auto_cb(struct button_item_t *btn) {
     if (disable_buttons) return;
-    int mode = subject_get_int(cfg.ft8_auto.val);
-    if ((mode < FTX_QSO_MODE_MANUAL) || (mode >= FTX_QSO_MODE_NEW_GRID)) {
-        mode = FTX_QSO_MODE_MANUAL;
+    int level = subject_get_int(auto_level);
+    if ((level < FTX_QSO_AUTO_OFF) || (level >= FTX_QSO_AUTO_PRE)) {
+        level = FTX_QSO_AUTO_OFF;
     } else {
-        mode++;
+        level++;
     }
-    subject_set_int(cfg.ft8_auto.val, mode);
+    subject_set_int(auto_level, level);
+    qso_setting_changed();
+}
+
+static void mode_auto_sel_cb(struct button_item_t *btn) {
+    if (disable_buttons) return;
+    int sel = subject_get_int(cfg.ft8_auto_mode.val);
+    if ((sel < FTX_QSO_SEL_SNR) || (sel >= FTX_QSO_SEL_NEW_GRID)) {
+        sel = FTX_QSO_SEL_SNR;
+    } else {
+        sel++;
+    }
+    subject_set_int(cfg.ft8_auto_mode.val, sel);
+    qso_setting_changed();
 }
 
 static void hold_tx_freq_cb(struct button_item_t *btn) {
@@ -703,42 +774,52 @@ static void hold_tx_freq_cb(struct button_item_t *btn) {
     subject_set_int(cfg.ft8_hold_freq.val, !subject_get_int(cfg.ft8_hold_freq.val));
 }
 
+/* (Re)load the CQ text into tx_msg with a fresh repeats budget, aimed at
+ * the parity held in cq_enabled. Called on CQ enable and whenever the
+ * engine reply that displaced the CQ freed the TX slot again — a served
+ * responder just proved propagation, so the countdown restarts. */
+static void cq_rearm(void) {
+    cq_make_message(params.callsign.x, params.qth.x, params.ft8_cq_modifier.x, tx_msg.msg);
+    tx_msg.repeats = subject_get_int(cfg.ft8_max_repeats.val);
+    tx_msg_oneshot = false;
+    tx_time_slot = (subject_get_int(cq_enabled) == CQ_ODD);
+}
+
 static void tx_cq_en_dis_cb(struct button_item_t *btn) {
     if (disable_buttons) return;
 
-    if (!subject_get_int(cq_enabled)){
-        if (strlen(params.callsign.x) == 0) {
-            msg_schedule_text_fmt("Call sign required");
-            return;
-        }
-        subject_set_int(cq_enabled, true);
-        subject_set_int(tx_enabled, true);
+    int cq = subject_get_int(cq_enabled);
+    cq = ((cq < CQ_OFF) || (cq >= CQ_ODD)) ? CQ_OFF : (cq + 1);
 
-        cq_make_message(params.callsign.x, params.qth.x, params.ft8_cq_modifier.x, tx_msg.msg);
-        tx_msg_oneshot = false;
-
-        struct timespec now;
-        clock_gettime(CLOCK_REALTIME, &now);
-        float time_since_slot_start;
-        tx_time_slot = !get_time_slot(now, &time_since_slot_start);
-        if (time_since_slot_start < MAX_TX_START_DELAY) {
-            tx_time_slot = !tx_time_slot;
-        }
-
-        if (tx_msg.msg[2] == '_') {
-            msg_schedule_text_fmt("Next TX: CQ %s", tx_msg.msg + 3);
-        } else {
-            msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
-        }
-        tx_msg.repeats = subject_get_int(cfg.ft8_max_repeats.val);
-        lv_finder_clear_cursor(finder);
-    } else {
+    if (cq == CQ_OFF) {
         if (state == TX_PROCESS) {
             state = RX_PROCESS;
         }
-        subject_set_int(cq_enabled, false);
+        subject_set_int(cq_enabled, CQ_OFF);
         tx_msg.msg[0] = '\0';
+        return;
     }
+
+    if (strlen(params.callsign.x) == 0) {
+        msg_schedule_text_fmt("Call sign required");
+        return;
+    }
+
+    /* Entering Even (or flipping to Odd) restarts the CQ session on the
+     * chosen parity. A CQ loop is served by the responder level: the
+     * engine answers stations calling me and never initiates on its own. */
+    subject_set_int(cq_enabled, cq);
+    subject_set_int(tx_enabled, true);
+    subject_set_int(auto_level, FTX_QSO_AUTO_RES);
+    ftx_qso_clear_decision_state();
+    cq_rearm();
+
+    if (tx_msg.msg[2] == '_') {
+        msg_schedule_text_fmt("Next TX: CQ %s", tx_msg.msg + 3);
+    } else {
+        msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
+    }
+    lv_finder_clear_cursor(finder);
 }
 
 static void tx_call_en_dis_cb(struct button_item_t *btn) {
@@ -823,6 +904,11 @@ static void on_table_press(const cell_data_t *cell_data) {
         msg_schedule_text_fmt("What should I do about it?");
         return;
     }
+
+    /* A click is the freshest user intent: it ends the CQ loop, drops the
+     * Auto knob to Off and restarts the engine as a pure manual QSO. */
+    subject_set_int(auto_level, FTX_QSO_AUTO_OFF);
+    qso_setting_changed();
 
     ftx_qso_context_t ctx = qso_context();
     ftx_qso_response_t response;
@@ -968,14 +1054,19 @@ static void add_tx_text(const char * text) {
 }
 
 static ftx_qso_context_t qso_context(void) {
-    int mode = subject_get_int(cfg.ft8_auto.val);
-    if ((mode < FTX_QSO_MODE_MANUAL) || (mode > FTX_QSO_MODE_NEW_GRID)) {
-        mode = FTX_QSO_MODE_MANUAL;
+    int level = subject_get_int(auto_level);
+    if ((level < FTX_QSO_AUTO_OFF) || (level > FTX_QSO_AUTO_PRE)) {
+        level = FTX_QSO_AUTO_OFF;
+    }
+    int sel = subject_get_int(cfg.ft8_auto_mode.val);
+    if ((sel < FTX_QSO_SEL_SNR) || (sel > FTX_QSO_SEL_NEW_GRID)) {
+        sel = FTX_QSO_SEL_SNR;
     }
     ftx_qso_context_t ctx = {
         .local_callsign = params.callsign.x,
         .local_qth      = params.qth.x,
-        .mode           = (ftx_qso_mode_t)mode,
+        .auto_level     = (ftx_qso_auto_t)level,
+        .sel            = (ftx_qso_sel_t)sel,
         .now            = time(NULL),
     };
     return ctx;
@@ -1070,9 +1161,8 @@ static void apply_qso_response(const ftx_qso_response_t *response,
     tx_msg_oneshot = true;
     tx_time_slot = response->tx_odd;
     subject_set_int(tx_enabled, true);
-    if (subject_get_int(cq_enabled)) {
-        subject_set_int(cq_enabled, false);
-    }
+    /* The CQ loop (if any) stays enabled: an engine reply just takes over
+     * the slot; on_slot_end_cb re-arms the CQ once the QSO is over. */
 
     float freq_hz = response->freq_hz;
     if (freq_hz > 0.0f) {
@@ -1245,6 +1335,16 @@ static void on_slot_end_cb(const slot_info_t *info, void *ctx) {
          * transmissions without leaving the mode. */
         if ((response.action == FTX_QSO_ACTION_TX) && subject_get_int(tx_enabled)) {
             apply_qso_response(&response, true);
+        } else if ((subject_get_int(cq_enabled) != CQ_OFF) &&
+                   (strncmp(tx_msg.msg, "CQ", 2) != 0)) {
+            /* The TX slot is free again: the engine has nothing to send and
+             * the reply that displaced the CQ was consumed (or its one-shot
+             * window missed). Refill the slot with the CQ at a fresh repeats
+             * budget — serving a responder just proved propagation. This is
+             * not a "QSO over" call: if the peer was merely fading, its next
+             * retry makes the engine displace the CQ again. A CQ still
+             * sitting in tx_msg keeps its running countdown instead. */
+            cq_rearm();
         }
         decoded_slot_msg_count = 0;
     }
@@ -1307,7 +1407,10 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
             }
             if (tx_msg.repeats == 0) {
                 if (strncmp(tx_msg.msg, "CQ", 2) == 0) {
-                    subject_set_int(cq_enabled, false);
+                    /* CQ exhausted with no takers. Setting the subject
+                     * from the worker is fine here: the button label
+                     * observer runs delayed on the LVGL thread. */
+                    subject_set_int(cq_enabled, CQ_OFF);
                 }
                 tx_msg.msg[0] = '\0';
             }
