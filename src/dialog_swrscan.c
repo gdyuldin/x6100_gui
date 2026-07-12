@@ -50,9 +50,9 @@ static void construct_cb(lv_obj_t *parent);
 static void destruct_cb();
 static void key_cb(lv_event_t * e);
 
-static void dialog_swrscan_run_cb(button_item_t *item);
-static void dialog_swrscan_scale_cb(button_item_t *item);
-static void dialog_swrscan_span_cb(button_item_t *item);
+static void dialog_swrscan_run_cb(button_data_t *btn_data);
+static void dialog_swrscan_scale_cb(button_data_t *btn_data);
+static void dialog_swrscan_span_cb(button_data_t *btn_data);
 
 static void set_span(Subject *subj, void *user_data);
 static void set_linear(Subject *subj, void *user_data);
@@ -60,18 +60,18 @@ static void set_linear(Subject *subj, void *user_data);
 static const char *scale_label_fn();
 static const char *span_label_fn();
 
-static button_item_t btn_run = {
+static button_data_t btn_run = {
     .type  = BTN_TEXT,
     .label = "Run",
     .press = dialog_swrscan_run_cb,
 };
-static button_item_t btn_scale = {
+static button_data_t btn_scale = {
     .type  = BTN_TEXT_FN,
     .label_fn = scale_label_fn,
     .press = dialog_swrscan_scale_cb,
     .subj = &cfg.swrscan_linear.val,
 };
-static button_item_t btn_span = {
+static button_data_t btn_span = {
     .type  = BTN_TEXT_FN,
     .label_fn = span_label_fn,
     .press = dialog_swrscan_span_cb,
@@ -316,7 +316,7 @@ static void key_cb(lv_event_t * e) {
     }
 }
 
-void dialog_swrscan_run_cb(button_item_t *item) {
+void dialog_swrscan_run_cb(button_data_t *btn_data) {
     if (run) {
         run = false;
         radio_stop_swrscan();
@@ -330,12 +330,12 @@ void dialog_swrscan_run_cb(button_item_t *item) {
     }
 }
 
-void dialog_swrscan_scale_cb(button_item_t *item) {
+void dialog_swrscan_scale_cb(button_data_t *btn_data) {
     bool new_val = !subject_get_int(cfg.swrscan_linear.val);
     subject_set_int(cfg.swrscan_linear.val, new_val);
 }
 
-void dialog_swrscan_span_cb(button_item_t *item) {
+void dialog_swrscan_span_cb(button_data_t *btn_data) {
     if (run) {
         return;
     }

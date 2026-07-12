@@ -14,21 +14,21 @@ cfg_ctrl_t controls_encoder_get_next(encoder_binds_t encoder, cfg_ctrl_t current
 
 void control_name_say(cfg_ctrl_t ctrl);
 
-void controls_toggle_agc_hang(button_item_t *btn);
-void controls_toggle_key_train(button_item_t *btn);
-void controls_toggle_key_iambic_mode(button_item_t *btn);
-void controls_toggle_cw_decoder(button_item_t *btn);
-void controls_toggle_cw_tuner(button_item_t *btn);
-void controls_toggle_cw_peak(button_item_t *btn);
+void controls_toggle_agc_hang(button_data_t *data);
+void controls_toggle_key_train(button_data_t *data);
+void controls_toggle_key_iambic_mode(button_data_t *data);
+void controls_toggle_cw_decoder(button_data_t *data);
+void controls_toggle_cw_tuner(button_data_t *data);
+void controls_toggle_cw_peak(button_data_t *data);
 
-void controls_toggle_dnf(button_item_t *btn);
-void controls_toggle_dnf_auto(button_item_t *btn);
-void controls_toggle_nb(button_item_t *btn);
-void controls_toggle_nr(button_item_t *btn);
+void controls_toggle_dnf(button_data_t *data);
+void controls_toggle_dnf_auto(button_data_t *data);
+void controls_toggle_nb(button_data_t *data);
+void controls_toggle_nr(button_data_t *data);
 
-void controls_toggle_vox(button_item_t *btn);
+void controls_toggle_vox(button_data_t *data);
 
-void controls_cw_zap(button_item_t *btn);
+void controls_cw_zap(button_data_t *data);
 
 #ifdef __cplusplus
 }

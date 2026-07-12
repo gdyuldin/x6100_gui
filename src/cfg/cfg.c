@@ -22,6 +22,10 @@ cfg_cur_t cfg_cur = {
     .band = &cfg_band,
 };
 
+// Configuration item array for load/save purpose
+static cfg_item_t** cfg_arr;
+static size_t cfg_arr_size = sizeof(cfg) / sizeof(cfg_item_t);
+
 static band_info_t cur_band_info;
 
 static int init_params_cfg(sqlite3 *db);
@@ -162,12 +166,25 @@ static void on_db_item_change(Subject *subj, void *user_data) {
 }
 
 /**
+ * Helper for creating cfg_item_t** array
+ */
+cfg_item_t** make_params_pointers_array(cfg_item_t *start, size_t cnt) {
+    cfg_item_t *arr = (cfg_item_t *)start;
+    cfg_item_t **arr_p = calloc(sizeof(cfg_item_t*), cnt);
+    for (size_t i = 0; i < cnt; i++) {
+        arr_p[i] = &arr[i];
+    }
+    return arr_p;
+}
+
+
+/**
  * Init cfg items
  */
-void init_items(cfg_item_t *cfg_arr, uint32_t count, int (*load)(struct cfg_item_t *item),
+void init_items(cfg_item_t **cfg_arr, uint32_t count, int (*load)(struct cfg_item_t *item),
                 int (*save)(struct cfg_item_t *item)) {
     for (size_t i = 0; i < count; i++) {
-        cfg_item_t *item = &cfg_arr[i];
+        cfg_item_t *item = cfg_arr[i];
         if (load) {
             if (item->load) {
                 LV_LOG_ERROR("Item %s load func is redefined", item->db_name);
@@ -193,18 +210,18 @@ void init_items(cfg_item_t *cfg_arr, uint32_t count, int (*load)(struct cfg_item
 /**
  * Load items from db
  */
-int load_items_from_db(cfg_item_t *cfg_arr, uint32_t count) {
+int load_items_from_db(cfg_item_t **cfg_arr, uint32_t count) {
     int rc;
     for (size_t i = 0; i < count; i++) {
-        cfg_arr[i].dirty->val = ITEM_STATE_LOADING;
-        rc = cfg_arr[i].load(&cfg_arr[i]);
+        cfg_arr[i]->dirty->val = ITEM_STATE_LOADING;
+        rc = cfg_arr[i]->load(cfg_arr[i]);
         if (rc == NOT_FOUND) {
-            LV_LOG_USER("%s is not found (pk=%i), rc=%d", cfg_arr[i].db_name, cfg_arr[i].pk, rc);
-            cfg_arr[i].save(&cfg_arr[i]);
+            LV_LOG_USER("%s is not found (pk=%i), rc=%d", cfg_arr[i]->db_name, cfg_arr[i]->pk, rc);
+            cfg_arr[i]->save(cfg_arr[i]);
         } else if (rc != SUCCESS) {
-            LV_LOG_WARN("Can't load %s (pk=%i), rc=%d", cfg_arr[i].db_name, cfg_arr[i].pk, rc);
+            LV_LOG_WARN("Can't load %s (pk=%i), rc=%d", cfg_arr[i]->db_name, cfg_arr[i]->pk, rc);
         }
-        cfg_arr[i].dirty->val = ITEM_STATE_CLEAN;
+        cfg_arr[i]->dirty->val = ITEM_STATE_CLEAN;
     }
     return rc;
 }
@@ -226,10 +243,10 @@ void save_item_to_db(cfg_item_t *item, bool force) {
     pthread_mutex_unlock(&item->dirty->mux);
 }
 
-void save_items_to_db(cfg_item_t *cfg_arr, uint32_t cfg_size) {
+void save_items_to_db(cfg_item_t **cfg_arr, uint32_t cfg_size) {
     int rc;
     for (size_t i = 0; i < cfg_size; i++) {
-        save_item_to_db(&cfg_arr[i], false);
+        save_item_to_db(cfg_arr[i], false);
     }
 }
 
@@ -290,22 +307,19 @@ static void * db_to_val_encoder_bind(void * val, Subject *subj) {
 /**
  * Save thread
  */
+
 static void *params_save_thread(void *arg) {
-    cfg_item_t *cfg_arr;
-    cfg_arr           = (cfg_item_t *)&cfg;
     uint32_t cfg_size = sizeof(cfg) / sizeof(cfg_item_t);
+    cfg_item_t** cfg_arr = make_params_pointers_array((cfg_item_t *)&cfg, cfg_size);
 
-    cfg_item_t *cfg_band_arr;
-    cfg_band_arr           = (cfg_item_t *)&cfg_band;
     uint32_t cfg_band_size = sizeof(cfg_band) / sizeof(cfg_item_t);
+    cfg_item_t** cfg_band_arr = make_params_pointers_array((cfg_item_t *)&cfg_band, cfg_band_size);
 
-    cfg_item_t *cfg_mode_arr;
-    cfg_mode_arr           = (cfg_item_t *)&cfg_mode;
     uint32_t cfg_mode_size = sizeof(cfg_mode) / sizeof(cfg_item_t);
+    cfg_item_t** cfg_mode_arr = make_params_pointers_array((cfg_item_t *)&cfg_mode, cfg_mode_size);
 
-    cfg_item_t *cfg_transverter_arr;
-    cfg_transverter_arr           = (cfg_item_t *)&cfg_transverters;
     uint32_t cfg_transverter_size = sizeof(cfg_transverters) / sizeof(cfg_item_t);
+    cfg_item_t** cfg_transverter_arr = make_params_pointers_array((cfg_item_t *)&cfg_transverters, cfg_transverter_size);
 
     while (true) {
         save_items_to_db(cfg_arr, cfg_size);
@@ -314,6 +328,10 @@ static void *params_save_thread(void *arg) {
         save_items_to_db(cfg_transverter_arr, cfg_transverter_size);
         sleep_usec(10000000);
     }
+    free(cfg_arr);
+    free(cfg_band_arr);
+    free(cfg_mode_arr);
+    free(cfg_transverter_arr);
 }
 
 /**
@@ -432,9 +450,8 @@ static int init_params_cfg(sqlite3 *db) {
     fill_cfg_item_int(&cfg.ft8_max_repeats, subject_create_int(6), "ft8_max_repeats");
 
 
+    cfg_arr = make_params_pointers_array((cfg_item_t *)&cfg, cfg_arr_size);
     /* Load values from table */
-    cfg_item_t *cfg_arr  = (cfg_item_t *)&cfg;
-    uint32_t    cfg_size = sizeof(cfg) / sizeof(*cfg_arr);
-    init_items(cfg_arr, cfg_size, NULL, NULL);
-    return load_items_from_db(cfg_arr, cfg_size);
+    init_items(cfg_arr, cfg_arr_size, NULL, NULL);
+    return load_items_from_db(cfg_arr, cfg_arr_size);
 }

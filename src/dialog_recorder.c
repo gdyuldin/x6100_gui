@@ -57,39 +57,39 @@ static void load_btn_page();
 
 static void update_level_cb(lv_timer_t * timer);
 
-static void rec_stop_cb(button_item_t *item);
-static void play_stop_cb(button_item_t *item);
-static void dialog_recorder_rec_cb(button_item_t *item);
-static void dialog_recorder_play_cb(button_item_t *item);
-static void dialog_recorder_rename_cb(button_item_t *item);
-static void dialog_recorder_delete_cb(button_item_t *item);
+static void rec_stop_cb(button_data_t *btn_data);
+static void play_stop_cb(button_data_t *btn_data);
+static void dialog_recorder_rec_cb(button_data_t *btn_data);
+static void dialog_recorder_play_cb(button_data_t *btn_data);
+static void dialog_recorder_rename_cb(button_data_t *btn_data);
+static void dialog_recorder_delete_cb(button_data_t *btn_data);
 
-static button_item_t btn_rec = {
+static button_data_t btn_rec = {
     .type  = BTN_TEXT,
     .label = "Rec",
     .press = dialog_recorder_rec_cb,
 };
-static button_item_t btn_rec_stop = {
+static button_data_t btn_rec_stop = {
     .type  = BTN_TEXT,
     .label = "Rec\nStop",
     .press = rec_stop_cb,
 };
-static button_item_t btn_rename = {
+static button_data_t btn_rename = {
     .type  = BTN_TEXT,
     .label = "Rename",
     .press = dialog_recorder_rename_cb,
 };
-static button_item_t btn_delete = {
+static button_data_t btn_delete = {
     .type  = BTN_TEXT,
     .label = "Delete",
     .press = dialog_recorder_delete_cb,
 };
-static button_item_t btn_play = {
+static button_data_t btn_play = {
     .type  = BTN_TEXT,
     .label = "Play",
     .press = dialog_recorder_play_cb,
 };
-static button_item_t btn_play_stop = {
+static button_data_t btn_play_stop = {
     .type  = BTN_TEXT,
     .label = "Play\nStop",
     .press = play_stop_cb,
@@ -372,27 +372,27 @@ static void key_cb(lv_event_t * e) {
     }
 }
 
-static void dialog_recorder_rec_cb(button_item_t *item) {
+static void dialog_recorder_rec_cb(button_data_t *btn_data) {
     recorder_set_on(true);
 }
 
-static void rec_stop_cb(button_item_t *item) {
+static void rec_stop_cb(button_data_t *btn_data) {
     recorder_set_on(false);
     load_table();
 }
 
-static void dialog_recorder_play_cb(button_item_t *item) {
+static void dialog_recorder_play_cb(button_data_t *btn_data) {
     pthread_create(&thread, NULL, play_thread, NULL);
 
     buttons_unload_page();
     buttons_load(4, &btn_play_stop);
 }
 
-static void play_stop_cb(button_item_t *item) {
+static void play_stop_cb(button_data_t *btn_data) {
     play_state = false;
 }
 
-static void dialog_recorder_rename_cb(button_item_t *item) {
+static void dialog_recorder_rename_cb(button_data_t *btn_data) {
     prev_filename = strdup(get_item());
 
     if (prev_filename) {
@@ -402,7 +402,7 @@ static void dialog_recorder_rename_cb(button_item_t *item) {
     }
 }
 
-static void dialog_recorder_delete_cb(button_item_t *item) {
+static void dialog_recorder_delete_cb(button_data_t *btn_data) {
     const char *name = get_item();
 
     if (name) {

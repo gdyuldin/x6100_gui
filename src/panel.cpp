@@ -66,14 +66,16 @@ static void panel_update_text_cb(const char *text) {
     old_write = buf_write;
     // TODO: check len of text is not exceed width
     buf_write = stpcpy(buf_write, text);
-    // new line text only
-    if (strcmp(buf_write - 2, "\n\n") == 0) {
-        *buf_write-- = '\0';
-    } else {
-        lv_txt_get_size(&text_size, buf, &sony_38, 0, 0, LV_COORD_MAX, 0);
-        if (text_size.x > (lv_obj_get_width(obj) - 20)) {
-            *old_write = '\n';
-            buf_write = stpcpy(old_write + 1, text);
+    if (buf_write - buf >= 2) {
+        // new line text only
+        if (strcmp(buf_write - 2, "\n\n") == 0) {
+            *buf_write-- = '\0';
+        } else {
+            lv_txt_get_size(&text_size, buf, &sony_38, 0, 0, LV_COORD_MAX, 0);
+            if (text_size.x > (lv_obj_get_width(obj) - 20)) {
+                *old_write = '\n';
+                buf_write = stpcpy(old_write + 1, text);
+            }
         }
     }
     check_lines();
