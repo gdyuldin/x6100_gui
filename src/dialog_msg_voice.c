@@ -308,9 +308,9 @@ static void * send_thread(void *arg) {
 
     msg_update_text_fmt("Sending message");
 
-    radio_set_ptt(true);
+    radio_set_modem(true);
     play_item();
-    radio_set_ptt(false);
+    radio_set_modem(false);
 
     if (dialog.run) {
         buttons_unload_page();
