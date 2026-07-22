@@ -148,9 +148,9 @@ void controls_toggle_vox(button_data_t *data) {
 }
 
 void controls_cw_zap(button_data_t *data) {
-    SUBJ_CAST_I32(cfg_cur.mode, mode_subj);
-    SUBJ_CAST_I32(cfg.key_tone.val, key_tone_subj);
-    SUBJ_CAST_I32(cfg_cur.fg_freq, fg_freq_subj);
+    auto mode_subj = static_cast<SubjectInt*>(cfg_cur.mode);
+    auto key_tone_subj = static_cast<SubjectInt*>(cfg.key_tone.val);
+    auto fg_freq_subj = static_cast<SubjectInt*>(cfg_cur.fg_freq);
     x6100_mode_t mode = (x6100_mode_t)(mode_subj->get());
     if ((mode != x6100_mode_cw) && (mode != x6100_mode_cwr)) {
         return;
