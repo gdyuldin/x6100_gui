@@ -12,12 +12,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <png.h>
+#include <jpeglib.h>
 #include <pthread.h>
 
 #include "lvgl/lvgl.h"
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
 
 #include "screenshot.h"
 #include "util.h"
@@ -41,9 +39,42 @@ static int path_is_jpeg(const char *path) {
     return 0;
 }
 
+static bool write_jpeg(const char *path, uint8_t *rgb, int quality) {
+    FILE *fp = fopen(path, "wb");
+    if (!fp)
+        return false;
+
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+    jpeg_stdio_dest(&cinfo, fp);
+
+    cinfo.image_width = 800;
+    cinfo.image_height = 480;
+    cinfo.input_components = 3;
+    cinfo.in_color_space = JCS_RGB;
+
+    jpeg_set_defaults(&cinfo);
+    jpeg_set_quality(&cinfo, quality, TRUE);
+    jpeg_start_compress(&cinfo, TRUE);
+
+    while (cinfo.next_scanline < cinfo.image_height) {
+        JSAMPROW row = rgb + cinfo.next_scanline * 800 * 3;
+
+        jpeg_write_scanlines(&cinfo, &row, 1);
+    }
+
+    jpeg_finish_compress(&cinfo);
+    jpeg_destroy_compress(&cinfo);
+    fclose(fp);
+    return true;
+}
+
 static void * screenshot_thread(void *arg) {
     if (path_is_jpeg(file_str_final)) {
-        /* JPG path: use stb_image_write (no extra lib), write to .tmp then rename */
+        /* JPG path: use system libjpeg, write to .tmp then rename */
         uint8_t *rgb = (uint8_t *) malloc(800 * 480 * 3);
         if (!rgb) {
             msg_update_text_fmt("Error write file");
@@ -59,7 +90,7 @@ static void * screenshot_thread(void *arg) {
             }
         }
         /* Do not flip: LVGL snapshot is already top-to-bottom, same as PNG path */
-        if (stbi_write_jpg(file_str_tmp, 800, 480, 3, rgb, 85)) {
+        if (write_jpeg(file_str_tmp, rgb, 85)) {
             if (rename(file_str_tmp, file_str_final) != 0)
                 remove(file_str_tmp);
             if (screenshot_notify)

@@ -14,7 +14,7 @@
 #include "screenshot.h"
 #include "util.h"
 
-/* Use tmpfs; JPG via stb_image_write (faster, smaller, no extra lib) */
+/* Use tmpfs; JPG via libjpeg (smaller than PNG for remote preview) */
 #define REMOTE_SCREEN_PATH "/dev/shm/remote_screen.jpg"
 #define REMOTE_SCREEN_REQ_PATH "/tmp/remote_screen.req"
 #define REMOTE_SCREEN_POLL_MS 200
