@@ -39,13 +39,11 @@ static float            v_ext;
 static float            v_bat;
 static uint8_t          cap_bat;
 static bool             charging;
-static bool             use_voltage_for_percentage=false;
 
 static char             str[32];
 
 static void check_time_sync_cb(lv_timer_t * t);
 static time_t get_last_sync_time();
-static uint8_t convert_voltage_to_percent(float voltage);
 
 static void set_state(clock_state_t new_state) {
     state = new_state;
@@ -106,20 +104,20 @@ static void show_time() {
             pthread_mutex_lock(&power_mux);
             const char * bat_sym;
             const char * ext_sym;
-            switch (cap_bat) {
-                case 0 ... 12:
+            switch ((uint8_t)(v_bat * 10)) {
+                case 0 ... 63:
                     bat_sym = LV_SYMBOL_BATTERY_EMPTY;
                     break;
-                case 13 ... 37:
+                case 64 ... 69:
                     bat_sym = LV_SYMBOL_BATTERY_1;
                     break;
-                case 38 ... 62:
+                case 70 ... 75:
                     bat_sym = LV_SYMBOL_BATTERY_2;
                     break;
-                case 63 ... 87:
+                case 76 ... 81:
                     bat_sym = LV_SYMBOL_BATTERY_3;
                     break;
-                case 88 ... 100:
+                case 82 ... 100:
                     bat_sym = LV_SYMBOL_BATTERY_FULL;
                     break;
             }
@@ -158,17 +156,9 @@ lv_obj_t * clock_init(lv_obj_t * parent) {
 
     last_time_sync = get_last_sync_time();
     timer_time_sync = lv_timer_create(check_time_sync_cb, 200, NULL);
-
-    x6100_base_ver_t base_ver = x6100_control_get_base_ver();
-    if (util_compare_version(base_ver, (x6100_base_ver_t){1, 1, 7, 0}) < 0) {
-        use_voltage_for_percentage = true;
-    }
 }
 
 void clock_update_power(float ext, float bat, uint8_t cap, bool charge_flag) {
-    if (use_voltage_for_percentage) {
-        cap = convert_voltage_to_percent(bat);
-    }
     pthread_mutex_lock(&power_mux);
     v_ext = ext;
     v_bat = bat;
@@ -224,23 +214,4 @@ static time_t get_last_sync_time() {
         return attr.st_atime;
     }
     return 0;
-}
-
-/**
- * Convert 2-cell Li-Po battery voltage to capacity percentage using lookup table
- */
-static uint8_t convert_voltage_to_percent(float voltage) {
-    // Convert to integer (tenths of volt)
-    uint8_t v = (uint8_t)(voltage * 10.0f);
-
-    // Direct LUT: 6.0V to 8.4V
-    static const uint8_t lut[25] = {
-        0,0,0,0,0,0,1,2,3,4,  // 6.0-6.9
-        5,8,12,18,25,35,45,55,65,75,  // 7.0-7.9
-        82,87,92,96,100       // 8.0-8.4
-    };
-
-    if (v >= 84) return 100;
-    if (v <= 60) return 0;
-    return lut[v - 60];
 }
