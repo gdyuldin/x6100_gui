@@ -38,6 +38,8 @@
 #include "scheduler.h"
 #include "wifi.h"
 #include "usb_devices.h"
+#include "remote_control.h"
+#include "remote_screen.h"
 
 #define DISP_BUF_SIZE (800 * 480 * 4)
 
@@ -78,6 +80,7 @@ int main(void) {
     lv_disp_set_bg_opa(lv_disp_get_default(), LV_OPA_COVER);
 
     keyboard_init();
+    remote_control_init();
 
     keypad_init("/dev/input/event0");
     keypad_init("/dev/input/event4");
@@ -136,6 +139,8 @@ int main(void) {
         loop_start_time = get_time();
         observer_delayed_notify_all();
         event_obj_check();
+        remote_control_poll();
+        remote_screen_tick();
         scheduler_work();
         next_loop_time = lv_timer_handler() + loop_start_time;
         sleep_time = next_loop_time - get_time();

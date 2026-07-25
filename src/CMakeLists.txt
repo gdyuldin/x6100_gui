@@ -16,6 +16,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     voice.cpp cw_tune_ui.c adif.c qso_log.c scheduler.cpp
     dialog_wifi.c wifi.cpp controls.cpp usb_devices.cpp
     knobs.cpp
+    remote_control.c remote_screen.c
 )
 
 add_subdirectory(fonts)
@@ -34,7 +35,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
-    libnm dbus-glib-1 sqlite3 libpng libgps sndfile libudev libpulse libpulse-simple alsa
+    libnm dbus-glib-1 sqlite3 libpng libjpeg libgps sndfile libudev libpulse libpulse-simple alsa
 )
 
 

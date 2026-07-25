@@ -8,4 +8,7 @@
 
 #pragma once
 
-void screenshot_take();
+#include <stdbool.h>
+
+bool screenshot_take();
+bool screenshot_take_to_path(const char *path, bool notify);
