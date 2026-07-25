@@ -153,17 +153,17 @@ float cw_get_tone_freq(void) {
 }
 
 static void on_key_tone_change(Subject *subj, void *user_data) {
-    SUBJ_CAST_I32(subj, key_tone_subj);
+    auto key_tone_subj = static_cast<SubjectInt*>(subj);
     key_tone = key_tone_subj->get();
 }
 
 static void on_val_float_change(Subject *subj, void *user_data) {
-    SUBJ_CAST_F(subj, subj_f);
+    auto subj_f = static_cast<SubjectFloat*>(subj);
     *(float*)user_data = subj_f->get();
 }
 
 static void on_val_bool_change(Subject *subj, void *user_data) {
-    SUBJ_CAST_I32(subj, subj_i);
+    auto subj_i = static_cast<SubjectInt*>(subj);
     *(bool*)user_data = subj_i->get();
 }
 

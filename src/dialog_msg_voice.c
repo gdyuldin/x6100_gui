@@ -31,6 +31,7 @@
 #include "textarea_window.h"
 #include "msg.h"
 #include "meter.h"
+#include "scheduler.h"
 
 #define BUF_SIZE 1024
 
@@ -59,6 +60,7 @@ static void rec_stop_cb(button_data_t *btn_data);
 static void play_stop_cb(button_data_t *btn_data);
 static void send_stop_cb(button_data_t *btn_data);
 static void beacon_stop_cb(button_data_t *btn_data);
+static void refresh_buttons_on_done(void *page);
 
 static void dialog_msg_voice_send_cb(button_data_t *btn_data);
 static void dialog_msg_voice_beacon_cb(button_data_t *btn_data);
@@ -296,10 +298,8 @@ static void * play_thread(void *arg) {
     play_item();
     audio_set_play_mode(AUDIO_PLAY_OFF);
 
-    if (dialog.run) {
-        buttons_unload_page();
-        buttons_load_page(&page_msg_voice_2);
-    }
+    void *page_ptr = &page_msg_voice_2;
+    scheduler_put(refresh_buttons_on_done, &page_ptr, sizeof(&page_ptr));
 }
 
 static void * send_thread(void *arg) {
@@ -308,14 +308,12 @@ static void * send_thread(void *arg) {
 
     msg_update_text_fmt("Sending message");
 
-    radio_set_ptt(true);
+    radio_set_modem(true);
     play_item();
-    radio_set_ptt(false);
+    radio_set_modem(false);
 
-    if (dialog.run) {
-        buttons_unload_page();
-        buttons_load_page(&page_msg_voice_1);
-    }
+    void *page_ptr = &page_msg_voice_1;
+    scheduler_put(refresh_buttons_on_done, &page_ptr, sizeof(&page_ptr));
 }
 
 static void * beacon_thread(void *arg) {
@@ -325,15 +323,15 @@ static void * beacon_thread(void *arg) {
     while (true) {
         switch (beacon) {
             case VOICE_BEACON_OFF:
-                buttons_unload_page();
-                buttons_load_page(&page_msg_voice_1);
+                void *page_ptr = &page_msg_voice_1;
+                scheduler_put(refresh_buttons_on_done, &page_ptr, sizeof(&page_ptr));
                 return NULL;
 
             case VOICE_BEACON_PLAY:
                 msg_update_text_fmt("Sending message");
-                radio_set_ptt(true);
+                radio_set_modem(true);
                 play_item();
-                radio_set_ptt(false);
+                radio_set_modem(false);
                 break;
 
             case VOICE_BEACON_IDLE:
@@ -620,4 +618,19 @@ void dialog_msg_voice_put_audio_samples(size_t nsamples, int16_t *samples) {
     peak = S1 + (peak / 32768.0) * (S9_40 - S1);
     meter_update(peak, 0.25f);
     sf_write_short(file, samples, nsamples);
+}
+
+
+/**
+ * Helper function to refresh buttons from threads to prevent LVGL errors
+ */
+static void refresh_buttons_on_done(void *page) {
+    if (!page) {
+        return;
+    }
+
+    if (dialog.run) {
+        buttons_unload_page();
+        buttons_load_page(*(buttons_page_t**)page);
+    }
 }
