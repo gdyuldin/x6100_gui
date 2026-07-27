@@ -118,6 +118,17 @@ lv_style_t  dialog_dropdown_list_style;
 
 lv_style_t  cw_tune_style;
 
+/* RGB Picker */
+lv_style_t style_rgb_preview_cont;
+lv_style_t style_rgb_preview_rect;
+lv_style_t style_rgb_preview_hex;
+lv_style_t style_rgb_slider_panel;
+lv_style_t style_rgb_slider_row;
+lv_style_t style_rgb_letter;
+lv_style_t style_rgb_slider;
+lv_style_t style_rgb_slider_focused;
+lv_style_t style_rgb_val_label;
+
 lv_color_t  bg_color;
 
 static void setup_theme_legacy();
@@ -338,6 +349,48 @@ void styles_init(themes_t theme) {
     lv_style_set_opa(&cw_tune_style, LV_OPA_50);
     lv_style_set_x(&cw_tune_style, 30);
     lv_style_set_y(&cw_tune_style, 70);
+
+    /* RGB Picker Styles */
+    lv_style_init(&style_rgb_preview_cont);
+    lv_style_set_bg_opa(&style_rgb_preview_cont, LV_OPA_TRANSP);
+    lv_style_set_pad_top(&style_rgb_preview_cont, 10);
+
+    lv_style_init(&style_rgb_preview_rect);
+    lv_style_set_radius(&style_rgb_preview_rect, 12);
+    lv_style_set_border_color(&style_rgb_preview_rect, lv_color_white());
+    lv_style_set_border_width(&style_rgb_preview_rect, 1);
+    lv_style_set_bg_color(&style_rgb_preview_rect, lv_color_hex(0xAAAAAA));
+
+    lv_style_init(&style_rgb_preview_hex);
+    lv_style_set_text_font(&style_rgb_preview_hex, &sony_26);
+
+    lv_style_init(&style_rgb_slider_panel);
+    lv_style_set_bg_opa(&style_rgb_slider_panel, LV_OPA_TRANSP);
+    lv_style_set_pad_row(&style_rgb_slider_panel, 12);
+
+    lv_style_init(&style_rgb_slider_row);
+    lv_style_set_pad_column(&style_rgb_slider_row, 10);
+    lv_style_set_pad_top(&style_rgb_slider_row, 5);
+
+    lv_style_init(&style_rgb_letter);
+    lv_style_set_text_color(&style_rgb_letter, lv_color_white());
+    lv_style_set_text_font(&style_rgb_letter, &sony_26);
+    lv_style_set_pad_top(&style_rgb_letter, -2);
+
+    lv_style_init(&style_rgb_slider);
+    lv_style_set_border_width(&style_rgb_slider, 2);
+    lv_style_set_border_color(&style_rgb_slider, lv_color_white());
+    lv_style_set_border_opa(&style_rgb_slider, LV_OPA_COVER);
+    lv_style_set_radius(&style_rgb_slider, 10);
+
+    lv_style_init(&style_rgb_slider_focused);
+    lv_style_set_border_width(&style_rgb_slider_focused, 3);
+    lv_style_set_border_color(&style_rgb_slider_focused, lv_palette_main(LV_PALETTE_BLUE));
+
+    lv_style_init(&style_rgb_val_label);
+    lv_style_set_text_color(&style_rgb_val_label, lv_color_white());
+    lv_style_set_text_font(&style_rgb_val_label, &sony_26);
+    lv_style_set_pad_top(&style_rgb_val_label, -2);
 
     styles_set_theme(theme);
 }
