@@ -239,6 +239,7 @@ static void meter_color_update_cb(lv_event_t * e) {
     params_uint8_t  *var = (params_uint8_t*)lv_event_get_user_data(e);
 
     params_uint8_set(var, lv_dropdown_get_selected(obj));
+    styles_update_meter_colors();
 }
 
 /* SWR Color */
@@ -2135,7 +2136,7 @@ static uint8_t make_meter_color(uint8_t row) {
     lv_label_set_text(obj, "Meter Color");
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
-    obj = dropdown_uint8(grid, &params.meter_color, " Gray \n Colored");
+    obj = dropdown_uint8(grid, &params.meter_color, " Gray \n Colored", meter_color_update_cb);
 
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
