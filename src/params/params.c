@@ -98,6 +98,13 @@ params_t params = {
     .wifi_enabled           = { .x = false, .name="wifi_enabled" },
 
     .theme                  = { .x = THEME_SIMPLE, .name="theme"},
+
+
+    .spectrum_r             = { .x = 170, .min = 0, .max = 255, .name = "Spectrum R" },
+    .spectrum_g             = { .x = 170, .min = 0, .max = 255, .name = "Spectrum G" },
+    .spectrum_b             = { .x = 170, .min = 0, .max = 255, .name = "Spectrum B" },
+    .meter_color            = { .x = METER_GRAY, .name="meter_color"},
+    .swr_color              = { .x = SWR_GRAY,   .name="swr_color"},
 };
 
 static sqlite3_stmt     *write_mode_stmt;
@@ -256,6 +263,12 @@ static bool params_load() {
         if (params_load_str(&params.callsign, name, t)) continue;
         if (params_load_bool(&params.wifi_enabled, name, i)) continue;
         if (params_load_uint8(&params.theme, name, i)) continue;
+
+        if (params_load_uint8(&params.spectrum_r, name, i)) continue;
+        if (params_load_uint8(&params.spectrum_g, name, i)) continue;
+        if (params_load_uint8(&params.spectrum_b, name, i)) continue;
+        if (params_load_uint8(&params.meter_color, name, i)) continue;
+        if (params_load_uint8(&params.swr_color, name, i)) continue;
     }
 
     sqlite3_finalize(stmt);
@@ -362,6 +375,12 @@ static void params_save() {
     params_save_str(&params.callsign);
     params_save_bool(&params.wifi_enabled);
     params_save_uint8(&params.theme);
+
+    params_save_uint8(&params.spectrum_r);
+    params_save_uint8(&params.spectrum_g);
+    params_save_uint8(&params.spectrum_b);
+    params_save_uint8(&params.meter_color);
+    params_save_uint8(&params.swr_color);
 
     sql_query_exec("COMMIT");
 }
