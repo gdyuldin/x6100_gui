@@ -130,12 +130,22 @@ static void tx_info_draw_cb(lv_event_t *e) {
     float swr_val = vswr_items[0].val;
 
     for (uint16_t i = 0; i < count; i++) {
+        if (params.swr_color.x == SWR_GRAY) {
         if (swr_val <= 2.0f) {
             rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
         } else if (swr_val <= 3.0f) {
             rect_dsc.bg_color = lv_color_hex(0xAAAA00);
         } else {
             rect_dsc.bg_color = lv_color_hex(0xAA0000);
+        }
+        } else {
+            if (swr_val <= 2.0f) {
+            rect_dsc.bg_color = lv_color_hex(0x00CC00);
+        } else if (swr_val <= 3.0f) {
+            rect_dsc.bg_color = lv_color_hex(0xAAAA00);
+        } else {
+            rect_dsc.bg_color = lv_color_hex(0xAA0000);
+            }
         }
 
         area.x1 = x1 + 30 + i * slice_swr_width - slice_swr_width / 2 + slice_spacing / 2;
