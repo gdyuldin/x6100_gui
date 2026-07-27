@@ -79,6 +79,11 @@ static lv_obj_t     *hour;
 static lv_obj_t     *min;
 static lv_obj_t     *sec;
 
+/* RGB picker */
+static lv_obj_t * color_preview_rect;
+static lv_obj_t * color_preview_hex;
+static lv_obj_t * rgb_sliders[3];
+
 static std::vector<Observer*> observers;
 
 static button_data_t btn_general = {
@@ -197,6 +202,35 @@ static void theme_update_cb(lv_event_t * e) {
 
     params_uint8_set(var, lv_dropdown_get_selected(obj));
     styles_set_theme((themes_t)var->x);
+}
+
+/* RGB picker */
+static void rgb_color_update_cb(lv_event_t * e)
+{
+    uint8_t r = lv_slider_get_value(rgb_sliders[0]);
+    uint8_t g = lv_slider_get_value(rgb_sliders[1]);
+    uint8_t b = lv_slider_get_value(rgb_sliders[2]);
+
+    lv_color_t col = lv_color_make(r, g, b);
+    lv_obj_set_style_bg_color(color_preview_rect, col, 0);
+    lv_obj_set_style_bg_opa(color_preview_rect, LV_OPA_COVER, 0);
+
+    char buf[10];
+    lv_snprintf(buf, sizeof(buf), "#%02X%02X%02X", r, g, b);
+    lv_label_set_text(color_preview_hex, buf);
+
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t *slider = rgb_sliders[i];
+        lv_obj_t *label = (lv_obj_t *)lv_obj_get_user_data(slider);
+        if (label) {
+            char label_buf[16];
+            lv_snprintf(label_buf, sizeof(label_buf), "%d", lv_slider_get_value(slider));
+            lv_label_set_text(label, label_buf);
+        }
+    }
+    params_uint8_set(&params.spectrum_r, r);
+    params_uint8_set(&params.spectrum_g, g);
+    params_uint8_set(&params.spectrum_b, b);
 }
 
 /* Shared create */
@@ -1976,6 +2010,105 @@ static uint8_t make_theme(uint8_t row) {
     return row + 1;
 }
 
+/* RGB picker */
+static uint8_t make_rgb_color_picker(uint8_t row)
+{
+    row_dsc[row] = 120;
+
+    lv_obj_t *obj;
+    uint8_t col = 0;
+
+    // Label
+    obj = lv_label_create(grid);
+    lv_label_set_text(obj, "Spectrum Color");
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    // Preview Container
+    lv_obj_t *preview_cont = lv_obj_create(grid);
+    lv_obj_remove_style_all(preview_cont);
+    lv_obj_set_layout(preview_cont, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(preview_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(preview_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_size(preview_cont, SMALL_2, LV_SIZE_CONTENT);
+    lv_obj_add_style(preview_cont, &style_rgb_preview_cont, 0);
+    lv_obj_set_grid_cell(preview_cont, LV_GRID_ALIGN_CENTER, col, 2, LV_GRID_ALIGN_CENTER, row, 1);
+    col += 2;
+
+    // Rectangle Color Preview
+    color_preview_rect = lv_obj_create(preview_cont);
+    lv_obj_set_size(color_preview_rect, 80, 50);
+    lv_obj_add_style(color_preview_rect, &style_rgb_preview_rect, 0);
+
+    // Hex-Label
+    color_preview_hex = lv_label_create(preview_cont);
+    lv_label_set_text(color_preview_hex, "#AAAAAA");
+    lv_obj_add_style(color_preview_hex, &style_rgb_preview_hex, 0);
+
+    // Slider Panel
+    lv_obj_t *slider_panel = lv_obj_create(grid);
+    lv_obj_remove_style_all(slider_panel);
+    lv_obj_set_layout(slider_panel, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(slider_panel, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(slider_panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_size(slider_panel, SMALL_4 + 60, LV_SIZE_CONTENT);
+    lv_obj_add_style(slider_panel, &style_rgb_slider_panel, 0);
+    lv_obj_set_grid_cell(slider_panel, LV_GRID_ALIGN_START, col, 4, LV_GRID_ALIGN_CENTER, row, 1);
+
+    const char *labels[] = {"R", "G", "B"};
+    lv_palette_t palettes[] = {LV_PALETTE_RED, LV_PALETTE_GREEN, LV_PALETTE_BLUE};
+
+    uint8_t init_values[] = {
+        params.spectrum_r.x,
+        params.spectrum_g.x,
+        params.spectrum_b.x
+    };
+
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t *slider_row = lv_obj_create(slider_panel);
+        lv_obj_remove_style_all(slider_row);
+        lv_obj_set_layout(slider_row, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(slider_row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_size(slider_row, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_add_style(slider_row, &style_rgb_slider_row, 0);
+
+        // Letter R / G / B
+        lv_obj_t *letter_label = lv_label_create(slider_row);
+        lv_label_set_text(letter_label, labels[i]);
+        lv_obj_set_width(letter_label, 20);
+        lv_obj_add_style(letter_label, &style_rgb_letter, 0);
+
+        // Slider
+        rgb_sliders[i] = slider_with_text(
+            slider_row,
+            init_values[i],
+            (uint8_t)0,
+            (uint8_t)255,
+            (uint8_t)1,
+            SMALL_4 - 100,
+            "%d",
+            rgb_color_update_cb,
+            NULL
+        );
+
+        // Dynamic Color
+        lv_obj_set_style_bg_color(rgb_sliders[i], lv_palette_main(palettes[i]), LV_PART_INDICATOR | LV_PART_KNOB);
+
+        // Static Styles
+        lv_obj_add_style(rgb_sliders[i], &style_rgb_slider, 0);
+        lv_obj_add_style(rgb_sliders[i], &style_rgb_slider_focused, LV_STATE_FOCUSED);
+
+        // Value-Label
+        lv_obj_t *val_label = (lv_obj_t *)lv_obj_get_user_data(rgb_sliders[i]);
+        lv_obj_add_style(val_label, &style_rgb_val_label, 0);
+    }
+
+    lv_obj_update_layout(grid);
+    lv_obj_invalidate(grid);
+    lv_event_send(rgb_sliders[0], LV_EVENT_VALUE_CHANGED, NULL);
+
+    return row + 1;
+}
+
 static uint8_t make_delimiter(uint8_t row) {
     row_dsc[row] = 10;
 
@@ -2105,6 +2238,9 @@ static void make_ui_page() {
     row = make_delimiter(row);
 
     row = make_theme(row);
+
+    /* RGB picker */
+    row = make_rgb_color_picker(row);
 
     row_dsc[row] = LV_GRID_TEMPLATE_LAST;
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);

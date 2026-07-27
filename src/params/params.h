@@ -163,6 +163,12 @@ typedef struct {
 
     params_uint8_t       theme;
 
+    /* Spectrum Color */
+
+    params_uint8_t       spectrum_r;
+    params_uint8_t       spectrum_g;
+    params_uint8_t       spectrum_b;
+
     /* durty flags */
 
     struct {
@@ -210,6 +216,11 @@ typedef struct {
         bool    press_f2;
         bool    long_f1;
         bool    long_f2;
+
+        /* Spectrum Color */
+        bool    spectrum_r;
+        bool    spectrum_g;
+        bool    spectrum_b;
 
     } dirty;
 } params_t;
