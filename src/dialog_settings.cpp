@@ -79,7 +79,7 @@ static lv_obj_t     *hour;
 static lv_obj_t     *min;
 static lv_obj_t     *sec;
 
-// RGB picker
+/* RGB picker */
 static lv_obj_t * color_preview_rect;
 static lv_obj_t * color_preview_hex;
 static lv_obj_t * rgb_sliders[3];
@@ -204,7 +204,7 @@ static void theme_update_cb(lv_event_t * e) {
     styles_set_theme((themes_t)var->x);
 }
 
-// RGB picker
+/* RGB picker */
 static void rgb_color_update_cb(lv_event_t * e)
 {
     uint8_t r = lv_slider_get_value(rgb_sliders[0]);
