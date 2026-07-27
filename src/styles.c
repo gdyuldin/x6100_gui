@@ -129,6 +129,13 @@ lv_style_t style_rgb_slider;
 lv_style_t style_rgb_slider_focused;
 lv_style_t style_rgb_val_label;
 
+/* Meter colors */
+lv_color_t meter_color_noise;
+lv_color_t meter_color_s9;
+lv_color_t meter_color_s9plus;
+lv_color_t meter_color_over;
+lv_color_t meter_color_peak;
+
 lv_color_t  bg_color;
 
 static void setup_theme_legacy();
@@ -392,6 +399,26 @@ void styles_init(themes_t theme) {
     lv_style_set_pad_top(&style_rgb_val_label, -2);
 
     styles_set_theme(theme);
+
+    styles_update_meter_colors();
+}
+
+void styles_update_meter_colors(void)
+{
+    if (params.meter_color.x == METER_GRAY) {
+        meter_color_noise   = lv_color_hex(0x777777);
+        meter_color_s9      = lv_color_hex(0xAAAAAA);
+        meter_color_s9plus  = lv_color_hex(0xAAAA00);
+        meter_color_over    = lv_color_hex(0xAA0000);
+        meter_color_peak    = lv_color_hex(0xAAAAAA);
+    } else {
+        // Colored
+        meter_color_noise   = lv_color_hex(0x228B22);
+        meter_color_s9      = lv_color_hex(0x00CC00);
+        meter_color_s9plus  = lv_color_hex(0xFFFF00);
+        meter_color_over    = lv_color_hex(0xAA0000);
+        meter_color_peak    = lv_color_hex(0xFFFF00);
+    }
 }
 
 void styles_set_theme(themes_t theme) {

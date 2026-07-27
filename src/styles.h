@@ -79,6 +79,13 @@ extern lv_style_t style_rgb_slider;
 extern lv_style_t style_rgb_slider_focused;
 extern lv_style_t style_rgb_val_label;
 
+/* Meter colors */
+extern lv_color_t meter_color_noise;
+extern lv_color_t meter_color_s9;
+extern lv_color_t meter_color_s9plus;
+extern lv_color_t meter_color_over;
+extern lv_color_t meter_color_peak;
+
 extern lv_font_t    sony_14;
 extern lv_font_t    sony_16;
 extern lv_font_t    sony_18;
@@ -100,3 +107,5 @@ extern lv_font_t    sony_60;
 void styles_init(themes_t theme);
 
 void styles_set_theme(themes_t theme);
+
+void styles_update_meter_colors(void);
