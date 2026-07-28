@@ -37,6 +37,7 @@ typedef struct {
 static lv_obj_t         *obj;
 static lv_obj_t         *img;
 static bool             ready = false;
+static bool             partial_render = false;
 
 static lv_style_t       middle_line_style;
 static lv_obj_t         *middle_line;
@@ -49,6 +50,7 @@ static float            grid_min = DEFAULT_MIN;
 static float            grid_max = DEFAULT_MAX;
 
 static lv_img_dsc_t     *frame;
+static uint8_t          *tmp_buf;
 static uint8_t          delay = 0;
 
 static wf_data_row_t    *wf_rows;
@@ -64,10 +66,10 @@ static uint8_t          refresh_counter = 0;
 
 static uint8_t          zoom = 1;
 
-static void refresh_waterfall( void * arg);
+static void refresh_waterfall();
 static void draw_middle_line();
 static void update_middle_line();
-static void redraw_cb(lv_event_t * e);
+static void waterfall_render();
 static void on_zoom_changed(Subject *subj, void *user_data);
 static void on_fg_freq_change(Subject *subj, void *user_data);
 static void on_lo_offset_change(Subject *subj, void *user_data);
@@ -151,7 +153,7 @@ void waterfall_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq,
 
         wf_rows[last_row_id].values[x] = id;
     }
-    scheduler_put_noargs(refresh_waterfall);
+    refresh_waterfall();
 }
 
 static void do_scroll_cb(lv_event_t * event) {
@@ -163,7 +165,8 @@ static void do_scroll_cb(lv_event_t * event) {
     } else {
         wf_center_freq = radio_center_freq;
     }
-    scheduler_put_noargs(refresh_waterfall);
+    partial_render = false;
+    refresh_waterfall();
 }
 
 void waterfall_set_height(lv_coord_t h) {
@@ -176,6 +179,7 @@ void waterfall_set_height(lv_coord_t h) {
     height = lv_obj_get_height(obj);
 
     frame = lv_img_buf_alloc(WIDTH, height, LV_IMG_CF_TRUE_COLOR);
+    tmp_buf = malloc(frame->data_size);
 
     img = lv_img_create(obj);
     lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
@@ -294,7 +298,7 @@ static inline void lerp_row(wf_data_row_t *row_data, uint32_t dst_center_freq, u
     }
 }
 
-static void redraw_cb(lv_event_t * e) {
+static void waterfall_render() {
     int32_t src_x_offset;
     uint16_t src_y, src_x0, dst_y, dst_x;
 
@@ -308,32 +312,56 @@ static void redraw_cb(lv_event_t * e) {
     lv_color_t px_color;
     uint8_t dst[WIDTH];
 
-    for (src_y = 0; src_y < height; src_y++) {
-        wf_data_row_t row_data = wf_rows[src_y];
-        dst_y = ((height - src_y + last_row_id) % height);
+    if (partial_render) {
+        // Copy data, add a line on top
+        uint32_t row_stride = lv_img_buf_get_img_size(frame->header.w, 1, frame->header.cf);
+        memmove(tmp_buf + row_stride, tmp_buf, frame->data_size - row_stride);
 
+        src_y = last_row_id;
+        wf_data_row_t row_data = wf_rows[src_y];
         lerp_row(&row_data, wf_center_freq, bandwidth, dst);
         for (size_t i = 0; i < WIDTH; i++) {
-            *((lv_color_t*)frame->data + (dst_y * WIDTH + i)) = (lv_color_t)wf_palette[dst[i]];
+            *((lv_color_t*)tmp_buf + i) = (lv_color_t)wf_palette[dst[i]];
+        }
+    } else {
+        for (src_y = 0; src_y < height; src_y++) {
+            wf_data_row_t row_data = wf_rows[src_y];
+            dst_y = ((height - src_y + last_row_id) % height);
+
+            lerp_row(&row_data, wf_center_freq, bandwidth, dst);
+            for (size_t i = 0; i < WIDTH; i++) {
+                *((lv_color_t*)tmp_buf + (dst_y * WIDTH + i)) = (lv_color_t)wf_palette[dst[i]];
+            }
         }
     }
+
+    partial_render = true;
 }
 
-static void refresh_waterfall( void * arg) {
+/// @brief Callback to invalidate waterfall on main thread
+/// @param ignore
+static void waterfall_invalidate(void*) {
+    // Copy before refresh to minimize tearing
+    memcpy((void*)frame->data, tmp_buf, frame->data_size);
+    lv_obj_invalidate(img);
+}
+
+static void refresh_waterfall() {
     if (!ready) {
         return;
     }
     refresh_counter++;
     if (refresh_counter >= refresh_period) {
         refresh_counter = 0;
-        redraw_cb(NULL);
-        lv_obj_invalidate(img);
+        waterfall_render();
+        scheduler_put_noargs(waterfall_invalidate);
     }
 }
 
 static void on_zoom_changed(Subject *subj, void *user_data) {
     zoom = subject_get_int(subj);
     update_middle_line();
+    partial_render = false;
 }
 
 static void on_if_shift_changed(Subject *subj, void *user_data) {
@@ -346,10 +374,12 @@ static void on_if_shift_changed(Subject *subj, void *user_data) {
 static void on_fg_freq_change(Subject *subj, void *user_data) {
     delay = 2;
     radio_center_freq = subject_get_int(subj) - if_shift;
+    partial_render = false;
 }
 
 static void on_lo_offset_change(Subject *subj, void *user_data) {
     lo_offset = subject_get_int(subj);
+    partial_render = false;
 }
 
 static void update_middle_line() {
