@@ -824,6 +824,7 @@ static void freq_shift(int16_t diff) {
     int32_t freq = subject_get_int(cfg_cur.fg_freq);
     int32_t df = diff * subject_get_int(cfg_cur.freq_step) * freq_accel(abs(diff));
     freq = align_int(freq + df, abs(df));
+    freq = LV_MAX(500000, freq);
     subject_set_int(cfg_cur.fg_freq, freq);
 
     voice_say_freq(freq);
