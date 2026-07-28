@@ -13,6 +13,10 @@
 
 #include "params/params.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void backlight_init();
 void backlight_tick();
 
@@ -21,3 +25,7 @@ void backlight_set_buttons(buttons_light_t value);
 
 void backlight_switch();
 bool backlight_is_on();
+
+#ifdef __cplusplus
+}
+#endif

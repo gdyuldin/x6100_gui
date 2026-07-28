@@ -8,6 +8,8 @@
 
 #include "main_screen.h"
 
+#include <math.h>
+
 #include "styles.h"
 #include "spectrum.h"
 #include "waterfall.h"
@@ -78,7 +80,7 @@ static lv_timer_t *low_power_timer;
 
 static void low_power_timer_cb(lv_timer_t * timer);
 
-static void freq_shift(int16_t diff);
+static void freq_shift(int16_t diff, uint16_t dt);
 static void next_freq_step(bool up);
 static void toggle_atu_enabled();
 
@@ -738,7 +740,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
         case HKEY_UP:
             if (hkey->state == HKEY_RELEASE) {
                 if (!subject_get_int(freq_lock)) {
-                    freq_shift(+1);
+                    freq_shift(+1, 0);
                 }
             } else if (hkey->state == HKEY_LONG) {
                 if (!band_lock) {
@@ -751,7 +753,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
         case HKEY_DOWN:
             if (hkey->state == HKEY_RELEASE) {
                 if (!subject_get_int(freq_lock)) {
-                    freq_shift(-1);
+                    freq_shift(-1, 0);
                 }
             } else if (hkey->state == HKEY_LONG) {
                 if (!band_lock) {
@@ -798,31 +800,35 @@ static void main_screen_update_cb(lv_event_t * e) {
     spectrum_clear();
 }
 
-static uint16_t freq_accel(uint16_t diff) {
-    if (diff < 3) {
+static uint16_t freq_accel(uint16_t dt) {
+    if (dt == 0) {
         return 1;
     }
+
+    float speed;
 
     switch (params.freq_accel.x) {
         case FREQ_ACCEL_NONE:
             return 1;
 
         case FREQ_ACCEL_LITE:
-            return (diff < 6) ? 5 : 10;
+            speed = 20.0f / dt;
+            return LV_MIN(exp2f(speed), 10);
 
         case FREQ_ACCEL_STRONG:
-            return (diff < 6) ? 10 : 30;
+            speed = 40.0f / dt;
+            return LV_MIN(exp2f(speed), 30);
     }
     return 1;
 }
 
-static void freq_shift(int16_t diff) {
+static void freq_shift(int16_t diff, uint16_t dt) {
     if (subject_get_int(freq_lock)) {
         return;
     }
 
     int32_t freq = subject_get_int(cfg_cur.fg_freq);
-    int32_t df = diff * subject_get_int(cfg_cur.freq_step) * freq_accel(abs(diff));
+    int32_t df = diff * subject_get_int(cfg_cur.freq_step) * freq_accel(dt);
     freq = align_int(freq + df, abs(df));
     freq = LV_MAX(500000, freq);
     subject_set_int(cfg_cur.fg_freq, freq);
@@ -831,11 +837,12 @@ static void freq_shift(int16_t diff) {
 }
 
 static void main_screen_rotary_cb(lv_event_t * e) {
-    int32_t *diff = (int32_t *) lv_event_get_param(e);
+    rotary_data_t *data = (rotary_data_t *) lv_event_get_param(e);
 
-    freq_shift(*diff);
-    dialog_rotary(*diff);
-    free(diff);
+    freq_shift(data->diff, data->dt);
+    // TODO: add dt support
+    dialog_rotary(data->diff);
+    free(data);
 }
 
 static void spectrum_key_cb(lv_event_t * e) {
@@ -844,13 +851,13 @@ static void spectrum_key_cb(lv_event_t * e) {
     switch (key) {
         case '-':
             if (!subject_get_int(freq_lock)) {
-                freq_shift(-1);
+                freq_shift(-1, 0);
             }
             break;
 
         case '=':
             if (!subject_get_int(freq_lock)) {
-                freq_shift(+1);
+                freq_shift(+1, 0);
             }
             break;
 

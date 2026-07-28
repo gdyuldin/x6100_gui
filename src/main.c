@@ -82,7 +82,7 @@ int main(void) {
     keypad_init("/dev/input/event0");
     keypad_init("/dev/input/event4");
 
-    rotary_init("/dev/input/event1");
+    rotary_main_init("/dev/input/event1");
 
     vol = rotary_init("/dev/input/event2");
     mfk = encoder_init("/dev/input/event3");

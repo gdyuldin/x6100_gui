@@ -11,19 +11,20 @@
 #include "events.h"
 #include "backlight.h"
 #include "keyboard.h"
+#include <stdio.h>
 
 #define QUEUE_SIZE  64
 
-uint32_t        EVENT_ROTARY;
-uint32_t        EVENT_KEYPAD;
-uint32_t        EVENT_HKEY;
-uint32_t        EVENT_RADIO_TX;
-uint32_t        EVENT_RADIO_RX;
-uint32_t        EVENT_SCREEN_UPDATE;
-uint32_t        EVENT_MSG_UPDATE;
-uint32_t        EVENT_GPS;
-uint32_t        EVENT_BAND_UP;
-uint32_t        EVENT_BAND_DOWN;
+lv_event_code_t        EVENT_ROTARY;
+lv_event_code_t        EVENT_KEYPAD;
+lv_event_code_t        EVENT_HKEY;
+lv_event_code_t        EVENT_RADIO_TX;
+lv_event_code_t        EVENT_RADIO_RX;
+lv_event_code_t        EVENT_SCREEN_UPDATE;
+lv_event_code_t        EVENT_MSG_UPDATE;
+lv_event_code_t        EVENT_GPS;
+lv_event_code_t        EVENT_BAND_UP;
+lv_event_code_t        EVENT_BAND_DOWN;
 
 typedef struct {
     lv_obj_t        *obj;

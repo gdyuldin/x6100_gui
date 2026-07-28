@@ -3,7 +3,7 @@ add_executable(${PROJECT_NAME})
 target_sources(${PROJECT_NAME} PUBLIC
     main.c main_screen.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
-    waterfall.c rotary.c keyboard.c encoder.c
+    waterfall.c rotary.cpp keyboard.c encoder.c
     events.c msg.c msg_tiny.c keypad.c
     hkey.c clock.c info.c
     meter.c band_info.c tx_info.c
@@ -49,8 +49,10 @@ RHVoice RHVoice_core RHVoice_audio
 ft8
 )
 
-# target_compile_options(${PROJECT_NAME} PRIVATE -g -fno-omit-frame-pointer -fasynchronous-unwind-tables)
-# target_link_options(${PROJECT_NAME} PRIVATE -g -rdynamic)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(${PROJECT_NAME} PRIVATE -g -fno-omit-frame-pointer -fasynchronous-unwind-tables)
+    target_link_options(${PROJECT_NAME} PRIVATE -g -rdynamic)
+endif()
 
 # target_compile_options(${PROJECT_NAME} PRIVATE -g -fsanitize=address -fsanitize=undefined  -fno-omit-frame-pointer -fno-sanitize-recover)
 # target_link_options(${PROJECT_NAME} PRIVATE -g -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -fno-sanitize-recover -static-libasan -static-libubsan)

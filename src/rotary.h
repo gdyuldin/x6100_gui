@@ -10,7 +10,13 @@
 
 #include <stdint.h>
 #include "lvgl/lvgl.h"
+
 #include "events.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 typedef struct {
     int             fd;
@@ -22,4 +28,14 @@ typedef struct {
     lv_indev_t      *indev;
 } rotary_t;
 
+typedef struct {
+    int16_t  diff;
+    uint16_t dt;  // dt in ms per single click/event
+} rotary_data_t;
+
 rotary_t * rotary_init(char *dev_name);
+void rotary_main_init(char *dev_name);
+
+#ifdef __cplusplus
+}
+#endif
