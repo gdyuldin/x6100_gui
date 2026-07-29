@@ -236,7 +236,7 @@ void save_item_to_db(cfg_item_t *item, bool force) {
     if ((item->dirty->val == ITEM_STATE_CHANGED) || force) {
         rc = item->save(item);
         if (rc != 0) {
-            LV_LOG_USER("Can't save %s (pk=%i)", item->db_name, item->pk);
+            LV_LOG_USER("Can't save %s (pk=%i), rc=%d", item->db_name, item->pk, rc);
         }
         item->dirty->val = ITEM_STATE_CLEAN;
     }

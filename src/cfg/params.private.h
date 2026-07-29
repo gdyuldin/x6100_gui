@@ -8,6 +8,7 @@ typedef enum {
     SUCCESS = 0,
     WRONG_TYPE = -1,
     NOT_FOUND = -2,
+    WRONG_VALUE = -3,
 } load_save_error_codes_t;
 
 void cfg_params_init(sqlite3 *db);

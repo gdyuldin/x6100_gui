@@ -87,8 +87,8 @@ void Subject::notify() {
     if (is_notifying) {
         LV_LOG_ERROR("Already notifying: %p", this);
     }
-    is_notifying = true;
     const std::lock_guard<std::mutex> lock(mutex_subscribe);
+    is_notifying = true;
     for (auto& observer : observers) {
         observer->notify();
     }

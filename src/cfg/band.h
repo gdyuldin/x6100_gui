@@ -38,7 +38,6 @@ typedef struct {
     cfg_item_t dac_offset;
 } cfg_band_t;
 
-void cfg_band_set_freq_for_vfo(x6100_vfo_t vfo, int32_t freq);
 
 void        cfg_band_vfo_copy();
 void        cfg_band_load_next(bool up);

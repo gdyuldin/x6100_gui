@@ -10,9 +10,9 @@ extern "C" {
 #include <sqlite3.h>
 
 enum item_state_t {
-    ITEM_STATE_CLEAN,
-    ITEM_STATE_CHANGED,
-    ITEM_STATE_LOADING,
+    ITEM_STATE_CLEAN, // DB item is not changes
+    ITEM_STATE_CHANGED,  // DB item is changed and ready for saving
+    ITEM_STATE_LOADING,  // DB item is loading from DB
 };
 
 struct dirty_t {

@@ -40,6 +40,13 @@ bool database_init() {
         return false;
     }
 
+    // Some optimizations
+    //
+    sqlite3_exec(db, "PRAGMA synchronous = OFF;", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA journal_mode = WAL;", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA cache_size = -4096;", NULL, NULL, NULL);
+
+
     rc = sqlite3_prepare_v2(db, "INSERT INTO params(name, val) VALUES(?, ?)", -1, &insert_stmt, 0);
 
     if (rc != SQLITE_OK) {

@@ -166,7 +166,7 @@ int cfg_mode_params_load_item(cfg_item_t *item) {
         }
         rc = 0;
     } else {
-        LV_LOG_WARN("No results for load from mode_params with name: %s and mode: %i", item->db_name, item->pk);
+        LV_LOG_WARN("No saved '%s' for mode: %i", item->db_name, item->pk);
         // Save with default value
         cfg_mode_params_save_item(item);
         rc = -1;

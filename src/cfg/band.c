@@ -4,6 +4,7 @@
 #include "band.private.h"
 
 #include "cfg.private.h"
+#include "params.private.h"
 
 #include "transverter.h"
 
@@ -157,21 +158,30 @@ void cfg_band_set_freq_for_vfo(x6100_vfo_t vfo, int32_t freq) {
         target = &cfg_band.vfo_b;
     }
     if (new_band_id != target->freq.pk) {
-        cfg_band.vfo.pk = new_band_id;
-        save_item_to_db(&cfg_band.vfo, true);
+        // Preserve VFO on changing band
+        // TODO: use another way
+        // cfg_band.vfo.pk = new_band_id;
+        // save_item_to_db(&cfg_band.vfo, true);
+
         if (target->freq.dirty->val == ITEM_STATE_LOADING) {
+            // Don not save during loading
             cfg_band_params_change_pk(new_band_id);
         } else {
             // save old freq and update band_id
             cfg_band_params_save_all();
             cfg_band_params_change_pk(new_band_id);
-            if (new_band_id != BAND_UNDEFINED) {
-                cfg_band_params_load_all_except_freq(vfo);
-            }
+            // Preserve VFO on changing band
+            save_item_to_db(&cfg_band.vfo, true);
+            subject_set_int(target->freq.val, freq);
+            // if (new_band_id != BAND_UNDEFINED) {
+            cfg_band_params_load_all_except_freq(vfo);
+            // }
         }
+
         subject_set_int(cfg.band_id.val, new_band_id);
+    } else {
+        subject_set_int(target->freq.val, freq);
     }
-    subject_set_int(target->freq.val, freq);
 }
 
 void cfg_band_vfo_copy() {
@@ -372,7 +382,7 @@ uint32_t cfg_band_read_all_bands(band_info_t **results, int32_t *cap) {
 
 void cfg_band_params_save_all() {
     if (cfg_arr) {
-        LV_LOG_USER("Save band params for pk=%i", cfg_arr[0]->pk);
+        LV_LOG_USER("Saving band params for pk=%i", cfg_arr[0]->pk);
         for (size_t i = 0; i < cfg_arr_size; i++) {
             save_item_to_db(cfg_arr[i], false);
         }
@@ -417,7 +427,7 @@ void cfg_band_params_load_all_except_freq(x6100_vfo_t vfo) {
             }
         }
 
-        LV_LOG_USER("Load band params for pk=%i, except %s", filtered_cfg[0]->pk, skip_name);
+        LV_LOG_USER("Loading band params for pk=%i, except %s", filtered_cfg[0]->pk, skip_name);
         load_items_from_db(filtered_cfg, filtered_size);
     } else {
         LV_LOG_ERROR("cfg_arr is null");
@@ -428,14 +438,13 @@ int cfg_band_params_load_item(cfg_item_t *item) {
     enum data_type dtype = subject_get_dtype(item->val);
     if ((dtype != DTYPE_INT) && (dtype != DTYPE_FLOAT)) {
         LV_LOG_WARN("Unknown item %s dtype: %u, can't load", item->db_name, dtype);
-        return -1;
+        return WRONG_TYPE;
+    }
+    band_info_t *band_info = NULL;
+    if (item->pk != BAND_UNDEFINED) {
+        band_info = get_band_info_by_pk(item->pk);
     }
 
-    band_info_t *band_info = get_band_info_by_pk(item->pk);
-    if (!band_info) {
-        LV_LOG_ERROR("Can't load band info for pk: %i", item->pk);
-        return -1;
-    }
     sqlite3_stmt *stmt = read_stmt;
     pthread_mutex_lock(&read_mutex);
     int     rc;
@@ -459,18 +468,19 @@ int cfg_band_params_load_item(cfg_item_t *item) {
             int_val = sqlite3_column_int(stmt, 0);
             LV_LOG_USER("Loaded %s=%i (pk=%i)", item->db_name, int_val, item->pk);
             if ((strcmp(item->db_name, "vfoa_freq") == 0) || (strcmp(item->db_name, "vfob_freq") == 0)) {
-                if ((int_val >= band_info->start_freq) && (int_val <= band_info->stop_freq) ||
-                    (band_info->id == BAND_UNDEFINED)) {
-                    subject_set_int(item->val, int_val);
-                } else {
-                    LV_LOG_USER("Freq %lu for %s (band_id: %i) outside boundaries, db value ignored", int_val,
-                                item->db_name, item->pk);
-                    subject_set_int(item->val, band_info->start_freq);
+                if (band_info) {
+                    // Check that loaded freq in boundary for non-undefined band
+                    if ((int_val >= band_info->start_freq) && (int_val <= band_info->stop_freq) ||
+                        (band_info->id == BAND_UNDEFINED)) {
+                    } else {
+                        LV_LOG_USER("Freq %lu for %s (band_id: %i) outside boundaries, %d will be used", int_val,
+                                    item->db_name, item->pk, band_info->start_freq);
+                        int_val = band_info->start_freq;
+                    }
                 }
-            } else {
-                subject_set_int(item->val, int_val);
             }
-            rc = 0;
+            subject_set_int(item->val, int_val);
+            rc = SUCCESS;
         } else if (dtype == DTYPE_FLOAT) {
             float val;
             if (item->db_scale != 0) {
@@ -480,19 +490,40 @@ int cfg_band_params_load_item(cfg_item_t *item) {
             }
             LV_LOG_USER("Loaded %s=%f (pk=%i)", item->db_name, val, item->pk);
             subject_set_float(item->val, val);
-            rc = 0;
+            rc = SUCCESS;
         }
     } else {
+        // Not found on DB
         if (strcmp(item->db_name, "vfob_freq") == 0) {
             int_val = subject_get_int(cfg_band.vfo_a.freq.val);
-            LV_LOG_USER("Copy vfoa freq (%d) to vfob", int_val);
+            if (band_info) {
+                // Check for boundaries before copying
+                if ((int_val >= band_info->start_freq) && (int_val <= band_info->stop_freq) ||
+                (band_info->id == BAND_UNDEFINED)) {
+                    LV_LOG_USER("Copy vfoa freq (%d) to vfob", int_val);
+                } else {
+                    int_val = band_info->start_freq;
+                    LV_LOG_USER("Freq %d for %s (band_id: %i) outside boundaries, db value ignored", int_val,
+                                item->db_name, item->pk);
+                }
+            }
             subject_set_int(item->val, int_val);
-            rc = 0;
+            rc = SUCCESS;
+        } else if (strcmp(item->db_name, "vfob_mode") == 0) {
+            subject_set_int(item->val, subject_get_int(cfg_band.vfo_a.mode.val));
+            rc = SUCCESS;
+        } else if (strcmp(item->db_name, "vfob_att") == 0) {
+            subject_set_int(item->val, subject_get_int(cfg_band.vfo_a.att.val));
+            rc = SUCCESS;
+        } else if (strcmp(item->db_name, "vfob_pre") == 0) {
+            subject_set_int(item->val, subject_get_int(cfg_band.vfo_a.pre.val));
+            rc = SUCCESS;
+        } else if (strcmp(item->db_name, "vfob_agc") == 0) {
+            subject_set_int(item->val, subject_get_int(cfg_band.vfo_a.agc.val));
+            rc = SUCCESS;
         } else {
-            LV_LOG_WARN("No results for load from band_params with name: %s and bands_id: %i", item->db_name, item->pk);
-            // Save with default value
-            cfg_band_params_save_item(item);
-            rc = -1;
+            // LV_LOG_WARN("No DB data for %s for bands_id: %i", item->db_name, item->pk);
+            rc = NOT_FOUND;
         }
     }
     sqlite3_reset(stmt);
@@ -504,13 +535,21 @@ int cfg_band_params_load_item(cfg_item_t *item) {
 
 int cfg_band_params_save_item(cfg_item_t *item) {
     int32_t      start_freq, stop_freq, band_id;
-    band_info_t *band_info = get_band_info_by_pk(item->pk);
+    band_info_t *band_info = NULL;
+
+    if (item->pk != BAND_UNDEFINED) {
+        band_info = get_band_info_by_pk(item->pk);
+    }
     if (!band_info) {
         band_id = BAND_UNDEFINED;
     } else {
         start_freq = band_info->start_freq;
         stop_freq  = band_info->stop_freq;
         band_id    = band_info->id;
+    }
+    if (item->pk != band_id) {
+        LV_LOG_ERROR("Band id %d from item %s not match with %d", item->pk, item->db_name, band_id);
+        return WRONG_VALUE;
     }
     sqlite3_stmt *stmt = insert_stmt;
     pthread_mutex_lock(&write_mutex);
@@ -537,12 +576,13 @@ int cfg_band_params_save_item(cfg_item_t *item) {
             int_val = subject_get_int(item->val);
             // Check that freq match band
             if ((strcmp(item->db_name, "vfoa_freq") == 0) || (strcmp(item->db_name, "vfob_freq") == 0)) {
-                if ((band_id == BAND_UNDEFINED) || ((int_val >= start_freq) && (int_val <= stop_freq))) {
-                    rc = sqlite3_bind_int(stmt, val_index, int_val);
+                band_info_t *band_info_freq = get_band_info_by_freq(int_val);
+                if (band_info_freq->id != band_id) {
+                    LV_LOG_USER("%s %d item with band_id=%d matches another band=%d, will not save", item->db_name,
+                        int_val, band_id, band_info_freq->id);
+                    rc = WRONG_VALUE;
                 } else {
-                    LV_LOG_USER("Freq %lu for %s (band_id: %u) outside boundaries, will not save", int_val,
-                                item->db_name, item->pk);
-                    rc = -1;
+                    rc = sqlite3_bind_int(stmt, val_index, int_val);
                 }
             } else {
                 rc = sqlite3_bind_int(stmt, val_index, int_val);
@@ -561,7 +601,7 @@ int cfg_band_params_save_item(cfg_item_t *item) {
             sqlite3_reset(stmt);
             sqlite3_clear_bindings(stmt);
             pthread_mutex_unlock(&write_mutex);
-            return -1;
+            return WRONG_TYPE;
             break;
     }
     if (rc != SQLITE_OK) {
@@ -578,7 +618,7 @@ int cfg_band_params_save_item(cfg_item_t *item) {
         } else if (dtype = DTYPE_FLOAT) {
             LV_LOG_USER("Saved %s=%f (pk=%i)", item->db_name, float_val, item->pk);
         }
-        rc = 0;
+        rc = SUCCESS;
     }
     sqlite3_reset(stmt);
     sqlite3_clear_bindings(stmt);
@@ -652,6 +692,9 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
     cfg_band_set_freq_for_vfo(vfo, freq);
     // Update freq shift
     subject_set_int(cfg_cur.freq_shift, cfg_transverter_get_shift(freq));
+    printf("A freq: %d (%d), B freq: %d (%d)\n",
+            subject_get_int(cfg_band.vfo_a.freq.val), cfg_band.vfo_a.freq.pk,
+            subject_get_int(cfg_band.vfo_b.freq.val), cfg_band.vfo_b.freq.pk);
 }
 
 static void on_bg_freq_change(Subject *subj, void *user_data) {
