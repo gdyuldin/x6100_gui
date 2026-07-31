@@ -158,11 +158,6 @@ void cfg_band_set_freq_for_vfo(x6100_vfo_t vfo, int32_t freq) {
         target = &cfg_band.vfo_b;
     }
     if (new_band_id != target->freq.pk) {
-        // Preserve VFO on changing band
-        // TODO: use another way
-        // cfg_band.vfo.pk = new_band_id;
-        // save_item_to_db(&cfg_band.vfo, true);
-
         if (target->freq.dirty->val == ITEM_STATE_LOADING) {
             // Don not save during loading
             cfg_band_params_change_pk(new_band_id);
@@ -173,9 +168,7 @@ void cfg_band_set_freq_for_vfo(x6100_vfo_t vfo, int32_t freq) {
             // Preserve VFO on changing band
             save_item_to_db(&cfg_band.vfo, true);
             subject_set_int(target->freq.val, freq);
-            // if (new_band_id != BAND_UNDEFINED) {
             cfg_band_params_load_all_except_freq(vfo);
-            // }
         }
 
         subject_set_int(cfg.band_id.val, new_band_id);
@@ -522,7 +515,6 @@ int cfg_band_params_load_item(cfg_item_t *item) {
             subject_set_int(item->val, subject_get_int(cfg_band.vfo_a.agc.val));
             rc = SUCCESS;
         } else {
-            // LV_LOG_WARN("No DB data for %s for bands_id: %i", item->db_name, item->pk);
             rc = NOT_FOUND;
         }
     }
@@ -692,9 +684,6 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
     cfg_band_set_freq_for_vfo(vfo, freq);
     // Update freq shift
     subject_set_int(cfg_cur.freq_shift, cfg_transverter_get_shift(freq));
-    printf("A freq: %d (%d), B freq: %d (%d)\n",
-            subject_get_int(cfg_band.vfo_a.freq.val), cfg_band.vfo_a.freq.pk,
-            subject_get_int(cfg_band.vfo_b.freq.val), cfg_band.vfo_b.freq.pk);
 }
 
 static void on_bg_freq_change(Subject *subj, void *user_data) {

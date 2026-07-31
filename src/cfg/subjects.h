@@ -13,41 +13,53 @@ enum data_type {
 
 #include <mutex>
 #include <algorithm>
-#include <list>
 #include <type_traits>
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <memory>
+#include <functional>
 
 class Subject;
 
 typedef void (*observer_cb)(Subject *, void *);
 
 class Observer {
+  friend class Subject;
+
   protected:
     Subject *subj;
     void (*fn)(Subject *, void *);
     void *user_data;
 
   public:
-    Observer(Subject *subj, observer_cb fn, void *user_data)
-        : subj(subj), fn(fn), user_data(user_data) {};
-    virtual ~Observer();
+    Observer(Subject *subj, observer_cb fn, void *user_data) : subj(subj), fn(fn), user_data(user_data) {};
+    virtual ~Observer() = default;
     virtual void notify();
+
+    void unsubscribe();
+};
+
+// RAII-wrapper for deleting
+struct ObserverDeleter {
+    void operator()(Observer* obs) const {
+        if (obs) {
+            obs->unsubscribe();
+            delete obs;
+        }
+    }
 };
 
 class ObserverDelayed : public Observer {
-    static std::list<ObserverDelayed*> delayed_observers_instances;
-    static std::mutex delayed_observers_mutex;
-    std::thread::id                     tid;
-    std::atomic<bool>                   changed = false;
 
   public:
-    ObserverDelayed(Subject *subj, observer_cb fn, void *user_data);
-    ~ObserverDelayed();
-    void        notify();
-    static void notify_all_delayed();
+    ObserverDelayed(Subject *subj, observer_cb fn, void *user_data) : Observer(subj, fn, user_data) {}
+    ~ObserverDelayed() = default;
+
+    void notify() override;
 };
+
+using Subscription = std::unique_ptr<Observer, ObserverDeleter>;
 
 class Subject {
     // Mutex to protect editing observers list
@@ -55,7 +67,7 @@ class Subject {
 
 
   protected:
-    std::list<Observer*> observers;
+    std::vector<Observer*> observers;
     data_type type;
     // For grouped notify
     std::atomic<bool> pause_notify = false;
@@ -69,9 +81,13 @@ class Subject {
 
   public:
     virtual data_type dtype();
+    // For C++ make sense to convert result to Subscription
     Observer* subscribe(observer_cb fn, void *user_data=nullptr);
+    // For C++ make sense to convert result to Subscription
     ObserverDelayed* subscribe_delayed(observer_cb fn, void *user_data=nullptr);
+
     void unsubscribe(Observer *o);
+
     void set_pause_notify(bool val);
     void force_paused_notify();
 };
@@ -91,8 +107,9 @@ template <typename T> class SubjectT : public Subject {
     };
 
     void set(T val) {
-        if (this->val != val) {
-            this->val = val;
+        // Atomic update
+        T old_val = this->val.exchange(val);
+        if (old_val != val) {
             if (this->pause_notify) {
                 this->changed = true;
             } else {
@@ -101,7 +118,7 @@ template <typename T> class SubjectT : public Subject {
         }
     };
 
-    data_type dtype() {
+    data_type dtype() override {
         if (std::is_same_v<T, int32_t>)
             return DTYPE_INT;
         if (std::is_same_v<T, uint64_t>)
@@ -120,7 +137,7 @@ template <> class SubjectT<const char*> : public Subject {
     SubjectT<const char*>(const char* data) : val(data) {};
     char* get();
     void set(const char* data);
-    data_type dtype() {
+    data_type dtype() override {
         return DTYPE_STR;
     }
 };
@@ -182,6 +199,11 @@ Observer *subject_add_observer_and_call(Subject *subj, observer_cb fn, void *use
 ObserverDelayed *subject_add_delayed_observer(Subject *subj, observer_cb fn, void *user_data);
 ObserverDelayed *subject_add_delayed_observer_and_call(Subject *subj, observer_cb fn, void *user_data);
 
+void subject_del_observer(Subject *subj, Observer *o);
+void subject_del_observer_delayed(Subject *subj, ObserverDelayed *o);
+
+// void subject_int_derived_add_parent(Subject *subj, Subject *parent);
+
 enum data_type subject_get_dtype(Subject *subj);
 
 void subject_set_int(Subject *subj, int32_t val);
@@ -189,10 +211,11 @@ void subject_set_uint64(Subject *subj, uint64_t val);
 void subject_set_float(Subject *subj, float val);
 void subject_set_text(Subject *subj, const char *val);
 
-void observer_del(Observer *observer);
-void observer_delayed_del(ObserverDelayed *observer);
+// Clear subscription and delete object
+void observer_clear(Observer *o);
 
-void observer_delayed_notify_all(void);
+// Clear subscription and delete object
+void observer_delayed_clear(ObserverDelayed *o);
 
 #ifdef __cplusplus
 }

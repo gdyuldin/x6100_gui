@@ -7,47 +7,24 @@ extern "C" {
     #include <stdlib.h>
 }
 
-std::list<ObserverDelayed*> ObserverDelayed::delayed_observers_instances;
-std::mutex ObserverDelayed::delayed_observers_mutex;
-
-Observer::~Observer() {
-    subj->unsubscribe(this);
-}
-
 void Observer::notify() {
-    this->fn(subj, user_data);
-};
-
-ObserverDelayed::ObserverDelayed(Subject *subj, observer_cb fn, void *user_data) : Observer(subj, fn, user_data) {
-    const std::lock_guard<std::mutex> lock(delayed_observers_mutex);
-    tid = std::this_thread::get_id();
-    delayed_observers_instances.push_back(this);
-};
-
-ObserverDelayed::~ObserverDelayed() {
-    const std::lock_guard<std::mutex> lock(delayed_observers_mutex);
-    auto item = std::find(delayed_observers_instances.begin(), delayed_observers_instances.end(), this);
-    delayed_observers_instances.erase(item);
+    if (fn && subj) {
+        fn(subj, user_data);
+    }
 }
+
+void Observer::unsubscribe() {
+    if (subj) {
+        subj->unsubscribe(this);
+        subj = nullptr;
+    }
+};
 
 void ObserverDelayed::notify() {
-    auto call_tid = std::this_thread::get_id();
-    if (call_tid != tid) {
-        changed = true;
-    } else {
-        this->Observer::notify();
-        changed = false;
-    }
-}
-
-void ObserverDelayed::notify_all_delayed() {
-    const std::lock_guard<std::mutex> lock(delayed_observers_mutex);
-    for (auto& item: ObserverDelayed::delayed_observers_instances) {
-        if (item->changed) {
-            item->Observer::notify();
-            item->changed = false;
-        }
-    }
+    lv_async_call([](void* user_data) {
+        auto* obs = static_cast<ObserverDelayed*>(user_data);
+        obs->Observer::notify();
+    }, this);
 }
 
 Observer* Subject::subscribe(observer_cb fn, void *user_data) {
@@ -87,13 +64,16 @@ void Subject::notify() {
     if (is_notifying) {
         LV_LOG_ERROR("Already notifying: %p", this);
     }
-    const std::lock_guard<std::mutex> lock(mutex_subscribe);
     is_notifying = true;
-    for (auto& observer : observers) {
+    std::vector<Observer*> observers_copy;
+    {
+        const std::lock_guard<std::mutex> lock(mutex_subscribe);
+        observers_copy = observers;
+    }
+    for (auto& observer : observers_copy) {
         observer->notify();
     }
     is_notifying = false;
-
 }
 
 data_type Subject::dtype() {
@@ -211,6 +191,20 @@ void subject_set_text(Subject *subj, const char *val) {
     }
 }
 
+void observer_clear(Observer *o) {
+    if (o) {
+        o->unsubscribe();
+        delete o;
+    }
+}
+
+void observer_delayed_clear(ObserverDelayed *o) {
+    if (o) {
+        o->unsubscribe();
+        delete o;
+    }
+}
+
 Observer *subject_add_observer(Subject *subj, observer_cb fn, void *user_data) {
     return subj->subscribe(fn, user_data);
 }
@@ -231,16 +225,19 @@ ObserverDelayed *subject_add_delayed_observer_and_call(Subject *subj, observer_c
     return observer;
 }
 
+void subject_del_observer(Subject *subj, Observer *o) {
+    subj->unsubscribe(o);
+}
+
+void subject_del_observer_delayed(Subject *subj, ObserverDelayed *o) {
+    subj->unsubscribe(o);
+}
+
+// void subject_int_derived_add_parent(Subject *subj, Subject *parent) {
+//     static_cast<SubjectDerivedInt*>(subj)->add_parent_subj(parent);
+// }
+
 data_type subject_get_dtype(Subject *subj) {
     return subj->dtype();
 }
 
-void observer_del(Observer *observer) {
-    delete observer;
-}
-void observer_delayed_del(ObserverDelayed *observer) {
-    delete observer;
-}
-void observer_delayed_notify_all(void) {
-    ObserverDelayed::notify_all_delayed();
-};

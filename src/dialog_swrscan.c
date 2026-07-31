@@ -282,15 +282,15 @@ static void destruct_cb() {
         dialog_swrscan_run_cb(NULL);
     }
     if (freq_obs) {
-        observer_delayed_del(freq_obs);
+        observer_delayed_clear(freq_obs);
         freq_obs = NULL;
     }
     if (linear_obs) {
-        observer_delayed_del(linear_obs);
+        observer_delayed_clear(linear_obs);
         linear_obs = NULL;
     }
     if (span_obs) {
-        observer_delayed_del(span_obs);
+        observer_delayed_clear(span_obs);
         span_obs = NULL;
     }
     radio_set_freq(subject_get_int(cfg_cur.fg_freq));

@@ -1208,6 +1208,7 @@ static void disp_btn_clear(disp_btn_t *btn) {
         // Unbind data from display button
         btn->data->disp_btn = NULL;
         if (btn->data->observer) {
+            btn->data->observer->unsubscribe();
             delete btn->data->observer;
             btn->data->observer = NULL;
         }

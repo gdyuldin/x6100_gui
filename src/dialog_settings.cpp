@@ -79,7 +79,7 @@ static lv_obj_t     *hour;
 static lv_obj_t     *min;
 static lv_obj_t     *sec;
 
-static std::vector<Observer*> observers;
+static std::vector<Subscription> observers;
 
 static button_data_t btn_general = {
     .type  = BTN_TEXT,
@@ -1664,7 +1664,7 @@ static uint8_t make_tx_offset(uint8_t row) {
         SMALL_3 - 110, "%d", tx_iq_offset_update_cb, (void*)cfg_cur.band->tx_i_offset.val);
 
     observer = cfg_cur.band->tx_i_offset.val->subscribe(on_iq_change, slider);
-    observers.push_back(observer);
+    observers.emplace_back(observer);
 
     cell = lv_obj_create(grid);
 
@@ -1679,7 +1679,7 @@ static uint8_t make_tx_offset(uint8_t row) {
         SMALL_3 - 110, "%d", tx_iq_offset_update_cb, (void*)cfg_cur.band->tx_q_offset.val);
 
     observer = cfg_cur.band->tx_q_offset.val->subscribe(on_iq_change, slider);
-    observers.push_back(observer);
+    observers.emplace_back(observer);
 
     return row + 1;
 }
@@ -1763,7 +1763,7 @@ static uint8_t band_out_gain_correction(uint8_t row) {
         SMALL_6 - 120, "%0.1f", band_out_gain_update_cb);
 
     Observer *observer = cfg_cur.band->dac_offset.val->subscribe(on_dac_gain_change, slider);
-    observers.push_back(observer);
+    observers.emplace_back(observer);
 
     return row + 1;
 }
@@ -2152,9 +2152,6 @@ static void construct_cb(lv_obj_t *parent) {
 static void destruct_cb() {
     grid_delete();
     grid = NULL;
-    for (auto& observer : observers) {
-        delete observer;
-    }
     observers.clear();
 
 }

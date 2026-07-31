@@ -46,7 +46,7 @@ struct Control {
 
     virtual std::string to_str()=0;
 
-    virtual ObserverDelayed *subscribe(void (*cb)(Subject *, void *), void *user_data) {
+    virtual ObserverDelayed* subscribe(void (*cb)(Subject *, void *), void *user_data) {
         return nullptr;
     }
 
@@ -64,7 +64,7 @@ struct ControlSubj: public Control {
 
     ControlSubj(const char *name, Subject **subj): Control(name), subj(subj) {};
 
-    ObserverDelayed *subscribe(void (*cb)(Subject *, void *), void *user_data) {
+    ObserverDelayed* subscribe(void (*cb)(Subject *, void *), void *user_data) override {
         return (*subj)->subscribe_delayed(cb, user_data);
     }
 };
@@ -151,7 +151,7 @@ class KnobInfo {
     const std::string arrow_symbol;
     modes_t           mode = MODE_EDIT;
 
-    ObserverDelayed *observer=nullptr;
+    Subscription subscription;
 
     void update() {
         if (!item) {
@@ -189,14 +189,10 @@ class KnobInfo {
         if (item == this->item) {
             update();
         } else {
-            if (observer) {
-                delete observer;
-                observer = nullptr;
-            }
             this->item = item;
-            observer = item->subscribe(on_subj_change, (void *)this);
-            if (observer) {
-                observer->notify();
+            subscription = Subscription(item->subscribe(on_subj_change, (void *)this));
+            if (subscription) {
+                subscription->notify();
             } else {
                 update();
             }
