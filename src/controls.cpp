@@ -740,12 +740,13 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg) {
 }
 
 cfg_ctrl_t controls_encoder_get_next(encoder_binds_t encoder, cfg_ctrl_t current, int16_t dir) {
-    char *binds = subject_get_text(cfg.encoders_binds.val);
+    const char *binds = subject_get_text(cfg.encoders_binds.val);
     size_t n_binds = strlen(binds);
     // Initialization
     if (dir == 0) {
         if (current < n_binds) {
             if (binds[current] == encoder) {
+                free((void*)binds);
                 return current;
             }
         }
@@ -757,6 +758,7 @@ cfg_ctrl_t controls_encoder_get_next(encoder_binds_t encoder, cfg_ctrl_t current
         {
             new_ctrl = (cfg_ctrl_t)(i % n_binds);
             if (binds[new_ctrl] == encoder) {
+                free((void*)binds);
                 return new_ctrl;
             }
         }
@@ -765,11 +767,13 @@ cfg_ctrl_t controls_encoder_get_next(encoder_binds_t encoder, cfg_ctrl_t current
         {
             new_ctrl = (cfg_ctrl_t)(i % n_binds);
             if (binds[new_ctrl] == encoder) {
+                free((void*)binds);
                 return new_ctrl;
             }
         }
     }
     LV_LOG_ERROR("No next/prev control for %c", encoder);
+    free((void*)binds);
     return current;
 }
 

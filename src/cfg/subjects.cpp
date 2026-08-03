@@ -80,34 +80,6 @@ data_type Subject::dtype() {
     return DTYPE_INVALID;
 }
 
-/**
- * String subject
- */
-
-
-char *SubjectT<const char *>::get() {
-    const std::lock_guard<std::mutex> lock(mutex);
-    return strdup(val.data());
-}
-
-void SubjectT<const char *>::set(const char *data) {
-    std::string new_val(data);
-    bool        changed = false;
-    {
-        const std::lock_guard<std::mutex> lock(mutex);
-        if (this->val != new_val) {
-            changed   = true;
-            this->val = new_val;
-        }
-    }
-    if (changed) {
-        if (this->pause_notify) {
-            this->changed = true;
-        } else {
-            this->notify();
-        }
-    }
-}
 
 SubjectsUpdateLock::SubjectsUpdateLock(std::initializer_list<Subject *> args) {
     subjects = args;
@@ -156,8 +128,9 @@ float subject_get_float(Subject *subj) {
     return static_cast<SubjectFloat*>(subj)->get();
 }
 
-char *subject_get_text(Subject *subj) {
-    return static_cast<SubjectText*>(subj)->get();
+const char *subject_get_text(Subject *subj) {
+    auto tmp = static_cast<SubjectText*>(subj)->get();
+    return strdup(tmp.c_str());
 }
 
 void subject_set_int(Subject *subj, int32_t val) {

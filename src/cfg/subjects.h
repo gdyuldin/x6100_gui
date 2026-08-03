@@ -93,23 +93,27 @@ class Subject {
 };
 
 template <typename T> class SubjectT : public Subject {
-    static_assert(std::is_same_v<T, int32_t> || \
-                  std::is_same_v<T, uint64_t> || \
-                  std::is_same_v<T, float>,
-                  "Unsupported type");
-    std::atomic<T> val;
+    T val;
+    mutable std::mutex mutex_;
 
   public:
     SubjectT(T val) : val(val) {};
 
-    T get() {
+    const T get() const {
+        std::lock_guard lock(mutex_);
         return val;
     };
 
-    void set(T val) {
-        // Atomic update
-        T old_val = this->val.exchange(val);
-        if (old_val != val) {
+    void set(T new_val) {
+        bool changed = false;
+        {
+            std::lock_guard lock(mutex_);
+            if (val != new_val) {
+                changed = true;
+                val = new_val;
+            }
+        }
+        if (changed) {
             if (this->pause_notify) {
                 this->changed = true;
             } else {
@@ -125,20 +129,9 @@ template <typename T> class SubjectT : public Subject {
             return DTYPE_UINT64;
         if (std::is_same_v<T, float>)
             return DTYPE_FLOAT;
+        if (std::is_same_v<T, std::string>)
+            return DTYPE_STR;
         return DTYPE_INVALID;
-    }
-};
-
-template <> class SubjectT<const char*> : public Subject {
-    std::mutex mutex;
-    std::string val;
-
-  public:
-    SubjectT<const char*>(const char* data) : val(data) {};
-    char* get();
-    void set(const char* data);
-    data_type dtype() override {
-        return DTYPE_STR;
     }
 };
 
@@ -156,7 +149,7 @@ class SubjectsUpdateLock {
 using SubjectInt = SubjectT<int32_t>;
 using SubjectUint64 = SubjectT<uint64_t>;
 using SubjectFloat = SubjectT<float>;
-using SubjectText = SubjectT<const char *>;
+using SubjectText = SubjectT<std::string>;
 
 #else
 
@@ -177,16 +170,15 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
-
 Subject *subject_create_int(int32_t val);
 Subject *subject_create_uint64(uint64_t val);
 Subject *subject_create_float(float val);
-Subject *subject_create_text(const char* val);
+Subject *subject_create_text(const char *val);
 
-int32_t  subject_get_int(Subject *subj);
-uint64_t subject_get_uint64(Subject *subj);
-float    subject_get_float(Subject *subj);
-char    *subject_get_text(Subject *subj);
+int32_t     subject_get_int(Subject *subj);
+uint64_t    subject_get_uint64(Subject *subj);
+float       subject_get_float(Subject *subj);
+const char *subject_get_text(Subject *subj);
 
 /// @brief Add observer to subject
 /// @param subj subject to add observer

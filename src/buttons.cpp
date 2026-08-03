@@ -680,7 +680,7 @@ static void button_encoder_update_cb(button_data_t *data) {
     // set corresponding encoder
     // if already bind - use corresponding encoder. If no - you default
     cfg_ctrl_t ctrl = (cfg_ctrl_t)data->ctrl;
-    char *binds = subject_get_text(cfg.encoders_binds.val);
+    const char *binds = subject_get_text(cfg.encoders_binds.val);
     size_t n_binds = strlen((char *)binds);
 
     void (*set_fn)(cfg_ctrl_t) = NULL;
@@ -713,7 +713,7 @@ static void button_encoder_update_cb(button_data_t *data) {
     if (set_fn) {
         set_fn(ctrl);
     }
-    free(binds);
+    free((void *)binds);
 }
 
 static void button_encoder_hold_update_cb(button_data_t *data) {
@@ -1078,12 +1078,12 @@ static const char * nr_level_label_getter() {
 
 
 static void encoder_binds_change_cb(Subject *subj, void *user_data) {
-    char *binds = subject_get_text(cfg.encoders_binds.val);
+    const char *binds = subject_get_text(cfg.encoders_binds.val);
     size_t n_binds = strlen((char *)binds);
     for (size_t i = 0; i < n_binds; i++) {
         fast_binds[i] = binds[i];
     }
-    free(binds);
+    free((void *)binds);
 
     for (size_t i = 0; i < BUTTONS; i++)
     {
