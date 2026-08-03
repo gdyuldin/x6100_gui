@@ -3,7 +3,7 @@
 #include "atu.private.h"
 #include "band.private.h"
 #include "mode.private.h"
-#include "params.private.h"
+#include "db.private.h"
 #include "transverter.private.h"
 #include "memory.private.h"
 #include "digital_modes.private.h"

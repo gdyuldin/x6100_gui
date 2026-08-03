@@ -2,6 +2,10 @@
 
 #include "cfg.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sqlite3.h>
 
 typedef enum {
@@ -10,6 +14,8 @@ typedef enum {
     NOT_FOUND = -2,
     WRONG_VALUE = -3,
 } load_save_error_codes_t;
+
+
 
 void cfg_params_init(sqlite3 *db);
 
@@ -22,3 +28,7 @@ int cfg_params_save_item_int(cfg_item_t *item);
 int cfg_params_save_item_uint64(cfg_item_t *item);
 int cfg_params_save_item_float(cfg_item_t *item);
 int cfg_params_save_item_str(cfg_item_t *item);
+
+#ifdef __cplusplus
+}
+#endif

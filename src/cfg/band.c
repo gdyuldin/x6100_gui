@@ -4,7 +4,7 @@
 #include "band.private.h"
 
 #include "cfg.private.h"
-#include "params.private.h"
+#include "db.private.h"
 
 #include "transverter.h"
 
