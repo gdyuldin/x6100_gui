@@ -24,6 +24,7 @@ add_subdirectory(widgets)
 add_subdirectory(params)
 add_subdirectory(qth)
 add_subdirectory(cfg)
+add_subdirectory(app_cfg)
 
 include_directories(utf8)
 include_directories(${CMAKE_SYSROOT}/usr/include/RHVoice/)
@@ -41,6 +42,7 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
 target_link_libraries(${PROJECT_NAME} PRIVATE
 PkgConfig::deps
 FT8 QTH
+app_cfg
 Threads::Threads
 lvgl lvgl::drivers
 aether_x6100_control

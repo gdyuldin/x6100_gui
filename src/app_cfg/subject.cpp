@@ -1,0 +1,86 @@
+#include "subject.h"
+
+extern "C" {
+    #include "../lvgl/lvgl.h"
+    // #include <stdint.h>
+    // #include <stdio.h>
+    // #include <stdlib.h>
+}
+
+void Observer::notify() {
+    if (fn && subj) {
+        fn(subj, user_data);
+    }
+}
+
+void Observer::unsubscribe() {
+    if (subj) {
+        subj->unsubscribe(this);
+        subj = nullptr;
+    }
+};
+
+void ObserverDelayed::notify() {
+    // Coalesce: only one deferred delivery per observer is queued at a time.
+    // The pending entry carries no state to refresh, so a later notify() while
+    // a delivery is already scheduled simply collapses into it (latest value
+    // wins when the trampoline runs).
+    bool expected = false;
+    if (!scheduled_.compare_exchange_strong(expected, true)) {
+        return;
+    }
+    lv_res_t res = lv_async_call(ObserverDelayed::async_trampoline, this);
+    if (res != LV_RES_OK) {
+        // Roll back so a later notify() retries.
+        scheduled_.store(false);
+    }
+}
+
+ObserverDelayed::~ObserverDelayed() {
+    // Delete/unsubscribe happens only on the main thread, and async_trampoline
+    // also runs on the main thread (lv_async), so the two never race here. The
+    // atomic flag still closes the window against a background producer thread
+    // calling notify() during destruction.
+    if (scheduled_.exchange(false)) {
+        lv_async_call_cancel(ObserverDelayed::async_trampoline, this);
+    }
+}
+
+void ObserverDelayed::async_trampoline(void* user_data) {
+    auto* obs = static_cast<ObserverDelayed*>(user_data);
+    // Task is executing: nothing left to cancel, so release the schedule flag.
+    obs->scheduled_.store(false);
+    obs->Observer::notify();
+}
+
+Observer* Subject::subscribe(observer_cb fn, void *user_data) {
+    const std::lock_guard<std::mutex> lock(mutex_subscribe);
+
+    auto observer = new Observer(this, fn, user_data);
+    observers.push_back(observer);
+    return observer;
+}
+
+ObserverDelayed* Subject::subscribe_delayed(observer_cb fn, void *user_data) {
+    const std::lock_guard<std::mutex> lock(mutex_subscribe);
+
+    auto observer = new ObserverDelayed(this, fn, user_data);
+    observers.push_back(observer);
+    return observer;
+}
+
+void Subject::unsubscribe(Observer *observer) {
+    const std::lock_guard<std::mutex> lock(mutex_subscribe);
+    observers.erase(std::find(observers.begin(), observers.end(), observer));
+}
+
+void Subject::notify() {
+    std::vector<Observer*> observers_copy;
+    {
+        const std::lock_guard<std::mutex> lock(mutex_subscribe);
+        observers_copy = observers;
+    }
+    for (auto& observer : observers_copy) {
+        observer->notify();
+    }
+}

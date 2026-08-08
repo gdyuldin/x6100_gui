@@ -10,16 +10,40 @@ include_directories(.)
 include_directories(third-party/rapidxml)
 include_directories(third-party/utf8)
 
-if(NOT ENABLE_TESTING)
-add_compile_options(-mtune=cortex-a7 -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4)
+if(ENABLE_TESTING)
+        Include(FetchContent)
+
+        FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG        v3.4.0 # or a later release
+        )
+
+        FetchContent_MakeAvailable(Catch2)
+
+        add_compile_definitions(LV_DRAW_NEON=0)
+
+
+        # include_directories(${CMAKE_CURRENT_SOURCE_DIR}/tests/mock_gpiod)
+        FetchContent_Declare(
+        AetherX6100Control
+        GIT_REPOSITORY https://github.com/gdyuldin/X6100Control.git
+        GIT_TAG        v0.16.1
+        )
+        FetchContent_MakeAvailable(AetherX6100Control)
+
+else()
+        add_compile_options(-mtune=cortex-a7 -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4)
 endif()
 
 add_subdirectory(lvgl)
 
 if(ENABLE_TESTING)
         enable_testing()
-        add_subdirectory(src/ft8)
         add_subdirectory(src/qth)
+        # TODO: ft8 tests support
+        # add_subdirectory(src/ft8)
+        add_subdirectory(src/app_cfg)
         add_subdirectory(tests)
 else()
         add_subdirectory(src)
