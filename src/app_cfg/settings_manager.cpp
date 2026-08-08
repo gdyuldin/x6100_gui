@@ -28,17 +28,33 @@ SettingsManager::SettingsManager()
       // reverse function writes back into the active VFO's frequency param.
       // Sources (VFO frequency params + current_vfo) are bound once in
       // init_load() via ComputedParameter::bind().
+      // The background VFO frequency is the complement of the active one.
       cp_fg_freq(
-          [this]() { return fg_freq_from_band(); },
-          [this](int32_t freq) { fg_freq_to_band(freq); }),
+          [this]() { return fg_freq_get(); },
+          [this](int32_t freq) { fg_freq_set(freq); }),
+      cp_bg_freq(
+          [this]() { return bg_freq_get(); },
+          [this](int32_t freq) { bg_freq_set(freq); }),
 
       // Computed current mode: the mode of the active VFO of the current band.
       // Analogous to cp_fg_freq. Sources (VFO mode params + current_vfo) are
       // bound once in init_load(); an observer on this subject triggers
       // switch_mode() whenever the current mode changes.
       cp_cur_mode(
-          [this]() { return get_cur_mode(); },
-          [this](int32_t mode) { set_cur_mode(mode); }),
+          [this]() { return cur_mode_get(); },
+          [this](int32_t mode) { cur_mode_set(mode); }),
+
+      // Computed current VFO's att/pre/agc. The compute fns read the active
+      // VFO's value; the reverse fns write back into it.
+      cp_cur_att(
+          [this]() { return cur_att_get(); },
+          [this](int32_t att) { cur_att_set(att); }),
+      cp_cur_pre(
+          [this]() { return cur_pre_get(); },
+          [this](int32_t pre) { cur_pre_set(pre); }),
+      cp_cur_agc(
+          [this]() { return cur_agc_get(); },
+          [this](int32_t agc) { cur_agc_set(agc); }),
 
       // Computed current filter params. The compute fns derive the effective
       // filter edges/bw from the MODE-scoped filter params (and key_tone for
@@ -52,23 +68,8 @@ SettingsManager::SettingsManager()
           [this](int32_t v) { cur_filter_high_reverse(v); }),
       cp_cur_filter_bw(
           [this]() { return cur_filter_bw_compute(); },
-          [this](int32_t v) { cur_filter_bw_reverse(v); }),
+          [this](int32_t v) { cur_filter_bw_reverse(v); })
 
-      // Computed current VFO's att/pre/agc. The compute fns read the active
-      // VFO's value; the reverse fns write back into it. The background VFO
-      // frequency is the complement of the active one.
-      cp_cur_att(
-          [this]() { return get_cur_att(); },
-          [this](int32_t att) { set_cur_att(att); }),
-      cp_cur_pre(
-          [this]() { return get_cur_pre(); },
-          [this](int32_t pre) { set_cur_pre(pre); }),
-      cp_cur_agc(
-          [this]() { return get_cur_agc(); },
-          [this](int32_t agc) { set_cur_agc(agc); }),
-      cp_bg_freq(
-          [this]() { return bg_freq_from_band(); },
-          [this](int32_t freq) { bg_freq_to_band(freq); })
 {
     // All Parameter members self-register via NSDMI in the header — no
     // registration calls needed here. The constructor is empty.
@@ -280,13 +281,13 @@ void SettingsManager::stop_flush_thread()
     }
 }
 
-int32_t SettingsManager::fg_freq_from_band()
+int32_t SettingsManager::fg_freq_get()
 {
     // Front-panel frequency = frequency of the active VFO of the current band.
     return p_band_current_vfo.get() == 0 ? p_band_vfoa_freq.get() : p_band_vfob_freq.get();
 }
 
-void SettingsManager::fg_freq_to_band(int32_t freq)
+void SettingsManager::fg_freq_set(int32_t freq)
 {
     // Write back into the active VFO's frequency param.
     if (p_band_current_vfo.get() == 0) {
@@ -296,13 +297,13 @@ void SettingsManager::fg_freq_to_band(int32_t freq)
     }
 }
 
-int32_t SettingsManager::get_cur_mode()
+int32_t SettingsManager::cur_mode_get()
 {
     // Current mode = mode of the active VFO of the current band.
     return p_band_current_vfo.get() == 0 ? p_band_vfoa_mode.get() : p_band_vfob_mode.get();
 }
 
-void SettingsManager::set_cur_mode(int32_t mode)
+void SettingsManager::cur_mode_set(int32_t mode)
 {
     // Write back into the active VFO's mode param.
     if (p_band_current_vfo.get() == 0) {
@@ -312,12 +313,12 @@ void SettingsManager::set_cur_mode(int32_t mode)
     }
 }
 
-int32_t SettingsManager::get_cur_att()
+int32_t SettingsManager::cur_att_get()
 {
     return p_band_current_vfo.get() == X6100_VFO_A ? p_band_vfoa_att.get() : p_band_vfob_att.get();
 }
 
-void SettingsManager::set_cur_att(int32_t att)
+void SettingsManager::cur_att_set(int32_t att)
 {
     if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfoa_att.set(att);
@@ -326,12 +327,12 @@ void SettingsManager::set_cur_att(int32_t att)
     }
 }
 
-int32_t SettingsManager::get_cur_pre()
+int32_t SettingsManager::cur_pre_get()
 {
     return p_band_current_vfo.get() == X6100_VFO_A ? p_band_vfoa_pre.get() : p_band_vfob_pre.get();
 }
 
-void SettingsManager::set_cur_pre(int32_t pre)
+void SettingsManager::cur_pre_set(int32_t pre)
 {
     if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfoa_pre.set(pre);
@@ -340,12 +341,12 @@ void SettingsManager::set_cur_pre(int32_t pre)
     }
 }
 
-int32_t SettingsManager::get_cur_agc()
+int32_t SettingsManager::cur_agc_get()
 {
     return p_band_current_vfo.get() == X6100_VFO_A ? p_band_vfoa_agc.get() : p_band_vfob_agc.get();
 }
 
-void SettingsManager::set_cur_agc(int32_t agc)
+void SettingsManager::cur_agc_set(int32_t agc)
 {
     if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfoa_agc.set(agc);
@@ -354,12 +355,12 @@ void SettingsManager::set_cur_agc(int32_t agc)
     }
 }
 
-int32_t SettingsManager::bg_freq_from_band()
+int32_t SettingsManager::bg_freq_get()
 {
     return p_band_current_vfo.get() == X6100_VFO_A ? p_band_vfob_freq.get() : p_band_vfoa_freq.get();
 }
 
-void SettingsManager::bg_freq_to_band(int32_t freq)
+void SettingsManager::bg_freq_set(int32_t freq)
 {
     if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfob_freq.set(freq);
@@ -575,9 +576,10 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
     BandInfoLoadResult band = BandsTable::get_by_id(band_id);
     const bool have_band = (band.rc == SUCCESS) && (band.value.id != BAND_UNDEFINED);
 
-    // vfoa_freq: NOT_FOUND -> band start (or the default); an out-of-range
-    // loaded value is clamped to the band start.
+    // VFOA: freq/mode restore+clamp, att/pre/agc keep default on NOT_FOUND.
     if (!(implicit && active_vfo == X6100_VFO_A)) {
+        // vfoa_freq: NOT_FOUND -> band start (or the default); an out-of-range
+        // loaded value is clamped to the band start.
         int rc = p_band_vfoa_freq.load(band_id);
         if (rc == NOT_FOUND) {
             p_band_vfoa_freq.set_quiet(have_band ? static_cast<int32_t>(band.value.start_freq) : default_freq);
@@ -588,19 +590,27 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
                 p_band_vfoa_freq.set_quiet(static_cast<int32_t>(band.value.start_freq));
             }
         }
-    }
 
-    // vfoa_mode: depends on the (loaded/restored) vfoa_freq.
-    if (!(implicit && active_vfo == X6100_VFO_A)) {
-        int rc = p_band_vfoa_mode.load(band_id);
+        // vfoa_mode: depends on the (loaded/restored) vfoa_freq.
+        rc = p_band_vfoa_mode.load(band_id);
         if (rc != SUCCESS) {
             p_band_vfoa_mode.set_quiet(resolve_default_mode(p_band_vfoa_freq.get()));
         }
+
+        // vfoa_att/pre/agc: on NOT_FOUND keep the default silently (no restore).
+        rc = p_band_vfoa_att.load(band_id);
+        (void)rc;
+        rc = p_band_vfoa_pre.load(band_id);
+        (void)rc;
+        rc = p_band_vfoa_agc.load(band_id);
+        (void)rc;
     }
 
-    // vfob_freq: copies the current vfoa_freq when absent; clamped like
-    // vfoa_freq when loaded.
+    // VFOB: freq/mode fall back to the VFOA value when absent; att/pre/agc copy
+    // the current VFOA value on NOT_FOUND. VFOA handled first above.
     if (!(implicit && active_vfo == X6100_VFO_B)) {
+        // vfob_freq: copies the current vfoa_freq when absent; clamped like
+        // vfoa_freq when loaded.
         int rc = p_band_vfob_freq.load(band_id);
         if (rc == NOT_FOUND) {
             p_band_vfob_freq.set_quiet(p_band_vfoa_freq.get());
@@ -611,45 +621,23 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
                 p_band_vfob_freq.set_quiet(static_cast<int32_t>(band.value.start_freq));
             }
         }
-    }
 
-    // vfob_mode: copies the current vfoa_mode when absent.
-    if (!(implicit && active_vfo == X6100_VFO_B)) {
-        int rc = p_band_vfob_mode.load(band_id);
+        // vfob_mode: copies the current vfoa_mode when absent.
+        rc = p_band_vfob_mode.load(band_id);
         if (rc != SUCCESS) {
             p_band_vfob_mode.set_quiet(p_band_vfoa_mode.get());
         }
-    }
 
-    // vfoa_att/pre/agc: on NOT_FOUND keep the default silently (no restore).
-    if (!(implicit && active_vfo == X6100_VFO_A)) {
-        int rc = p_band_vfoa_att.load(band_id);
-        (void)rc;
-    }
-    if (!(implicit && active_vfo == X6100_VFO_A)) {
-        int rc = p_band_vfoa_pre.load(band_id);
-        (void)rc;
-    }
-    if (!(implicit && active_vfo == X6100_VFO_A)) {
-        int rc = p_band_vfoa_agc.load(band_id);
-        (void)rc;
-    }
-
-    // vfob_att/pre/agc: on NOT_FOUND copy the current vfoa value.
-    if (!(implicit && active_vfo == X6100_VFO_B)) {
-        int rc = p_band_vfob_att.load(band_id);
+        // vfob_att/pre/agc: on NOT_FOUND copy the current vfoa value.
+        rc = p_band_vfob_att.load(band_id);
         if (rc == NOT_FOUND) {
             p_band_vfob_att.set_quiet(p_band_vfoa_att.get());
         }
-    }
-    if (!(implicit && active_vfo == X6100_VFO_B)) {
-        int rc = p_band_vfob_pre.load(band_id);
+        rc = p_band_vfob_pre.load(band_id);
         if (rc == NOT_FOUND) {
             p_band_vfob_pre.set_quiet(p_band_vfoa_pre.get());
         }
-    }
-    if (!(implicit && active_vfo == X6100_VFO_B)) {
-        int rc = p_band_vfob_agc.load(band_id);
+        rc = p_band_vfob_agc.load(band_id);
         if (rc == NOT_FOUND) {
             p_band_vfob_agc.set_quiet(p_band_vfoa_agc.get());
         }

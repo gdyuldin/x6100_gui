@@ -22,6 +22,8 @@
 #include <thread>
 #include <vector>
 
+#include <ft8lib/constants.h>
+
 #include "parameter.h"
 #include "pending_writes.h"
 #include "computed_parameter.h"
@@ -88,15 +90,15 @@ public:
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_ant_id{"ant", 1, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_atu_enabled{"atu", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_atu_enabled{"atu", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
 
     // UI
-    Parameter<int32_t> p_auto_level_enabled{"auto_level_enabled", 1, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_auto_level_enabled{"auto_level_enabled", true, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<float, int32_t, 2> p_auto_level_offset{"auto_level_offset", 0.0f, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_knob_info{"knob_info", 1, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_knob_info{"knob_info", true, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     // String mapping encoder (cfg_ctrl_t) positions to bind values
     // (EB_BIND_VOL/EB_BIND_MFK/EB_BIND_NONE). GLOBAL: persisted in the flat `params` table under key
@@ -111,7 +113,7 @@ public:
         }, {}, &global_params_};
 
     // VOX
-    Parameter<int32_t> p_vox_en{"vox_en", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_vox_en{"vox_en", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_vox_gain{"vox_gain", 0, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
@@ -122,19 +124,19 @@ public:
 
 
     // FT8
-    Parameter<int32_t> p_ft8_show_all{"ft8_show_all", 1, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_ft8_show_all{"ft8_show_all", true, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_ft8_protocol{"ft8_protocol", 1, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_ft8_protocol{"ft8_protocol", FTX_PROTOCOL_FT8, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_ft8_auto{"ft8_auto", 1, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_ft8_auto{"ft8_auto", true, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_ft8_hold_freq{"ft8_hold_freq", 1, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_ft8_hold_freq{"ft8_hold_freq", true, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_ft8_max_repeats{"ft8_max_repeats", 6, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
 
     // SWR scan
-    Parameter<int32_t> p_swrscan_linear{"swrscan_linear", 1, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_swrscan_linear{"swrscan_linear", true, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_swrscan_span{"swrscan_span", 200000, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
@@ -150,21 +152,21 @@ public:
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_key_vol{"key_vol", 10, StorageType::GLOBAL, pending_writes_,
         [](int32_t v) { return clamp_val(v, 0, 100); }, {}, &global_params_};
-    Parameter<int32_t> p_key_train{"key_train", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_key_train{"key_train", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_qsk_time{"qsk_time", 100, StorageType::GLOBAL, pending_writes_,
         [](int32_t v) { return clamp_val(v, 0, 1000); }, {}, &global_params_};
     Parameter<float, int32_t, 10> p_key_ratio{"key_ratio", 3.0f, StorageType::GLOBAL, pending_writes_,
         [](float v) { return clamp_val(v, 2.5f, 4.0f); }, {}, &global_params_};
-    Parameter<int32_t> p_cw_peak_on{"cw_peak_on", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_cw_peak_on{"cw_peak_on", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_cw_peak_q{"cw_peak_q", 1, StorageType::GLOBAL, pending_writes_,
         [](int32_t v) { return clamp_val(v, 0, 10); }, {}, &global_params_};
 
     // CW decoder
-    Parameter<int32_t> p_cw_decoder{"cw_decoder", 1, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_cw_decoder{"cw_decoder", true, StorageType::GLOBAL, pending_writes_,
         [](int32_t v) { return clamp_val(v, 0, 1); }, {}, &global_params_};
-    Parameter<int32_t> p_cw_tune{"cw_tune", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_cw_tune{"cw_tune", true, StorageType::GLOBAL, pending_writes_,
         [](int32_t v) { return clamp_val(v, 0, 1); }, {}, &global_params_};
     Parameter<float, int32_t, 10> p_cw_decoder_snr{"cw_decoder_snr_2", 5.0f, StorageType::GLOBAL, pending_writes_,
         [](float v) { return clamp_val(v, 0.0f, 30.0f); }, {}, &global_params_};
@@ -172,7 +174,7 @@ public:
         [](float v) { return clamp_val(v, 0.0f, 30.0f); }, {}, &global_params_};
 
     // AGC
-    Parameter<int32_t> p_agc_hang{"agc_hang", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_agc_hang{"agc_hang", false, StorageType::GLOBAL, pending_writes_,
         [](int32_t v) { return clamp_val(v, 0, 1); }, {}, &global_params_};
     Parameter<int32_t> p_agc_knee{"agc_knee", -60, StorageType::GLOBAL, pending_writes_,
         [](int32_t v) { return clamp_val(v, -120, 0); }, {}, &global_params_};
@@ -180,21 +182,21 @@ public:
         [](int32_t v) { return clamp_val(v, 0, 20); }, {}, &global_params_};
 
     // DSP
-    Parameter<int32_t> p_dnf{"dnf", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_dnf{"dnf", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_dnf_center{"dnf_center", 1000, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_dnf_width{"dnf_width", 50, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_dnf_auto{"dnf_auto", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_dnf_auto{"dnf_auto", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_nb{"nb", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_nb{"nb", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_nb_level{"nb_level", 10, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_nb_width{"nb_width", 10, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_nr{"nr", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_nr{"nr", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_nr_level{"nr_level", 0, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
@@ -208,19 +210,19 @@ public:
         nullptr, {}, &global_params_};
     Parameter<float, int32_t, 2> p_comp_makeup_offset{"comp_makeup_offset", 0.0f, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_fm_emphasis{"fm_emphasis", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_fm_emphasis{"fm_emphasis", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_tx_filter_low{"tx_filter_low", 160, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_tx_filter_high{"tx_filter_high", 3000, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
-    Parameter<int32_t> p_cessb_on{"cessb_on", 0, StorageType::GLOBAL, pending_writes_,
+    Parameter<int32_t> p_cessb_on{"cessb_on", false, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<float, int32_t, 10> p_cessb_power_up{"cessb_power_up", 3.7f, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
 
     // Band params
-    Parameter<int32_t> p_band_current_vfo{"vfo", 0, StorageType::BAND, pending_writes_,
+    Parameter<int32_t> p_band_current_vfo{"vfo", X6100_VFO_A, StorageType::BAND, pending_writes_,
         nullptr, {}, &band_params_};
     Parameter<int32_t> p_band_if_shift{"if_shift", 0, StorageType::BAND, pending_writes_,
         nullptr, {}, &band_params_};
@@ -228,7 +230,7 @@ public:
         nullptr, {}, &band_params_};
     Parameter<int32_t> p_band_grid_max{"grid_max", -73, StorageType::BAND, pending_writes_,
         nullptr, {}, &band_params_};
-    Parameter<int32_t> p_band_split{"split", 0, StorageType::BAND, pending_writes_,
+    Parameter<int32_t> p_band_split{"split", false, StorageType::BAND, pending_writes_,
         nullptr, {}, &band_params_};
     Parameter<int32_t> p_band_tx_i_offset{"tx_i_offset", 0, StorageType::BAND, pending_writes_,
         nullptr, {}, &band_params_};
@@ -370,30 +372,31 @@ public:
 
 private:
     // active VFO frequency of the current band (compute fn for cp_fg_freq).
-    int32_t fg_freq_from_band();
+    int32_t fg_freq_get();
 
     // reverse fn for cp_fg_freq: writes freq into the active VFO param.
-    void fg_freq_to_band(int32_t freq);
-
-    // active VFO mode of the current band (compute fn for cp_cur_mode).
-    int32_t get_cur_mode();
-
-    // reverse fn for cp_cur_mode: writes mode into the active VFO's mode param.
-    void set_cur_mode(int32_t mode);
-
-    // compute/reverse fns for cp_cur_att / cp_cur_pre / cp_cur_agc: read/write
-    // the active VFO's att/pre/agc param based on p_band_current_vfo.
-    int32_t get_cur_att();
-    void set_cur_att(int32_t att);
-    int32_t get_cur_pre();
-    void set_cur_pre(int32_t pre);
-    int32_t get_cur_agc();
-    void set_cur_agc(int32_t agc);
+    void fg_freq_set(int32_t freq);
 
     // compute/reverse fns for cp_bg_freq: the background (inactive) VFO's
     // frequency, i.e. the complement of the active VFO.
-    int32_t bg_freq_from_band();
-    void bg_freq_to_band(int32_t freq);
+    int32_t bg_freq_get();
+    void bg_freq_set(int32_t freq);
+
+    // active VFO mode of the current band (compute fn for cp_cur_mode).
+    int32_t cur_mode_get();
+
+    // reverse fn for cp_cur_mode: writes mode into the active VFO's mode param.
+    void cur_mode_set(int32_t mode);
+
+    // compute/reverse fns for cp_cur_att / cp_cur_pre / cp_cur_agc: read/write
+    // the active VFO's att/pre/agc param based on p_band_current_vfo.
+    int32_t cur_att_get();
+    void cur_att_set(int32_t att);
+    int32_t cur_pre_get();
+    void cur_pre_set(int32_t pre);
+    int32_t cur_agc_get();
+    void cur_agc_set(int32_t agc);
+
 
     // Trampoline for the cp_cur_mode observer: calls switch_mode() with the new
     // mode whenever cp_cur_mode's value changes.
