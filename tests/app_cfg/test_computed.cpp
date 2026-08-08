@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "computed_api.h"       // C-совместимые opaque-типы и функции set/get
+#include "computed_api.h"       // C-compatible opaque-types and set/get functions
 #include "computed_parameter.h" // ComputedParameter<T>
 #include "subject.h"            // SubjectT, Observer, Subscription
 

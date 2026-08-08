@@ -19,9 +19,9 @@ StorageKey make_key(StorageType type, int context_id, const char* name) {
 TEST_CASE("PendingWrites stores and overwrites int32_t", "[pending_writes]") {
     PendingWrites pending;
     auto key = make_key(StorageType::BAND, 1, "vfoa_freq");
-    pending.write(key, int32_t(7100000));
-    pending.write(key, int32_t(7200000));
-    REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == 7200000);
+    pending.write(key, int32_t(7'100'000));
+    pending.write(key, int32_t(7'200'00));
+    REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == 7'200'00);
 }
 
 
@@ -44,11 +44,11 @@ TEST_CASE("PendingWrites key distinguishes band_id and mode_id", "[pending_write
     auto key_band1 = make_key(StorageType::BAND, 1, "vfoa_freq");
     auto key_band2 = make_key(StorageType::BAND, 2, "vfoa_freq");
 
-    pending.write(key_band1, int32_t(7000000));
-    pending.write(key_band2, int32_t(14000000));
+    pending.write(key_band1, int32_t(7'000'000));
+    pending.write(key_band2, int32_t(14'000'000));
 
-    REQUIRE(PendingWritesTestAccess::peek_int(pending, key_band1) == 7000000);
-    REQUIRE(PendingWritesTestAccess::peek_int(pending, key_band2) == 14000000);
+    REQUIRE(PendingWritesTestAccess::peek_int(pending, key_band1) == 7'000'000);
+    REQUIRE(PendingWritesTestAccess::peek_int(pending, key_band2) == 14'000'000);
 }
 
 TEST_CASE("PendingWrites thread safety basic", "[pending_writes]") {
@@ -86,16 +86,16 @@ TEST_CASE("PendingWrites retains entry on failed save and retries later", "[pend
         });
 
     auto key = make_key(StorageType::BAND, 1, "vfoa_freq");
-    pending.write(key, int32_t(7100000));
+    pending.write(key, int32_t(7'100'000));
 
     // First save fails: the pending entry must NOT be dropped (no data loss).
     mock_band.arm_fail_save(5);
     pending.flush_storage(StorageType::BAND, 1);
-    REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == 7100000);
+    REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == 7'100'000);
     REQUIRE(mock_band.ints().empty());
 
     // A subsequent flush succeeds and clears the entry.
     pending.flush_storage(StorageType::BAND, 1);
     REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == std::nullopt);
-    REQUIRE(mock_band.ints().at({StorageType::BAND, 1, "vfoa_freq"}) == 7100000);
+    REQUIRE(mock_band.ints().at({StorageType::BAND, 1, "vfoa_freq"}) == 7'100'000);
 }

@@ -102,10 +102,10 @@ TEST_CASE("ParamsTable saves and loads int32_t", "[db]") {
 TEST_CASE("ParamsTable saves and loads float", "[db]") {
     ParamsTableFixture f;
 
-    int rc = ParamsTable::Save<float>("freq", 14.175f);
+    int rc = ParamsTable::Save<float>("pwr", 14.175f);
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<float> res = ParamsTable::Load<float>("freq");
+    ParamLoadResult<float> res = ParamsTable::Load<float>("pwr");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == Catch::Approx(14.175f));
 }
@@ -444,8 +444,8 @@ TEST_CASE("BandsTable get_by_id loads a band and its type", "[db]") {
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == 2);
     REQUIRE(res.value.name == "40m CW");
-    REQUIRE(res.value.start_freq == 7000000);
-    REQUIRE(res.value.stop_freq == 7050000);
+    REQUIRE(res.value.start_freq == 7'000'000);
+    REQUIRE(res.value.stop_freq == 7'050'000);
     REQUIRE(res.value.type == BAND_ACTIVE);
 }
 
@@ -457,8 +457,8 @@ TEST_CASE("BandsTable get_by_id loads a second adjacent active band", "[db]") {
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == 3);
     REQUIRE(res.value.name == "40m SSB");
-    REQUIRE(res.value.start_freq == 7050000);
-    REQUIRE(res.value.stop_freq == 7200000);
+    REQUIRE(res.value.start_freq == 7'050'000);
+    REQUIRE(res.value.stop_freq == 7'200'000);
     REQUIRE(res.value.type == BAND_ACTIVE);
 }
 
@@ -513,48 +513,48 @@ TEST_CASE("BandsTable get_by_id serves repeated lookups from cache", "[db]") {
 TEST_CASE("BandsTable get_by_freq returns a gap below the first band", "[db]") {
     BandsTableFixture f;
 
-    BandInfoLoadResult res = BandsTable::get_by_freq(1000000);
+    BandInfoLoadResult res = BandsTable::get_by_freq(1'000'000);
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == BAND_UNDEFINED);
     REQUIRE(res.value.type == BAND_INACTIVE);
     // No active band below 1 MHz: the low side is NULL (start_freq becomes 0)
     // and the next band starts at 3.5 MHz.
     REQUIRE(res.value.start_freq == 0);
-    REQUIRE(res.value.stop_freq == 3500000);
+    REQUIRE(res.value.stop_freq == 3'500'000);
 }
 
 TEST_CASE("BandsTable get_by_freq loads the active band containing the frequency", "[db]") {
     BandsTableFixture f;
 
-    BandInfoLoadResult res = BandsTable::get_by_freq(3600000);
+    BandInfoLoadResult res = BandsTable::get_by_freq(3'600'000);
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == 1);
     REQUIRE(res.value.name == "80m");
-    REQUIRE(res.value.start_freq == 3500000);
-    REQUIRE(res.value.stop_freq == 4000000);
+    REQUIRE(res.value.start_freq == 3'500'000);
+    REQUIRE(res.value.stop_freq == 4'000'000);
     REQUIRE(res.value.type == BAND_ACTIVE);
 }
 
 TEST_CASE("BandsTable get_by_freq includes the lower band edge", "[db]") {
     BandsTableFixture f;
 
-    BandInfoLoadResult res = BandsTable::get_by_freq(7000000);
+    BandInfoLoadResult res = BandsTable::get_by_freq(7'000'000);
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == 2);
     REQUIRE(res.value.name == "40m CW");
-    REQUIRE(res.value.start_freq == 7000000);
-    REQUIRE(res.value.stop_freq == 7050000);
+    REQUIRE(res.value.start_freq == 7'000'000);
+    REQUIRE(res.value.stop_freq == 7'050'000);
 }
 
 TEST_CASE("BandsTable get_by_freq includes the upper band edge", "[db]") {
     BandsTableFixture f;
 
-    BandInfoLoadResult res = BandsTable::get_by_freq(4000000);
+    BandInfoLoadResult res = BandsTable::get_by_freq(4'000'000);
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == 1);
     REQUIRE(res.value.name == "80m");
-    REQUIRE(res.value.start_freq == 3500000);
-    REQUIRE(res.value.stop_freq == 4000000);
+    REQUIRE(res.value.start_freq == 3'500'000);
+    REQUIRE(res.value.stop_freq == 4'000'000);
 }
 
 TEST_CASE("BandsTable get_by_freq resolves overlapping adjacent bands by id", "[db]") {
@@ -563,12 +563,12 @@ TEST_CASE("BandsTable get_by_freq resolves overlapping adjacent bands by id", "[
     // 7.05 MHz belongs to both 40m CW (which stops here) and 40m SSB (which
     // starts here); ORDER BY id DESC NULLS LAST picks the band with the
     // highest id.
-    BandInfoLoadResult res = BandsTable::get_by_freq(7050000);
+    BandInfoLoadResult res = BandsTable::get_by_freq(7'050'000);
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == 3);
     REQUIRE(res.value.name == "40m SSB");
-    REQUIRE(res.value.start_freq == 7050000);
-    REQUIRE(res.value.stop_freq == 7200000);
+    REQUIRE(res.value.start_freq == 7'050'000);
+    REQUIRE(res.value.stop_freq == 7'200'000);
 }
 
 TEST_CASE("BandsTable get_by_freq returns the gap between bands ignoring inactive bands", "[db]") {
@@ -577,12 +577,12 @@ TEST_CASE("BandsTable get_by_freq returns the gap between bands ignoring inactiv
     // 5 MHz lies inside the inactive "GAP" band (type = 0). Active bands are
     // 80m (3.5-4 MHz) below and 40m CW (7-7.05 MHz) above, so the gap spans
     // 4-7 MHz.
-    BandInfoLoadResult res = BandsTable::get_by_freq(5000000);
+    BandInfoLoadResult res = BandsTable::get_by_freq(5'000'000);
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == BAND_UNDEFINED);
     REQUIRE(res.value.type == BAND_INACTIVE);
-    REQUIRE(res.value.start_freq == 4000000);
-    REQUIRE(res.value.stop_freq == 7000000);
+    REQUIRE(res.value.start_freq == 4'000'000);
+    REQUIRE(res.value.stop_freq == 7'000'000);
 }
 
 TEST_CASE("BandsTable get_by_freq returns a gap above the last band", "[db]") {
@@ -590,18 +590,18 @@ TEST_CASE("BandsTable get_by_freq returns a gap above the last band", "[db]") {
 
     // No active band above 7.2 MHz: the high side is NULL (stop_freq becomes
     // 0xFFFFFFFF) and the low side is the stop of 40m SSB.
-    BandInfoLoadResult res = BandsTable::get_by_freq(8000000);
+    BandInfoLoadResult res = BandsTable::get_by_freq(8'000'000);
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.id == BAND_UNDEFINED);
     REQUIRE(res.value.type == BAND_INACTIVE);
-    REQUIRE(res.value.start_freq == 7200000);
+    REQUIRE(res.value.start_freq == 7'200'000);
     REQUIRE(res.value.stop_freq == 4294967295U);
 }
 
 TEST_CASE("BandsTable get_by_freq serves repeated lookups from cache", "[db]") {    BandsTableFixture f;
 
     // Load 7.1 MHz -> 40m SSB is now cached.
-    BandInfoLoadResult first = BandsTable::get_by_freq(7100000);
+    BandInfoLoadResult first = BandsTable::get_by_freq(7'100'000);
     REQUIRE(first.rc == SUCCESS);
     REQUIRE(first.value.id == 3);
     REQUIRE(first.value.name == "40m SSB");
@@ -610,11 +610,11 @@ TEST_CASE("BandsTable get_by_freq serves repeated lookups from cache", "[db]") {
     int rc = sqlite3_exec(f.db(), "UPDATE bands SET stop_freq = 7100000 WHERE id = 3", nullptr, nullptr, nullptr);
     REQUIRE(rc == SQLITE_OK);
 
-    BandInfoLoadResult second = BandsTable::get_by_freq(7100000);
+    BandInfoLoadResult second = BandsTable::get_by_freq(7'100'000);
     REQUIRE(second.rc == SUCCESS);
     REQUIRE(second.value.id == 3);
     REQUIRE(second.value.name == "40m SSB");
-    REQUIRE(second.value.stop_freq == 7200000);
+    REQUIRE(second.value.stop_freq == 7'200'000);
 }
 
 TEST_CASE("BandsTable get_by_freq serves the start boundary from cache", "[db]") {
@@ -623,7 +623,7 @@ TEST_CASE("BandsTable get_by_freq serves the start boundary from cache", "[db]")
     // 7.0 MHz is exactly the start of 40m CW. The cache must serve this
     // boundary on the next call (the old code compared with strict > and
     // missed, forcing a re-query).
-    BandInfoLoadResult first = BandsTable::get_by_freq(7000000);
+    BandInfoLoadResult first = BandsTable::get_by_freq(7'000'000);
     REQUIRE(first.rc == SUCCESS);
     REQUIRE(first.value.id == 2);
 
@@ -633,11 +633,11 @@ TEST_CASE("BandsTable get_by_freq serves the start boundary from cache", "[db]")
     int rc = sqlite3_exec(f.db(), "UPDATE bands SET start_freq = 7050000 WHERE id = 2", nullptr, nullptr, nullptr);
     REQUIRE(rc == SQLITE_OK);
 
-    BandInfoLoadResult second = BandsTable::get_by_freq(7000000);
+    BandInfoLoadResult second = BandsTable::get_by_freq(7'000'000);
     REQUIRE(second.rc == SUCCESS);
     REQUIRE(second.value.id == 2);
     REQUIRE(second.value.name == "40m CW");
-    REQUIRE(second.value.start_freq == 7000000);
+    REQUIRE(second.value.start_freq == 7'000'000);
 }
 
 TEST_CASE("BandsTable all_bands returns every band row and its fields", "[db]") {
@@ -665,17 +665,17 @@ TEST_CASE("BandsTable all_bands returns bands ordered by start frequency", "[db]
 
     // The values were inserted out of order; the query must sort them by
     // start_freq so the band edges screen can draw them left-to-right.
-    CHECK(bands[0].start_freq == 3500000);
-    CHECK(bands[1].start_freq == 5000000);
-    CHECK(bands[2].start_freq == 7000000);
-    CHECK(bands[3].start_freq == 7050000);
+    CHECK(bands[0].start_freq == 3'500'000);
+    CHECK(bands[1].start_freq == 5'000'000);
+    CHECK(bands[2].start_freq == 7'000'000);
+    CHECK(bands[3].start_freq == 7'050'000);
 
     // Frequencies and types must be copied verbatim.
-    CHECK(bands[0].stop_freq == 4000000);
+    CHECK(bands[0].stop_freq == 4'000'000);
     CHECK(bands[0].type == BAND_ACTIVE);
     CHECK(bands[1].type == BAND_INACTIVE);
     CHECK(bands[2].type == BAND_ACTIVE);
-    CHECK(bands[3].stop_freq == 7200000);
+    CHECK(bands[3].stop_freq == 7'200'000);
     CHECK(bands[3].type == BAND_ACTIVE);
 }
 
@@ -683,12 +683,12 @@ TEST_CASE("BandsTable next goes from a gap to the next band upwards", "[db]") {
     BandsTableFixture f;
 
     // GAP (inactive, 5-6 MHz) -> the first active band above it is 40m CW.
-    BandInfoLoadResult res = BandsTable::next(4, 5500000, true);
+    BandInfoLoadResult res = BandsTable::next(4, 5'500'000, true);
     CHECK(res.rc == SUCCESS);
     CHECK(res.value.id == 2);
     CHECK(res.value.name == "40m CW");
-    CHECK(res.value.start_freq == 7000000);
-    CHECK(res.value.stop_freq == 7050000);
+    CHECK(res.value.start_freq == 7'000'000);
+    CHECK(res.value.stop_freq == 7'050'000);
 }
 
 TEST_CASE("BandsTable next goes from an unusable frequency up to the next band", "[db]") {
@@ -696,7 +696,7 @@ TEST_CASE("BandsTable next goes from an unusable frequency up to the next band",
 
     // 6.5 MHz is between the end of 80m and the start of 40m CW. Although the
     // band is inactive, next() must return 40m CW.
-    BandInfoLoadResult res = BandsTable::next(BAND_UNDEFINED, 6500000, true);
+    BandInfoLoadResult res = BandsTable::next(BAND_UNDEFINED, 6'500'000, true);
     CHECK(res.rc == SUCCESS);
     CHECK(res.value.id == 2);
     CHECK(res.value.name == "40m CW");
@@ -707,18 +707,18 @@ TEST_CASE("BandsTable next jumps from a band over the adjacent shared boundary u
 
     // 7.05 MHz is the shared start of 40m CW and 40m SSB; starting from 40m CW
     // going up must skip the current band and land on 40m SSB.
-    BandInfoLoadResult res = BandsTable::next(2, 7050000, true);
+    BandInfoLoadResult res = BandsTable::next(2, 7'050'000, true);
     CHECK(res.rc == SUCCESS);
     CHECK(res.value.id == 3);
     CHECK(res.value.name == "40m SSB");
-    CHECK(res.value.start_freq == 7050000);
-    CHECK(res.value.stop_freq == 7200000);
+    CHECK(res.value.start_freq == 7'050'000);
+    CHECK(res.value.stop_freq == 7'200'000);
 }
 
 TEST_CASE("BandsTable next goes from the bottom edge upwards to the first band", "[db]") {
     BandsTableFixture f;
 
-    BandInfoLoadResult res = BandsTable::next(BAND_UNDEFINED, 1000000, true);
+    BandInfoLoadResult res = BandsTable::next(BAND_UNDEFINED, 1'000'000, true);
     CHECK(res.rc == SUCCESS);
     CHECK(res.value.id == 1);
     CHECK(res.value.name == "80m");
@@ -727,7 +727,7 @@ TEST_CASE("BandsTable next goes from the bottom edge upwards to the first band",
 TEST_CASE("BandsTable next returns NOT_FOUND above the last band", "[db]") {
     BandsTableFixture f;
 
-    BandInfoLoadResult res = BandsTable::next(3, 7200000, true);
+    BandInfoLoadResult res = BandsTable::next(3, 7'200'000, true);
     CHECK(res.rc == NOT_FOUND);
 }
 
@@ -735,19 +735,19 @@ TEST_CASE("BandsTable next goes to the previous band downwards", "[db]") {
     BandsTableFixture f;
 
     // 40m CW -> 80m.
-    BandInfoLoadResult res = BandsTable::next(2, 7010000, false);
+    BandInfoLoadResult res = BandsTable::next(2, 7'010'000, false);
     CHECK(res.rc == SUCCESS);
     CHECK(res.value.id == 1);
     CHECK(res.value.name == "80m");
-    CHECK(res.value.start_freq == 3500000);
-    CHECK(res.value.stop_freq == 4000000);
+    CHECK(res.value.start_freq == 3'500'000);
+    CHECK(res.value.stop_freq == 4'000'000);
 }
 
 TEST_CASE("BandsTable next goes down from the adjacent to the previous band", "[db]") {
     BandsTableFixture f;
 
     // 7.05 MHz inside 40m SSB; moving downwards must land on 40m CW.
-    BandInfoLoadResult res = BandsTable::next(3, 7050000, false);
+    BandInfoLoadResult res = BandsTable::next(3, 7'050'000, false);
     CHECK(res.rc == SUCCESS);
     CHECK(res.value.id == 2);
     CHECK(res.value.name == "40m CW");
@@ -757,7 +757,7 @@ TEST_CASE("BandsTable next goes from a gap down to the previous band", "[db]") {
     BandsTableFixture f;
 
     // Gap band (5-6 MHz) downwards hits the active band below it (80m).
-    BandInfoLoadResult res = BandsTable::next(4, 5500000, false);
+    BandInfoLoadResult res = BandsTable::next(4, 5'500'000, false);
     CHECK(res.rc == SUCCESS);
     CHECK(res.value.id == 1);
     CHECK(res.value.name == "80m");
@@ -766,7 +766,7 @@ TEST_CASE("BandsTable next goes from a gap down to the previous band", "[db]") {
 TEST_CASE("BandsTable next returns NOT_FOUND below the first band", "[db]") {
     BandsTableFixture f;
 
-    BandInfoLoadResult res = BandsTable::next(1, 3500000, false);
+    BandInfoLoadResult res = BandsTable::next(1, 3'500'000, false);
     CHECK(res.rc == NOT_FOUND);
 }
 
@@ -774,7 +774,7 @@ TEST_CASE("BandsTable next skips the current band even on an inactive band", "[d
     BandsTableFixture f;
 
     // From the gap row (id=4) moving down reaches 80m, not the GAP itself.
-    BandInfoLoadResult res = BandsTable::next(4, 5500000, false);
+    BandInfoLoadResult res = BandsTable::next(4, 5'500'000, false);
     CHECK(res.rc == SUCCESS);
     CHECK(res.value.id == 1);
 }

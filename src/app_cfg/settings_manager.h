@@ -80,6 +80,12 @@ public:
         [](int32_t v) { return clamp_val(v, -5000, 5000); }, {}, &global_params_};
     Parameter<int32_t> p_xit{"xit", 0, StorageType::GLOBAL, pending_writes_,
         [](int32_t v) { return clamp_val(v, -5000, 5000); }, {}, &global_params_};
+    // Current band id, persisted in the global `params` table (mirrors the
+    // legacy cfg.band_id). Restored at init_load to pick the starting band;
+    // updated on every band switch so a restart returns to the last band.
+    // Default 7 = 20m SSB, matching the VFOA default frequency of 14.1 MHz.
+    Parameter<int32_t> p_band_id{"band_id", 7, StorageType::GLOBAL, pending_writes_,
+        {}, {}, &global_params_};
     Parameter<int32_t> p_mic{"mic", x6100_mic_auto, StorageType::GLOBAL, pending_writes_,
         nullptr, {}, &global_params_};
     Parameter<int32_t> p_hmic{"hmic", 20, StorageType::GLOBAL, pending_writes_,
@@ -327,21 +333,13 @@ public:
     SettingsManager& operator=(SettingsManager&&) = delete;
 
     // -- Initialisation --
-    // Loads global params, then band/mode params for the given starting
-    // context. on_db_error (optional) is invoked on DB failures; parameters
-    // keep their current values on NOT_FOUND.
-    void init_load(int band_id, int mode_id, void (*on_db_error)(const char* msg) = nullptr);
+    // Loads global params (including the persisted band_id), then band params
+    // for the restored band and mode params for the mode derived from the
+    // active VFO (cp_cur_mode). on_db_error (optional) is invoked on DB
+    // failures; parameters keep their current values on NOT_FOUND.
+    void init_load(void (*on_db_error)(const char* msg) = nullptr);
 
     // -- Context switching --
-    // Explicit band switch: saves pending writes of the current band, loads all
-    // band params of new_band_id except current_vfo (the active VFO stays the
-    // same), then switches the band context.
-    void switch_band_explicit(int new_band_id);
-
-    // Implicit band switch: like explicit, but also skips loading the frequency
-    // of the active VFO (the radio continues on the same frequency).
-    void switch_band_implicit(int new_band_id);
-
     // Switches mode context: saves pending mode writes and loads mode params
     // for new_mode_id.
     void switch_mode(int new_mode_id);
@@ -402,6 +400,15 @@ private:
     // mode whenever cp_cur_mode's value changes.
     static void switch_mode_observer_cb(Subject* subj, void* user_data);
 
+    // Trampoline for the p_band_vfoa_freq / p_band_vfob_freq observers: when a
+    // VFO frequency changes into a different band, triggers an implicit band
+    // switch (the frequency that caused the switch is preserved).
+    static void vfo_freq_change_cb(Subject* subj, void* user_data);
+
+    // Trampoline for the p_band_id observer: an explicit band switch is triggered
+    // by setting p_band_id; the observer runs switch_band with implicit=false.
+    static void switch_band_observer_cb(Subject* subj, void* user_data);
+
     // Shared band-switch core: flush, rebind context, switch-time loads and
     // recomputes. `implicit` selects whether the active VFO's freq+mode is kept.
     void switch_band(int new_band_id, bool implicit);
@@ -456,9 +463,24 @@ private:
     int band_id_ = 0;
     int mode_id_ = 0;
 
+    // Re-entrancy guard for switch_band: prevents the p_band_id observer (which
+    // fires from inside switch_band's p_band_id.set) from running a nested
+    // switch_band with a different `implicit` flag.
+    bool band_switch_active_ = false;
+
     // Holds the cp_cur_mode observer that triggers switch_mode() on mode change.
     // RAII: unsubscribes on destruction.
     Subscription switch_mode_obs_;
+
+    // Holds the p_band_id observer that triggers an explicit band switch when
+    // p_band_id is set. RAII: unsubscribe on destruction.
+    Subscription band_id_obs_;
+
+    // Holds the VFO frequency observers that trigger an implicit band switch
+    // when the active VFO is tuned into a different band. RAII: unsubscribe on
+    // destruction.
+    Subscription vfoa_freq_obs_;
+    Subscription vfob_freq_obs_;
 
     // Background flush thread control.
     bool flush_thread_running_ = false;

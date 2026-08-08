@@ -93,15 +93,15 @@ TEST_CASE("BandStorage round-trip isolates context_id", "[storage]") {
     TestDbGuard db;
     StoragePolicy& policy = storage_policy_for(StorageType::BAND);
 
-    REQUIRE(policy.save_int(5, "vfoa_freq", 14200) == SUCCESS);
-    REQUIRE(policy.save_int(6, "vfoa_freq", 14300) == SUCCESS);
+    REQUIRE(policy.save_int(5, "vfoa_freq", 14'200'000) == SUCCESS);
+    REQUIRE(policy.save_int(6, "vfoa_freq", 14'300'000) == SUCCESS);
 
     auto v5 = policy.load_int(5, "vfoa_freq");
     auto v6 = policy.load_int(6, "vfoa_freq");
     REQUIRE(v5.has_value());
     REQUIRE(v6.has_value());
-    REQUIRE(*v5 == 14200);
-    REQUIRE(*v6 == 14300);
+    REQUIRE(*v5 == 14'200'000);
+    REQUIRE(*v6 == 14'300'000);
 
     // Missing name in an existing context still returns nullopt.
     REQUIRE_FALSE(policy.load_int(5, "no_such_param").has_value());

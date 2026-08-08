@@ -6,8 +6,6 @@
 #include "computed_parameter.h"
 #include "subject.h"
 
-#include <sqlite3.h>
-
 // The opaque C handles are the concrete Parameter<T> / ComputedParameter<T>
 // instantiations owned by the static SettingsManager below. Casts are safe
 // because C code only ever receives them through this API.
@@ -33,11 +31,13 @@ ParamInt*        cfg_band_vfob_freq  = nullptr;
 ParamFloat*      cfg_band_dac_offset = nullptr;
 ComputedParamInt* cfg_fg_freq       = nullptr;
 
-void cfg_api_init(sqlite3* /*db*/, int band_id, int mode_id, void (*on_db_error)(const char*))
+void cfg_api_init(void (*on_db_error)(const char*))
 {
     // on_db_error is kept for signature compatibility but is currently inert
     // (plan A.1 dropped the wiring): the manager stores it but never invokes it.
-    g_cfg.init_load(band_id, mode_id, on_db_error);
+    // The starting band/mode are derived internally (persisted global band_id +
+    // cp_cur_mode).
+    g_cfg.init_load(on_db_error);
 
     cfg_volume           = reinterpret_cast<ParamInt*>(&g_cfg.p_volume);
     cfg_squelch          = reinterpret_cast<ParamInt*>(&g_cfg.p_squelch);

@@ -16,7 +16,6 @@
 // the sqlite3 connection and table initialisation (avoids double-Init).
 
 #include <stdint.h>
-#include <sqlite3.h>
 
 #include "computed_api.h"
 
@@ -81,10 +80,13 @@ extern ParamInt*           cfg_band_vfob_freq; // p_band_vfob_freq (BAND)
 extern ParamFloat*         cfg_band_dac_offset; // p_band_dac_offse (BAND)
 extern ComputedParamInt*   cfg_fg_freq;       // cp_fg_freq
 
-// Initialise the manager (loads global/band/mode params for the starting
-// context) and fill the extern globals above. on_db_error is kept for
-// signature compatibility; it is currently inert (see plan A.1).
-void cfg_api_init(sqlite3* db, int band_id, int mode_id, void (*on_db_error)(const char*));
+// Initialise the manager (loads global/band/mode params; the starting band comes
+// from the persisted global band_id and the starting mode from cp_cur_mode, so
+// no band/mode ids are passed) and fill the extern globals above. The caller
+// owns the sqlite3 connection/table init (cfg_api_init is not handed a db
+// handle). on_db_error is kept for signature compatibility; it is currently
+// inert (see plan A.1).
+void cfg_api_init(void (*on_db_error)(const char*));
 
 // Persist all pending deferred writes immediately.
 void cfg_api_flush_all(void);

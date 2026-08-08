@@ -10,12 +10,14 @@ extern "C" {
 // SettingsManager implementation.
 //
 // Band/mode switching semantics (aligned with src/cfg/band.c):
-//   - switch_band_explicit: the user explicitly selected a new band. Save the
-//     pending writes of the current band, then load all band params of the new
-//     band EXCEPT current_vfo (the active VFO reference stays the same VFO).
-//   - switch_band_implicit: the radio crossed into a new band while tuning.
-//     Same as explicit, but additionally the frequency of the active VFO is
-//     left untouched (it keeps the current tune frequency).
+//   - Explicit band switch: setting p_band_id triggers an observer that calls
+//     switch_band(implicit=false). Save the pending writes of the current band,
+//     then load all band params of the new band EXCEPT current_vfo (the active
+//     VFO reference stays the same VFO).
+//   - Implicit switch: when a VFO frequency is tuned into a different band
+//     (via cp_fg_freq or the active p_band_vfo*_freq), an observer triggers a
+//     band switch. The active VFO's frequency that caused the switch is kept,
+//     but its mode/att/pre/agc are loaded from the new band.
 //   - switch_mode: the user changed the mode. Save pending mode writes and
 //     load the mode params for the new mode.
 //
@@ -80,11 +82,12 @@ SettingsManager::~SettingsManager()
     stop_flush_thread();
 }
 
-void SettingsManager::init_load(int band_id, int mode_id, void (*on_db_error)(const char* msg))
+void SettingsManager::init_load(void (*on_db_error)(const char* msg))
 {
     // Global params (flat `params` table; context_id is ignored). The unified
-    // ParamBase registry now includes p_pwr (float) and p_encoder_bind (text),
-    // so the non-int32 special cases no longer need explicit load calls.
+    // ParamBase registry now includes p_pwr (float), p_encoder_bind (text) and
+    // p_band_id (the persisted current band), so the non-int32 special cases
+    // no longer need explicit load calls.
     for (ParamBase* p : global_params_)
     {
         int rc = p->load(0);
@@ -96,14 +99,24 @@ void SettingsManager::init_load(int band_id, int mode_id, void (*on_db_error)(co
         }
     }
 
-    band_id_ = band_id;
-    mode_id_ = mode_id;
+    // The starting band comes from the persisted global parameter.
+    band_id_ = p_band_id.get();
 
     set_band_context(band_id_);
-    set_mode_context(mode_id_);
 
     load_band_all(band_id_);
-    load_mode_all(mode_id_);
+
+    // Subscribe the VFO frequency observers that trigger an implicit band
+    // switch when a frequency is tuned into a different band. Subscribed after
+    // the initial load so the initial restore does not trigger a switch.
+    vfoa_freq_obs_ = Subscription(p_band_vfoa_freq.subscribe(vfo_freq_change_cb, this));
+    vfob_freq_obs_ = Subscription(p_band_vfob_freq.subscribe(vfo_freq_change_cb, this));
+
+    // Subscribe the p_band_id observer that triggers an explicit band switch
+    // when p_band_id is set. Subscribed after the initial load so the restore
+    // of the persisted band does not trigger a switch.
+    band_id_obs_ = Subscription(p_band_id.subscribe(switch_band_observer_cb, this));
+
 
     // Bind the computed fg_freq to its sources (VFO frequency params +
     // current_vfo) so it recomputes automatically when they change.
@@ -115,12 +128,19 @@ void SettingsManager::init_load(int band_id, int mode_id, void (*on_db_error)(co
     cp_fg_freq.recompute();
 
     // Bind the computed cur_mode to its sources (VFO mode params + current_vfo)
-    // and recompute it BEFORE subscribing the switch_mode observer, so the
-    // initial recompute does not fire switch_mode().
+    // and recompute it BEFORE deriving the mode id, so the initial recompute
+    // does not fire switch_mode().
     cp_cur_mode.bind(p_band_vfoa_mode);
     cp_cur_mode.bind(p_band_vfob_mode);
     cp_cur_mode.bind(p_band_current_vfo);
     cp_cur_mode.recompute();
+
+    // The starting mode is the active VFO's mode of the restored band.
+    mode_id_ = cp_cur_mode.get();
+
+    set_mode_context(mode_id_);
+
+    load_mode_all(mode_id_);
 
     // Subscribe an observer that calls switch_mode() whenever the current mode
     // changes (e.g. from cp_cur_mode.set() or a VFO switch).
@@ -165,22 +185,24 @@ void SettingsManager::init_load(int band_id, int mode_id, void (*on_db_error)(co
     cp_cur_filter_bw.recompute();
 }
 
-void SettingsManager::switch_band_explicit(int new_band_id)
-{
-    switch_band(new_band_id, false);
-}
-
-void SettingsManager::switch_band_implicit(int new_band_id)
-{
-    switch_band(new_band_id, true);
-}
-
 void SettingsManager::switch_band(int new_band_id, bool implicit)
 {
+    // Re-entrancy guard: an explicit switch triggered by setting p_band_id calls
+    // switch_band(implicit=false). If that happens from inside this call (the
+    // implicit path sets p_band_id below, firing the observer), return early so
+    // exactly one load_band_switch runs with the correct `implicit` flag.
+    if (band_switch_active_) {
+        return;
+    }
+    band_switch_active_ = true;
+
     // Save pending writes of the current band before switching context.
     pending_writes_.flush_storage(StorageType::BAND, band_id_);
 
     band_id_ = new_band_id;
+
+    // Persist the current band so a restart returns to it.
+    p_band_id.set(new_band_id);
 
     set_band_context(band_id_);
 
@@ -192,6 +214,8 @@ void SettingsManager::switch_band(int new_band_id, bool implicit)
     cp_cur_pre.recompute();
     cp_cur_agc.recompute();
     cp_bg_freq.recompute();
+
+    band_switch_active_ = false;
 }
 
 void SettingsManager::switch_mode(int new_mode_id)
@@ -498,6 +522,35 @@ void SettingsManager::switch_mode_observer_cb(Subject* /*subj*/, void* user_data
     mgr->switch_mode(mgr->cp_cur_mode.get());
 }
 
+void SettingsManager::vfo_freq_change_cb(Subject* subj, void* user_data)
+{
+    // Whenever a VFO frequency changes, check whether it landed in a different
+    // band. If so, switch bands implicitly: the frequency that caused the
+    // switch is preserved (it was just tuned), and the new band's mode/att/pre/
+    // agc are loaded. Triggered from both cp_fg_freq.set() (via fg_freq_set ->
+    // active VFO freq .set()) and direct p_band_vfo*_freq.set().
+    SettingsManager* mgr = static_cast<SettingsManager*>(user_data);
+    auto* freq_subj = static_cast<SubjectT<int32_t>*>(subj);
+    const int32_t freq = freq_subj->get();
+    BandInfoLoadResult result = BandsTable::get_by_freq(static_cast<uint32_t>(freq));
+    if (result.rc == SUCCESS && result.value.id != BAND_UNDEFINED &&
+        result.value.id != mgr->band_id_)
+    {
+        mgr->switch_band(result.value.id, true);
+    }
+}
+
+void SettingsManager::switch_band_observer_cb(Subject* /*subj*/, void* user_data)
+{
+    // Whenever p_band_id changes, switch bands explicitly (implicit=false): the
+    // caller set p_band_id to select a new band. The active VFO reference and
+    // both VFO frequencies are loaded from the new band. switch_band() sets
+    // p_band_id to the same value (no-op), and the re-entrancy guard prevents a
+    // nested switch when this fires from the implicit path.
+    SettingsManager* mgr = static_cast<SettingsManager*>(user_data);
+    mgr->switch_band(mgr->p_band_id.get(), false);
+}
+
 void SettingsManager::set_band_context(int band_id)
 {
     // Unified band registry now includes p_band_dac_offset (float), so the
@@ -576,7 +629,11 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
     BandInfoLoadResult band = BandsTable::get_by_id(band_id);
     const bool have_band = (band.rc == SUCCESS) && (band.value.id != BAND_UNDEFINED);
 
-    // VFOA: freq/mode restore+clamp, att/pre/agc keep default on NOT_FOUND.
+    // On an implicit switch only the active VFO's FREQUENCY is preserved (the
+    // value that caused the switch); its mode/att/pre/agc are still loaded from
+    // the new band, exactly like the inactive VFO.
+
+    // VFOA frequency: skipped on implicit switch when VFOA is the active VFO.
     if (!(implicit && active_vfo == X6100_VFO_A)) {
         // vfoa_freq: NOT_FOUND -> band start (or the default); an out-of-range
         // loaded value is clamped to the band start.
@@ -590,14 +647,17 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
                 p_band_vfoa_freq.set_quiet(static_cast<int32_t>(band.value.start_freq));
             }
         }
+    }
 
-        // vfoa_mode: depends on the (loaded/restored) vfoa_freq.
-        rc = p_band_vfoa_mode.load(band_id);
+    // VFOA mode/att/pre/agc: always loaded.
+    {
+        int rc = p_band_vfoa_mode.load(band_id);
         if (rc != SUCCESS) {
             p_band_vfoa_mode.set_quiet(resolve_default_mode(p_band_vfoa_freq.get()));
         }
-
-        // vfoa_att/pre/agc: on NOT_FOUND keep the default silently (no restore).
+    }
+    {
+        int rc;
         rc = p_band_vfoa_att.load(band_id);
         (void)rc;
         rc = p_band_vfoa_pre.load(band_id);
@@ -606,8 +666,7 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
         (void)rc;
     }
 
-    // VFOB: freq/mode fall back to the VFOA value when absent; att/pre/agc copy
-    // the current VFOA value on NOT_FOUND. VFOA handled first above.
+    // VFOB frequency: skipped on implicit switch when VFOB is the active VFO.
     if (!(implicit && active_vfo == X6100_VFO_B)) {
         // vfob_freq: copies the current vfoa_freq when absent; clamped like
         // vfoa_freq when loaded.
@@ -621,14 +680,18 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
                 p_band_vfob_freq.set_quiet(static_cast<int32_t>(band.value.start_freq));
             }
         }
+    }
 
-        // vfob_mode: copies the current vfoa_mode when absent.
-        rc = p_band_vfob_mode.load(band_id);
+    // VFOB mode/att/pre/agc: always loaded; fall back to the VFOA value when
+    // absent (mode copied, att/pre/agc copied on NOT_FOUND).
+    {
+        int rc = p_band_vfob_mode.load(band_id);
         if (rc != SUCCESS) {
             p_band_vfob_mode.set_quiet(p_band_vfoa_mode.get());
         }
-
-        // vfob_att/pre/agc: on NOT_FOUND copy the current vfoa value.
+    }
+    {
+        int rc;
         rc = p_band_vfob_att.load(band_id);
         if (rc == NOT_FOUND) {
             p_band_vfob_att.set_quiet(p_band_vfoa_att.get());

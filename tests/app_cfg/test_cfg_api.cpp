@@ -80,13 +80,27 @@ struct IntObserver {
     }
 };
 
+// Prime the global `band_id` param and a bands row so cfg_api_init (which now
+// derives the starting band from the persisted global band_id) lands on band
+// `band_id` instead of the default.
+void prime_band(sqlite3* db, int band_id)
+{
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).save_int(0, "band_id", band_id) == SUCCESS);
+    char* err = nullptr;
+    REQUIRE(sqlite3_exec(db,
+                "INSERT INTO bands(id, name, start_freq, stop_freq, type) "
+                "VALUES(5, 'test', 5000000, 15000000, 1);",
+                nullptr, nullptr, &err) == SQLITE_OK);
+}
+
 } // namespace
 
 TEST_CASE("cfg_api_init wires the extern globals and loads preseeded values", "[cfg_api]") {
     TestDbGuard db;
+    prime_band(db.db, 5);
     storage_policy_for(StorageType::GLOBAL).save_int(0, "volume", 55);
 
-    cfg_api_init(db.db, 5, 3, nullptr);
+    cfg_api_init(nullptr);
 
     REQUIRE(cfg_volume != nullptr);
     REQUIRE(cfg_squelch != nullptr);
@@ -108,7 +122,8 @@ TEST_CASE("cfg_api_init wires the extern globals and loads preseeded values", "[
 
 TEST_CASE("cfg_api set runs the validator and persists via flush", "[cfg_api]") {
     TestDbGuard db;
-    cfg_api_init(db.db, 5, 3, nullptr);
+    prime_band(db.db, 5);
+    cfg_api_init(nullptr);
 
     // 150 is outside the 0..100 volume range -> clamped by the validator.
     param_int_set(cfg_volume, 150);
@@ -124,24 +139,29 @@ TEST_CASE("cfg_api set runs the validator and persists via flush", "[cfg_api]") 
 
 TEST_CASE("cfg_fg_freq mirrors the active VFO and writes back through reverse fn", "[cfg_api]") {
     TestDbGuard db;
+    prime_band(db.db, 5);
     StoragePolicy& b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfoa_freq", 7100) == SUCCESS);
+    REQUIRE(b.save_int(5, "vfoa_freq", 7'100'000) == SUCCESS);
+    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
     REQUIRE(b.save_int(5, "vfo", 0) == SUCCESS);
+    // Persisted band_id must also be present in the DB (global param).
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).save_int(0, "band_id", 5) == SUCCESS);
 
-    cfg_api_init(db.db, 5, 3, nullptr);
+    cfg_api_init(nullptr);
 
     // Active VFO = A (0) -> front-panel freq is vfoa_freq.
-    REQUIRE(computed_param_int_get(cfg_fg_freq) == 7100);
+    REQUIRE(computed_param_int_get(cfg_fg_freq) == 7'100'000);
 
     // Reverse set writes back into the active VFO's freq.
-    computed_param_int_set(cfg_fg_freq, 7400);
-    REQUIRE(computed_param_int_get(cfg_fg_freq) == 7400);
-    REQUIRE(param_int_get(cfg_band_vfoa_freq) == 7400);
+    computed_param_int_set(cfg_fg_freq, 7'400'000);
+    REQUIRE(computed_param_int_get(cfg_fg_freq) == 7'400'000);
+    REQUIRE(param_int_get(cfg_band_vfoa_freq) == 7'400'000);
 }
 
 TEST_CASE("cfg_api immediate subscribe fires and unsubscribes", "[cfg_api]") {
     TestDbGuard db;
-    cfg_api_init(db.db, 5, 3, nullptr);
+    prime_band(db.db, 5);
+    cfg_api_init(nullptr);
 
     IntObserver obs;
     Observer* o = param_int_subscribe(cfg_volume, IntObserver::cb, &obs);
@@ -161,7 +181,8 @@ TEST_CASE("cfg_api immediate subscribe fires and unsubscribes", "[cfg_api]") {
 TEST_CASE("cfg_api delayed subscribe coalesces into one latest callback", "[cfg_api][delayed]") {
     lv_init();
     TestDbGuard db;
-    cfg_api_init(db.db, 5, 3, nullptr);
+    prime_band(db.db, 5);
+    cfg_api_init(nullptr);
 
     IntObserver obs;
     ObserverDelayed* o = param_int_subscribe_delayed(cfg_volume, IntObserver::cb, &obs);
@@ -184,7 +205,8 @@ TEST_CASE("cfg_api delayed subscribe coalesces into one latest callback", "[cfg_
 TEST_CASE("cfg_api delayed unsubscribe cancels a pending delivery", "[cfg_api][delayed]") {
     lv_init();
     TestDbGuard db;
-    cfg_api_init(db.db, 5, 3, nullptr);
+    prime_band(db.db, 5);
+    cfg_api_init(nullptr);
 
     IntObserver obs;
     ObserverDelayed* o = param_int_subscribe_delayed(cfg_volume, IntObserver::cb, &obs);
