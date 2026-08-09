@@ -471,6 +471,143 @@ void ModeParamsTable::Shutdown() {
 }
 
 // ---------------------------------------------------------------------------
+// MemoryTable
+// ---------------------------------------------------------------------------
+
+bool MemoryTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated MemoryTable initialization");
+        return false;
+    }
+    db_ = database;
+
+    int rc;
+
+    rc = sqlite3_prepare_v2(db_, "SELECT name, val FROM memory WHERE id = :id", -1, &load_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare MemoryTable::load: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    load_id_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":id");
+
+    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO memory(id, name, val) VALUES(:id, :name, :val)", -1,
+                            &save_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare MemoryTable::save: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(load_stmt_);
+        load_stmt_           = nullptr;
+        load_id_param_index_ = 0;
+        db_                  = nullptr;
+        return false;
+    }
+    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
+    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
+    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+    return true;
+}
+
+void MemoryTable::Shutdown() {
+    if (load_stmt_) {
+        sqlite3_finalize(load_stmt_);
+        load_stmt_ = nullptr;
+    }
+    if (save_stmt_) {
+        sqlite3_finalize(save_stmt_);
+        save_stmt_ = nullptr;
+    }
+    load_id_param_index_   = 0;
+    save_id_param_index_   = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
+}
+
+int MemoryTable::Save(int32_t id, const char *name, int32_t value) {
+    int            rc;
+    StmtResetGuard guard(save_mutex_, save_stmt_);
+
+    rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, id);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind mem id %i: %s", id, sqlite3_errmsg(db_));
+        return rc;
+    }
+    rc = sqlite3_bind_text(save_stmt_, save_name_param_index_, name, strlen(name), 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind mem name %s: %s", name, sqlite3_errmsg(db_));
+        return rc;
+    }
+    rc = sqlite3_bind_int(save_stmt_, save_val_param_index_, value);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind mem val %i: %s", value, sqlite3_errmsg(db_));
+        return rc;
+    }
+    rc = sqlite3_step(save_stmt_);
+    if (rc != SQLITE_DONE) {
+        LV_LOG_ERROR("Failed save memory item %s: %s", name, sqlite3_errmsg(db_));
+        return rc;
+    }
+    return SUCCESS;
+}
+
+bool MemoryTable::Load(int32_t id,
+                       int32_t &freq, bool &has_freq,
+                       int32_t &mode, bool &has_mode,
+                       int32_t &agc,  bool &has_agc,
+                       int32_t &att,  bool &has_att,
+                       int32_t &pre,  bool &has_pre) {
+    freq     = 0;
+    mode     = 0;
+    agc      = 0;
+    att      = 0;
+    pre      = 0;
+    has_freq = false;
+    has_mode = false;
+    has_agc  = false;
+    has_att  = false;
+    has_pre  = false;
+
+    int            rc;
+    StmtResetGuard guard(load_mutex_, load_stmt_);
+
+    rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, id);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind mem id %i: %s", id, sqlite3_errmsg(db_));
+        return false;
+    }
+    while (1) {
+        rc = sqlite3_step(load_stmt_);
+        if (rc == SQLITE_ROW) {
+            const unsigned char *name_txt = sqlite3_column_text(load_stmt_, 0);
+            const char          *name     = name_txt ? reinterpret_cast<const char *>(name_txt) : "";
+            const int32_t        val      = sqlite3_column_int(load_stmt_, 1);
+            if (strcmp(name, "vfoa_freq") == 0) {
+                freq     = val;
+                has_freq = true;
+            } else if (strcmp(name, "vfoa_mode") == 0) {
+                mode     = val;
+                has_mode = true;
+            } else if (strcmp(name, "vfoa_agc") == 0) {
+                agc     = val;
+                has_agc = true;
+            } else if (strcmp(name, "vfoa_att") == 0) {
+                att     = val;
+                has_att = true;
+            } else if (strcmp(name, "vfoa_pre") == 0) {
+                pre     = val;
+                has_pre = true;
+            }
+        } else if (rc == SQLITE_DONE) {
+            break;
+        } else {
+            LV_LOG_ERROR("Error while reading memory rows: %s", sqlite3_errmsg(db_));
+            return false;
+        }
+    }
+    return has_freq;
+}
+
+// ---------------------------------------------------------------------------
 // Global database entry points
 // ---------------------------------------------------------------------------
 
@@ -484,6 +621,8 @@ extern "C" void cfg_db_init(sqlite3 *database) {
     if (!ok) exit(1);
     ok = ModeParamsTable::Init(database);
     if (!ok) exit(1);
+    ok = MemoryTable::Init(database);
+    if (!ok) exit(1);
 }
 
 void cfg_db_shutdown() {
@@ -491,4 +630,5 @@ void cfg_db_shutdown() {
     BandsTable::Shutdown();
     BandParamsTable::Shutdown();
     ModeParamsTable::Shutdown();
+    MemoryTable::Shutdown();
 }

@@ -453,11 +453,52 @@ class ModeParamsTable {
     inline static int           save_val_param_index_  = 0;
 };
 
+// Key-value snapshot store for user memory slots (hardware-key memories,
+// backup slot). NOT a deferred-write parameter store: saves are immediate and
+// loads are done on demand. Each row is (id, name, value); a "slot" is all
+// rows sharing the same id, following the legacy `memory` table schema for
+// compatibility with existing user configurations. Field names match the old
+// cfg module: vfoa_freq, vfoa_mode, vfoa_agc, vfoa_pre, vfoa_att.
+class MemoryTable {
+  public:
+    static bool Init(sqlite3 *database);
+    static void Shutdown();
+
+    // Save a single (id, name, val) row. INSERT OR REPLACE makes repeated
+    // saves of the same name for the same id overwrite the previous value.
+    static int Save(int32_t id, const char *name, int32_t value);
+
+    // Reads all rows for the given id and fills the output fields. Each field
+    // has a paired `has_*` flag that is true only when a matching row was
+    // found. Returns false if no vfoa_freq row exists for this id (the slot
+    // is not loadable); otherwise true.
+    static bool Load(int32_t id,
+                     int32_t &freq, bool &has_freq,
+                     int32_t &mode, bool &has_mode,
+                     int32_t &agc,  bool &has_agc,
+                     int32_t &att,  bool &has_att,
+                     int32_t &pre,  bool &has_pre);
+
+  private:
+    // Database handle shared by all statements of this table.
+    inline static sqlite3 *db_ = nullptr;
+
+    // Save statement group: INSERT OR REPLACE INTO memory(id, name, val).
+    inline static sqlite3_stmt *save_stmt_ = nullptr;
+    inline static std::mutex    save_mutex_;
+    inline static int           save_id_param_index_   = 0;
+    inline static int           save_name_param_index_ = 0;
+    inline static int           save_val_param_index_  = 0;
+
+    // Load statement group: SELECT name, val FROM memory WHERE id = :id.
+    inline static sqlite3_stmt *load_stmt_ = nullptr;
+    inline static std::mutex    load_mutex_;
+    inline static int           load_id_param_index_ = 0;
+};
+
 void cfg_db_shutdown();
 
 #endif
-
-
 #ifdef __cplusplus
 extern "C" {
     #endif

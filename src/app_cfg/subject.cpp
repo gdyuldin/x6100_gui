@@ -74,7 +74,53 @@ void Subject::unsubscribe(Observer *observer) {
     observers.erase(std::find(observers.begin(), observers.end(), observer));
 }
 
+// Thread-local suppression state: a depth counter plus the queue of subjects
+// that changed during a suppressed scope. One independent state per thread, so
+// suppression is confined to the thread that created the guard.
+static thread_local int suppress_depth_ = 0;
+static thread_local std::vector<Subject*> suppressed_subjects_;
+
+void Subject::push_suppress() {
+    ++suppress_depth_;
+}
+
+void Subject::pop_suppress() {
+    --suppress_depth_;
+    if (suppress_depth_ != 0) {
+        return;  // nested scope: the outermost pop_suppress() delivers the batch
+    }
+
+    // Take the queued subjects into a local vector so a nested
+    // push_suppress/pop_suppress (triggered from a callback below) uses a
+    // freshly reset queue instead of corrupting this iteration.
+    std::vector<Subject*> to_notify;
+    to_notify.swap(suppressed_subjects_);
+
+    // Deduplicate: the same subject may have changed several times within one
+    // suppressed scope; deliver exactly one notification with its final value.
+    std::sort(to_notify.begin(), to_notify.end());
+    auto last = std::unique(to_notify.begin(), to_notify.end());
+
+    for (auto it = to_notify.begin(); it != last; ++it) {
+        (*it)->notify_impl();
+    }
+}
+
+bool Subject::is_suppressed() {
+    return suppress_depth_ > 0;
+}
+
 void Subject::notify() {
+    if (is_suppressed()) {
+        // The value is already updated inside SubjectT::set; defer the delivery
+        // to pop_suppress(), which coalesces all changes of the scope.
+        suppressed_subjects_.push_back(this);
+        return;
+    }
+    notify_impl();
+}
+
+void Subject::notify_impl() {
     std::vector<Observer*> observers_copy;
     {
         const std::lock_guard<std::mutex> lock(mutex_subscribe);

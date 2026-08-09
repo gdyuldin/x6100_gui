@@ -196,30 +196,45 @@ void SettingsManager::switch_band(int new_band_id, bool implicit)
     }
     band_switch_active_ = true;
 
-    // Save pending writes of the current band before switching context.
-    pending_writes_.flush_storage(StorageType::BAND, band_id_);
+    // Batch the whole switch into a single notification round: every load
+    // (set_quiet) and recompute below records its subject in the suppression
+    // queue instead of firing callbacks one by one. The block scope ends BEFORE
+    // band_switch_active_ is cleared, so the p_band_id observer deferred by the
+    // suppressed set() below is caught by the re-entrancy guard instead of
+    // running a second explicit switch.
+    {
+        NotifySuppressGuard guard;
 
-    band_id_ = new_band_id;
+        // Save pending writes of the current band before switching context.
+        pending_writes_.flush_storage(StorageType::BAND, band_id_);
 
-    // Persist the current band so a restart returns to it.
-    p_band_id.set(new_band_id);
+        band_id_ = new_band_id;
 
-    set_band_context(band_id_);
+        // Persist the current band so a restart returns to it.
+        p_band_id.set(new_band_id);
 
-    load_band_switch(band_id_, implicit);
+        set_band_context(band_id_);
 
-    cp_fg_freq.recompute();
-    cp_cur_mode.recompute();
-    cp_cur_att.recompute();
-    cp_cur_pre.recompute();
-    cp_cur_agc.recompute();
-    cp_bg_freq.recompute();
+        load_band_switch(band_id_, implicit);
+
+        cp_fg_freq.recompute();
+        cp_cur_mode.recompute();
+        cp_cur_att.recompute();
+        cp_cur_pre.recompute();
+        cp_cur_agc.recompute();
+        cp_bg_freq.recompute();
+    }
 
     band_switch_active_ = false;
 }
 
 void SettingsManager::switch_mode(int new_mode_id)
 {
+    // Batch the mode switch into a single notification round: the mode-param
+    // loads (set_quiet) and the freq/filter recomputes below are coalesced so
+    // every changed subject fires exactly one callback.
+    NotifySuppressGuard guard;
+
     pending_writes_.flush_storage(StorageType::MODE, mode_id_);
 
     mode_id_ = new_mode_id;

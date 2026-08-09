@@ -70,32 +70,59 @@ class Subject {
     std::vector<Observer*> observers;
 
     // Notification invariant (do not break):
-    // notify() copies `observers` under mutex_subscribe and then runs each
+    // notify_impl() copies `observers` under mutex_subscribe and then runs each
     // callback OUTSIDE the lock. This is correct only because observers never
     // delete themselves or a peer during notification processing — deletion
     // happens later, from the main thread, outside the notify loop. Under that
     // invariant every pointer in the copy stays valid for the whole loop.
     //   - An observer must NOT unsubscribe+destroy itself or a peer from inside
-    //     its own notify() callback (or from a notify() it triggers, e.g. via
-    //     ComputedParameter::recompute / the ObserverDelayed trampoline).
+    //     its own notify_impl() callback (or from a notify_impl() it triggers,
+    //     e.g. via ComputedParameter::recompute / the ObserverDelayed
+    //     trampoline).
     //   - subscribe()/unsubscribe() from within a callback take snapshot
     //     semantics: a newly added observer is not notified this round; a
     //     removed observer is still notified once. By design.
     //   - Cross-thread subscribe/unsubscribe is serialized with the copy by
     //     mutex_subscribe; callbacks run lock-free, so they must only read
     //     SubjectT values (which have their own mutexes).
+    void notify_impl();
+
+    // Notification entry point: during a suppressed scope (NotifySuppressGuard)
+    // the subject is queued for a single delivery at pop_suppress() instead of
+    // firing callbacks immediately; otherwise behaves exactly like notify_impl().
     void notify();
 
     // Subject is not designed to be deleted
     ~Subject() = default;
 
   public:
+    // Nestable notification suppression (thread-local). While the depth is
+    // non-zero, every notify() only records the subject in a thread-local
+    // queue; pop_suppress() at depth 0 deduplicates the queue and delivers one
+    // notify_impl() per unique subject, so a bulk update (memory load, band/
+    // mode switch) fires exactly one callback per changed subject.
+    static void push_suppress();
+    static void pop_suppress();
+    static bool is_suppressed();
+
     // For C++ make sense to convert result to Subscription
     Observer* subscribe(observer_cb fn, void *user_data=nullptr);
     // For C++ make sense to convert result to Subscription
     ObserverDelayed* subscribe_delayed(observer_cb fn, void *user_data=nullptr);
 
     void unsubscribe(Observer *o);
+};
+
+// RAII wrapper for Subject::push_suppress/pop_suppress: suppresses all
+// notifications for the whole scope and delivers one batch of coalesced
+// callbacks (per changed subject) when the scope exits. Nestable.
+class NotifySuppressGuard {
+  public:
+    NotifySuppressGuard() { Subject::push_suppress(); }
+    ~NotifySuppressGuard() { Subject::pop_suppress(); }
+
+    NotifySuppressGuard(const NotifySuppressGuard&) = delete;
+    NotifySuppressGuard& operator=(const NotifySuppressGuard&) = delete;
 };
 
 template <typename T> class SubjectT : public Subject {

@@ -161,3 +161,114 @@ TEST_CASE("ObserverDelayed cancels pending delivery on destruction", "[subject][
     REQUIRE(obs.values.empty());
 }
 
+// Notification suppression: push_suppress/pop_suppress (and the NotifySuppressGuard
+// RAII wrapper) defer all observed changes of a scope into one batch delivery.
+
+TEST_CASE("Suppression defers notifications until pop", "[subject][suppress]") {
+    SubjectT<int> s(0);
+    TestObserver obs;
+    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+
+    Subject::push_suppress();
+    s.set(5);
+    s.set(10);
+    REQUIRE(obs.values.empty());
+    Subject::pop_suppress();
+
+    // One deferred delivery carrying the final value.
+    REQUIRE(obs.values == std::vector<int>{10});
+}
+
+TEST_CASE("Suppression deduplicates many sets of one subject", "[subject][suppress]") {
+    SubjectT<int> s(0);
+    TestObserver obs;
+    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+
+    Subject::push_suppress();
+    s.set(1);
+    s.set(2);
+    s.set(3);
+    Subject::pop_suppress();
+
+    // Exactly one callback, with the last value.
+    REQUIRE(obs.values == std::vector<int>{3});
+}
+
+TEST_CASE("Suppression notifies each changed subject once", "[subject][suppress]") {
+    SubjectT<int> s1(0), s2(0), s3(0);
+    TestObserver obs1, obs2, obs3;
+    Subscription sub1{ s1.subscribe(TestObserver::staticCallback, &obs1) };
+    Subscription sub2{ s2.subscribe(TestObserver::staticCallback, &obs2) };
+    Subscription sub3{ s3.subscribe(TestObserver::staticCallback, &obs3) };
+
+    Subject::push_suppress();
+    s1.set(1);
+    s2.set(2);
+    s3.set(3);
+    Subject::pop_suppress();
+
+    REQUIRE(obs1.values == std::vector<int>{1});
+    REQUIRE(obs2.values == std::vector<int>{2});
+    REQUIRE(obs3.values == std::vector<int>{3});
+}
+
+TEST_CASE("Nested suppression batches into a single delivery", "[subject][suppress]") {
+    SubjectT<int> s(0);
+    TestObserver obs;
+    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+
+    Subject::push_suppress();
+    {
+        Subject::push_suppress();
+        s.set(1);
+        Subject::pop_suppress();  // inner: depth still > 0, nothing delivered
+        REQUIRE(obs.values.empty());
+        s.set(2);
+    }
+    Subject::pop_suppress();  // outer: one coalesced delivery
+
+    REQUIRE(obs.values == std::vector<int>{2});
+}
+
+TEST_CASE("Suppression delivers nothing for an unchanged value", "[subject][suppress]") {
+    SubjectT<int> s(5);
+    TestObserver obs;
+    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+
+    Subject::push_suppress();
+    s.set(5);  // no change -> no notify() -> not queued
+    Subject::pop_suppress();
+
+    REQUIRE(obs.values.empty());
+}
+
+TEST_CASE("NotifySuppressGuard RAII suppresses the whole scope", "[subject][suppress]") {
+    SubjectT<int> s(0);
+    TestObserver obs;
+    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+
+    {
+        NotifySuppressGuard guard;
+        s.set(7);
+        REQUIRE(obs.values.empty());
+    }
+    // Guard destructor called pop_suppress().
+    REQUIRE(obs.values == std::vector<int>{7});
+}
+
+TEST_CASE("ObserverDelayed keeps one coalesced delivery through suppression", "[subject][suppress][delayed]") {
+    lv_init();
+    SubjectT<int> s(0);
+    TestObserver obs;
+    Subscription sub{ s.subscribe_delayed(TestObserver::staticCallback, &obs) };
+
+    Subject::push_suppress();
+    s.set(1);
+    s.set(2);
+    Subject::pop_suppress();
+    REQUIRE(obs.values.empty());  // delivery is async
+
+    lv_timer_handler();
+    REQUIRE(obs.values == std::vector<int>{2});
+}
+
