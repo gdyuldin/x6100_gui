@@ -18,6 +18,9 @@
 #include "settings_manager.h"
 #include "lvgl.h"
 
+// Subject/Observer types live in namespace appcfg (see subject.h).
+using namespace appcfg;
+
 namespace {
 
 // In-memory DB fixture mirroring the production schema (params, band_params,

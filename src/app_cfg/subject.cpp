@@ -7,6 +7,8 @@ extern "C" {
     // #include <stdlib.h>
 }
 
+namespace appcfg {
+
 void Observer::notify() {
     if (fn && subj) {
         fn(subj, user_data);
@@ -130,3 +132,5 @@ void Subject::notify_impl() {
         observer->notify();
     }
 }
+
+} // namespace appcfg

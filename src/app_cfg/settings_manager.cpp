@@ -7,6 +7,9 @@ extern "C" {
     #include <aether_radio/x6100_control/control.h>
 }
 
+// Subject/Observer types live in namespace appcfg (see subject.h).
+using namespace appcfg;
+
 // SettingsManager implementation.
 //
 // Band/mode switching semantics (aligned with src/cfg/band.c):

@@ -20,7 +20,14 @@
 #include "computed_api.h"
 
 #ifdef __cplusplus
-#include "subject.h" // real Observer / ObserverDelayed types
+#include "subject.h" // real (namespaced) Observer / ObserverDelayed types
+
+// C++ build: re-expose the namespaced observer types under the plain names so
+// the extern "C" prototypes below stay valid for both languages. The aliases
+// are visible only to TUs that include this header; no such TU also includes
+// the legacy cfg/subjects.h, so there is no conflict during the transition.
+using Observer = appcfg::Observer;
+using ObserverDelayed = appcfg::ObserverDelayed;
 #else
 // Opaque C handles for the C++ observer types (resolved to the real ones in
 // C++ builds).
@@ -48,7 +55,7 @@ typedef void (*param_float_cb)(ParamFloat* p, void* user_data);
 typedef void (*param_text_cb)(ParamText* p, void* user_data);
 
 // Subscribe to a parameter. Returns the internal Observer* / ObserverDelayed*
-// that must be released later with param_unsubscribe.
+// (appcfg::Observer in C++) that must be released later with param_unsubscribe.
 Observer*        param_int_subscribe(ParamInt* p, param_int_cb cb, void* user_data);
 ObserverDelayed* param_int_subscribe_delayed(ParamInt* p, param_int_cb cb, void* user_data);
 Observer*        param_float_subscribe(ParamFloat* p, param_float_cb cb, void* user_data);

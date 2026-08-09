@@ -608,6 +608,183 @@ bool MemoryTable::Load(int32_t id,
 }
 
 // ---------------------------------------------------------------------------
+// DigitalModesTable
+// ---------------------------------------------------------------------------
+
+bool DigitalModesTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated DigitalModesTable initialization");
+        return false;
+    }
+    db_ = database;
+
+    int rc;
+
+    rc = sqlite3_prepare_v2(
+        db_, "SELECT label, freq, mode FROM digital_modes WHERE type = :type AND freq > :freq ORDER BY freq ASC LIMIT 1",
+        -1, &get_next_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare DigitalModesTable::get_next: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    get_next_type_param_index_ = sqlite3_bind_parameter_index(get_next_stmt_, ":type");
+    get_next_freq_param_index_ = sqlite3_bind_parameter_index(get_next_stmt_, ":freq");
+
+    rc = sqlite3_prepare_v2(
+        db_, "SELECT label, freq, mode FROM digital_modes WHERE type = :type ORDER BY ABS(freq - :freq) ASC LIMIT 1",
+        -1, &get_closest_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare DigitalModesTable::get_closest: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(get_next_stmt_);
+        get_next_stmt_             = nullptr;
+        get_next_type_param_index_ = 0;
+        get_next_freq_param_index_ = 0;
+        db_ = nullptr;
+        return false;
+    }
+    get_closest_type_param_index_ = sqlite3_bind_parameter_index(get_closest_stmt_, ":type");
+    get_closest_freq_param_index_ = sqlite3_bind_parameter_index(get_closest_stmt_, ":freq");
+
+    rc = sqlite3_prepare_v2(
+        db_, "SELECT label, freq, mode FROM digital_modes WHERE type = :type AND freq < :freq ORDER BY freq DESC LIMIT 1",
+        -1, &get_prev_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare DigitalModesTable::get_prev: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(get_next_stmt_);
+        sqlite3_finalize(get_closest_stmt_);
+        get_next_stmt_               = nullptr;
+        get_closest_stmt_            = nullptr;
+        get_next_type_param_index_   = 0;
+        get_next_freq_param_index_   = 0;
+        get_closest_type_param_index_ = 0;
+        get_closest_freq_param_index_ = 0;
+        db_ = nullptr;
+        return false;
+    }
+    get_prev_type_param_index_ = sqlite3_bind_parameter_index(get_prev_stmt_, ":type");
+    get_prev_freq_param_index_ = sqlite3_bind_parameter_index(get_prev_stmt_, ":freq");
+    return true;
+}
+
+void DigitalModesTable::Shutdown() {
+    if (get_next_stmt_) {
+        sqlite3_finalize(get_next_stmt_);
+        get_next_stmt_ = nullptr;
+    }
+    if (get_closest_stmt_) {
+        sqlite3_finalize(get_closest_stmt_);
+        get_closest_stmt_ = nullptr;
+    }
+    if (get_prev_stmt_) {
+        sqlite3_finalize(get_prev_stmt_);
+        get_prev_stmt_ = nullptr;
+    }
+    get_next_type_param_index_         = 0;
+    get_next_freq_param_index_         = 0;
+    get_closest_type_param_index_      = 0;
+    get_closest_freq_param_index_      = 0;
+    get_prev_type_param_index_         = 0;
+    get_prev_freq_param_index_         = 0;
+    db_ = nullptr;
+}
+
+DigitalModesTable::LoadResult DigitalModesTable::find_next(int32_t type, int32_t current_freq) {
+    int            rc;
+    StmtResetGuard guard(get_next_mutex_, get_next_stmt_);
+
+    rc = sqlite3_bind_int(get_next_stmt_, get_next_type_param_index_, type);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital type %i to find_next stmt: %s", type, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_bind_int(get_next_stmt_, get_next_freq_param_index_, current_freq);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital freq %i to find_next stmt: %s", current_freq, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_step(get_next_stmt_);
+    if (rc == SQLITE_ROW) {
+        Record              record;
+        const unsigned char *txt = sqlite3_column_text(get_next_stmt_, 0);
+        record.label = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq  = sqlite3_column_int(get_next_stmt_, 1);
+        record.mode  = sqlite3_column_int(get_next_stmt_, 2);
+        // record.label is copied into a std::string: sqlite3_reset (run by the
+        // guard on scope exit) invalidates the column text pointer.
+        return {record, SUCCESS};
+    }
+    if (rc == SQLITE_DONE) {
+        LV_LOG_WARN("No next digital mode for type=%i, freq=%i", type, current_freq);
+        return {Record{}, NOT_FOUND};
+    }
+    LV_LOG_WARN("find_next failed: %s", sqlite3_errmsg(db_));
+    return {Record{}, rc};
+}
+
+DigitalModesTable::LoadResult DigitalModesTable::find_closest(int32_t type, int32_t current_freq) {
+    int            rc;
+    StmtResetGuard guard(get_closest_mutex_, get_closest_stmt_);
+
+    rc = sqlite3_bind_int(get_closest_stmt_, get_closest_type_param_index_, type);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital type %i to find_closest stmt: %s", type, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_bind_int(get_closest_stmt_, get_closest_freq_param_index_, current_freq);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital freq %i to find_closest stmt: %s", current_freq, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_step(get_closest_stmt_);
+    if (rc == SQLITE_ROW) {
+        Record              record;
+        const unsigned char *txt = sqlite3_column_text(get_closest_stmt_, 0);
+        record.label = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq  = sqlite3_column_int(get_closest_stmt_, 1);
+        record.mode  = sqlite3_column_int(get_closest_stmt_, 2);
+        return {record, SUCCESS};
+    }
+    if (rc == SQLITE_DONE) {
+        LV_LOG_WARN("No closest digital mode for type=%i, freq=%i", type, current_freq);
+        return {Record{}, NOT_FOUND};
+    }
+    LV_LOG_WARN("find_closest failed: %s", sqlite3_errmsg(db_));
+    return {Record{}, rc};
+}
+
+DigitalModesTable::LoadResult DigitalModesTable::find_prev(int32_t type, int32_t current_freq) {
+    int            rc;
+    StmtResetGuard guard(get_prev_mutex_, get_prev_stmt_);
+
+    rc = sqlite3_bind_int(get_prev_stmt_, get_prev_type_param_index_, type);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital type %i to find_prev stmt: %s", type, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_bind_int(get_prev_stmt_, get_prev_freq_param_index_, current_freq);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital freq %i to find_prev stmt: %s", current_freq, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_step(get_prev_stmt_);
+    if (rc == SQLITE_ROW) {
+        Record              record;
+        const unsigned char *txt = sqlite3_column_text(get_prev_stmt_, 0);
+        record.label = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq  = sqlite3_column_int(get_prev_stmt_, 1);
+        record.mode  = sqlite3_column_int(get_prev_stmt_, 2);
+        return {record, SUCCESS};
+    }
+    if (rc == SQLITE_DONE) {
+        LV_LOG_WARN("No prev digital mode for type=%i, freq=%i", type, current_freq);
+        return {Record{}, NOT_FOUND};
+    }
+    LV_LOG_WARN("find_prev failed: %s", sqlite3_errmsg(db_));
+    return {Record{}, rc};
+}
+
+// ---------------------------------------------------------------------------
 // Global database entry points
 // ---------------------------------------------------------------------------
 
@@ -623,6 +800,8 @@ extern "C" void cfg_db_init(sqlite3 *database) {
     if (!ok) exit(1);
     ok = MemoryTable::Init(database);
     if (!ok) exit(1);
+    ok = DigitalModesTable::Init(database);
+    if (!ok) exit(1);
 }
 
 void cfg_db_shutdown() {
@@ -631,4 +810,5 @@ void cfg_db_shutdown() {
     BandParamsTable::Shutdown();
     ModeParamsTable::Shutdown();
     MemoryTable::Shutdown();
+    DigitalModesTable::Shutdown();
 }

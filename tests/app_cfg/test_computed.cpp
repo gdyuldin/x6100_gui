@@ -9,6 +9,9 @@
 #include "computed_parameter.h" // ComputedParameter<T>
 #include "subject.h"            // SubjectT, Observer, Subscription
 
+// Subject/Observer types live in namespace appcfg (see subject.h).
+using namespace appcfg;
+
 
 struct TestObserver {
     std::vector<int> values;

@@ -496,6 +496,53 @@ class MemoryTable {
     inline static int           load_id_param_index_ = 0;
 };
 
+// Read-only presets of digital mode working frequencies (FT8/FT4), mirroring
+// the legacy `digital_modes` table from sql/params.sql. Each row carries a
+// label, a frequency and the radio mode (always x6100_mode_usb_dig in the
+// seed data). Navigation is directional: find_next/find_prev return the
+// preset strictly above/below a frequency, find_closest the nearest one.
+class DigitalModesTable {
+  public:
+    struct Record {
+        std::string label;
+        int32_t     freq;
+        int32_t     mode;
+    };
+    struct LoadResult {
+        Record value;
+        int    rc;  // load_save_error_codes_t (negative) or sqlite3 rc (positive)
+    };
+
+    static bool Init(sqlite3 *database);
+    static void Shutdown();
+
+    static LoadResult find_next(int32_t type, int32_t current_freq);
+    static LoadResult find_closest(int32_t type, int32_t current_freq);
+    static LoadResult find_prev(int32_t type, int32_t current_freq);
+
+  private:
+    // Database handle shared by all statements of this table.
+    inline static sqlite3 *db_ = nullptr;
+
+    // get_next: freq > :freq AND type = :type ORDER BY freq ASC LIMIT 1.
+    inline static sqlite3_stmt *get_next_stmt_             = nullptr;
+    inline static std::mutex    get_next_mutex_;
+    inline static int           get_next_type_param_index_ = 0;
+    inline static int           get_next_freq_param_index_ = 0;
+
+    // get_closest: type = :type ORDER BY ABS(freq - :freq) ASC LIMIT 1.
+    inline static sqlite3_stmt *get_closest_stmt_             = nullptr;
+    inline static std::mutex    get_closest_mutex_;
+    inline static int           get_closest_type_param_index_ = 0;
+    inline static int           get_closest_freq_param_index_ = 0;
+
+    // get_prev: freq < :freq AND type = :type ORDER BY freq DESC LIMIT 1.
+    inline static sqlite3_stmt *get_prev_stmt_             = nullptr;
+    inline static std::mutex    get_prev_mutex_;
+    inline static int           get_prev_type_param_index_ = 0;
+    inline static int           get_prev_freq_param_index_ = 0;
+};
+
 void cfg_db_shutdown();
 
 #endif

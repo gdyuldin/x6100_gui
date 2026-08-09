@@ -14,6 +14,9 @@
 #include "db.h"
 #include "tests/app_cfg/mocks/mock_pending_writes.h"
 
+// Subject/Observer types live in namespace appcfg (see subject.h).
+using namespace appcfg;
+
 namespace {
 
 // RAII wrapper for the shared in-memory DB used by the round-trip tests.

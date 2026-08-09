@@ -398,16 +398,16 @@ private:
 
     // Trampoline for the cp_cur_mode observer: calls switch_mode() with the new
     // mode whenever cp_cur_mode's value changes.
-    static void switch_mode_observer_cb(Subject* subj, void* user_data);
+    static void switch_mode_observer_cb(appcfg::Subject* subj, void* user_data);
 
     // Trampoline for the p_band_vfoa_freq / p_band_vfob_freq observers: when a
     // VFO frequency changes into a different band, triggers an implicit band
     // switch (the frequency that caused the switch is preserved).
-    static void vfo_freq_change_cb(Subject* subj, void* user_data);
+    static void vfo_freq_change_cb(appcfg::Subject* subj, void* user_data);
 
     // Trampoline for the p_band_id observer: an explicit band switch is triggered
     // by setting p_band_id; the observer runs switch_band with implicit=false.
-    static void switch_band_observer_cb(Subject* subj, void* user_data);
+    static void switch_band_observer_cb(appcfg::Subject* subj, void* user_data);
 
     // Shared band-switch core: flush, rebind context, switch-time loads and
     // recomputes. `implicit` selects whether the active VFO's freq+mode is kept.
@@ -470,17 +470,17 @@ private:
 
     // Holds the cp_cur_mode observer that triggers switch_mode() on mode change.
     // RAII: unsubscribes on destruction.
-    Subscription switch_mode_obs_;
+    appcfg::Subscription switch_mode_obs_;
 
     // Holds the p_band_id observer that triggers an explicit band switch when
     // p_band_id is set. RAII: unsubscribe on destruction.
-    Subscription band_id_obs_;
+    appcfg::Subscription band_id_obs_;
 
     // Holds the VFO frequency observers that trigger an implicit band switch
     // when the active VFO is tuned into a different band. RAII: unsubscribe on
     // destruction.
-    Subscription vfoa_freq_obs_;
-    Subscription vfob_freq_obs_;
+    appcfg::Subscription vfoa_freq_obs_;
+    appcfg::Subscription vfob_freq_obs_;
 
     // Background flush thread control.
     bool flush_thread_running_ = false;

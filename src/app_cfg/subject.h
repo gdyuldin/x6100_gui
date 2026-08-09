@@ -9,6 +9,12 @@
 // #include <thread>
 // #include <functional>
 
+// Subject/Observer live in namespace appcfg (not the global namespace) so they
+// can coexist with the legacy src/cfg/subjects.h implementation during the
+// transition to app_cfg. The legacy names (Subject, Observer, ...) stay global;
+// new-style code references them as appcfg::Subject etc.
+namespace appcfg {
+
 class Subject;
 
 typedef void (*observer_cb)(Subject *, void *);
@@ -152,3 +158,5 @@ template <typename T> class SubjectT : public Subject {
         return changed;
     };
 };
+
+} // namespace appcfg

@@ -6,6 +6,10 @@
 #include "computed_parameter.h"
 #include "subject.h"
 
+// Subject/Observer types live in namespace appcfg (see subject.h); the C-API
+// layer is extern "C" global, so pull the names in for this TU only.
+using namespace appcfg;
+
 // The opaque C handles are the concrete Parameter<T> / ComputedParameter<T>
 // instantiations owned by the static SettingsManager below. Casts are safe
 // because C code only ever receives them through this API.

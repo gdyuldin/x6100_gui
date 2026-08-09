@@ -7,6 +7,9 @@
 #include "subject.h"  // SubjectT, Observer, Subscription, ObserverDeleter
 #include "lvgl.h"     // lv_init / lv_timer_handler for delayed-notify tests
 
+// Subject/Observer types live in namespace appcfg (see subject.h).
+using namespace appcfg;
+
 
 struct TestObserver {
     std::vector<int> values;

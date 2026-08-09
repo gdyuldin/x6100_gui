@@ -81,7 +81,7 @@ public:
 //   Parameter<float, int32_t, 2>         -> value*2 written, /2 on load
 // When ValueType == DbType, Scale is unused (direct assignment).
 template <typename ValueType, typename DbType = ValueType, int32_t Scale = 1000>
-class Parameter : public SubjectT<ValueType>, public ParamBase {
+class Parameter : public appcfg::SubjectT<ValueType>, public ParamBase {
 public:
     // db_name       - key in the database table
     // default_val   - initial value before loading
@@ -97,7 +97,7 @@ public:
               std::function<ValueType(ValueType)> validator = {},
               std::function<void()> on_not_found = {},
               std::vector<ParamBase*>* group = nullptr)
-        : SubjectT<ValueType>(default_val),
+        : appcfg::SubjectT<ValueType>(default_val),
           db_name_(db_name),
           storage_(storage),
           sink_(sink),
@@ -129,7 +129,7 @@ public:
         if (validator_) {
             v = validator_(v);
         }
-        if (SubjectT<ValueType>::set(v)) {
+        if (appcfg::SubjectT<ValueType>::set(v)) {
             sink_.write(StorageKey{storage_, context_id_, db_name_}, to_db_value(v));
         }
     }
@@ -140,7 +140,7 @@ public:
         if (validator_) {
             v = validator_(v);
         }
-        SubjectT<ValueType>::set(v);
+        appcfg::SubjectT<ValueType>::set(v);
     }
 
     // Load from the storage policy matching storage(). Returns rc (SUCCESS or
@@ -179,7 +179,7 @@ public:
             context_id = context_id_;
         }
         StoragePolicy& policy = storage_policy_for(storage_);
-        const DbType db_value = to_db_value(SubjectT<ValueType>::get());
+        const DbType db_value = to_db_value(appcfg::SubjectT<ValueType>::get());
         if constexpr (std::is_same_v<DbType, int32_t>) {
             return policy.save_int(context_id, db_name_, db_value);
         } else if constexpr (std::is_same_v<DbType, float>) {

@@ -15,6 +15,9 @@
 #include "settings_manager.h"
 #include "subject.h"
 
+// Subject/Observer types live in namespace appcfg (see subject.h).
+using namespace appcfg;
+
 // cfg_memory_save: store the current active VFO frequency, mode, agc, pre and
 // att into the memory slot `id`. Returns true when every field was saved.
 extern "C" bool cfg_memory_save(int32_t id) {
