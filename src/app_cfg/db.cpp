@@ -471,6 +471,63 @@ void ModeParamsTable::Shutdown() {
 }
 
 // ---------------------------------------------------------------------------
+// TransverterTable
+// ---------------------------------------------------------------------------
+
+bool TransverterTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated TransverterTable initialization");
+        return false;
+    }
+    db_ = database;
+
+    int rc;
+
+    rc = sqlite3_prepare_v2(db_, "SELECT val FROM transverter WHERE name = :name AND id = :id", -1, &load_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare TransverterTable::load: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
+    load_id_param_index_   = sqlite3_bind_parameter_index(load_stmt_, ":id");
+
+    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO transverter(id, name, val) VALUES(:id, :name, :val)", -1,
+                            &save_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare TransverterTable::save: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(load_stmt_);
+        load_stmt_             = nullptr;
+        load_name_param_index_ = 0;
+        load_id_param_index_   = 0;
+        db_ = nullptr;
+        return false;
+    }
+    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
+    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
+    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+    return true;
+}
+
+void TransverterTable::Shutdown() {
+    if (load_stmt_) {
+        sqlite3_finalize(load_stmt_);
+        load_stmt_ = nullptr;
+    }
+    if (save_stmt_) {
+        sqlite3_finalize(save_stmt_);
+        save_stmt_ = nullptr;
+    }
+    load_id_param_index_    = 0;
+    load_name_param_index_  = 0;
+    save_id_param_index_    = 0;
+    save_name_param_index_  = 0;
+    save_val_param_index_   = 0;
+    db_ = nullptr;
+}
+
+
+// ---------------------------------------------------------------------------
 // MemoryTable
 // ---------------------------------------------------------------------------
 
@@ -798,6 +855,8 @@ extern "C" void cfg_db_init(sqlite3 *database) {
     if (!ok) exit(1);
     ok = ModeParamsTable::Init(database);
     if (!ok) exit(1);
+    ok = TransverterTable::Init(database);
+    if (!ok) exit(1);
     ok = MemoryTable::Init(database);
     if (!ok) exit(1);
     ok = DigitalModesTable::Init(database);
@@ -809,6 +868,7 @@ void cfg_db_shutdown() {
     BandsTable::Shutdown();
     BandParamsTable::Shutdown();
     ModeParamsTable::Shutdown();
+    TransverterTable::Shutdown();
     MemoryTable::Shutdown();
     DigitalModesTable::Shutdown();
 }

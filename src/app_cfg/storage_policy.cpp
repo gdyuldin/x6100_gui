@@ -46,6 +46,7 @@ StoragePolicy& storage_policy_for(StorageType type)
     static GlobalStorage global_storage;
     static BandStorage band_storage;
     static ModeStorage mode_storage;
+    static TransverterStorage transverter_storage;
 
     switch (type)
     {
@@ -55,6 +56,8 @@ StoragePolicy& storage_policy_for(StorageType type)
         return band_storage;
     case StorageType::MODE:
         return mode_storage;
+    case StorageType::TRANSVERTER:
+        return transverter_storage;
     }
 
     // Unreachable; kept as a fallback that cannot throw.
@@ -246,6 +249,70 @@ int ModeStorage::save_text(int context_id, const char* name, const std::string& 
 std::optional<std::string> ModeStorage::load_text(int context_id, const char* name)
 {
     ParamLoadResult<std::string> res = ModeParamsTable::Load<std::string>(context_id, name);
+    if (res.rc == SUCCESS)
+    {
+        return res.value;
+    }
+    return std::nullopt;
+}
+
+// ---------------------------------------------------------------------------
+// TransverterStorage — `transverter` table keyed by transverter id
+// ---------------------------------------------------------------------------
+
+int TransverterStorage::save_int(int context_id, const char* name, int32_t value)
+{
+    int rc = TransverterTable::Save<int32_t>(context_id, name, value);
+    if (rc != SUCCESS)
+    {
+        return log_save_error("TransverterTable::Save<int32_t>", rc);
+    }
+    return SUCCESS;
+}
+
+std::optional<int32_t> TransverterStorage::load_int(int context_id, const char* name)
+{
+    ParamLoadResult<int32_t> res = TransverterTable::Load<int32_t>(context_id, name);
+    if (res.rc == SUCCESS)
+    {
+        return res.value;
+    }
+    return std::nullopt;
+}
+
+int TransverterStorage::save_float(int context_id, const char* name, float value)
+{
+    int rc = TransverterTable::Save<float>(context_id, name, value);
+    if (rc != SUCCESS)
+    {
+        return log_save_error("TransverterTable::Save<float>", rc);
+    }
+    return SUCCESS;
+}
+
+std::optional<float> TransverterStorage::load_float(int context_id, const char* name)
+{
+    ParamLoadResult<float> res = TransverterTable::Load<float>(context_id, name);
+    if (res.rc == SUCCESS)
+    {
+        return res.value;
+    }
+    return std::nullopt;
+}
+
+int TransverterStorage::save_text(int context_id, const char* name, const std::string& value)
+{
+    int rc = TransverterTable::Save<std::string>(context_id, name, value);
+    if (rc != SUCCESS)
+    {
+        return log_save_error("TransverterTable::Save<std::string>", rc);
+    }
+    return SUCCESS;
+}
+
+std::optional<std::string> TransverterStorage::load_text(int context_id, const char* name)
+{
+    ParamLoadResult<std::string> res = TransverterTable::Load<std::string>(context_id, name);
     if (res.rc == SUCCESS)
     {
         return res.value;

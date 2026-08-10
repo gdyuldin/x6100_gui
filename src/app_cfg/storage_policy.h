@@ -85,6 +85,20 @@ public:
     std::optional<std::string> load_text(int context_id, const char* name) override;
 };
 
+// Stateless adapter for the `transverter` table keyed by transverter id
+// (context_id = the fixed transverter number 0 or 1).
+class TransverterStorage : public StoragePolicy {
+public:
+    int  save_int(int context_id, const char* name, int32_t value) override;
+    std::optional<int32_t> load_int(int context_id, const char* name) override;
+
+    int  save_float(int context_id, const char* name, float value) override;
+    std::optional<float> load_float(int context_id, const char* name) override;
+
+    int  save_text(int context_id, const char* name, const std::string& value) override;
+    std::optional<std::string> load_text(int context_id, const char* name) override;
+};
+
 // Returns the policy for a StorageType. The three policies are singleton
 // static objects (stateless); the function is used by Parameter::load/save
 // and by PendingWrites::flush_* to route a key to the right table.

@@ -87,6 +87,22 @@ extern ParamInt*           cfg_band_vfob_freq; // p_band_vfob_freq (BAND)
 extern ParamFloat*         cfg_band_dac_offset; // p_band_dac_offse (BAND)
 extern ComputedParamInt*   cfg_fg_freq;       // cp_fg_freq
 
+// Transverter params (p_transverter_{0,1}_{from,to,shift}). Values are Hz.
+extern ParamInt* cfg_transverter_0_from;
+extern ParamInt* cfg_transverter_0_to;
+extern ParamInt* cfg_transverter_0_shift;
+extern ParamInt* cfg_transverter_1_from;
+extern ParamInt* cfg_transverter_1_to;
+extern ParamInt* cfg_transverter_1_shift;
+
+// Transverter shift for a frequency: the shift of the transverter whose
+// [from, to] range contains freq, or 0 when none covers it (g_cfg.transverter_shift_for).
+int32_t cfg_transverter_shift_for(int32_t freq);
+
+// True when freq is usable by the hardware: HF 0.5-55 MHz or inside any
+// transverter range (g_cfg.is_valid_hw_freq).
+bool cfg_is_valid_hw_freq(int32_t freq);
+
 // Initialise the manager (loads global/band/mode params; the starting band comes
 // from the persisted global band_id and the starting mode from cp_cur_mode, so
 // no band/mode ids are passed) and fill the extern globals above. The caller

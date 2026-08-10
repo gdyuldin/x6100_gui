@@ -249,10 +249,10 @@ public:
     // BAND VFO params (context_id = bands_id). These are NOT in the band
     // registry: load_band_vfo() loads them in explicit dependency order so the
     // DB restore/clamp rules can reference already-loaded siblings.
-    Parameter<int32_t> p_band_vfoa_freq{"vfoa_freq", 14100000, StorageType::BAND, pending_writes_,
-        [](int32_t v) { return clamp_val(v, 0, 60000000); }};
-    Parameter<int32_t> p_band_vfob_freq{"vfob_freq", 14150000, StorageType::BAND, pending_writes_,
-        [](int32_t v) { return clamp_val(v, 0, 60000000); }};
+    Parameter<int32_t> p_band_vfoa_freq{"vfoa_freq", 14'100'000, StorageType::BAND, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 0, 500'000'000); }};
+    Parameter<int32_t> p_band_vfob_freq{"vfob_freq", 14'150'000, StorageType::BAND, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 0, 500'000'000); }};
     Parameter<int32_t> p_band_vfoa_mode{"vfoa_mode", x6100_mode_usb, StorageType::BAND, pending_writes_};
     Parameter<int32_t> p_band_vfob_mode{"vfob_mode", x6100_mode_usb, StorageType::BAND, pending_writes_};
     Parameter<int32_t> p_band_vfoa_att{"vfoa_att", x6100_att_off, StorageType::BAND, pending_writes_};
@@ -271,6 +271,25 @@ public:
         [](int32_t v) { return clamp_val(v, 1, 10000); }, {}, &mode_params_};
     Parameter<int32_t> p_mode_spectrum_factor{"spectrum_factor", 1, StorageType::MODE, pending_writes_,
         [](int32_t v) { return clamp_val(v, 1, 8); }, {}, &mode_params_};
+
+    // Transverter params (physical hardware frequency conversion). context_id
+    // is the fixed transverter number (0 or 1) — never switched. NOT registered
+    // in any load-all registry (group = nullptr): they are loaded individually
+    // in init_load() with explicit load(0)/load(1). Values are frequencies in Hz.
+    // Transverter 0 (2m: 144-150 MHz, IF at 28 MHz)
+    Parameter<int32_t> p_transverter_0_from{"from", 144000000, StorageType::TRANSVERTER, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 70000000, 500000000); }, {}, nullptr, 0};
+    Parameter<int32_t> p_transverter_0_to{"to", 150000000, StorageType::TRANSVERTER, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 70000000, 500000000); }, {}, nullptr, 0};
+    Parameter<int32_t> p_transverter_0_shift{"shift", 116000000, StorageType::TRANSVERTER, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 0, 500000000); }, {}, nullptr, 0};
+    // Transverter 1 (70cm: 432-438 MHz, IF at 28 MHz)
+    Parameter<int32_t> p_transverter_1_from{"from", 432000000, StorageType::TRANSVERTER, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 70000000, 500000000); }, {}, nullptr, 1};
+    Parameter<int32_t> p_transverter_1_to{"to", 438000000, StorageType::TRANSVERTER, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 70000000, 500000000); }, {}, nullptr, 1};
+    Parameter<int32_t> p_transverter_1_shift{"shift", 404000000, StorageType::TRANSVERTER, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 0, 500000000); }, {}, nullptr, 1};
 
 private:
     // MODE-scoped filter band edges. PRIVATE: never read/written directly
@@ -367,6 +386,35 @@ public:
     // -- Accessors --
     int current_band_id() const { return band_id_; }
     int current_mode_id() const { return mode_id_; }
+
+    // Hardware-usable frequency range limits (in Hz). HF is the native
+    // 0.5-55 MHz band; anything above must be covered by a transverter.
+    static constexpr int32_t HF_MIN_FREQ = 500'000;
+    static constexpr int32_t HF_MAX_FREQ = 55'000'000;
+
+    // Transverter shift for a frequency: the shift of the transverter whose
+    // [from, to] range contains `freq`, or 0 when no transverter covers it.
+    int32_t transverter_shift_for(int32_t freq) const {
+        if (freq >= p_transverter_0_from.get() && freq <= p_transverter_0_to.get())
+            return p_transverter_0_shift.get();
+        if (freq >= p_transverter_1_from.get() && freq <= p_transverter_1_to.get())
+            return p_transverter_1_shift.get();
+        return 0;
+    }
+
+    // True when `freq` is usable by the hardware: HF 0.5-55 MHz or inside any
+    // transverter [from, to] range. Bands-table ranges are informational only.
+    bool is_valid_hw_freq(int32_t freq) const {
+        if (freq >= HF_MIN_FREQ && freq <= HF_MAX_FREQ) {
+            return true;
+        }
+        return transverter_shift_for(freq) != 0;
+    }
+
+    // If `freq` is hardware-usable, return it unchanged. Otherwise clamp to the
+    // nearest boundary of any hardware-usable frequency range (HF 0.5-55 MHz or
+    // the configured transverter [from, to] ranges).
+    int32_t clamp_to_valid_hw_freq(int32_t freq) const;
 
 private:
     // active VFO frequency of the current band (compute fn for cp_fg_freq).

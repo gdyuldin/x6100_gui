@@ -109,6 +109,15 @@ void SettingsManager::init_load(void (*on_db_error)(const char* msg))
 
     load_band_all(band_id_);
 
+    // Transverter params are loaded individually (fixed context_id = the
+    // transverter number). NOT_FOUND keeps the default value.
+    p_transverter_0_from.load(0);
+    p_transverter_0_to.load(0);
+    p_transverter_0_shift.load(0);
+    p_transverter_1_from.load(1);
+    p_transverter_1_to.load(1);
+    p_transverter_1_shift.load(1);
+
     // Subscribe the VFO frequency observers that trigger an implicit band
     // switch when a frequency is tuned into a different band. Subscribed after
     // the initial load so the initial restore does not trigger a switch.
@@ -331,6 +340,9 @@ int32_t SettingsManager::fg_freq_get()
 
 void SettingsManager::fg_freq_set(int32_t freq)
 {
+    // Clamp to the nearest hardware-usable frequency before writing back, so
+    // invalid frequencies never reach the VFO params.
+    freq = clamp_to_valid_hw_freq(freq);
     // Write back into the active VFO's frequency param.
     if (p_band_current_vfo.get() == 0) {
         p_band_vfoa_freq.set(freq);
@@ -409,6 +421,36 @@ void SettingsManager::bg_freq_set(int32_t freq)
     } else {
         p_band_vfoa_freq.set(freq);
     }
+}
+
+int32_t SettingsManager::clamp_to_valid_hw_freq(int32_t freq) const
+{
+    if (is_valid_hw_freq(freq)) {
+        return freq;
+    }
+
+    // Boundaries of every hardware-usable frequency range.
+    const int32_t bounds[] = {
+        HF_MIN_FREQ,                     // HF lower limit
+        HF_MAX_FREQ,                     // HF upper limit
+        p_transverter_0_from.get(),      // transverter 0 [from, to]
+        p_transverter_0_to.get(),
+        p_transverter_1_from.get(),      // transverter 1 [from, to]
+        p_transverter_1_to.get(),
+    };
+
+    int32_t nearest = bounds[0];
+    int64_t best    = freq > bounds[0] ? static_cast<int64_t>(freq) - bounds[0]
+                                       : static_cast<int64_t>(bounds[0]) - freq;
+    for (const int32_t b : bounds) {
+        const int64_t d = freq > b ? static_cast<int64_t>(freq) - b
+                                   : static_cast<int64_t>(b) - freq;
+        if (d < best) {
+            best    = d;
+            nearest = b;
+        }
+    }
+    return nearest;
 }
 
 SettingsManager::FilterMode SettingsManager::filter_mode(int32_t mode) const
@@ -662,7 +704,7 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
             const int32_t freq = p_band_vfoa_freq.get();
             if (freq < static_cast<int32_t>(band.value.start_freq) ||
                 freq > static_cast<int32_t>(band.value.stop_freq)) {
-                p_band_vfoa_freq.set_quiet(static_cast<int32_t>(band.value.start_freq));
+                p_band_vfoa_freq.set_quiet(clamp_to_valid_hw_freq(freq));
             }
         }
     }
@@ -695,7 +737,7 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
             const int32_t freq = p_band_vfob_freq.get();
             if (freq < static_cast<int32_t>(band.value.start_freq) ||
                 freq > static_cast<int32_t>(band.value.stop_freq)) {
-                p_band_vfob_freq.set_quiet(static_cast<int32_t>(band.value.start_freq));
+                p_band_vfob_freq.set_quiet(clamp_to_valid_hw_freq(freq));
             }
         }
     }

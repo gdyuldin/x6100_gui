@@ -16,7 +16,7 @@
 // StorageType marks which logical table a parameter belongs to. It is used
 // only by PendingWrites/flush_storage to force-save into the right table;
 // the actual per-table DB helpers live in db.h and are added separately.
-enum class StorageType { GLOBAL, BAND, MODE };
+enum class StorageType { GLOBAL, BAND, MODE, TRANSVERTER };
 
 // Fully identifies a persisted parameter. PendingWrites stores pending writes
 // by (type, context_id, name); context_id is the band_id/mode_id/etc. and is
@@ -85,25 +85,29 @@ class Parameter : public appcfg::SubjectT<ValueType>, public ParamBase {
 public:
     // db_name       - key in the database table
     // default_val   - initial value before loading
-    // storage       - GLOBAL / BAND / MODE marker (for flush sorting)
+    // storage       - GLOBAL / BAND / MODE / TRANSVERTER marker (for flush sorting)
     // sink          - deferred-write sink receiving pending writes
     // validator     - optional clamp/correct on set()
     // on_not_found  - optional callback on load NOT_FOUND
     // group         - optional registry vector; push_back(this) on construction
+    // context_id    - initial context bound to this parameter (band_id/mode_id/
+    //                 transverter_id). Defaults to 0; SettingsManager sets it
+    //                 when loading a band/mode context.
     Parameter(const char* db_name,
               ValueType default_val,
               StorageType storage,
               WriteSink& sink,
               std::function<ValueType(ValueType)> validator = {},
               std::function<void()> on_not_found = {},
-              std::vector<ParamBase*>* group = nullptr)
+              std::vector<ParamBase*>* group = nullptr,
+              int context_id = 0)
         : appcfg::SubjectT<ValueType>(default_val),
           db_name_(db_name),
           storage_(storage),
           sink_(sink),
           validator_(std::move(validator)),
           on_not_found_(std::move(on_not_found)),
-          context_id_(0)
+          context_id_(context_id)
     {
         if (group)
         {

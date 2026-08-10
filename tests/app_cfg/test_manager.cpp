@@ -66,6 +66,12 @@ struct TestDbGuard {
             "  start_freq INTEGER,"
             "  stop_freq  INTEGER,"
             "  type       INTEGER"
+            ");"
+            "CREATE TABLE IF NOT EXISTS transverter("
+            "  id   INTEGER,"
+            "  name TEXT,"
+            "  val  INTEGER,"
+            "  UNIQUE(id, name) ON CONFLICT REPLACE"
             ");", nullptr, nullptr, &err);
         REQUIRE(rc == SQLITE_OK);
         if (err) sqlite3_free(err);
@@ -73,9 +79,11 @@ struct TestDbGuard {
         BandParamsTable::Init(db);
         ModeParamsTable::Init(db);
         BandsTable::Init(db);
+        TransverterTable::Init(db);
     }
 
     ~TestDbGuard() {
+        TransverterTable::Shutdown();
         BandsTable::Shutdown();
         ParamsTable::Shutdown();
         BandParamsTable::Shutdown();
@@ -535,10 +543,13 @@ TEST_CASE("VFO restore picks LSB on a low band", "[manager]") {
     REQUIRE(mgr.p_band_vfob_mode.get() == x6100_mode_lsb);
 }
 
-TEST_CASE("VFO boundary clamp of a DB value outside the band", "[manager]") {
+TEST_CASE("VFO boundary clamp of a DB value outside all HW ranges", "[manager]") {
     TestDbGuard db;
     insert_band(db.db, 5, 10'100 * kHz, 10'150 * kHz);
 
+    // vfoa_freq = 999.999 MHz is above TV1's upper boundary; vfob_freq = 1 kHz is
+    // below HF's lower boundary. Both are outside every hardware-usable range,
+    // so they clamp to the *nearest* HW-valid boundary (not the band start).
     StoragePolicy& b = storage_policy_for(StorageType::BAND);
     REQUIRE(b.save_int(5, "vfoa_freq", 999'999 * kHz) == SUCCESS);
     REQUIRE(b.save_int(5, "vfob_freq", 1 * kHz) == SUCCESS);
@@ -546,9 +557,10 @@ TEST_CASE("VFO boundary clamp of a DB value outside the band", "[manager]") {
     SettingsManager mgr;
     fresh_manager(mgr, db, 5);
 
-    // Out-of-range loaded values are clamped to the band start.
-    REQUIRE(mgr.p_band_vfoa_freq.get() == 10'100 * kHz);
-    REQUIRE(mgr.p_band_vfob_freq.get() == 10'100 * kHz);
+    // 999.999 MHz -> nearest boundary is transverter 1's 'to' (438 MHz).
+    REQUIRE(mgr.p_band_vfoa_freq.get() == 438'000'000);
+    // 1 kHz -> nearest boundary is HF's lower limit (0.5 MHz).
+    REQUIRE(mgr.p_band_vfob_freq.get() == 500'000);
 }
 
 TEST_CASE("vfob copies a loaded vfoa freq and restores its mode", "[manager]") {
@@ -1023,4 +1035,64 @@ TEST_CASE("switch_mode recomputes cur_filter_* for the new mode's pair", "[manag
     REQUIRE(mgr.cp_cur_filter_low.get() == 600);   // key_tone - high/2
     REQUIRE(mgr.cp_cur_filter_high.get() == 800);  // key_tone + high/2
     REQUIRE(mgr.cp_cur_filter_bw.get() == 200);
+}
+
+TEST_CASE("init_load preserves transverter frequency inside HW range", "[manager][transverter]") {
+    TestDbGuard db;
+
+    // Band 7 = 20m SSB (14.07-14.35 MHz). The stored VFO frequency (145 MHz) is
+    // outside the band but within the first transverter's hardware range
+    // (144-150 MHz), so it must be preserved, not clamped to the band start.
+    insert_band(db.db, 7, 14'070'000, 14'350'000);
+
+    {
+        StoragePolicy& b = storage_policy_for(StorageType::BAND);
+        REQUIRE(b.save_int(7, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(b.save_int(7, "vfoa_freq", 145'000'000) == SUCCESS);
+        REQUIRE(b.save_int(7, "vfob_freq", 145'000'000) == SUCCESS);
+        REQUIRE(b.save_int(7, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+        REQUIRE(b.save_int(7, "vfob_mode", x6100_mode_usb) == SUCCESS);
+        REQUIRE(b.save_int(7, "vfoa_agc", x6100_agc_auto) == SUCCESS);
+        REQUIRE(b.save_int(7, "vfob_agc", x6100_agc_auto) == SUCCESS);
+    }
+
+    SettingsManager mgr;
+    mgr.p_band_id.set_quiet(7);
+    mgr.init_load();
+
+    // 145 MHz is hardware-usable (transverter 0: 144-150 MHz), so it survives
+    // the band clamp unchanged.
+    REQUIRE(mgr.is_valid_hw_freq(145'000'000));
+    REQUIRE(mgr.p_band_vfoa_freq.get() == 145'000'000);
+    REQUIRE(mgr.cp_fg_freq.get() == 145'000'000);
+}
+
+TEST_CASE("init_load clamps frequency outside HW ranges to nearest boundary", "[manager][transverter]") {
+    TestDbGuard db;
+
+    // Band 5 = 30m (10.1-10.15 MHz). The stored VFO frequency (65 MHz) is
+    // outside both HF (0.5-55 MHz) and all transverter ranges. The nearest
+    // hardware-usable boundary is the HF upper limit: 55 MHz.
+    insert_band(db.db, 5, 10'100'000, 10'150'000);
+
+    {
+        StoragePolicy& b = storage_policy_for(StorageType::BAND);
+        REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(b.save_int(5, "vfoa_freq", 65'000'000) == SUCCESS);
+        REQUIRE(b.save_int(5, "vfob_freq", 65'000'000) == SUCCESS);
+        REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_lsb) == SUCCESS);
+        REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_lsb) == SUCCESS);
+        REQUIRE(b.save_int(5, "vfoa_agc", x6100_agc_auto) == SUCCESS);
+        REQUIRE(b.save_int(5, "vfob_agc", x6100_agc_auto) == SUCCESS);
+    }
+
+    SettingsManager mgr;
+    mgr.p_band_id.set_quiet(5);
+    mgr.init_load();
+
+    // 65 MHz is not hardware-usable; it clamps to the nearest boundary (55 MHz).
+    REQUIRE_FALSE(mgr.is_valid_hw_freq(65'000'000));
+    REQUIRE(mgr.is_valid_hw_freq(55'000'000));
+    REQUIRE(mgr.p_band_vfoa_freq.get() == 55'000'000);
+    REQUIRE(mgr.cp_fg_freq.get() == 55'000'000);
 }

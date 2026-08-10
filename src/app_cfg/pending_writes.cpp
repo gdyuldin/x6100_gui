@@ -44,6 +44,7 @@ void PendingWrites::flush_all()
     flush_storage(StorageType::GLOBAL, -1);
     flush_storage(StorageType::BAND, -1);
     flush_storage(StorageType::MODE, -1);
+    flush_storage(StorageType::TRANSVERTER, -1);
 }
 
 // Persist pending changes belonging to one logical table and erase them. For

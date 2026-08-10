@@ -34,6 +34,12 @@ ParamInt*        cfg_band_vfoa_freq  = nullptr;
 ParamInt*        cfg_band_vfob_freq  = nullptr;
 ParamFloat*      cfg_band_dac_offset = nullptr;
 ComputedParamInt* cfg_fg_freq       = nullptr;
+ParamInt*   cfg_transverter_0_from  = nullptr;
+ParamInt*   cfg_transverter_0_to    = nullptr;
+ParamInt*   cfg_transverter_0_shift = nullptr;
+ParamInt*   cfg_transverter_1_from  = nullptr;
+ParamInt*   cfg_transverter_1_to    = nullptr;
+ParamInt*   cfg_transverter_1_shift = nullptr;
 
 void cfg_api_init(void (*on_db_error)(const char*))
 {
@@ -57,6 +63,23 @@ void cfg_api_init(void (*on_db_error)(const char*))
     cfg_band_vfob_freq   = reinterpret_cast<ParamInt*>(&g_cfg.p_band_vfob_freq);
     cfg_band_dac_offset  = reinterpret_cast<ParamFloat*>(&g_cfg.p_band_dac_offset);
     cfg_fg_freq          = reinterpret_cast<ComputedParamInt*>(&g_cfg.cp_fg_freq);
+
+    cfg_transverter_0_from  = reinterpret_cast<ParamInt*>(&g_cfg.p_transverter_0_from);
+    cfg_transverter_0_to    = reinterpret_cast<ParamInt*>(&g_cfg.p_transverter_0_to);
+    cfg_transverter_0_shift = reinterpret_cast<ParamInt*>(&g_cfg.p_transverter_0_shift);
+    cfg_transverter_1_from  = reinterpret_cast<ParamInt*>(&g_cfg.p_transverter_1_from);
+    cfg_transverter_1_to    = reinterpret_cast<ParamInt*>(&g_cfg.p_transverter_1_to);
+    cfg_transverter_1_shift = reinterpret_cast<ParamInt*>(&g_cfg.p_transverter_1_shift);
+}
+
+int32_t cfg_transverter_shift_for(int32_t freq)
+{
+    return g_cfg.transverter_shift_for(freq);
+}
+
+bool cfg_is_valid_hw_freq(int32_t freq)
+{
+    return g_cfg.is_valid_hw_freq(freq);
 }
 
 void cfg_api_flush_all(void)

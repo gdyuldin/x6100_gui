@@ -453,6 +453,118 @@ class ModeParamsTable {
     inline static int           save_val_param_index_  = 0;
 };
 
+// Transverter configuration: (transverter_id, name, val) rows in the legacy
+// `transverter` SQLite table. `id` is the transverter number (0 or 1), `name`
+// is "from"/"to"/"shift" and `val` is a frequency in Hz (int32_t). Uses the
+// exact legacy column names and UNIQUE(id, name) constraint so existing user
+// data survives migration. Follows the BandParamsTable pattern; context_id in
+// StorageKey maps to `id` (fixed for the parameter's lifetime — never switched).
+class TransverterTable {
+  public:
+    static bool Init(sqlite3 *database);
+    static void Shutdown();
+
+    template <typename T> static ParamLoadResult<T> Load(const int32_t id, const char *name) {
+        int            rc;
+        StmtResetGuard guard(load_mutex_, load_stmt_);
+
+        rc = sqlite3_bind_text(load_stmt_, load_name_param_index_, name, strlen(name), SQLITE_STATIC);
+        if (rc != SQLITE_OK) {
+            LV_LOG_ERROR("Failed to bind name %s: %s", name, sqlite3_errmsg(db_));
+            return {T{}, rc};
+        }
+        rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, id);
+        if (rc != SQLITE_OK) {
+            LV_LOG_ERROR("Failed to bind transverter id %i: %s", id, sqlite3_errmsg(db_));
+            return {T{}, rc};
+        }
+
+        rc = sqlite3_step(load_stmt_);
+        if (rc == SQLITE_ROW) {
+            T value;
+            if constexpr (std::is_same_v<T, int32_t>) {
+                value = sqlite3_column_int(load_stmt_, 0);
+                LV_LOG_USER("Loaded %s=%i", name, value);
+            } else if constexpr (std::is_same_v<T, float>) {
+                value = sqlite3_column_double(load_stmt_, 0);
+                LV_LOG_USER("Loaded %s=%f", name, value);
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                const unsigned char *txt = sqlite3_column_text(load_stmt_, 0);
+                value = txt ? reinterpret_cast<const char *>(txt) : "";
+                LV_LOG_USER("Loaded %s=%s", name, value.c_str());
+            } else {
+                static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_load().");
+            }
+            return {value, SUCCESS};
+        }
+        if (rc == SQLITE_DONE) {
+            LV_LOG_WARN("No results for load %s", name);
+            return {T{}, NOT_FOUND};
+        }
+        LV_LOG_WARN("Load %s failed: %s", name, sqlite3_errmsg(db_));
+        return {T{}, rc};
+    }
+
+    template <typename T> static int Save(const int32_t id, const char *name, const T &value) {
+        int            rc;
+        StmtResetGuard guard(save_mutex_, save_stmt_);
+
+        rc = sqlite3_bind_text(save_stmt_, save_name_param_index_, name, strlen(name), 0);
+        if (rc != SQLITE_OK) {
+            LV_LOG_WARN("Can't bind name %s to save params query", name);
+            return rc;
+        }
+        rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, id);
+        if (rc != SQLITE_OK) {
+            LV_LOG_ERROR("Failed to bind transverter id %i: %s", id, sqlite3_errmsg(db_));
+            return rc;
+        }
+
+        if constexpr (std::is_same_v<T, int32_t>) {
+            rc = sqlite3_bind_int(save_stmt_, save_val_param_index_, value);
+        } else if constexpr (std::is_same_v<T, float>) {
+            rc = sqlite3_bind_double(save_stmt_, save_val_param_index_, value);
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            rc = sqlite3_bind_text(save_stmt_, save_val_param_index_, value.c_str(), -1, 0);
+        } else {
+            static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_save().");
+        }
+
+        if (rc != SQLITE_OK) {
+            LV_LOG_WARN("Can't bind val %s to save params query", value_to_string(value).c_str());
+        } else {
+            rc = sqlite3_step(save_stmt_);
+            if (rc != SQLITE_DONE) {
+                LV_LOG_ERROR("Failed save item %s: %s", name, sqlite3_errmsg(db_));
+            } else {
+                LV_LOG_USER("Saved %s=%s", name, value_to_string(value).c_str());
+                rc = SUCCESS;
+            }
+        }
+        return rc;
+    }
+
+  private:
+    // Database handle shared by all statements of this table.
+    inline static sqlite3 *db_ = nullptr;
+
+    // Load statement group: prepared statement + guarding mutex + cached
+    // :id and :name parameter indices.
+    inline static sqlite3_stmt *load_stmt_             = nullptr;
+    inline static std::mutex    load_mutex_;
+    inline static int           load_id_param_index_   = 0;
+    inline static int           load_name_param_index_ = 0;
+
+    // Save statement group: prepared statement + guarding mutex + cached
+    // :id, :name and :val parameter indices.
+    inline static sqlite3_stmt *save_stmt_             = nullptr;
+    inline static std::mutex    save_mutex_;
+    inline static int           save_id_param_index_   = 0;
+    inline static int           save_name_param_index_ = 0;
+    inline static int           save_val_param_index_  = 0;
+};
+
+
 // Key-value snapshot store for user memory slots (hardware-key memories,
 // backup slot). NOT a deferred-write parameter store: saves are immediate and
 // loads are done on demand. Each row is (id, name, value); a "slot" is all
