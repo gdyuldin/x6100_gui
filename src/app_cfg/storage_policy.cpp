@@ -26,8 +26,7 @@ namespace {
 
 // Shared helper: formats the SQLite rc into the log message described by the
 // caller. Returns the rc unchanged so the caller can propagate it.
-int log_save_error(const char* what, int rc)
-{
+int log_save_error(const char *what, int rc) {
     LV_LOG_ERROR("storage_policy: %s failed, sqlite rc=%d", what, rc);
     return rc;
 }
@@ -38,26 +37,24 @@ int log_save_error(const char* what, int rc)
 // global policy resolver
 // ---------------------------------------------------------------------------
 
-StoragePolicy& storage_policy_for(StorageType type)
-{
+StoragePolicy &storage_policy_for(StorageType type) {
     // Stateless singletons. Parameters live statically and are never deleted,
     // so a single non-owning static pointer per policy is safe and avoids
     // constructing them on first use inside a hot path.
-    static GlobalStorage global_storage;
-    static BandStorage band_storage;
-    static ModeStorage mode_storage;
+    static GlobalStorage      global_storage;
+    static BandStorage        band_storage;
+    static ModeStorage        mode_storage;
     static TransverterStorage transverter_storage;
 
-    switch (type)
-    {
-    case StorageType::GLOBAL:
-        return global_storage;
-    case StorageType::BAND:
-        return band_storage;
-    case StorageType::MODE:
-        return mode_storage;
-    case StorageType::TRANSVERTER:
-        return transverter_storage;
+    switch (type) {
+        case StorageType::GLOBAL:
+            return global_storage;
+        case StorageType::BAND:
+            return band_storage;
+        case StorageType::MODE:
+            return mode_storage;
+        case StorageType::TRANSVERTER:
+            return transverter_storage;
     }
 
     // Unreachable; kept as a fallback that cannot throw.
@@ -68,61 +65,49 @@ StoragePolicy& storage_policy_for(StorageType type)
 // GlobalStorage — flat GLOBAL `params` table, context_id unused
 // ---------------------------------------------------------------------------
 
-int GlobalStorage::save_int(int /*context_id*/, const char* name, int32_t value)
-{
+int GlobalStorage::save_int(int /*context_id*/, const char *name, int32_t value) {
     int rc = ParamsTable::Save<int32_t>(name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("ParamsTable::Save<int32_t>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<int32_t> GlobalStorage::load_int(int /*context_id*/, const char* name)
-{
+std::optional<int32_t> GlobalStorage::load_int(int /*context_id*/, const char *name) {
     ParamLoadResult<int32_t> res = ParamsTable::Load<int32_t>(name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
 }
 
-int GlobalStorage::save_float(int /*context_id*/, const char* name, float value)
-{
+int GlobalStorage::save_float(int /*context_id*/, const char *name, float value) {
     int rc = ParamsTable::Save<float>(name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("ParamsTable::Save<float>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<float> GlobalStorage::load_float(int /*context_id*/, const char* name)
-{
+std::optional<float> GlobalStorage::load_float(int /*context_id*/, const char *name) {
     ParamLoadResult<float> res = ParamsTable::Load<float>(name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
 }
 
-int GlobalStorage::save_text(int /*context_id*/, const char* name, const std::string& value)
-{
+int GlobalStorage::save_text(int /*context_id*/, const char *name, const std::string &value) {
     int rc = ParamsTable::Save<std::string>(name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("ParamsTable::Save<std::string>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<std::string> GlobalStorage::load_text(int /*context_id*/, const char* name)
-{
+std::optional<std::string> GlobalStorage::load_text(int /*context_id*/, const char *name) {
     ParamLoadResult<std::string> res = ParamsTable::Load<std::string>(name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
@@ -132,61 +117,49 @@ std::optional<std::string> GlobalStorage::load_text(int /*context_id*/, const ch
 // BandStorage — `band_params` table keyed by bands_id
 // ---------------------------------------------------------------------------
 
-int BandStorage::save_int(int context_id, const char* name, int32_t value)
-{
+int BandStorage::save_int(int context_id, const char *name, int32_t value) {
     int rc = BandParamsTable::Save<int32_t>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("BandParamsTable::Save<int32_t>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<int32_t> BandStorage::load_int(int context_id, const char* name)
-{
+std::optional<int32_t> BandStorage::load_int(int context_id, const char *name) {
     ParamLoadResult<int32_t> res = BandParamsTable::Load<int32_t>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
 }
 
-int BandStorage::save_float(int context_id, const char* name, float value)
-{
+int BandStorage::save_float(int context_id, const char *name, float value) {
     int rc = BandParamsTable::Save<float>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("BandParamsTable::Save<float>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<float> BandStorage::load_float(int context_id, const char* name)
-{
+std::optional<float> BandStorage::load_float(int context_id, const char *name) {
     ParamLoadResult<float> res = BandParamsTable::Load<float>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
 }
 
-int BandStorage::save_text(int context_id, const char* name, const std::string& value)
-{
+int BandStorage::save_text(int context_id, const char *name, const std::string &value) {
     int rc = BandParamsTable::Save<std::string>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("BandParamsTable::Save<std::string>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<std::string> BandStorage::load_text(int context_id, const char* name)
-{
+std::optional<std::string> BandStorage::load_text(int context_id, const char *name) {
     ParamLoadResult<std::string> res = BandParamsTable::Load<std::string>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
@@ -196,61 +169,49 @@ std::optional<std::string> BandStorage::load_text(int context_id, const char* na
 // ModeStorage — `mode_params` table keyed by mode
 // ---------------------------------------------------------------------------
 
-int ModeStorage::save_int(int context_id, const char* name, int32_t value)
-{
+int ModeStorage::save_int(int context_id, const char *name, int32_t value) {
     int rc = ModeParamsTable::Save<int32_t>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("ModeParamsTable::Save<int32_t>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<int32_t> ModeStorage::load_int(int context_id, const char* name)
-{
+std::optional<int32_t> ModeStorage::load_int(int context_id, const char *name) {
     ParamLoadResult<int32_t> res = ModeParamsTable::Load<int32_t>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
 }
 
-int ModeStorage::save_float(int context_id, const char* name, float value)
-{
+int ModeStorage::save_float(int context_id, const char *name, float value) {
     int rc = ModeParamsTable::Save<float>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("ModeParamsTable::Save<float>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<float> ModeStorage::load_float(int context_id, const char* name)
-{
+std::optional<float> ModeStorage::load_float(int context_id, const char *name) {
     ParamLoadResult<float> res = ModeParamsTable::Load<float>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
 }
 
-int ModeStorage::save_text(int context_id, const char* name, const std::string& value)
-{
+int ModeStorage::save_text(int context_id, const char *name, const std::string &value) {
     int rc = ModeParamsTable::Save<std::string>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("ModeParamsTable::Save<std::string>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<std::string> ModeStorage::load_text(int context_id, const char* name)
-{
+std::optional<std::string> ModeStorage::load_text(int context_id, const char *name) {
     ParamLoadResult<std::string> res = ModeParamsTable::Load<std::string>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
@@ -260,61 +221,49 @@ std::optional<std::string> ModeStorage::load_text(int context_id, const char* na
 // TransverterStorage — `transverter` table keyed by transverter id
 // ---------------------------------------------------------------------------
 
-int TransverterStorage::save_int(int context_id, const char* name, int32_t value)
-{
+int TransverterStorage::save_int(int context_id, const char *name, int32_t value) {
     int rc = TransverterTable::Save<int32_t>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("TransverterTable::Save<int32_t>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<int32_t> TransverterStorage::load_int(int context_id, const char* name)
-{
+std::optional<int32_t> TransverterStorage::load_int(int context_id, const char *name) {
     ParamLoadResult<int32_t> res = TransverterTable::Load<int32_t>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
 }
 
-int TransverterStorage::save_float(int context_id, const char* name, float value)
-{
+int TransverterStorage::save_float(int context_id, const char *name, float value) {
     int rc = TransverterTable::Save<float>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("TransverterTable::Save<float>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<float> TransverterStorage::load_float(int context_id, const char* name)
-{
+std::optional<float> TransverterStorage::load_float(int context_id, const char *name) {
     ParamLoadResult<float> res = TransverterTable::Load<float>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;
 }
 
-int TransverterStorage::save_text(int context_id, const char* name, const std::string& value)
-{
+int TransverterStorage::save_text(int context_id, const char *name, const std::string &value) {
     int rc = TransverterTable::Save<std::string>(context_id, name, value);
-    if (rc != SUCCESS)
-    {
+    if (rc != SUCCESS) {
         return log_save_error("TransverterTable::Save<std::string>", rc);
     }
     return SUCCESS;
 }
 
-std::optional<std::string> TransverterStorage::load_text(int context_id, const char* name)
-{
+std::optional<std::string> TransverterStorage::load_text(int context_id, const char *name) {
     ParamLoadResult<std::string> res = TransverterTable::Load<std::string>(context_id, name);
-    if (res.rc == SUCCESS)
-    {
+    if (res.rc == SUCCESS) {
         return res.value;
     }
     return std::nullopt;

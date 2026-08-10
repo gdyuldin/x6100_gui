@@ -11,10 +11,9 @@
  */
 #include "db.h"
 
-#include <stdlib.h>
-#include <pthread.h>
 #include "../lvgl/lvgl.h"
-
+#include <pthread.h>
+#include <stdlib.h>
 
 // ---------------------------------------------------------------------------
 // ParamsTable
@@ -40,9 +39,9 @@ bool ParamsTable::Init(sqlite3 *database) {
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR("Failed prepare write statement: %s", sqlite3_errmsg(db_));
         sqlite3_finalize(load_stmt_);
-        load_stmt_           = nullptr;
+        load_stmt_             = nullptr;
         load_name_param_index_ = 0;
-        db_ = nullptr;
+        db_                    = nullptr;
         return false;
     }
     save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
@@ -62,9 +61,8 @@ void ParamsTable::Shutdown() {
     load_name_param_index_ = 0;
     save_name_param_index_ = 0;
     save_val_param_index_  = 0;
-    db_ = nullptr;
+    db_                    = nullptr;
 }
-
 
 // ---------------------------------------------------------------------------
 // BandsTable
@@ -104,7 +102,7 @@ bool BandsTable::Init(sqlite3 *database) {
         LV_LOG_ERROR("Failed prepare get_band_by_freq statement: %s", sqlite3_errmsg(db_));
         sqlite3_finalize(get_band_by_id_stmt_);
         get_band_by_id_stmt_ = nullptr;
-        db_ = nullptr;
+        db_                  = nullptr;
         return false;
     }
     get_band_by_freq_freq_param_index_ = sqlite3_bind_parameter_index(get_band_by_freq_stmt_, ":freq");
@@ -119,7 +117,7 @@ bool BandsTable::Init(sqlite3 *database) {
         sqlite3_finalize(get_band_by_freq_stmt_);
         get_band_by_id_stmt_   = nullptr;
         get_band_by_freq_stmt_ = nullptr;
-        db_ = nullptr;
+        db_                    = nullptr;
         return false;
     }
     get_band_up_freq_param_index_ = sqlite3_bind_parameter_index(get_band_up_stmt_, ":freq");
@@ -137,7 +135,7 @@ bool BandsTable::Init(sqlite3 *database) {
         get_band_by_id_stmt_   = nullptr;
         get_band_by_freq_stmt_ = nullptr;
         get_band_up_stmt_      = nullptr;
-        db_ = nullptr;
+        db_                    = nullptr;
         return false;
     }
     get_band_down_freq_param_index_ = sqlite3_bind_parameter_index(get_band_down_stmt_, ":freq");
@@ -155,7 +153,7 @@ bool BandsTable::Init(sqlite3 *database) {
         get_band_by_freq_stmt_ = nullptr;
         get_band_up_stmt_      = nullptr;
         get_band_down_stmt_    = nullptr;
-        db_ = nullptr;
+        db_                    = nullptr;
         return false;
     }
     return true;
@@ -182,12 +180,12 @@ void BandsTable::Shutdown() {
         sqlite3_finalize(read_all_bands_stmt_);
         read_all_bands_stmt_ = nullptr;
     }
-    get_band_by_id_id_param_index_       = 0;
-    get_band_by_freq_freq_param_index_   = 0;
-    get_band_up_freq_param_index_        = 0;
-    get_band_up_id_param_index_          = 0;
-    get_band_down_freq_param_index_      = 0;
-    get_band_down_id_param_index_        = 0;
+    get_band_by_id_id_param_index_     = 0;
+    get_band_by_freq_freq_param_index_ = 0;
+    get_band_up_freq_param_index_      = 0;
+    get_band_up_id_param_index_        = 0;
+    get_band_down_freq_param_index_    = 0;
+    get_band_down_id_param_index_      = 0;
     {
         std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
         last_band = BandInfo{};
@@ -221,12 +219,12 @@ BandInfoLoadResult BandsTable::get_by_id(int32_t band_id) {
     rc = sqlite3_step(get_band_by_id_stmt_);
     if (rc == SQLITE_ROW) {
         BandInfo info;
-        info.id              = band_id;
+        info.id                  = band_id;
         const unsigned char *txt = sqlite3_column_text(get_band_by_id_stmt_, 0);
-        info.name            = txt ? reinterpret_cast<const char *>(txt) : "";
-        info.start_freq      = sqlite3_column_int(get_band_by_id_stmt_, 1);
-        info.stop_freq       = sqlite3_column_int(get_band_by_id_stmt_, 2);
-        info.type            = static_cast<band_type_t>(sqlite3_column_int(get_band_by_id_stmt_, 3));
+        info.name                = txt ? reinterpret_cast<const char *>(txt) : "";
+        info.start_freq          = sqlite3_column_int(get_band_by_id_stmt_, 1);
+        info.stop_freq           = sqlite3_column_int(get_band_by_id_stmt_, 2);
+        info.type                = static_cast<band_type_t>(sqlite3_column_int(get_band_by_id_stmt_, 3));
         {
             std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
             last_band = info;
@@ -286,16 +284,16 @@ BandInfoLoadResult BandsTable::get_by_freq(uint32_t freq) {
 BandInfoLoadResult BandsTable::next(int32_t cur_band_id, uint32_t cur_freq, bool up) {
     int           rc;
     sqlite3_stmt *stmt;
-    std::mutex* mux;
-    int freq_idx, band_idx;
+    std::mutex   *mux;
+    int           freq_idx, band_idx;
     if (up) {
-        stmt = get_band_up_stmt_;
-        mux = &get_band_up_mutex_;
+        stmt     = get_band_up_stmt_;
+        mux      = &get_band_up_mutex_;
         freq_idx = get_band_up_freq_param_index_;
         band_idx = get_band_up_id_param_index_;
     } else {
-        stmt = get_band_down_stmt_;
-        mux = &get_band_down_mutex_;
+        stmt     = get_band_down_stmt_;
+        mux      = &get_band_down_mutex_;
         freq_idx = get_band_down_freq_param_index_;
         band_idx = get_band_down_id_param_index_;
     }
@@ -315,12 +313,12 @@ BandInfoLoadResult BandsTable::next(int32_t cur_band_id, uint32_t cur_freq, bool
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
         BandInfo info;
-        info.id         = sqlite3_column_int(stmt, 0);
+        info.id                  = sqlite3_column_int(stmt, 0);
         const unsigned char *txt = sqlite3_column_text(stmt, 1);
-        info.name            = txt ? reinterpret_cast<const char *>(txt) : "";
-        info.type     = BAND_ACTIVE;
-        info.start_freq = sqlite3_column_int(stmt, 2);
-        info.stop_freq  = sqlite3_column_int(stmt, 3);
+        info.name                = txt ? reinterpret_cast<const char *>(txt) : "";
+        info.type                = BAND_ACTIVE;
+        info.start_freq          = sqlite3_column_int(stmt, 2);
+        info.stop_freq           = sqlite3_column_int(stmt, 3);
         {
             std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
             last_band = info;
@@ -332,20 +330,20 @@ BandInfoLoadResult BandsTable::next(int32_t cur_band_id, uint32_t cur_freq, bool
 }
 
 std::vector<BandInfo> BandsTable::all_bands() {
-    int           rc;
-    StmtResetGuard guard(read_all_bands_mutex_, read_all_bands_stmt_);
+    int                   rc;
+    StmtResetGuard        guard(read_all_bands_mutex_, read_all_bands_stmt_);
     std::vector<BandInfo> result;
     while (1) {
         rc = sqlite3_step(read_all_bands_stmt_);
 
         if (rc == SQLITE_ROW) {
             BandInfo info;
-            info.id         = sqlite3_column_int(read_all_bands_stmt_, 0);
+            info.id                  = sqlite3_column_int(read_all_bands_stmt_, 0);
             const unsigned char *txt = sqlite3_column_text(read_all_bands_stmt_, 1);
-            info.name            = txt ? reinterpret_cast<const char *>(txt) : "";
-            info.start_freq = sqlite3_column_int(read_all_bands_stmt_, 2);
-            info.stop_freq  = sqlite3_column_int(read_all_bands_stmt_, 3);
-            info.type     = static_cast<band_type_t>(sqlite3_column_int(read_all_bands_stmt_, 4));
+            info.name                = txt ? reinterpret_cast<const char *>(txt) : "";
+            info.start_freq          = sqlite3_column_int(read_all_bands_stmt_, 2);
+            info.stop_freq           = sqlite3_column_int(read_all_bands_stmt_, 3);
+            info.type                = static_cast<band_type_t>(sqlite3_column_int(read_all_bands_stmt_, 4));
             result.push_back(info);
         } else if (rc == SQLITE_DONE) {
             break;
@@ -370,7 +368,8 @@ bool BandParamsTable::Init(sqlite3 *database) {
 
     int rc;
 
-    rc = sqlite3_prepare_v2(db_, "SELECT val FROM band_params WHERE bands_id = :id AND name = :name", -1, &load_stmt_, 0);
+    rc = sqlite3_prepare_v2(db_, "SELECT val FROM band_params WHERE bands_id = :id AND name = :name", -1, &load_stmt_,
+                            0);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR("Failed prepare BandParamsTable::load: %s", sqlite3_errmsg(db_));
         db_ = nullptr;
@@ -387,7 +386,7 @@ bool BandParamsTable::Init(sqlite3 *database) {
         load_stmt_             = nullptr;
         load_id_param_index_   = 0;
         load_name_param_index_ = 0;
-        db_ = nullptr;
+        db_                    = nullptr;
         return false;
     }
     save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
@@ -405,14 +404,13 @@ void BandParamsTable::Shutdown() {
         sqlite3_finalize(save_stmt_);
         save_stmt_ = nullptr;
     }
-    load_id_param_index_    = 0;
-    load_name_param_index_  = 0;
-    save_id_param_index_    = 0;
-    save_name_param_index_  = 0;
-    save_val_param_index_   = 0;
-    db_ = nullptr;
+    load_id_param_index_   = 0;
+    load_name_param_index_ = 0;
+    save_id_param_index_   = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
 }
-
 
 // ---------------------------------------------------------------------------
 // ModeParamsTable
@@ -444,7 +442,7 @@ bool ModeParamsTable::Init(sqlite3 *database) {
         load_stmt_             = nullptr;
         load_id_param_index_   = 0;
         load_name_param_index_ = 0;
-        db_ = nullptr;
+        db_                    = nullptr;
         return false;
     }
     save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
@@ -462,12 +460,12 @@ void ModeParamsTable::Shutdown() {
         sqlite3_finalize(save_stmt_);
         save_stmt_ = nullptr;
     }
-    load_id_param_index_    = 0;
-    load_name_param_index_  = 0;
-    save_id_param_index_    = 0;
-    save_name_param_index_  = 0;
-    save_val_param_index_   = 0;
-    db_ = nullptr;
+    load_id_param_index_   = 0;
+    load_name_param_index_ = 0;
+    save_id_param_index_   = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -500,7 +498,7 @@ bool TransverterTable::Init(sqlite3 *database) {
         load_stmt_             = nullptr;
         load_name_param_index_ = 0;
         load_id_param_index_   = 0;
-        db_ = nullptr;
+        db_                    = nullptr;
         return false;
     }
     save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
@@ -518,14 +516,13 @@ void TransverterTable::Shutdown() {
         sqlite3_finalize(save_stmt_);
         save_stmt_ = nullptr;
     }
-    load_id_param_index_    = 0;
-    load_name_param_index_  = 0;
-    save_id_param_index_    = 0;
-    save_name_param_index_  = 0;
-    save_val_param_index_   = 0;
-    db_ = nullptr;
+    load_id_param_index_   = 0;
+    load_name_param_index_ = 0;
+    save_id_param_index_   = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
 }
-
 
 // ---------------------------------------------------------------------------
 // MemoryTable
@@ -607,12 +604,8 @@ int MemoryTable::Save(int32_t id, const char *name, int32_t value) {
     return SUCCESS;
 }
 
-bool MemoryTable::Load(int32_t id,
-                       int32_t &freq, bool &has_freq,
-                       int32_t &mode, bool &has_mode,
-                       int32_t &agc,  bool &has_agc,
-                       int32_t &att,  bool &has_att,
-                       int32_t &pre,  bool &has_pre) {
+bool MemoryTable::Load(int32_t id, int32_t &freq, bool &has_freq, int32_t &mode, bool &has_mode, int32_t &agc,
+                       bool &has_agc, int32_t &att, bool &has_att, int32_t &pre, bool &has_pre) {
     freq     = 0;
     mode     = 0;
     agc      = 0;
@@ -678,8 +671,9 @@ bool DigitalModesTable::Init(sqlite3 *database) {
     int rc;
 
     rc = sqlite3_prepare_v2(
-        db_, "SELECT label, freq, mode FROM digital_modes WHERE type = :type AND freq > :freq ORDER BY freq ASC LIMIT 1",
-        -1, &get_next_stmt_, 0);
+        db_,
+        "SELECT label, freq, mode FROM digital_modes WHERE type = :type AND freq > :freq ORDER BY freq ASC LIMIT 1", -1,
+        &get_next_stmt_, 0);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR("Failed prepare DigitalModesTable::get_next: %s", sqlite3_errmsg(db_));
         db_ = nullptr;
@@ -697,26 +691,27 @@ bool DigitalModesTable::Init(sqlite3 *database) {
         get_next_stmt_             = nullptr;
         get_next_type_param_index_ = 0;
         get_next_freq_param_index_ = 0;
-        db_ = nullptr;
+        db_                        = nullptr;
         return false;
     }
     get_closest_type_param_index_ = sqlite3_bind_parameter_index(get_closest_stmt_, ":type");
     get_closest_freq_param_index_ = sqlite3_bind_parameter_index(get_closest_stmt_, ":freq");
 
     rc = sqlite3_prepare_v2(
-        db_, "SELECT label, freq, mode FROM digital_modes WHERE type = :type AND freq < :freq ORDER BY freq DESC LIMIT 1",
+        db_,
+        "SELECT label, freq, mode FROM digital_modes WHERE type = :type AND freq < :freq ORDER BY freq DESC LIMIT 1",
         -1, &get_prev_stmt_, 0);
     if (rc != SQLITE_OK) {
         LV_LOG_ERROR("Failed prepare DigitalModesTable::get_prev: %s", sqlite3_errmsg(db_));
         sqlite3_finalize(get_next_stmt_);
         sqlite3_finalize(get_closest_stmt_);
-        get_next_stmt_               = nullptr;
-        get_closest_stmt_            = nullptr;
-        get_next_type_param_index_   = 0;
-        get_next_freq_param_index_   = 0;
+        get_next_stmt_                = nullptr;
+        get_closest_stmt_             = nullptr;
+        get_next_type_param_index_    = 0;
+        get_next_freq_param_index_    = 0;
         get_closest_type_param_index_ = 0;
         get_closest_freq_param_index_ = 0;
-        db_ = nullptr;
+        db_                           = nullptr;
         return false;
     }
     get_prev_type_param_index_ = sqlite3_bind_parameter_index(get_prev_stmt_, ":type");
@@ -737,13 +732,13 @@ void DigitalModesTable::Shutdown() {
         sqlite3_finalize(get_prev_stmt_);
         get_prev_stmt_ = nullptr;
     }
-    get_next_type_param_index_         = 0;
-    get_next_freq_param_index_         = 0;
-    get_closest_type_param_index_      = 0;
-    get_closest_freq_param_index_      = 0;
-    get_prev_type_param_index_         = 0;
-    get_prev_freq_param_index_         = 0;
-    db_ = nullptr;
+    get_next_type_param_index_    = 0;
+    get_next_freq_param_index_    = 0;
+    get_closest_type_param_index_ = 0;
+    get_closest_freq_param_index_ = 0;
+    get_prev_type_param_index_    = 0;
+    get_prev_freq_param_index_    = 0;
+    db_                           = nullptr;
 }
 
 DigitalModesTable::LoadResult DigitalModesTable::find_next(int32_t type, int32_t current_freq) {
@@ -762,11 +757,11 @@ DigitalModesTable::LoadResult DigitalModesTable::find_next(int32_t type, int32_t
     }
     rc = sqlite3_step(get_next_stmt_);
     if (rc == SQLITE_ROW) {
-        Record              record;
+        Record               record;
         const unsigned char *txt = sqlite3_column_text(get_next_stmt_, 0);
-        record.label = txt ? reinterpret_cast<const char *>(txt) : "";
-        record.freq  = sqlite3_column_int(get_next_stmt_, 1);
-        record.mode  = sqlite3_column_int(get_next_stmt_, 2);
+        record.label             = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq              = sqlite3_column_int(get_next_stmt_, 1);
+        record.mode              = sqlite3_column_int(get_next_stmt_, 2);
         // record.label is copied into a std::string: sqlite3_reset (run by the
         // guard on scope exit) invalidates the column text pointer.
         return {record, SUCCESS};
@@ -795,11 +790,11 @@ DigitalModesTable::LoadResult DigitalModesTable::find_closest(int32_t type, int3
     }
     rc = sqlite3_step(get_closest_stmt_);
     if (rc == SQLITE_ROW) {
-        Record              record;
+        Record               record;
         const unsigned char *txt = sqlite3_column_text(get_closest_stmt_, 0);
-        record.label = txt ? reinterpret_cast<const char *>(txt) : "";
-        record.freq  = sqlite3_column_int(get_closest_stmt_, 1);
-        record.mode  = sqlite3_column_int(get_closest_stmt_, 2);
+        record.label             = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq              = sqlite3_column_int(get_closest_stmt_, 1);
+        record.mode              = sqlite3_column_int(get_closest_stmt_, 2);
         return {record, SUCCESS};
     }
     if (rc == SQLITE_DONE) {
@@ -826,11 +821,11 @@ DigitalModesTable::LoadResult DigitalModesTable::find_prev(int32_t type, int32_t
     }
     rc = sqlite3_step(get_prev_stmt_);
     if (rc == SQLITE_ROW) {
-        Record              record;
+        Record               record;
         const unsigned char *txt = sqlite3_column_text(get_prev_stmt_, 0);
-        record.label = txt ? reinterpret_cast<const char *>(txt) : "";
-        record.freq  = sqlite3_column_int(get_prev_stmt_, 1);
-        record.mode  = sqlite3_column_int(get_prev_stmt_, 2);
+        record.label             = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq              = sqlite3_column_int(get_prev_stmt_, 1);
+        record.mode              = sqlite3_column_int(get_prev_stmt_, 2);
         return {record, SUCCESS};
     }
     if (rc == SQLITE_DONE) {
@@ -848,19 +843,26 @@ DigitalModesTable::LoadResult DigitalModesTable::find_prev(int32_t type, int32_t
 extern "C" void cfg_db_init(sqlite3 *database) {
     bool ok;
     ok = ParamsTable::Init(database);
-    if (!ok) exit(1);
+    if (!ok)
+        exit(1);
     ok = BandsTable::Init(database);
-    if (!ok) exit(1);
+    if (!ok)
+        exit(1);
     ok = BandParamsTable::Init(database);
-    if (!ok) exit(1);
+    if (!ok)
+        exit(1);
     ok = ModeParamsTable::Init(database);
-    if (!ok) exit(1);
+    if (!ok)
+        exit(1);
     ok = TransverterTable::Init(database);
-    if (!ok) exit(1);
+    if (!ok)
+        exit(1);
     ok = MemoryTable::Init(database);
-    if (!ok) exit(1);
+    if (!ok)
+        exit(1);
     ok = DigitalModesTable::Init(database);
-    if (!ok) exit(1);
+    if (!ok)
+        exit(1);
 }
 
 void cfg_db_shutdown() {

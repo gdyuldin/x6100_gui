@@ -17,17 +17,17 @@
 extern "C" {
 #endif
 
-typedef struct ComputedParamInt ComputedParamInt;     // = ComputedParameter<int32_t>
+typedef struct ComputedParamInt   ComputedParamInt;   // = ComputedParameter<int32_t>
 typedef struct ComputedParamFloat ComputedParamFloat; // = ComputedParameter<float>
-typedef struct ComputedParamText ComputedParamText;   // = ComputedParameter<std::string>
+typedef struct ComputedParamText  ComputedParamText;  // = ComputedParameter<std::string>
 
-void    computed_param_int_set(ComputedParamInt* p, int32_t value);
-int32_t computed_param_int_get(const ComputedParamInt* p);
+void    computed_param_int_set(ComputedParamInt *p, int32_t value);
+int32_t computed_param_int_get(const ComputedParamInt *p);
 
-void  computed_param_float_set(ComputedParamFloat* p, float value);
-float computed_param_float_get(const ComputedParamFloat* p);
+void  computed_param_float_set(ComputedParamFloat *p, float value);
+float computed_param_float_get(const ComputedParamFloat *p);
 
-void computed_param_text_set(ComputedParamText* p, const char* value);
+void computed_param_text_set(ComputedParamText *p, const char *value);
 
 #ifdef __cplusplus
 } // extern "C"

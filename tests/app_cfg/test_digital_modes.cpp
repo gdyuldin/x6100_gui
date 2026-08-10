@@ -11,7 +11,6 @@
 #include "db.h"
 #include "digital_modes.h"
 
-
 // RAII fixture: opens an in-memory database, creates the digital_modes table
 // (matching sql/params.sql) with the production preset rows and initialises
 // DigitalModesTable. Shuts the table down and closes the connection on
@@ -23,43 +22,41 @@ class DigitalModesTableFixture {
         rc = sqlite3_open(":memory:", &db_);
         REQUIRE(rc == SQLITE_OK);
 
-        const char* create_sql =
-            "CREATE TABLE digital_modes("
-            "    id     INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "    label  varchar(64) NOT NULL,"
-            "    freq   INTEGER NOT NULL CHECK(freq > 0),"
-            "    mode   INTEGER NOT NULL DEFAULT 3 CHECK(mode >= 0 AND mode <= 7),"
-            "    type   INTEGER NOT NULL,"
-            "    CONSTRAINT freq_type_uniq UNIQUE(freq, type)"
-            ");";
-        rc = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
+        const char *create_sql = "CREATE TABLE digital_modes("
+                                 "    id     INTEGER PRIMARY KEY AUTOINCREMENT,"
+                                 "    label  varchar(64) NOT NULL,"
+                                 "    freq   INTEGER NOT NULL CHECK(freq > 0),"
+                                 "    mode   INTEGER NOT NULL DEFAULT 3 CHECK(mode >= 0 AND mode <= 7),"
+                                 "    type   INTEGER NOT NULL,"
+                                 "    CONSTRAINT freq_type_uniq UNIQUE(freq, type)"
+                                 ");";
+        rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
         // Seed the table with the production presets from sql/digital_modes.csv
         // (11 FT8 rows, then 9 FT4 rows; every mode is 3 = x6100_mode_usb_dig).
-        const char* insert_sql =
-            "INSERT INTO digital_modes(label, freq, mode, type) VALUES"
-            "    ('FT8 160m', 1840000, 3, 0),"
-            "    ('FT8 80m',  3573000, 3, 0),"
-            "    ('FT8 60m',  5357000, 3, 0),"
-            "    ('FT8 40m',  7074000, 3, 0),"
-            "    ('FT8 30m',  10136000, 3, 0),"
-            "    ('FT8 20m',  14074000, 3, 0),"
-            "    ('FT8 17m',  18100000, 3, 0),"
-            "    ('FT8 15m',  21074000, 3, 0),"
-            "    ('FT8 12m',  24915000, 3, 0),"
-            "    ('FT8 10m',  28074000, 3, 0),"
-            "    ('FT8 6m',   50313000, 3, 0),"
-            "    ('FT4 80m',  3575000, 3, 1),"
-            "    ('FT4 40m',  7047500, 3, 1),"
-            "    ('FT4 30m',  10140000, 3, 1),"
-            "    ('FT4 20m',  14080000, 3, 1),"
-            "    ('FT4 17m',  18104000, 3, 1),"
-            "    ('FT4 15m',  21140000, 3, 1),"
-            "    ('FT4 12m',  24919000, 3, 1),"
-            "    ('FT4 10m',  28180000, 3, 1),"
-            "    ('FT4 6m',   50318000, 3, 1);";
-        rc = sqlite3_exec(db_, insert_sql, nullptr, nullptr, nullptr);
+        const char *insert_sql = "INSERT INTO digital_modes(label, freq, mode, type) VALUES"
+                                 "    ('FT8 160m', 1840000, 3, 0),"
+                                 "    ('FT8 80m',  3573000, 3, 0),"
+                                 "    ('FT8 60m',  5357000, 3, 0),"
+                                 "    ('FT8 40m',  7074000, 3, 0),"
+                                 "    ('FT8 30m',  10136000, 3, 0),"
+                                 "    ('FT8 20m',  14074000, 3, 0),"
+                                 "    ('FT8 17m',  18100000, 3, 0),"
+                                 "    ('FT8 15m',  21074000, 3, 0),"
+                                 "    ('FT8 12m',  24915000, 3, 0),"
+                                 "    ('FT8 10m',  28074000, 3, 0),"
+                                 "    ('FT8 6m',   50313000, 3, 0),"
+                                 "    ('FT4 80m',  3575000, 3, 1),"
+                                 "    ('FT4 40m',  7047500, 3, 1),"
+                                 "    ('FT4 30m',  10140000, 3, 1),"
+                                 "    ('FT4 20m',  14080000, 3, 1),"
+                                 "    ('FT4 17m',  18104000, 3, 1),"
+                                 "    ('FT4 15m',  21140000, 3, 1),"
+                                 "    ('FT4 12m',  24919000, 3, 1),"
+                                 "    ('FT4 10m',  28180000, 3, 1),"
+                                 "    ('FT4 6m',   50318000, 3, 1);";
+        rc                     = sqlite3_exec(db_, insert_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
         bool ok = DigitalModesTable::Init(db_);
@@ -71,14 +68,11 @@ class DigitalModesTableFixture {
         sqlite3_close(db_);
     }
 
-    sqlite3* db() {
-        return db_;
-    }
+    sqlite3 *db() { return db_; }
 
   private:
-    sqlite3* db_ = nullptr;
+    sqlite3 *db_ = nullptr;
 };
-
 
 TEST_CASE("DigitalModesTable find_next returns the next preset", "[digital_modes]") {
     DigitalModesTableFixture f;

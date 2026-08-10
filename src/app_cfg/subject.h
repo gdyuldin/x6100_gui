@@ -1,10 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <atomic>
+#include <memory>
 #include <mutex>
 #include <vector>
-#include <memory>
-#include <atomic>
-#include <algorithm>
 // #include <type_traits>
 // #include <thread>
 // #include <functional>
@@ -20,7 +20,7 @@ class Subject;
 typedef void (*observer_cb)(Subject *, void *);
 
 class Observer {
-  friend class Subject;
+    friend class Subject;
 
   protected:
     Subject *subj;
@@ -28,7 +28,7 @@ class Observer {
     void *user_data;
 
   public:
-    Observer(Subject *subj, observer_cb fn, void *user_data) : subj(subj), fn(fn), user_data(user_data) {};
+    Observer(Subject *subj, observer_cb fn, void *user_data) : subj(subj), fn(fn), user_data(user_data){};
     virtual ~Observer() = default;
     virtual void notify();
 
@@ -36,12 +36,12 @@ class Observer {
 
     // Accessor for the C-API layer: cfg_api's param_unsubscribe reads this to
     // free the per-subscription adapter stored as user_data.
-    void* get_user_data() const { return user_data; }
+    void *get_user_data() const { return user_data; }
 };
 
 // RAII-wrapper for deleting
 struct ObserverDeleter {
-    void operator()(Observer* obs) const {
+    void operator()(Observer *obs) const {
         if (obs) {
             obs->unsubscribe();
             delete obs;
@@ -61,7 +61,7 @@ class ObserverDelayed : public Observer {
     // Coalescing guard: true while one lv_async_call is pending for this
     // observer. A call to notify() while one is pending collapses into the
     // single scheduled delivery (latest value wins).
-    static void async_trampoline(void* user_data);
+    static void       async_trampoline(void *user_data);
     std::atomic<bool> scheduled_{false};
 };
 
@@ -71,9 +71,8 @@ class Subject {
     // Mutex to protect editing observers list
     std::mutex mutex_subscribe;
 
-
   protected:
-    std::vector<Observer*> observers;
+    std::vector<Observer *> observers;
 
     // Notification invariant (do not break):
     // notify_impl() copies `observers` under mutex_subscribe and then runs each
@@ -112,9 +111,9 @@ class Subject {
     static bool is_suppressed();
 
     // For C++ make sense to convert result to Subscription
-    Observer* subscribe(observer_cb fn, void *user_data=nullptr);
+    Observer *subscribe(observer_cb fn, void *user_data = nullptr);
     // For C++ make sense to convert result to Subscription
-    ObserverDelayed* subscribe_delayed(observer_cb fn, void *user_data=nullptr);
+    ObserverDelayed *subscribe_delayed(observer_cb fn, void *user_data = nullptr);
 
     void unsubscribe(Observer *o);
 };
@@ -127,16 +126,16 @@ class NotifySuppressGuard {
     NotifySuppressGuard() { Subject::push_suppress(); }
     ~NotifySuppressGuard() { Subject::pop_suppress(); }
 
-    NotifySuppressGuard(const NotifySuppressGuard&) = delete;
-    NotifySuppressGuard& operator=(const NotifySuppressGuard&) = delete;
+    NotifySuppressGuard(const NotifySuppressGuard &)            = delete;
+    NotifySuppressGuard &operator=(const NotifySuppressGuard &) = delete;
 };
 
 template <typename T> class SubjectT : public Subject {
-    T val;
+    T                  val;
     mutable std::mutex mutex_;
 
   public:
-    SubjectT(T val) : val(val) {};
+    SubjectT(T val) : val(val){};
 
     const T get() const {
         std::lock_guard lock(mutex_);
@@ -149,7 +148,7 @@ template <typename T> class SubjectT : public Subject {
             std::lock_guard lock(mutex_);
             if (val != new_val) {
                 changed = true;
-                val = new_val;
+                val     = new_val;
             }
         }
         if (changed) {

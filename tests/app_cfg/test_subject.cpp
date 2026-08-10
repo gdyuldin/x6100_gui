@@ -1,24 +1,23 @@
 // test_subject.cpp
 #include <catch2/catch_test_macros.hpp>
 
+#include "lvgl.h"    // lv_init / lv_timer_handler for delayed-notify tests
+#include "subject.h" // SubjectT, Observer, Subscription, ObserverDeleter
 #include <atomic>
 #include <thread>
 #include <vector>
-#include "subject.h"  // SubjectT, Observer, Subscription, ObserverDeleter
-#include "lvgl.h"     // lv_init / lv_timer_handler for delayed-notify tests
 
 // Subject/Observer types live in namespace appcfg (see subject.h).
 using namespace appcfg;
 
-
 struct TestObserver {
     std::vector<int> values;
-    void callback(Subject* subj, void* self) {
-        auto* s = static_cast<SubjectT<int>*>(subj);
+    void             callback(Subject *subj, void *self) {
+        auto *s = static_cast<SubjectT<int> *>(subj);
         values.push_back(s->get());
     }
-    static void staticCallback(Subject* subj, void* user) {
-        auto* self = static_cast<TestObserver*>(user);
+    static void staticCallback(Subject *subj, void *user) {
+        auto *self = static_cast<TestObserver *>(user);
         self->callback(subj, nullptr);
     }
 };
@@ -32,8 +31,8 @@ TEST_CASE("SubjectT basic get/set", "[subject]") {
 
 TEST_CASE("SubjectT set same value does not notify", "[subject]") {
     SubjectT<int> s(10);
-    TestObserver obs;
-    auto sub = s.subscribe(TestObserver::staticCallback, &obs);
+    TestObserver  obs;
+    auto          sub = s.subscribe(TestObserver::staticCallback, &obs);
     s.set(10);
     REQUIRE(obs.values.empty());
     delete sub;
@@ -41,8 +40,8 @@ TEST_CASE("SubjectT set same value does not notify", "[subject]") {
 
 TEST_CASE("SubjectT notifies observer on change", "[subject]") {
     SubjectT<int> s(0);
-    TestObserver obs;
-    auto sub = s.subscribe(TestObserver::staticCallback, &obs);
+    TestObserver  obs;
+    auto          sub = s.subscribe(TestObserver::staticCallback, &obs);
     s.set(5);
     REQUIRE(obs.values == std::vector<int>{5});
     s.set(10);
@@ -52,9 +51,9 @@ TEST_CASE("SubjectT notifies observer on change", "[subject]") {
 
 TEST_CASE("Subscription RAII unsubscribe", "[subject]") {
     SubjectT<int> s(0);
-    TestObserver obs;
+    TestObserver  obs;
     {
-        Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+        Subscription sub{s.subscribe(TestObserver::staticCallback, &obs)};
         s.set(1);
         REQUIRE(obs.values == std::vector<int>{1});
     }
@@ -64,8 +63,8 @@ TEST_CASE("Subscription RAII unsubscribe", "[subject]") {
 
 TEST_CASE("Unsubscribe observer", "[subject]") {
     SubjectT<int> s(0);
-    TestObserver obs;
-    auto sub = s.subscribe(TestObserver::staticCallback, &obs);
+    TestObserver  obs;
+    auto          sub = s.subscribe(TestObserver::staticCallback, &obs);
     s.set(5);
     REQUIRE(obs.values == std::vector<int>{5});
     sub->unsubscribe();
@@ -76,9 +75,9 @@ TEST_CASE("Unsubscribe observer", "[subject]") {
 
 TEST_CASE("Multiple observers", "[subject]") {
     SubjectT<int> s(0);
-    TestObserver obs1, obs2;
-    auto sub1 = s.subscribe(TestObserver::staticCallback, &obs1);
-    auto sub2 = s.subscribe(TestObserver::staticCallback, &obs2);
+    TestObserver  obs1, obs2;
+    auto          sub1 = s.subscribe(TestObserver::staticCallback, &obs1);
+    auto          sub2 = s.subscribe(TestObserver::staticCallback, &obs2);
     s.set(42);
     REQUIRE(obs1.values == std::vector<int>{42});
     REQUIRE(obs2.values == std::vector<int>{42});
@@ -89,8 +88,8 @@ TEST_CASE("Multiple observers", "[subject]") {
 
 TEST_CASE("Observer manual unsubscribe", "[subject]") {
     SubjectT<int> s(0);
-    TestObserver obs;
-    Observer* raw = s.subscribe(TestObserver::staticCallback, &obs);
+    TestObserver  obs;
+    Observer     *raw = s.subscribe(TestObserver::staticCallback, &obs);
     s.set(1);
     REQUIRE(obs.values.size() == 1);
     raw->unsubscribe();
@@ -100,18 +99,20 @@ TEST_CASE("Observer manual unsubscribe", "[subject]") {
 }
 
 TEST_CASE("Concurrent set/get integrity", "[subject][threads]") {
-    SubjectT<int> s(0);
-    const int iterations = 1000;
+    SubjectT<int>     s(0);
+    const int         iterations = 1000;
     std::atomic<bool> start{false};
 
     auto writer = [&]() {
-        while (!start.load()) {}
+        while (!start.load()) {
+        }
         for (int i = 0; i < iterations; ++i) {
             s.set(i);
         }
     };
     auto reader = [&]() {
-        while (!start.load()) {}
+        while (!start.load()) {
+        }
         for (int i = 0; i < iterations; ++i) {
             int val = s.get();
             REQUIRE(val >= 0);
@@ -133,8 +134,8 @@ TEST_CASE("Concurrent set/get integrity", "[subject][threads]") {
 TEST_CASE("ObserverDelayed coalesces many sets into one latest delivery", "[subject][delayed]") {
     lv_init();
     SubjectT<int> s(0);
-    TestObserver obs;
-    Subscription sub{ s.subscribe_delayed(TestObserver::staticCallback, &obs) };
+    TestObserver  obs;
+    Subscription  sub{s.subscribe_delayed(TestObserver::staticCallback, &obs)};
 
     // Several rapid sets at once: the deferred delivery must collapse.
     s.set(1);
@@ -153,10 +154,10 @@ TEST_CASE("ObserverDelayed coalesces many sets into one latest delivery", "[subj
 TEST_CASE("ObserverDelayed cancels pending delivery on destruction", "[subject][delayed]") {
     lv_init();
     SubjectT<int> s(0);
-    TestObserver obs;
+    TestObserver  obs;
     {
-        Subscription sub{ s.subscribe_delayed(TestObserver::staticCallback, &obs) };
-        s.set(5);  // schedules a deferred delivery
+        Subscription sub{s.subscribe_delayed(TestObserver::staticCallback, &obs)};
+        s.set(5); // schedules a deferred delivery
         // Subscription is destroyed here: the pending async call is cancelled
         // so the stale observer is never invoked after it is gone.
     }
@@ -169,8 +170,8 @@ TEST_CASE("ObserverDelayed cancels pending delivery on destruction", "[subject][
 
 TEST_CASE("Suppression defers notifications until pop", "[subject][suppress]") {
     SubjectT<int> s(0);
-    TestObserver obs;
-    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+    TestObserver  obs;
+    Subscription  sub{s.subscribe(TestObserver::staticCallback, &obs)};
 
     Subject::push_suppress();
     s.set(5);
@@ -184,8 +185,8 @@ TEST_CASE("Suppression defers notifications until pop", "[subject][suppress]") {
 
 TEST_CASE("Suppression deduplicates many sets of one subject", "[subject][suppress]") {
     SubjectT<int> s(0);
-    TestObserver obs;
-    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+    TestObserver  obs;
+    Subscription  sub{s.subscribe(TestObserver::staticCallback, &obs)};
 
     Subject::push_suppress();
     s.set(1);
@@ -199,10 +200,10 @@ TEST_CASE("Suppression deduplicates many sets of one subject", "[subject][suppre
 
 TEST_CASE("Suppression notifies each changed subject once", "[subject][suppress]") {
     SubjectT<int> s1(0), s2(0), s3(0);
-    TestObserver obs1, obs2, obs3;
-    Subscription sub1{ s1.subscribe(TestObserver::staticCallback, &obs1) };
-    Subscription sub2{ s2.subscribe(TestObserver::staticCallback, &obs2) };
-    Subscription sub3{ s3.subscribe(TestObserver::staticCallback, &obs3) };
+    TestObserver  obs1, obs2, obs3;
+    Subscription  sub1{s1.subscribe(TestObserver::staticCallback, &obs1)};
+    Subscription  sub2{s2.subscribe(TestObserver::staticCallback, &obs2)};
+    Subscription  sub3{s3.subscribe(TestObserver::staticCallback, &obs3)};
 
     Subject::push_suppress();
     s1.set(1);
@@ -217,29 +218,29 @@ TEST_CASE("Suppression notifies each changed subject once", "[subject][suppress]
 
 TEST_CASE("Nested suppression batches into a single delivery", "[subject][suppress]") {
     SubjectT<int> s(0);
-    TestObserver obs;
-    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+    TestObserver  obs;
+    Subscription  sub{s.subscribe(TestObserver::staticCallback, &obs)};
 
     Subject::push_suppress();
     {
         Subject::push_suppress();
         s.set(1);
-        Subject::pop_suppress();  // inner: depth still > 0, nothing delivered
+        Subject::pop_suppress(); // inner: depth still > 0, nothing delivered
         REQUIRE(obs.values.empty());
         s.set(2);
     }
-    Subject::pop_suppress();  // outer: one coalesced delivery
+    Subject::pop_suppress(); // outer: one coalesced delivery
 
     REQUIRE(obs.values == std::vector<int>{2});
 }
 
 TEST_CASE("Suppression delivers nothing for an unchanged value", "[subject][suppress]") {
     SubjectT<int> s(5);
-    TestObserver obs;
-    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+    TestObserver  obs;
+    Subscription  sub{s.subscribe(TestObserver::staticCallback, &obs)};
 
     Subject::push_suppress();
-    s.set(5);  // no change -> no notify() -> not queued
+    s.set(5); // no change -> no notify() -> not queued
     Subject::pop_suppress();
 
     REQUIRE(obs.values.empty());
@@ -247,8 +248,8 @@ TEST_CASE("Suppression delivers nothing for an unchanged value", "[subject][supp
 
 TEST_CASE("NotifySuppressGuard RAII suppresses the whole scope", "[subject][suppress]") {
     SubjectT<int> s(0);
-    TestObserver obs;
-    Subscription sub{ s.subscribe(TestObserver::staticCallback, &obs) };
+    TestObserver  obs;
+    Subscription  sub{s.subscribe(TestObserver::staticCallback, &obs)};
 
     {
         NotifySuppressGuard guard;
@@ -262,14 +263,14 @@ TEST_CASE("NotifySuppressGuard RAII suppresses the whole scope", "[subject][supp
 TEST_CASE("ObserverDelayed keeps one coalesced delivery through suppression", "[subject][suppress][delayed]") {
     lv_init();
     SubjectT<int> s(0);
-    TestObserver obs;
-    Subscription sub{ s.subscribe_delayed(TestObserver::staticCallback, &obs) };
+    TestObserver  obs;
+    Subscription  sub{s.subscribe_delayed(TestObserver::staticCallback, &obs)};
 
     Subject::push_suppress();
     s.set(1);
     s.set(2);
     Subject::pop_suppress();
-    REQUIRE(obs.values.empty());  // delivery is async
+    REQUIRE(obs.values.empty()); // delivery is async
 
     lv_timer_handler();
     REQUIRE(obs.values == std::vector<int>{2});

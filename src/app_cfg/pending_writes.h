@@ -4,14 +4,14 @@
 
 #ifdef __cplusplus
 
+#include <functional>
+#include <mutex>
 #include <string>
 #include <unordered_map>
-#include <mutex>
-#include <functional>
 
 // StorageKey, StorageKeyHash and StorageType are defined in parameter.h.
 
-class StoragePolicy;            // defined in storage_policy.h
+class StoragePolicy; // defined in storage_policy.h
 class PendingWrites;
 
 // Deferred-write buffer: stores only the last value per key. Parameter::set()
@@ -32,7 +32,7 @@ class PendingWrites;
 //     (two statements, opposite order) becomes possible. No lock cycle exists
 //     today.
 class PendingWrites : public WriteSink {
-public:
+  public:
     // Default: route flushes to the stateless production policies via
     // storage_policy_for(). Tests pass a per-type resolver so each logical
     // table can be backed by its own mock (one table = one class), matching
@@ -42,14 +42,12 @@ public:
 
     // resolver maps a StorageType to the StoragePolicy that should persist it.
     // Non-owning: the caller (test) owns the returned policies.
-    explicit PendingWrites(std::function<StoragePolicy&(StorageType)> resolver)
-        : policy_resolver_(std::move(resolver))
-    {
-    }
+    explicit PendingWrites(std::function<StoragePolicy &(StorageType)> resolver)
+        : policy_resolver_(std::move(resolver)) {}
 
-    void write(const StorageKey& key, int32_t value) override;
-    void write(const StorageKey& key, float value) override;
-    void write(const StorageKey& key, const std::string& value) override;
+    void write(const StorageKey &key, int32_t value) override;
+    void write(const StorageKey &key, float value) override;
+    void write(const StorageKey &key, const std::string &value) override;
 
     // Persist all pending changes through the StoragePolicy.
     void flush_all();
@@ -58,20 +56,20 @@ public:
     // For the flat GLOBAL table context_id is ignored; band/mode tables use it.
     void flush_storage(StorageType type, int context_id);
 
-private:
+  private:
     friend class PendingWritesTestAccess;
 
-    StoragePolicy& policy_for(StorageType type);
+    StoragePolicy &policy_for(StorageType type);
 
     // Optional per-type resolver. Empty (default) selects the stateless
     // production policies via storage_policy_for(); tests use it to inject
     // per-table mocks.
-    std::function<StoragePolicy&(StorageType)> policy_resolver_;
+    std::function<StoragePolicy &(StorageType)> policy_resolver_;
 
     std::unordered_map<StorageKey, int32_t, StorageKeyHash>     pending_ints_;
     std::unordered_map<StorageKey, float, StorageKeyHash>       pending_floats_;
     std::unordered_map<StorageKey, std::string, StorageKeyHash> pending_texts_;
-    mutable std::mutex mutex_;
+    mutable std::mutex                                          mutex_;
 };
 
 #endif

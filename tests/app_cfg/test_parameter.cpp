@@ -3,15 +3,15 @@
 // set_quiet without enqueue, DbType conversion (scaling) and DB round-trip
 // using the flat `params` table over an in-memory SQLite connection.
 
-#include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include <optional>
-#include <string>
 #include <sqlite3.h>
+#include <string>
 
-#include "parameter.h"
 #include "db.h"
+#include "parameter.h"
 #include "tests/app_cfg/mocks/mock_pending_writes.h"
 
 // Subject/Observer types live in namespace appcfg (see subject.h).
@@ -24,30 +24,32 @@ namespace {
 // tears everything down on scope exit (also cleanly shuts down the shared
 // connection so ASan/UBSan runs do not leak).
 struct TestDbGuard {
-    sqlite3* db = nullptr;
+    sqlite3 *db = nullptr;
 
     TestDbGuard() {
         REQUIRE(sqlite3_open(":memory:", &db) == SQLITE_OK);
-        char* err = nullptr;
-        int rc = sqlite3_exec(db,
-            "CREATE TABLE IF NOT EXISTS params ("
-            "  name TEXT PRIMARY KEY,"
-            "  val  TEXT NOT NULL"
-            ");"
-            "CREATE TABLE IF NOT EXISTS band_params("
-            "  bands_id INTEGER,"
-            "  name     TEXT,"
-            "  val      INTEGER,"
-            "  UNIQUE (bands_id, name) ON CONFLICT REPLACE"
-            ");"
-            "CREATE TABLE IF NOT EXISTS mode_params("
-            "  mode INTEGER,"
-            "  name TEXT,"
-            "  val  INTEGER,"
-            "  UNIQUE (mode, name) ON CONFLICT REPLACE"
-            ");", nullptr, nullptr, &err);
+        char *err = nullptr;
+        int   rc  = sqlite3_exec(db,
+                                 "CREATE TABLE IF NOT EXISTS params ("
+                                    "  name TEXT PRIMARY KEY,"
+                                    "  val  TEXT NOT NULL"
+                                    ");"
+                                    "CREATE TABLE IF NOT EXISTS band_params("
+                                    "  bands_id INTEGER,"
+                                    "  name     TEXT,"
+                                    "  val      INTEGER,"
+                                    "  UNIQUE (bands_id, name) ON CONFLICT REPLACE"
+                                    ");"
+                                    "CREATE TABLE IF NOT EXISTS mode_params("
+                                    "  mode INTEGER,"
+                                    "  name TEXT,"
+                                    "  val  INTEGER,"
+                                    "  UNIQUE (mode, name) ON CONFLICT REPLACE"
+                                    ");",
+                                 nullptr, nullptr, &err);
         REQUIRE(rc == SQLITE_OK);
-        if (err) sqlite3_free(err);
+        if (err)
+            sqlite3_free(err);
         ParamsTable::Init(db);
         BandParamsTable::Init(db);
         ModeParamsTable::Init(db);
@@ -66,7 +68,7 @@ struct TestDbGuard {
 } // namespace
 
 TEST_CASE("Parameter set validates and enqueues", "[parameter]") {
-    MockWriteSink sink;
+    MockWriteSink       sink;
     Parameter<int, int> vol("volume", 50, StorageType::GLOBAL, sink,
                             [](int v) { return v < 0 ? 0 : (v > 100 ? 100 : v); });
 
@@ -100,9 +102,9 @@ TEST_CASE("Parameter BAND set uses bound context_id", "[parameter]") {
 }
 
 TEST_CASE("Parameter validator clamps invalid values", "[parameter]") {
-    MockWriteSink sink;
+    MockWriteSink           sink;
     Parameter<int, int32_t> p("volume", 50, StorageType::GLOBAL, sink,
-        [](int value) { return value < 0 ? 0 : (value > 100 ? 100 : value); });
+                              [](int value) { return value < 0 ? 0 : (value > 100 ? 100 : value); });
 
     p.set(-10);
     REQUIRE(p.get() == 0);
@@ -115,11 +117,11 @@ TEST_CASE("Parameter validator clamps invalid values", "[parameter]") {
 }
 
 TEST_CASE("Parameter notifies and enqueues only on change", "[parameter]") {
-    MockWriteSink sink;
+    MockWriteSink           sink;
     Parameter<int, int32_t> p("volume", 50, StorageType::GLOBAL, sink);
-    int notify_count = 0;
-    auto count_cb = [](Subject* s, void* ud) { ++(*static_cast<int*>(ud)); };
-    Subscription sub(p.subscribe(count_cb, &notify_count));
+    int                     notify_count = 0;
+    auto                    count_cb     = [](Subject *s, void *ud) { ++(*static_cast<int *>(ud)); };
+    Subscription            sub(p.subscribe(count_cb, &notify_count));
 
     p.set(75);
     REQUIRE(notify_count == 1);
@@ -136,7 +138,7 @@ TEST_CASE("Parameter notifies and enqueues only on change", "[parameter]") {
 }
 
 TEST_CASE("Parameter set_quiet does not enqueue", "[parameter]") {
-    MockWriteSink sink;
+    MockWriteSink           sink;
     Parameter<int, int32_t> p("volume", 50, StorageType::GLOBAL, sink);
     p.set_quiet(80);
     REQUIRE(p.get() == 80);
@@ -144,7 +146,7 @@ TEST_CASE("Parameter set_quiet does not enqueue", "[parameter]") {
 }
 
 TEST_CASE("Parameter float->int32 scaling round-trip", "[parameter]") {
-    TestDbGuard db;
+    TestDbGuard   db;
     MockWriteSink sink;
     // Frequency in MHz stored as Hz x1000 in DB.
     Parameter<float, int32_t> p("vfoa_freq", 7.100f, StorageType::BAND, sink);
@@ -160,7 +162,7 @@ TEST_CASE("Parameter float->int32 scaling round-trip", "[parameter]") {
 }
 
 TEST_CASE("Parameter custom NTTP Scale scales enqueue and round-trip", "[parameter]") {
-    TestDbGuard db;
+    TestDbGuard   db;
     MockWriteSink sink;
     // Custom compile-time scale x10 (e.g. tenths stored as int).
     Parameter<float, int32_t, 10> p("custom_scale", 0.0f, StorageType::BAND, sink);
@@ -189,8 +191,8 @@ TEST_CASE("Parameter Scale is a compile-time constant per instantiation", "[para
 }
 
 TEST_CASE("Parameter save/load round-trip int32", "[parameter][storage]") {
-    TestDbGuard db;
-    MockWriteSink sink;
+    TestDbGuard             db;
+    MockWriteSink           sink;
     Parameter<int, int32_t> p("volume", 0, StorageType::GLOBAL, sink);
 
     p.set(90);
@@ -203,20 +205,19 @@ TEST_CASE("Parameter save/load round-trip int32", "[parameter][storage]") {
 }
 
 TEST_CASE("Parameter load NOT_FOUND keeps current value", "[parameter]") {
-    TestDbGuard db;
+    TestDbGuard   db;
     MockWriteSink sink;
-    bool not_found_called = false;
+    bool          not_found_called = false;
 
-    Parameter<int, int32_t> p("missing_param", 7, StorageType::GLOBAL, sink,
-                              {}, [&]() { not_found_called = true; });
+    Parameter<int, int32_t> p("missing_param", 7, StorageType::GLOBAL, sink, {}, [&]() { not_found_called = true; });
     REQUIRE(p.load() == NOT_FOUND);
     REQUIRE(p.get() == 7);
     REQUIRE(not_found_called);
 }
 
 TEST_CASE("Parameter save/load text round-trip", "[parameter]") {
-    TestDbGuard db;
-    MockWriteSink sink;
+    TestDbGuard                         db;
+    MockWriteSink                       sink;
     Parameter<std::string, std::string> p("callsign", "UU0XXX", StorageType::GLOBAL, sink);
 
     p.set("R2ABC");
@@ -229,9 +230,9 @@ TEST_CASE("Parameter save/load text round-trip", "[parameter]") {
 }
 
 TEST_CASE("Parameter self-registers into a ParamBase group", "[parameter]") {
-    MockWriteSink sink;
-    std::vector<ParamBase*> group;
-    Parameter<int32_t> a("a", 0, StorageType::GLOBAL, sink, nullptr, {}, &group);
+    MockWriteSink                 sink;
+    std::vector<ParamBase *>      group;
+    Parameter<int32_t>            a("a", 0, StorageType::GLOBAL, sink, nullptr, {}, &group);
     Parameter<float, int32_t, 10> b("b", 0.0f, StorageType::BAND, sink, nullptr, {}, &group);
     REQUIRE(group.size() == 2);
     REQUIRE(std::string(group[0]->db_name()) == "a");

@@ -10,13 +10,13 @@
 
 #include <vector>
 
-#include "db.h"
-#include "parameter.h"
-#include "storage_policy.h"
 #include "cfg_api.h"
 #include "computed_api.h"
-#include "settings_manager.h"
+#include "db.h"
 #include "lvgl.h"
+#include "parameter.h"
+#include "settings_manager.h"
+#include "storage_policy.h"
 
 // Subject/Observer types live in namespace appcfg (see subject.h).
 using namespace appcfg;
@@ -27,37 +27,39 @@ namespace {
 // mode_params, bands). This test process owns DB opening + table Init; the
 // cfg_api does not call cfg_db_init.
 struct TestDbGuard {
-    sqlite3* db = nullptr;
+    sqlite3 *db = nullptr;
 
     TestDbGuard() {
         REQUIRE(sqlite3_open(":memory:", &db) == SQLITE_OK);
-        char* err = nullptr;
-        int rc = sqlite3_exec(db,
-            "CREATE TABLE IF NOT EXISTS params ("
-            "  name TEXT PRIMARY KEY,"
-            "  val  INTEGER"
-            ");"
-            "CREATE TABLE IF NOT EXISTS band_params("
-            "  bands_id INTEGER,"
-            "  name     TEXT,"
-            "  val      INTEGER,"
-            "  UNIQUE (bands_id, name) ON CONFLICT REPLACE"
-            ");"
-            "CREATE TABLE IF NOT EXISTS mode_params("
-            "  mode INTEGER,"
-            "  name TEXT,"
-            "  val  INTEGER,"
-            "  UNIQUE (mode, name) ON CONFLICT REPLACE"
-            ");"
-            "CREATE TABLE IF NOT EXISTS bands("
-            "  id         INTEGER PRIMARY KEY,"
-            "  name       TEXT,"
-            "  start_freq INTEGER,"
-            "  stop_freq  INTEGER,"
-            "  type       INTEGER"
-            ");", nullptr, nullptr, &err);
+        char *err = nullptr;
+        int   rc  = sqlite3_exec(db,
+                                 "CREATE TABLE IF NOT EXISTS params ("
+                                    "  name TEXT PRIMARY KEY,"
+                                    "  val  INTEGER"
+                                    ");"
+                                    "CREATE TABLE IF NOT EXISTS band_params("
+                                    "  bands_id INTEGER,"
+                                    "  name     TEXT,"
+                                    "  val      INTEGER,"
+                                    "  UNIQUE (bands_id, name) ON CONFLICT REPLACE"
+                                    ");"
+                                    "CREATE TABLE IF NOT EXISTS mode_params("
+                                    "  mode INTEGER,"
+                                    "  name TEXT,"
+                                    "  val  INTEGER,"
+                                    "  UNIQUE (mode, name) ON CONFLICT REPLACE"
+                                    ");"
+                                    "CREATE TABLE IF NOT EXISTS bands("
+                                    "  id         INTEGER PRIMARY KEY,"
+                                    "  name       TEXT,"
+                                    "  start_freq INTEGER,"
+                                    "  stop_freq  INTEGER,"
+                                    "  type       INTEGER"
+                                    ");",
+                                 nullptr, nullptr, &err);
         REQUIRE(rc == SQLITE_OK);
-        if (err) sqlite3_free(err);
+        if (err)
+            sqlite3_free(err);
         ParamsTable::Init(db);
         BandParamsTable::Init(db);
         ModeParamsTable::Init(db);
@@ -77,23 +79,21 @@ struct TestDbGuard {
 
 struct IntObserver {
     std::vector<int32_t> values;
-    static void cb(ParamInt* p, void* user_data)
-    {
-        static_cast<IntObserver*>(user_data)->values.push_back(param_int_get(p));
+    static void          cb(ParamInt *p, void *user_data) {
+        static_cast<IntObserver *>(user_data)->values.push_back(param_int_get(p));
     }
 };
 
 // Prime the global `band_id` param and a bands row so cfg_api_init (which now
 // derives the starting band from the persisted global band_id) lands on band
 // `band_id` instead of the default.
-void prime_band(sqlite3* db, int band_id)
-{
+void prime_band(sqlite3 *db, int band_id) {
     REQUIRE(storage_policy_for(StorageType::GLOBAL).save_int(0, "band_id", band_id) == SUCCESS);
-    char* err = nullptr;
+    char *err = nullptr;
     REQUIRE(sqlite3_exec(db,
-                "INSERT INTO bands(id, name, start_freq, stop_freq, type) "
-                "VALUES(5, 'test', 5000000, 15000000, 1);",
-                nullptr, nullptr, &err) == SQLITE_OK);
+                         "INSERT INTO bands(id, name, start_freq, stop_freq, type) "
+                         "VALUES(5, 'test', 5000000, 15000000, 1);",
+                         nullptr, nullptr, &err) == SQLITE_OK);
 }
 
 } // namespace
@@ -143,7 +143,7 @@ TEST_CASE("cfg_api set runs the validator and persists via flush", "[cfg_api]") 
 TEST_CASE("cfg_fg_freq mirrors the active VFO and writes back through reverse fn", "[cfg_api]") {
     TestDbGuard db;
     prime_band(db.db, 5);
-    StoragePolicy& b = storage_policy_for(StorageType::BAND);
+    StoragePolicy &b = storage_policy_for(StorageType::BAND);
     REQUIRE(b.save_int(5, "vfoa_freq", 7'100'000) == SUCCESS);
     REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
     REQUIRE(b.save_int(5, "vfo", 0) == SUCCESS);
@@ -167,7 +167,7 @@ TEST_CASE("cfg_api immediate subscribe fires and unsubscribes", "[cfg_api]") {
     cfg_api_init(nullptr);
 
     IntObserver obs;
-    Observer* o = param_int_subscribe(cfg_volume, IntObserver::cb, &obs);
+    Observer   *o = param_int_subscribe(cfg_volume, IntObserver::cb, &obs);
     REQUIRE(o != nullptr);
 
     obs.values.clear();
@@ -187,8 +187,8 @@ TEST_CASE("cfg_api delayed subscribe coalesces into one latest callback", "[cfg_
     prime_band(db.db, 5);
     cfg_api_init(nullptr);
 
-    IntObserver obs;
-    ObserverDelayed* o = param_int_subscribe_delayed(cfg_volume, IntObserver::cb, &obs);
+    IntObserver      obs;
+    ObserverDelayed *o = param_int_subscribe_delayed(cfg_volume, IntObserver::cb, &obs);
     REQUIRE(o != nullptr);
 
     param_int_set(cfg_volume, 1);
@@ -211,8 +211,8 @@ TEST_CASE("cfg_api delayed unsubscribe cancels a pending delivery", "[cfg_api][d
     prime_band(db.db, 5);
     cfg_api_init(nullptr);
 
-    IntObserver obs;
-    ObserverDelayed* o = param_int_subscribe_delayed(cfg_volume, IntObserver::cb, &obs);
+    IntObserver      obs;
+    ObserverDelayed *o = param_int_subscribe_delayed(cfg_volume, IntObserver::cb, &obs);
 
     param_int_set(cfg_volume, 5);
     param_unsubscribe(o);

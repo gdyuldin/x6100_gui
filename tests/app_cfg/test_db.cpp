@@ -3,14 +3,13 @@
 // int32_t, float and std::string against in-memory SQLite databases. Only the
 // tables needed by the tested class are created, and each table is
 // initialised directly so the tests never touch cfg_db_init()/exit().
-#include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <sqlite3.h>
 
 #include <string>
 
 #include "db.h"
-
 
 // RAII fixture: opens an in-memory database, creates the params table and
 // initialises ParamsTable. Shuts ParamsTable down and closes the connection
@@ -23,12 +22,11 @@ class ParamsTableFixture {
         rc = sqlite3_open(":memory:", &db_);
         REQUIRE(rc == SQLITE_OK);
 
-        const char* create_sql =
-            "CREATE TABLE params("
-            "    name TEXT PRIMARY KEY ON CONFLICT REPLACE,"
-            "    val  INTEGER"
-            ");";
-        rc = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
+        const char *create_sql = "CREATE TABLE params("
+                                 "    name TEXT PRIMARY KEY ON CONFLICT REPLACE,"
+                                 "    val  INTEGER"
+                                 ");";
+        rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
         bool ok = ParamsTable::Init(db_);
@@ -40,14 +38,11 @@ class ParamsTableFixture {
         sqlite3_close(db_);
     }
 
-    sqlite3* db() {
-        return db_;
-    }
+    sqlite3 *db() { return db_; }
 
   private:
-    sqlite3* db_ = nullptr;
+    sqlite3 *db_ = nullptr;
 };
-
 
 // RAII fixture: opens an in-memory database, creates the mode_params table
 // and initialises ModeParamsTable. Shuts ModeParamsTable down and closes the
@@ -60,14 +55,13 @@ class ModeParamsTableFixture {
         rc = sqlite3_open(":memory:", &db_);
         REQUIRE(rc == SQLITE_OK);
 
-        const char* create_sql =
-            "CREATE TABLE mode_params("
-            "    mode  INTEGER,"
-            "    name  TEXT,"
-            "    val   INTEGER,"
-            "    UNIQUE(mode, name) ON CONFLICT REPLACE"
-            ");";
-        rc = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
+        const char *create_sql = "CREATE TABLE mode_params("
+                                 "    mode  INTEGER,"
+                                 "    name  TEXT,"
+                                 "    val   INTEGER,"
+                                 "    UNIQUE(mode, name) ON CONFLICT REPLACE"
+                                 ");";
+        rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
         bool ok = ModeParamsTable::Init(db_);
@@ -80,9 +74,8 @@ class ModeParamsTableFixture {
     }
 
   private:
-    sqlite3* db_ = nullptr;
+    sqlite3 *db_ = nullptr;
 };
-
 
 // ---------------------------------------------------------------------------
 // ParamsTable
@@ -174,7 +167,6 @@ TEST_CASE("ParamsTable supports re-initialisation on the same connection", "[db]
     REQUIRE(ParamsTable::Load<std::string>("reinit").value == "again");
 }
 
-
 // ---------------------------------------------------------------------------
 // ModeParamsTable
 // ---------------------------------------------------------------------------
@@ -260,7 +252,6 @@ TEST_CASE("ModeParamsTable handles an empty string value", "[db]") {
     REQUIRE(res.value.empty());
 }
 
-
 // ---------------------------------------------------------------------------
 // BandParamsTable
 // ---------------------------------------------------------------------------
@@ -275,14 +266,13 @@ class BandParamsTableFixture {
         rc = sqlite3_open(":memory:", &db_);
         REQUIRE(rc == SQLITE_OK);
 
-        const char* create_sql =
-            "CREATE TABLE band_params("
-            "    bands_id INTEGER,"
-            "    name     TEXT,"
-            "    val      INTEGER,"
-            "    UNIQUE(bands_id, name) ON CONFLICT REPLACE"
-            ");";
-        rc = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
+        const char *create_sql = "CREATE TABLE band_params("
+                                 "    bands_id INTEGER,"
+                                 "    name     TEXT,"
+                                 "    val      INTEGER,"
+                                 "    UNIQUE(bands_id, name) ON CONFLICT REPLACE"
+                                 ");";
+        rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
         bool ok = BandParamsTable::Init(db_);
@@ -295,7 +285,7 @@ class BandParamsTableFixture {
     }
 
   private:
-    sqlite3* db_ = nullptr;
+    sqlite3 *db_ = nullptr;
 };
 
 TEST_CASE("BandParamsTable saves and loads int32_t", "[db]") {
@@ -380,7 +370,6 @@ TEST_CASE("BandParamsTable handles an empty string value", "[db]") {
     REQUIRE(res.value.empty());
 }
 
-
 // ---------------------------------------------------------------------------
 // BandsTable
 // ---------------------------------------------------------------------------
@@ -400,24 +389,22 @@ class BandsTableFixture {
         rc = sqlite3_open(":memory:", &db_);
         REQUIRE(rc == SQLITE_OK);
 
-        const char* create_sql =
-            "CREATE TABLE bands("
-            "    id         INTEGER PRIMARY KEY,"
-            "    name       TEXT,"
-            "    start_freq INTEGER,"
-            "    stop_freq  INTEGER,"
-            "    type       INTEGER"
-            ");";
-        rc = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
+        const char *create_sql = "CREATE TABLE bands("
+                                 "    id         INTEGER PRIMARY KEY,"
+                                 "    name       TEXT,"
+                                 "    start_freq INTEGER,"
+                                 "    stop_freq  INTEGER,"
+                                 "    type       INTEGER"
+                                 ");";
+        rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
-        const char* insert_sql =
-            "INSERT INTO bands(id, name, start_freq, stop_freq, type) VALUES"
-            "    (1, '80m',    3500000, 4000000, 1),"
-            "    (2, '40m CW', 7000000, 7050000, 1),"
-            "    (3, '40m SSB',7050000, 7200000, 1),"
-            "    (4, 'GAP',    5000000, 6000000, 0);";
-        rc = sqlite3_exec(db_, insert_sql, nullptr, nullptr, nullptr);
+        const char *insert_sql = "INSERT INTO bands(id, name, start_freq, stop_freq, type) VALUES"
+                                 "    (1, '80m',    3500000, 4000000, 1),"
+                                 "    (2, '40m CW', 7000000, 7050000, 1),"
+                                 "    (3, '40m SSB',7050000, 7200000, 1),"
+                                 "    (4, 'GAP',    5000000, 6000000, 0);";
+        rc                     = sqlite3_exec(db_, insert_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
         bool ok = BandsTable::Init(db_);
@@ -429,12 +416,10 @@ class BandsTableFixture {
         sqlite3_close(db_);
     }
 
-    sqlite3* db() {
-        return db_;
-    }
+    sqlite3 *db() { return db_; }
 
   private:
-    sqlite3* db_ = nullptr;
+    sqlite3 *db_ = nullptr;
 };
 
 TEST_CASE("BandsTable get_by_id loads a band and its type", "[db]") {
@@ -598,7 +583,8 @@ TEST_CASE("BandsTable get_by_freq returns a gap above the last band", "[db]") {
     REQUIRE(res.value.stop_freq == 4294967295U);
 }
 
-TEST_CASE("BandsTable get_by_freq serves repeated lookups from cache", "[db]") {    BandsTableFixture f;
+TEST_CASE("BandsTable get_by_freq serves repeated lookups from cache", "[db]") {
+    BandsTableFixture f;
 
     // Load 7.1 MHz -> 40m SSB is now cached.
     BandInfoLoadResult first = BandsTable::get_by_freq(7'100'000);

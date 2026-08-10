@@ -3,11 +3,11 @@
 // round-trip save/load against an in-memory SQLite connection, per-value-type
 // correctness (int32/float/string) and context_id isolation for band/mode.
 
-#include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
 
-#include <string>
 #include <sqlite3.h>
+#include <string>
 
 #include "db.h"
 #include "parameter.h"
@@ -19,30 +19,32 @@ namespace {
 // same schema as sql/params.sql and initialises the shared prepared statements
 // of every table class used by the storage policies.
 struct TestDbGuard {
-    sqlite3* db = nullptr;
+    sqlite3 *db = nullptr;
 
     TestDbGuard() {
         REQUIRE(sqlite3_open(":memory:", &db) == SQLITE_OK);
-        char* err = nullptr;
-        int rc = sqlite3_exec(db,
-            "CREATE TABLE IF NOT EXISTS params ("
-            "  name TEXT PRIMARY KEY,"
-            "  val  INTEGER"
-            ");"
-            "CREATE TABLE IF NOT EXISTS band_params("
-            "  bands_id INTEGER,"
-            "  name     TEXT,"
-            "  val      INTEGER,"
-            "  UNIQUE (bands_id, name) ON CONFLICT REPLACE"
-            ");"
-            "CREATE TABLE IF NOT EXISTS mode_params("
-            "  mode INTEGER,"
-            "  name TEXT,"
-            "  val  INTEGER,"
-            "  UNIQUE (mode, name) ON CONFLICT REPLACE"
-            ");", nullptr, nullptr, &err);
+        char *err = nullptr;
+        int   rc  = sqlite3_exec(db,
+                                 "CREATE TABLE IF NOT EXISTS params ("
+                                    "  name TEXT PRIMARY KEY,"
+                                    "  val  INTEGER"
+                                    ");"
+                                    "CREATE TABLE IF NOT EXISTS band_params("
+                                    "  bands_id INTEGER,"
+                                    "  name     TEXT,"
+                                    "  val      INTEGER,"
+                                    "  UNIQUE (bands_id, name) ON CONFLICT REPLACE"
+                                    ");"
+                                    "CREATE TABLE IF NOT EXISTS mode_params("
+                                    "  mode INTEGER,"
+                                    "  name TEXT,"
+                                    "  val  INTEGER,"
+                                    "  UNIQUE (mode, name) ON CONFLICT REPLACE"
+                                    ");",
+                                 nullptr, nullptr, &err);
         REQUIRE(rc == SQLITE_OK);
-        if (err) sqlite3_free(err);
+        if (err)
+            sqlite3_free(err);
         ParamsTable::Init(db);
         BandParamsTable::Init(db);
         ModeParamsTable::Init(db);
@@ -61,8 +63,8 @@ struct TestDbGuard {
 } // namespace
 
 TEST_CASE("GlobalStorage round-trip int32/float/string", "[storage]") {
-    TestDbGuard db;
-    StoragePolicy& policy = storage_policy_for(StorageType::GLOBAL);
+    TestDbGuard    db;
+    StoragePolicy &policy = storage_policy_for(StorageType::GLOBAL);
 
     REQUIRE(policy.save_int(0, "volume", 75) == SUCCESS);
     auto v_int = policy.load_int(0, "volume");
@@ -81,8 +83,8 @@ TEST_CASE("GlobalStorage round-trip int32/float/string", "[storage]") {
 }
 
 TEST_CASE("GlobalStorage load of missing key returns nullopt", "[storage]") {
-    TestDbGuard db;
-    StoragePolicy& policy = storage_policy_for(StorageType::GLOBAL);
+    TestDbGuard    db;
+    StoragePolicy &policy = storage_policy_for(StorageType::GLOBAL);
 
     REQUIRE_FALSE(policy.load_int(0, "no_such_param").has_value());
     REQUIRE_FALSE(policy.load_float(0, "no_such_param").has_value());
@@ -90,8 +92,8 @@ TEST_CASE("GlobalStorage load of missing key returns nullopt", "[storage]") {
 }
 
 TEST_CASE("BandStorage round-trip isolates context_id", "[storage]") {
-    TestDbGuard db;
-    StoragePolicy& policy = storage_policy_for(StorageType::BAND);
+    TestDbGuard    db;
+    StoragePolicy &policy = storage_policy_for(StorageType::BAND);
 
     REQUIRE(policy.save_int(5, "vfoa_freq", 14'200'000) == SUCCESS);
     REQUIRE(policy.save_int(6, "vfoa_freq", 14'300'000) == SUCCESS);
@@ -108,8 +110,8 @@ TEST_CASE("BandStorage round-trip isolates context_id", "[storage]") {
 }
 
 TEST_CASE("BandStorage round-trip float and string", "[storage]") {
-    TestDbGuard db;
-    StoragePolicy& policy = storage_policy_for(StorageType::BAND);
+    TestDbGuard    db;
+    StoragePolicy &policy = storage_policy_for(StorageType::BAND);
 
     REQUIRE(policy.save_float(5, "tone", 600.0f) == SUCCESS);
     auto v_float = policy.load_float(5, "tone");
@@ -123,8 +125,8 @@ TEST_CASE("BandStorage round-trip float and string", "[storage]") {
 }
 
 TEST_CASE("ModeStorage round-trip with mode context_id", "[storage]") {
-    TestDbGuard db;
-    StoragePolicy& policy = storage_policy_for(StorageType::MODE);
+    TestDbGuard    db;
+    StoragePolicy &policy = storage_policy_for(StorageType::MODE);
 
     REQUIRE(policy.save_int(3, "squelch", 12) == SUCCESS);
     auto v = policy.load_int(3, "squelch");

@@ -4,7 +4,7 @@
 #include <cstdio>
 
 extern "C" {
-    #include <aether_radio/x6100_control/control.h>
+#include <aether_radio/x6100_control/control.h>
 }
 
 // Subject/Observer types live in namespace appcfg (see subject.h).
@@ -34,68 +34,48 @@ SettingsManager::SettingsManager()
       // Sources (VFO frequency params + current_vfo) are bound once in
       // init_load() via ComputedParameter::bind().
       // The background VFO frequency is the complement of the active one.
-      cp_fg_freq(
-          [this]() { return fg_freq_get(); },
-          [this](int32_t freq) { fg_freq_set(freq); }),
-      cp_bg_freq(
-          [this]() { return bg_freq_get(); },
-          [this](int32_t freq) { bg_freq_set(freq); }),
+      cp_fg_freq([this]() { return fg_freq_get(); }, [this](int32_t freq) { fg_freq_set(freq); }),
+      cp_bg_freq([this]() { return bg_freq_get(); }, [this](int32_t freq) { bg_freq_set(freq); }),
 
       // Computed current mode: the mode of the active VFO of the current band.
       // Analogous to cp_fg_freq. Sources (VFO mode params + current_vfo) are
       // bound once in init_load(); an observer on this subject triggers
       // switch_mode() whenever the current mode changes.
-      cp_cur_mode(
-          [this]() { return cur_mode_get(); },
-          [this](int32_t mode) { cur_mode_set(mode); }),
+      cp_cur_mode([this]() { return cur_mode_get(); }, [this](int32_t mode) { cur_mode_set(mode); }),
 
       // Computed current VFO's att/pre/agc. The compute fns read the active
       // VFO's value; the reverse fns write back into it.
-      cp_cur_att(
-          [this]() { return cur_att_get(); },
-          [this](int32_t att) { cur_att_set(att); }),
-      cp_cur_pre(
-          [this]() { return cur_pre_get(); },
-          [this](int32_t pre) { cur_pre_set(pre); }),
-      cp_cur_agc(
-          [this]() { return cur_agc_get(); },
-          [this](int32_t agc) { cur_agc_set(agc); }),
+      cp_cur_att([this]() { return cur_att_get(); }, [this](int32_t att) { cur_att_set(att); }),
+      cp_cur_pre([this]() { return cur_pre_get(); }, [this](int32_t pre) { cur_pre_set(pre); }),
+      cp_cur_agc([this]() { return cur_agc_get(); }, [this](int32_t agc) { cur_agc_set(agc); }),
 
       // Computed current filter params. The compute fns derive the effective
       // filter edges/bw from the MODE-scoped filter params (and key_tone for
       // CW) according to the active mode's category; the reverse fns write
       // back into filter_low/filter_high. Sources are bound in init_load().
-      cp_cur_filter_low(
-          [this]() { return cur_filter_low_compute(); },
-          [this](int32_t v) { cur_filter_low_reverse(v); }),
-      cp_cur_filter_high(
-          [this]() { return cur_filter_high_compute(); },
-          [this](int32_t v) { cur_filter_high_reverse(v); }),
-      cp_cur_filter_bw(
-          [this]() { return cur_filter_bw_compute(); },
-          [this](int32_t v) { cur_filter_bw_reverse(v); })
+      cp_cur_filter_low([this]() { return cur_filter_low_compute(); },
+                        [this](int32_t v) { cur_filter_low_reverse(v); }),
+      cp_cur_filter_high([this]() { return cur_filter_high_compute(); },
+                         [this](int32_t v) { cur_filter_high_reverse(v); }),
+      cp_cur_filter_bw([this]() { return cur_filter_bw_compute(); }, [this](int32_t v) { cur_filter_bw_reverse(v); })
 
 {
     // All Parameter members self-register via NSDMI in the header — no
     // registration calls needed here. The constructor is empty.
 }
 
-SettingsManager::~SettingsManager()
-{
+SettingsManager::~SettingsManager() {
     stop_flush_thread();
 }
 
-void SettingsManager::init_load(void (*on_db_error)(const char* msg))
-{
+void SettingsManager::init_load(void (*on_db_error)(const char *msg)) {
     // Global params (flat `params` table; context_id is ignored). The unified
     // ParamBase registry now includes p_pwr (float), p_encoder_bind (text) and
     // p_band_id (the persisted current band), so the non-int32 special cases
     // no longer need explicit load calls.
-    for (ParamBase* p : global_params_)
-    {
+    for (ParamBase *p : global_params_) {
         int rc = p->load(0);
-        if (rc != SUCCESS && rc != NOT_FOUND && on_db_error)
-        {
+        if (rc != SUCCESS && rc != NOT_FOUND && on_db_error) {
             char msg[64];
             std::snprintf(msg, sizeof(msg), "Failed to load %s", p->db_name());
             on_db_error(msg);
@@ -128,7 +108,6 @@ void SettingsManager::init_load(void (*on_db_error)(const char* msg))
     // when p_band_id is set. Subscribed after the initial load so the restore
     // of the persisted band does not trigger a switch.
     band_id_obs_ = Subscription(p_band_id.subscribe(switch_band_observer_cb, this));
-
 
     // Bind the computed fg_freq to its sources (VFO frequency params +
     // current_vfo) so it recomputes automatically when they change.
@@ -197,8 +176,7 @@ void SettingsManager::init_load(void (*on_db_error)(const char* msg))
     cp_cur_filter_bw.recompute();
 }
 
-void SettingsManager::switch_band(int new_band_id, bool implicit)
-{
+void SettingsManager::switch_band(int new_band_id, bool implicit) {
     // Re-entrancy guard: an explicit switch triggered by setting p_band_id calls
     // switch_band(implicit=false). If that happens from inside this call (the
     // implicit path sets p_band_id below, firing the observer), return early so
@@ -240,8 +218,7 @@ void SettingsManager::switch_band(int new_band_id, bool implicit)
     band_switch_active_ = false;
 }
 
-void SettingsManager::switch_mode(int new_mode_id)
-{
+void SettingsManager::switch_mode(int new_mode_id) {
     // Batch the mode switch into a single notification round: the mode-param
     // loads (set_quiet) and the freq/filter recomputes below are coalesced so
     // every changed subject fires exactly one callback.
@@ -268,28 +245,22 @@ void SettingsManager::switch_mode(int new_mode_id)
     cp_cur_filter_bw.recompute();
 }
 
-void SettingsManager::flush_all()
-{
+void SettingsManager::flush_all() {
     pending_writes_.flush_all();
 }
 
-void SettingsManager::flush_storage(StorageType type, int context_id)
-{
+void SettingsManager::flush_storage(StorageType type, int context_id) {
     pending_writes_.flush_storage(type, context_id);
 }
 
-void SettingsManager::cfg_band_vfo_copy()
-{
-    if (p_band_current_vfo.get() == X6100_VFO_A)
-    {
+void SettingsManager::cfg_band_vfo_copy() {
+    if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfob_freq.set(p_band_vfoa_freq.get());
         p_band_vfob_mode.set(p_band_vfoa_mode.get());
         p_band_vfob_agc.set(p_band_vfoa_agc.get());
         p_band_vfob_att.set(p_band_vfoa_att.get());
         p_band_vfob_pre.set(p_band_vfoa_pre.get());
-    }
-    else
-    {
+    } else {
         p_band_vfoa_freq.set(p_band_vfob_freq.get());
         p_band_vfoa_mode.set(p_band_vfob_mode.get());
         p_band_vfoa_agc.set(p_band_vfob_agc.get());
@@ -298,13 +269,12 @@ void SettingsManager::cfg_band_vfo_copy()
     }
 }
 
-void SettingsManager::start_flush_thread()
-{
+void SettingsManager::start_flush_thread() {
     if (flush_thread_running_) {
         return;
     }
     flush_thread_running_ = true;
-    flush_thread_ = std::thread([this]() {
+    flush_thread_         = std::thread([this]() {
         std::unique_lock<std::mutex> lock(flush_mutex_);
         while (flush_thread_running_) {
             // Wake every 3 seconds (or on notify) and persist pending changes.
@@ -317,8 +287,7 @@ void SettingsManager::start_flush_thread()
     });
 }
 
-void SettingsManager::stop_flush_thread()
-{
+void SettingsManager::stop_flush_thread() {
     if (!flush_thread_running_) {
         return;
     }
@@ -332,14 +301,12 @@ void SettingsManager::stop_flush_thread()
     }
 }
 
-int32_t SettingsManager::fg_freq_get()
-{
+int32_t SettingsManager::fg_freq_get() {
     // Front-panel frequency = frequency of the active VFO of the current band.
     return p_band_current_vfo.get() == 0 ? p_band_vfoa_freq.get() : p_band_vfob_freq.get();
 }
 
-void SettingsManager::fg_freq_set(int32_t freq)
-{
+void SettingsManager::fg_freq_set(int32_t freq) {
     // Clamp to the nearest hardware-usable frequency before writing back, so
     // invalid frequencies never reach the VFO params.
     freq = clamp_to_valid_hw_freq(freq);
@@ -351,14 +318,12 @@ void SettingsManager::fg_freq_set(int32_t freq)
     }
 }
 
-int32_t SettingsManager::cur_mode_get()
-{
+int32_t SettingsManager::cur_mode_get() {
     // Current mode = mode of the active VFO of the current band.
     return p_band_current_vfo.get() == 0 ? p_band_vfoa_mode.get() : p_band_vfob_mode.get();
 }
 
-void SettingsManager::cur_mode_set(int32_t mode)
-{
+void SettingsManager::cur_mode_set(int32_t mode) {
     // Write back into the active VFO's mode param.
     if (p_band_current_vfo.get() == 0) {
         p_band_vfoa_mode.set(mode);
@@ -367,13 +332,11 @@ void SettingsManager::cur_mode_set(int32_t mode)
     }
 }
 
-int32_t SettingsManager::cur_att_get()
-{
+int32_t SettingsManager::cur_att_get() {
     return p_band_current_vfo.get() == X6100_VFO_A ? p_band_vfoa_att.get() : p_band_vfob_att.get();
 }
 
-void SettingsManager::cur_att_set(int32_t att)
-{
+void SettingsManager::cur_att_set(int32_t att) {
     if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfoa_att.set(att);
     } else {
@@ -381,13 +344,11 @@ void SettingsManager::cur_att_set(int32_t att)
     }
 }
 
-int32_t SettingsManager::cur_pre_get()
-{
+int32_t SettingsManager::cur_pre_get() {
     return p_band_current_vfo.get() == X6100_VFO_A ? p_band_vfoa_pre.get() : p_band_vfob_pre.get();
 }
 
-void SettingsManager::cur_pre_set(int32_t pre)
-{
+void SettingsManager::cur_pre_set(int32_t pre) {
     if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfoa_pre.set(pre);
     } else {
@@ -395,13 +356,11 @@ void SettingsManager::cur_pre_set(int32_t pre)
     }
 }
 
-int32_t SettingsManager::cur_agc_get()
-{
+int32_t SettingsManager::cur_agc_get() {
     return p_band_current_vfo.get() == X6100_VFO_A ? p_band_vfoa_agc.get() : p_band_vfob_agc.get();
 }
 
-void SettingsManager::cur_agc_set(int32_t agc)
-{
+void SettingsManager::cur_agc_set(int32_t agc) {
     if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfoa_agc.set(agc);
     } else {
@@ -409,13 +368,11 @@ void SettingsManager::cur_agc_set(int32_t agc)
     }
 }
 
-int32_t SettingsManager::bg_freq_get()
-{
+int32_t SettingsManager::bg_freq_get() {
     return p_band_current_vfo.get() == X6100_VFO_A ? p_band_vfob_freq.get() : p_band_vfoa_freq.get();
 }
 
-void SettingsManager::bg_freq_set(int32_t freq)
-{
+void SettingsManager::bg_freq_set(int32_t freq) {
     if (p_band_current_vfo.get() == X6100_VFO_A) {
         p_band_vfob_freq.set(freq);
     } else {
@@ -423,28 +380,25 @@ void SettingsManager::bg_freq_set(int32_t freq)
     }
 }
 
-int32_t SettingsManager::clamp_to_valid_hw_freq(int32_t freq) const
-{
+int32_t SettingsManager::clamp_to_valid_hw_freq(int32_t freq) const {
     if (is_valid_hw_freq(freq)) {
         return freq;
     }
 
     // Boundaries of every hardware-usable frequency range.
     const int32_t bounds[] = {
-        HF_MIN_FREQ,                     // HF lower limit
-        HF_MAX_FREQ,                     // HF upper limit
-        p_transverter_0_from.get(),      // transverter 0 [from, to]
+        HF_MIN_FREQ,                // HF lower limit
+        HF_MAX_FREQ,                // HF upper limit
+        p_transverter_0_from.get(), // transverter 0 [from, to]
         p_transverter_0_to.get(),
-        p_transverter_1_from.get(),      // transverter 1 [from, to]
+        p_transverter_1_from.get(), // transverter 1 [from, to]
         p_transverter_1_to.get(),
     };
 
     int32_t nearest = bounds[0];
-    int64_t best    = freq > bounds[0] ? static_cast<int64_t>(freq) - bounds[0]
-                                       : static_cast<int64_t>(bounds[0]) - freq;
+    int64_t best = freq > bounds[0] ? static_cast<int64_t>(freq) - bounds[0] : static_cast<int64_t>(bounds[0]) - freq;
     for (const int32_t b : bounds) {
-        const int64_t d = freq > b ? static_cast<int64_t>(freq) - b
-                                   : static_cast<int64_t>(b) - freq;
+        const int64_t d = freq > b ? static_cast<int64_t>(freq) - b : static_cast<int64_t>(b) - freq;
         if (d < best) {
             best    = d;
             nearest = b;
@@ -453,8 +407,7 @@ int32_t SettingsManager::clamp_to_valid_hw_freq(int32_t freq) const
     return nearest;
 }
 
-SettingsManager::FilterMode SettingsManager::filter_mode(int32_t mode) const
-{
+SettingsManager::FilterMode SettingsManager::filter_mode(int32_t mode) const {
     switch (mode) {
         case x6100_mode_lsb:
         case x6100_mode_lsb_dig:
@@ -473,8 +426,7 @@ SettingsManager::FilterMode SettingsManager::filter_mode(int32_t mode) const
     }
 }
 
-int32_t SettingsManager::cur_filter_low_compute()
-{
+int32_t SettingsManager::cur_filter_low_compute() {
     // Current mode category drives the edge mapping. The filter params are
     // MODE-scoped to cp_cur_mode.get() (matches mode_id_ at steady state).
     int32_t low;
@@ -492,8 +444,7 @@ int32_t SettingsManager::cur_filter_low_compute()
     }
 }
 
-int32_t SettingsManager::cur_filter_high_compute()
-{
+int32_t SettingsManager::cur_filter_high_compute() {
     int32_t low;
     switch (filter_mode(cp_cur_mode.get())) {
         case FilterMode::SSB:
@@ -508,13 +459,11 @@ int32_t SettingsManager::cur_filter_high_compute()
     }
 }
 
-int32_t SettingsManager::cur_filter_bw_compute()
-{
+int32_t SettingsManager::cur_filter_bw_compute() {
     return cp_cur_filter_high.get() - cp_cur_filter_low.get();
 }
 
-void SettingsManager::cur_filter_low_reverse(int32_t v)
-{
+void SettingsManager::cur_filter_low_reverse(int32_t v) {
     switch (filter_mode(cp_cur_mode.get())) {
         case FilterMode::SSB:
             p_mode_filter_low.set(v);
@@ -530,8 +479,7 @@ void SettingsManager::cur_filter_low_reverse(int32_t v)
     }
 }
 
-void SettingsManager::cur_filter_high_reverse(int32_t v)
-{
+void SettingsManager::cur_filter_high_reverse(int32_t v) {
     switch (filter_mode(cp_cur_mode.get())) {
         case FilterMode::SSB:
         case FilterMode::AM:
@@ -544,8 +492,7 @@ void SettingsManager::cur_filter_high_reverse(int32_t v)
     }
 }
 
-void SettingsManager::cur_filter_bw_reverse(int32_t v)
-{
+void SettingsManager::cur_filter_bw_reverse(int32_t v) {
     v = clamp_val(v, 10, 6000);
     switch (filter_mode(cp_cur_mode.get())) {
         case FilterMode::AM:
@@ -553,18 +500,19 @@ void SettingsManager::cur_filter_bw_reverse(int32_t v)
             // bw == filter_high in AM/FM (low is 0).
             p_mode_filter_high.set(v);
             break;
-        case FilterMode::SSB: {
-            const int32_t mid = (p_mode_filter_low.get() + p_mode_filter_high.get()) / 2;
-            int32_t low = mid - v / 2;
-            int32_t high = mid + v / 2;
-            if (low < 0) {
-                low = 0;
-                high = v;
+        case FilterMode::SSB:
+            {
+                const int32_t mid  = (p_mode_filter_low.get() + p_mode_filter_high.get()) / 2;
+                int32_t       low  = mid - v / 2;
+                int32_t       high = mid + v / 2;
+                if (low < 0) {
+                    low  = 0;
+                    high = v;
+                }
+                p_mode_filter_low.set(low);
+                p_mode_filter_high.set(high);
+                break;
             }
-            p_mode_filter_low.set(low);
-            p_mode_filter_high.set(high);
-            break;
-        }
         case FilterMode::CW:
             // bw == filter_high in CW (the +/- offset cancels).
             p_mode_filter_high.set(v);
@@ -572,51 +520,44 @@ void SettingsManager::cur_filter_bw_reverse(int32_t v)
     }
 }
 
-void SettingsManager::switch_mode_observer_cb(Subject* /*subj*/, void* user_data)
-{
+void SettingsManager::switch_mode_observer_cb(Subject * /*subj*/, void *user_data) {
     // Whenever the current mode changes, switch the mode context so the
     // MODE-scoped params track the active VFO's mode. switch_mode() only loads
     // MODE params (set_quiet) and recomputes cp_fg_freq, never cp_cur_mode, so
     // this does not recurse.
-    SettingsManager* mgr = static_cast<SettingsManager*>(user_data);
+    SettingsManager *mgr = static_cast<SettingsManager *>(user_data);
     mgr->switch_mode(mgr->cp_cur_mode.get());
 }
 
-void SettingsManager::vfo_freq_change_cb(Subject* subj, void* user_data)
-{
+void SettingsManager::vfo_freq_change_cb(Subject *subj, void *user_data) {
     // Whenever a VFO frequency changes, check whether it landed in a different
     // band. If so, switch bands implicitly: the frequency that caused the
     // switch is preserved (it was just tuned), and the new band's mode/att/pre/
     // agc are loaded. Triggered from both cp_fg_freq.set() (via fg_freq_set ->
     // active VFO freq .set()) and direct p_band_vfo*_freq.set().
-    SettingsManager* mgr = static_cast<SettingsManager*>(user_data);
-    auto* freq_subj = static_cast<SubjectT<int32_t>*>(subj);
-    const int32_t freq = freq_subj->get();
-    BandInfoLoadResult result = BandsTable::get_by_freq(static_cast<uint32_t>(freq));
-    if (result.rc == SUCCESS && result.value.id != BAND_UNDEFINED &&
-        result.value.id != mgr->band_id_)
-    {
+    SettingsManager   *mgr       = static_cast<SettingsManager *>(user_data);
+    auto              *freq_subj = static_cast<SubjectT<int32_t> *>(subj);
+    const int32_t      freq      = freq_subj->get();
+    BandInfoLoadResult result    = BandsTable::get_by_freq(static_cast<uint32_t>(freq));
+    if (result.rc == SUCCESS && result.value.id != BAND_UNDEFINED && result.value.id != mgr->band_id_) {
         mgr->switch_band(result.value.id, true);
     }
 }
 
-void SettingsManager::switch_band_observer_cb(Subject* /*subj*/, void* user_data)
-{
+void SettingsManager::switch_band_observer_cb(Subject * /*subj*/, void *user_data) {
     // Whenever p_band_id changes, switch bands explicitly (implicit=false): the
     // caller set p_band_id to select a new band. The active VFO reference and
     // both VFO frequencies are loaded from the new band. switch_band() sets
     // p_band_id to the same value (no-op), and the re-entrancy guard prevents a
     // nested switch when this fires from the implicit path.
-    SettingsManager* mgr = static_cast<SettingsManager*>(user_data);
+    SettingsManager *mgr = static_cast<SettingsManager *>(user_data);
     mgr->switch_band(mgr->p_band_id.get(), false);
 }
 
-void SettingsManager::set_band_context(int band_id)
-{
+void SettingsManager::set_band_context(int band_id) {
     // Unified band registry now includes p_band_dac_offset (float), so the
     // explicit set_context_id call is no longer needed.
-    for (ParamBase* p : band_params_)
-    {
+    for (ParamBase *p : band_params_) {
         p->set_context_id(band_id);
     }
     // The four VFO params are not in the generic registry (see load_band_vfo),
@@ -634,18 +575,14 @@ void SettingsManager::set_band_context(int band_id)
     p_band_vfob_agc.set_context_id(band_id);
 }
 
-void SettingsManager::set_mode_context(int mode_id)
-{
-    for (ParamBase* p : mode_params_)
-    {
+void SettingsManager::set_mode_context(int mode_id) {
+    for (ParamBase *p : mode_params_) {
         p->set_context_id(mode_id);
     }
 }
 
-void SettingsManager::load_band_all(int band_id)
-{
-    for (ParamBase* p : band_params_)
-    {
+void SettingsManager::load_band_all(int band_id) {
+    for (ParamBase *p : band_params_) {
         p->load(band_id);
     }
 
@@ -654,24 +591,19 @@ void SettingsManager::load_band_all(int band_id)
     load_band_vfo(band_id, false);
 }
 
-void SettingsManager::load_mode_all(int mode_id)
-{
-    for (ParamBase* p : mode_params_)
-    {
+void SettingsManager::load_mode_all(int mode_id) {
+    for (ParamBase *p : mode_params_) {
         p->load(mode_id);
     }
 }
 
-void SettingsManager::load_band_switch(int new_band_id, bool implicit)
-{
+void SettingsManager::load_band_switch(int new_band_id, bool implicit) {
     // A switch never reloads current_vfo (the active VFO reference stays). The
     // generic registry holds current_vfo + if_shift + dac_offset; this loop
     // loads if_shift and dac_offset, skipping current_vfo. The VFO params
     // (and the implicit active-VFO skip) are handled by load_band_vfo.
-    for (ParamBase* p : band_params_)
-    {
-        if (p == &p_band_current_vfo)
-        {
+    for (ParamBase *p : band_params_) {
+        if (p == &p_band_current_vfo) {
             continue;
         }
         p->load(new_band_id);
@@ -679,15 +611,14 @@ void SettingsManager::load_band_switch(int new_band_id, bool implicit)
     load_band_vfo(new_band_id, implicit);
 }
 
-void SettingsManager::load_band_vfo(int band_id, bool implicit)
-{
+void SettingsManager::load_band_vfo(int band_id, bool implicit) {
     const int active_vfo = p_band_current_vfo.get();
 
     // BandInfo drives the clamp/restore rules. A missing or undefined band
     // disables clamping; vfoa_freq then falls back to a default restore.
-    const int32_t default_freq = 12000000;
-    BandInfoLoadResult band = BandsTable::get_by_id(band_id);
-    const bool have_band = (band.rc == SUCCESS) && (band.value.id != BAND_UNDEFINED);
+    const int32_t      default_freq = 12000000;
+    BandInfoLoadResult band         = BandsTable::get_by_id(band_id);
+    const bool         have_band    = (band.rc == SUCCESS) && (band.value.id != BAND_UNDEFINED);
 
     // On an implicit switch only the active VFO's FREQUENCY is preserved (the
     // value that caused the switch); its mode/att/pre/agc are still loaded from
@@ -767,21 +698,19 @@ void SettingsManager::load_band_vfo(int band_id, bool implicit)
     }
 }
 
-int32_t SettingsManager::resolve_default_mode(int32_t freq)
-{
+int32_t SettingsManager::resolve_default_mode(int32_t freq) {
     return freq < 10000000 ? x6100_mode_lsb : x6100_mode_usb;
 }
 
-std::string SettingsManager::make_default_encoder_bind()
-{
+std::string SettingsManager::make_default_encoder_bind() {
     std::string s(EB_CTRL_FAST_ACCESS_LAST, static_cast<char>(EB_BIND_NONE));
 
-    s[EB_CTRL_VOL]             = static_cast<char>(EB_BIND_VOL);
-    s[EB_CTRL_RFG]             = static_cast<char>(EB_BIND_VOL);
-    s[EB_CTRL_FILTER_LOW]      = static_cast<char>(EB_BIND_VOL);
-    s[EB_CTRL_FILTER_HIGH]     = static_cast<char>(EB_BIND_VOL);
-    s[EB_CTRL_PWR]             = static_cast<char>(EB_BIND_VOL);
-    s[EB_CTRL_HMIC]            = static_cast<char>(EB_BIND_VOL);
+    s[EB_CTRL_VOL]         = static_cast<char>(EB_BIND_VOL);
+    s[EB_CTRL_RFG]         = static_cast<char>(EB_BIND_VOL);
+    s[EB_CTRL_FILTER_LOW]  = static_cast<char>(EB_BIND_VOL);
+    s[EB_CTRL_FILTER_HIGH] = static_cast<char>(EB_BIND_VOL);
+    s[EB_CTRL_PWR]         = static_cast<char>(EB_BIND_VOL);
+    s[EB_CTRL_HMIC]        = static_cast<char>(EB_BIND_VOL);
 
     s[EB_CTRL_SPECTRUM_FACTOR] = static_cast<char>(EB_BIND_MFK);
     s[EB_CTRL_DNF]             = static_cast<char>(EB_BIND_MFK);

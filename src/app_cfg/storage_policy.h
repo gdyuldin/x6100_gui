@@ -30,78 +30,78 @@ enum class StorageType;
 // the "one table = one class" rule: each policy is a thin mapper and the
 // virtual dispatch is only needed by tests.
 class StoragePolicy {
-public:
+  public:
     virtual ~StoragePolicy() = default;
 
     // int32_t
-    virtual int  save_int(int context_id, const char* name, int32_t value) = 0;
-    virtual std::optional<int32_t> load_int(int context_id, const char* name) = 0;
+    virtual int                    save_int(int context_id, const char *name, int32_t value) = 0;
+    virtual std::optional<int32_t> load_int(int context_id, const char *name)                = 0;
 
     // float
-    virtual int  save_float(int context_id, const char* name, float value) = 0;
-    virtual std::optional<float> load_float(int context_id, const char* name) = 0;
+    virtual int                  save_float(int context_id, const char *name, float value) = 0;
+    virtual std::optional<float> load_float(int context_id, const char *name)              = 0;
 
     // std::string
-    virtual int  save_text(int context_id, const char* name, const std::string& value) = 0;
-    virtual std::optional<std::string> load_text(int context_id, const char* name) = 0;
+    virtual int                        save_text(int context_id, const char *name, const std::string &value) = 0;
+    virtual std::optional<std::string> load_text(int context_id, const char *name)                           = 0;
 };
 
 // Stateless adapter for the flat GLOBAL `params` table (context_id unused).
 class GlobalStorage : public StoragePolicy {
-public:
-    int  save_int(int context_id, const char* name, int32_t value) override;
-    std::optional<int32_t> load_int(int context_id, const char* name) override;
+  public:
+    int                    save_int(int context_id, const char *name, int32_t value) override;
+    std::optional<int32_t> load_int(int context_id, const char *name) override;
 
-    int  save_float(int context_id, const char* name, float value) override;
-    std::optional<float> load_float(int context_id, const char* name) override;
+    int                  save_float(int context_id, const char *name, float value) override;
+    std::optional<float> load_float(int context_id, const char *name) override;
 
-    int  save_text(int context_id, const char* name, const std::string& value) override;
-    std::optional<std::string> load_text(int context_id, const char* name) override;
+    int                        save_text(int context_id, const char *name, const std::string &value) override;
+    std::optional<std::string> load_text(int context_id, const char *name) override;
 };
 
 // Stateless adapter for the `band_params` table keyed by bands_id.
 class BandStorage : public StoragePolicy {
-public:
-    int  save_int(int context_id, const char* name, int32_t value) override;
-    std::optional<int32_t> load_int(int context_id, const char* name) override;
+  public:
+    int                    save_int(int context_id, const char *name, int32_t value) override;
+    std::optional<int32_t> load_int(int context_id, const char *name) override;
 
-    int  save_float(int context_id, const char* name, float value) override;
-    std::optional<float> load_float(int context_id, const char* name) override;
+    int                  save_float(int context_id, const char *name, float value) override;
+    std::optional<float> load_float(int context_id, const char *name) override;
 
-    int  save_text(int context_id, const char* name, const std::string& value) override;
-    std::optional<std::string> load_text(int context_id, const char* name) override;
+    int                        save_text(int context_id, const char *name, const std::string &value) override;
+    std::optional<std::string> load_text(int context_id, const char *name) override;
 };
 
 // Stateless adapter for the `mode_params` table keyed by mode.
 class ModeStorage : public StoragePolicy {
-public:
-    int  save_int(int context_id, const char* name, int32_t value) override;
-    std::optional<int32_t> load_int(int context_id, const char* name) override;
+  public:
+    int                    save_int(int context_id, const char *name, int32_t value) override;
+    std::optional<int32_t> load_int(int context_id, const char *name) override;
 
-    int  save_float(int context_id, const char* name, float value) override;
-    std::optional<float> load_float(int context_id, const char* name) override;
+    int                  save_float(int context_id, const char *name, float value) override;
+    std::optional<float> load_float(int context_id, const char *name) override;
 
-    int  save_text(int context_id, const char* name, const std::string& value) override;
-    std::optional<std::string> load_text(int context_id, const char* name) override;
+    int                        save_text(int context_id, const char *name, const std::string &value) override;
+    std::optional<std::string> load_text(int context_id, const char *name) override;
 };
 
 // Stateless adapter for the `transverter` table keyed by transverter id
 // (context_id = the fixed transverter number 0 or 1).
 class TransverterStorage : public StoragePolicy {
-public:
-    int  save_int(int context_id, const char* name, int32_t value) override;
-    std::optional<int32_t> load_int(int context_id, const char* name) override;
+  public:
+    int                    save_int(int context_id, const char *name, int32_t value) override;
+    std::optional<int32_t> load_int(int context_id, const char *name) override;
 
-    int  save_float(int context_id, const char* name, float value) override;
-    std::optional<float> load_float(int context_id, const char* name) override;
+    int                  save_float(int context_id, const char *name, float value) override;
+    std::optional<float> load_float(int context_id, const char *name) override;
 
-    int  save_text(int context_id, const char* name, const std::string& value) override;
-    std::optional<std::string> load_text(int context_id, const char* name) override;
+    int                        save_text(int context_id, const char *name, const std::string &value) override;
+    std::optional<std::string> load_text(int context_id, const char *name) override;
 };
 
 // Returns the policy for a StorageType. The three policies are singleton
 // static objects (stateless); the function is used by Parameter::load/save
 // and by PendingWrites::flush_* to route a key to the right table.
-StoragePolicy& storage_policy_for(StorageType type);
+StoragePolicy &storage_policy_for(StorageType type);
 
 #endif // __cplusplus

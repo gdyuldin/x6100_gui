@@ -6,8 +6,8 @@
 // `digital_modes` table and write the found frequency/mode back through the
 // computed params (cp_fg_freq / cp_cur_mode).
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {

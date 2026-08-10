@@ -9,12 +9,11 @@
 #include <string>
 
 #include "db.h"
-#include "storage_policy.h"
-#include "pending_writes.h"
 #include "parameter.h"
+#include "pending_writes.h"
+#include "storage_policy.h"
 #include "tests/app_cfg/mocks/mock_storage.h"
 #include "tests/app_cfg/mocks/pending_writes_test_access.h"
-
 
 // RAII fixture: opens an in-memory database, creates the transverter table and
 // initialises TransverterTable. Shuts it down and closes the connection on
@@ -26,14 +25,13 @@ class TransverterTableFixture {
         rc = sqlite3_open(":memory:", &db_);
         REQUIRE(rc == SQLITE_OK);
 
-        const char* create_sql =
-            "CREATE TABLE transverter("
-            "    id     INTEGER,"
-            "    name   TEXT,"
-            "    val    INTEGER,"
-            "    UNIQUE(id, name) ON CONFLICT REPLACE"
-            ");";
-        rc = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
+        const char *create_sql = "CREATE TABLE transverter("
+                                 "    id     INTEGER,"
+                                 "    name   TEXT,"
+                                 "    val    INTEGER,"
+                                 "    UNIQUE(id, name) ON CONFLICT REPLACE"
+                                 ");";
+        rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
         bool ok = TransverterTable::Init(db_);
@@ -45,14 +43,11 @@ class TransverterTableFixture {
         sqlite3_close(db_);
     }
 
-    sqlite3* db() {
-        return db_;
-    }
+    sqlite3 *db() { return db_; }
 
   private:
-    sqlite3* db_ = nullptr;
+    sqlite3 *db_ = nullptr;
 };
-
 
 // ---------------------------------------------------------------------------
 // TransverterTable
@@ -110,7 +105,6 @@ TEST_CASE("TransverterTable returns NOT_FOUND when the id has no entry", "[trans
     REQUIRE(res.rc == NOT_FOUND);
 }
 
-
 // ---------------------------------------------------------------------------
 // TransverterStorage (routes to TransverterTable through the real DB)
 // ---------------------------------------------------------------------------
@@ -131,19 +125,17 @@ TEST_CASE("TransverterStorage saves and loads int32_t via TransverterTable", "[t
     REQUIRE(!missing.has_value());
 }
 
-
 // ---------------------------------------------------------------------------
 // PendingWrites: TRANSVERTER entries are flushed by flush_all()
 // ---------------------------------------------------------------------------
 
 TEST_CASE("PendingWrites flush_all persists TRANVERTER entries", "[transverter]") {
     // One mock bound to StorageType::TRANSVERTER (mirrors TransverterStorage).
-    MockStorage mock_tv(StorageType::TRANSVERTER);
-    PendingWrites pending(
-        [&](StorageType type) -> StoragePolicy& {
-            (void)type;
-            return mock_tv;
-        });
+    MockStorage   mock_tv(StorageType::TRANSVERTER);
+    PendingWrites pending([&](StorageType type) -> StoragePolicy & {
+        (void)type;
+        return mock_tv;
+    });
 
     StorageKey key{StorageType::TRANSVERTER, 0, "from"};
     pending.write(key, int32_t(144'000'000));
@@ -157,12 +149,11 @@ TEST_CASE("PendingWrites flush_all persists TRANVERTER entries", "[transverter]"
 }
 
 TEST_CASE("PendingWrites flush_all keeps TRANSVERTER entry on failed save", "[transverter]") {
-    MockStorage mock_tv(StorageType::TRANSVERTER);
-    PendingWrites pending(
-        [&](StorageType type) -> StoragePolicy& {
-            (void)type;
-            return mock_tv;
-        });
+    MockStorage   mock_tv(StorageType::TRANSVERTER);
+    PendingWrites pending([&](StorageType type) -> StoragePolicy & {
+        (void)type;
+        return mock_tv;
+    });
 
     StorageKey key{StorageType::TRANSVERTER, 1, "shift"};
     pending.write(key, int32_t(404'000'000));

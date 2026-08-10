@@ -26,14 +26,13 @@
 // mode_params). The mock records the number of successful save_* calls so
 // tests can assert that a flush actually persisted values.
 class MockStorage : public StoragePolicy {
-public:
+  public:
     explicit MockStorage(StorageType type) : type_(type) {}
 
     // StoragePolicy interface ------------------------------------------------
     // If fail_next_save_ is set, the next save_* call returns the configured
     // error code without persisting, then resets the flag.
-    int save_int(int context_id, const char* name, int32_t value) override
-    {
+    int save_int(int context_id, const char *name, int32_t value) override {
         if (fail_next_save_) {
             fail_next_save_ = false;
             return fail_rc_;
@@ -43,8 +42,7 @@ public:
         return 0;
     }
 
-    std::optional<int32_t> load_int(int context_id, const char* name) override
-    {
+    std::optional<int32_t> load_int(int context_id, const char *name) override {
         auto it = ints_.find({type_, context_id, name});
         if (it == ints_.end()) {
             return std::nullopt;
@@ -52,8 +50,7 @@ public:
         return it->second;
     }
 
-    int save_float(int context_id, const char* name, float value) override
-    {
+    int save_float(int context_id, const char *name, float value) override {
         if (fail_next_save_) {
             fail_next_save_ = false;
             return fail_rc_;
@@ -63,8 +60,7 @@ public:
         return 0;
     }
 
-    std::optional<float> load_float(int context_id, const char* name) override
-    {
+    std::optional<float> load_float(int context_id, const char *name) override {
         auto it = floats_.find({type_, context_id, name});
         if (it == floats_.end()) {
             return std::nullopt;
@@ -72,8 +68,7 @@ public:
         return it->second;
     }
 
-    int save_text(int context_id, const char* name, const std::string& value) override
-    {
+    int save_text(int context_id, const char *name, const std::string &value) override {
         if (fail_next_save_) {
             fail_next_save_ = false;
             return fail_rc_;
@@ -83,8 +78,7 @@ public:
         return 0;
     }
 
-    std::optional<std::string> load_text(int context_id, const char* name) override
-    {
+    std::optional<std::string> load_text(int context_id, const char *name) override {
         auto it = texts_.find({type_, context_id, name});
         if (it == texts_.end()) {
             return std::nullopt;
@@ -93,29 +87,31 @@ public:
     }
 
     // Test helpers -----------------------------------------------------------
-    void clear()
-    {
+    void clear() {
         ints_.clear();
         floats_.clear();
         texts_.clear();
-        saved_int_count_    = 0;
-        saved_float_count_  = 0;
-        saved_text_count_   = 0;
-        fail_next_save_     = false;
+        saved_int_count_   = 0;
+        saved_float_count_ = 0;
+        saved_text_count_  = 0;
+        fail_next_save_    = false;
     }
 
     // Arm the next single save_* call to fail with the given rc.
-    void arm_fail_save(int rc) { fail_next_save_ = true; fail_rc_ = rc; }
+    void arm_fail_save(int rc) {
+        fail_next_save_ = true;
+        fail_rc_        = rc;
+    }
 
-    const std::unordered_map<StorageKey, int32_t, StorageKeyHash>& ints() const { return ints_; }
-    const std::unordered_map<StorageKey, float, StorageKeyHash>&   floats() const { return floats_; }
-    const std::unordered_map<StorageKey, std::string, StorageKeyHash>& texts() const { return texts_; }
+    const std::unordered_map<StorageKey, int32_t, StorageKeyHash>     &ints() const { return ints_; }
+    const std::unordered_map<StorageKey, float, StorageKeyHash>       &floats() const { return floats_; }
+    const std::unordered_map<StorageKey, std::string, StorageKeyHash> &texts() const { return texts_; }
 
-    int saved_int_count() const   { return saved_int_count_; }
+    int saved_int_count() const { return saved_int_count_; }
     int saved_float_count() const { return saved_float_count_; }
-    int saved_text_count() const  { return saved_text_count_; }
+    int saved_text_count() const { return saved_text_count_; }
 
-private:
+  private:
     // The logical table this instance emulates; every stored key is tagged
     // with it.
     StorageType type_;
