@@ -17,4 +17,4 @@ add_test(NAME test_qth COMMAND $<TARGET_FILE:test_qth> --colour-mode=ansi )
 # add_test(NAME test_ft8_qso COMMAND $<TARGET_FILE:test_ft8_qso> --colour-mode=ansi )
 
 
-add_subdirectory(app_cfg)
+add_subdirectory(cfg)

@@ -7,17 +7,13 @@
  */
 #include "cw.h"
 
+#include "cfg/settings_manager.h"
 
 #include <math.h>
 #include <complex.h>
 
-#include "util.h"
-#include "cfg/cfg.h"
-#include "cfg/subjects.h"
-
 extern "C" {
     #include "lvgl/lvgl.h"
-    #include "params/params.h"
     #include "cw_decoder.h"
     #include "panel.h"
     #include "meter.h"
@@ -60,18 +56,18 @@ static void on_high_filter_change(Subject *subj, void *user_data);
 
 
 void cw_init() {
-    cfg.key_tone.val->subscribe(on_key_tone_change)->notify();
+    cfg_sm.p_key_tone.subscribe_and_notify(on_key_tone_change);
     tone_freq = key_tone;
-    cfg.cw_decoder_snr.val->subscribe(on_val_float_change, (void*)&cw_decoder_snr)->notify();
-    cfg.cw_decoder_snr_gist.val->subscribe(on_val_float_change, (void*)&cw_decoder_snr_gist)->notify();
-    cfg.cw_decoder.val->subscribe(on_val_bool_change, (void*)&cw_decoder)->notify();
-    cfg.cw_tune.val->subscribe(on_val_bool_change, (void*)&cw_tune)->notify();
+    cfg_sm.p_cw_decoder_snr.subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr);
+    cfg_sm.p_cw_decoder_snr_gist.subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr_gist);
+    cfg_sm.p_cw_decoder.subscribe_and_notify(on_val_bool_change, (void*)&cw_decoder);
+    cfg_sm.p_cw_tune.subscribe_and_notify(on_val_bool_change, (void*)&cw_tune);
 
     cw_detector = new CWDetector((float)SAMPLE_RATE, 0.01f, 0.8f);
-    cw_detector->set_f0(subject_get_int(cfg.key_tone.val));
+    cw_detector->set_f0(cfg_sm.p_key_tone.get());
 
-    cfg_cur.filter.low->subscribe(on_low_filter_change)->notify();
-    cfg_cur.filter.high->subscribe(on_high_filter_change)->notify();
+    cfg_sm.cp_cur_filter_low.subscribe_and_notify(on_low_filter_change);
+    cfg_sm.cp_cur_filter_high.subscribe_and_notify(on_high_filter_change);
 
     ready = true;
 }
@@ -153,27 +149,24 @@ float cw_get_tone_freq(void) {
 }
 
 static void on_key_tone_change(Subject *subj, void *user_data) {
-    auto key_tone_subj = static_cast<SubjectInt*>(subj);
-    key_tone = key_tone_subj->get();
+    key_tone = cfg_sm.p_key_tone.get();
 }
 
 static void on_val_float_change(Subject *subj, void *user_data) {
-    auto subj_f = static_cast<SubjectFloat*>(subj);
-    *(float*)user_data = subj_f->get();
+    *(float*)user_data = static_cast<SubjectT<float>*>(subj)->get();
 }
 
 static void on_val_bool_change(Subject *subj, void *user_data) {
-    auto subj_i = static_cast<SubjectInt*>(subj);
-    *(bool*)user_data = subj_i->get();
+    *(bool*)user_data = static_cast<SubjectT<int32_t>*>(subj)->get();
 }
 
 
 static void on_low_filter_change(Subject *subj, void *user_data) {
-    filter_low = subject_get_int(subj);
+    filter_low = cfg_sm.cp_cur_filter_low.get();
 }
 
 static void on_high_filter_change(Subject *subj, void *user_data) {
-    filter_high = subject_get_int(subj);
+    filter_high = cfg_sm.cp_cur_filter_high.get();
 }
 
 /**

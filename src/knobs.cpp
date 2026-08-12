@@ -11,9 +11,11 @@
 #include "knobs.h"
 
 #include "buttons.h"
+#include "cfg/settings_manager.h"
 
 #include <string>
 #include <vector>
+#include <stdexcept>
 #include <map>
 
 extern "C" {
@@ -46,7 +48,7 @@ struct Control {
 
     virtual std::string to_str()=0;
 
-    virtual ObserverDelayed* subscribe(void (*cb)(Subject *, void *), void *user_data) {
+    virtual ObserverDelayed* subscribe(observer_cb cb, void *user_data) {
         return nullptr;
     }
 
@@ -59,87 +61,52 @@ struct Control {
     }
 };
 
-struct ControlSubj: public Control {
-    Subject **subj;
+template <typename T>
+struct ControlSubjBase : public Control {
+    SubjectT<T> *subj;
 
-    ControlSubj(const char *name, Subject **subj): Control(name), subj(subj) {};
+    ControlSubjBase(const char *name, SubjectT<T> *subj)
+        : Control(name), subj(subj) {}
 
-    ObserverDelayed* subscribe(void (*cb)(Subject *, void *), void *user_data) override {
-        return (*subj)->subscribe_delayed(cb, user_data);
+    ObserverDelayed* subscribe(observer_cb cb, void *user_data) override {
+        return subj->subscribe_delayed(cb, user_data);
     }
 };
 
-struct ControlSubjInt: public ControlSubj {
-    using ControlSubj::ControlSubj;
-
-    std::string to_str() {
-        return std::to_string(subject_get_int(*subj));
-    }
-
+struct ControlSubjInt : public ControlSubjBase<int32_t> {
+    using ControlSubjBase<int32_t>::ControlSubjBase;
+    std::string to_str() { return std::to_string(subj->get()); }
 };
 
-struct ControlSubjFloat: public ControlSubj {
+struct ControlSubjFloat : public ControlSubjBase<float> {
     std::string fmt;
-
-    ControlSubjFloat(const char *name, Subject **subj, std::string fmt="%0.1f"): ControlSubj(name, subj), fmt(fmt) {};
-
+    ControlSubjFloat(const char *name, SubjectT<float> *subj, std::string fmt = "%0.1f")
+        : ControlSubjBase<float>(name, subj), fmt(fmt) {}
     std::string to_str() {
-        float val = subject_get_float(*subj);
-        return float_to_str(val, fmt);
+        return float_to_str(subj->get(), fmt);
     }
 };
 
-struct ControlSubjChoices: public ControlSubj {
+struct ControlSubjChoices : public ControlSubjBase<int32_t> {
     std::vector<std::string> choices;
-
-    ControlSubjChoices(const char *name, Subject **subj, std::vector<std::string> choices): ControlSubj(name, subj), choices(choices) {};
-
+    ControlSubjChoices(const char *name, SubjectT<int32_t> *subj,
+                       std::vector<std::string> choices)
+        : ControlSubjBase<int32_t>(name, subj), choices(choices) {}
     std::string to_str() {
-        int32_t val = subject_get_int(*subj);
-        if ((choices.size() > val) && (val >= 0)) {
-            return choices[val];
-        } else {
-            return std::string("Unknown");
-        }
+        int32_t val = subj->get();
+        if ((choices.size() > (size_t)val) && (val >= 0)) return choices[val];
+        return std::string("Unknown");
     }
 };
 
-struct ControlSubjOnOff: public ControlSubjChoices {
-    ControlSubjOnOff(const char *name, Subject **subj): ControlSubjChoices(name, subj, {"Off", "On"}) {};
+struct ControlSubjOnOff : public ControlSubjChoices {
+    ControlSubjOnOff(const char *name, SubjectT<int32_t> *subj)
+        : ControlSubjChoices(name, subj, {"Off", "On"}) {}
 };
 
-
-template <typename T> struct ControlInt: public Control {
-    T *val;
-
-    ControlInt(const char *name, T *val): Control(name), val(val) {};
-
-    std::string to_str() {
-        return std::to_string(*val);
-    }
-};
-
-template <typename T> struct ControlChoices: public Control {
-    T *val;
-    std::vector<std::string> choices;
-
-    ControlChoices(const char *name, T *val, std::vector<std::string> choices): Control(name), val(val), choices(choices) {};
-
-    std::string to_str() {
-        if ((choices.size() > *val) && (*val >= 0)) {
-            return choices[*val];
-        } else {
-            return std::string("Unknown");
-        }
-    }
-};
-
-struct ControlComp: public ControlSubj {
-    using ControlSubj::ControlSubj;
-
-    std::string to_str() {
-        return std::string(params_comp_str_get(subject_get_int(*subj)));
-    }
+struct ControlComp : public ControlSubjBase<int32_t> {
+    using ControlSubjBase<int32_t>::ControlSubjBase;
+    std::string to_str() { return std::string(params_comp_str_get(subj->get())); }
 };
 
 
@@ -191,11 +158,7 @@ class KnobInfo {
         } else {
             this->item = item;
             subscription = Subscription(item->subscribe(on_subj_change, (void *)this));
-            if (subscription) {
-                subscription->notify();
-            } else {
-                update();
-            }
+            subscription->notify();
         }
     }
 };
@@ -204,58 +167,58 @@ static void on_knob_info_enabled_change(Subject *subj, void *user_data);
 
 
 static std::map<int, Control*> controls = {
-    {CTRL_VOL, new ControlSubjInt("Volume", &cfg.vol.val)},
-    {CTRL_VOL, new ControlSubjInt("Volume", &cfg.vol.val)},
-    {CTRL_SQL, new ControlSubjInt("Voice SQL", &cfg.sql.val)},
-    {CTRL_RFG, new ControlSubjInt("RF gain", &cfg_cur.band->rfg.val)},
-    {CTRL_FILTER_LOW, new ControlSubjInt("Filter low", &cfg_cur.filter.low)},
-    {CTRL_FILTER_HIGH, new ControlSubjInt("Filter high", &cfg_cur.filter.high)},
-    {CTRL_FILTER_BW, new ControlSubjInt("Filter bw", &cfg_cur.filter.bw)},
-    {CTRL_PWR, new ControlSubjFloat("Power", &cfg.pwr.val, "%0.1f")},
-    {CTRL_MIC, new ControlSubjChoices("MIC", &cfg.mic.val, {"Built-In", "Handle", "Auto"})},
-    {CTRL_HMIC, new ControlSubjInt("H-MIC gain", &cfg.hmic.val)},
-    {CTRL_IMIC, new ControlSubjInt("I-MIC gain", &cfg.imic.val)},
-    {CTRL_MONI, new ControlSubjInt("Moni level", &cfg.moni.val)},
-    {CTRL_SPECTRUM_FACTOR, new ControlSubjInt("Zoom", &cfg_cur.zoom)},
-    {CTRL_COMP, new ControlComp("Compressor", &cfg.comp.val)},
+    {CTRL_VOL, new ControlSubjInt("Volume", &cfg_sm.p_volume)},
+    {CTRL_VOL, new ControlSubjInt("Volume", &cfg_sm.p_volume)},
+    {CTRL_SQL, new ControlSubjInt("Voice SQL", &cfg_sm.p_squelch)},
+    {CTRL_RFG, new ControlSubjInt("RF gain", &cfg_sm.p_rfgain)},
+    {CTRL_FILTER_LOW, new ControlSubjInt("Filter low", &cfg_sm.cp_cur_filter_low)},
+    {CTRL_FILTER_HIGH, new ControlSubjInt("Filter high", &cfg_sm.cp_cur_filter_high)},
+    {CTRL_FILTER_BW, new ControlSubjInt("Filter bw", &cfg_sm.cp_cur_filter_bw)},
+    {CTRL_PWR, new ControlSubjFloat("Power", &cfg_sm.p_pwr, "%0.1f")},
+    {CTRL_MIC, new ControlSubjChoices("MIC", &cfg_sm.p_mic, {"Built-In", "Handle", "Auto"})},
+    {CTRL_HMIC, new ControlSubjInt("H-MIC gain", &cfg_sm.p_hmic)},
+    {CTRL_IMIC, new ControlSubjInt("I-MIC gain", &cfg_sm.p_imic)},
+    {CTRL_MONI, new ControlSubjInt("Moni level", &cfg_sm.p_moni)},
+    {CTRL_SPECTRUM_FACTOR, new ControlSubjInt("Zoom", &cfg_sm.p_mode_zoom)},
+    {CTRL_COMP, new ControlComp("Compressor", &cfg_sm.p_comp)},
 
-    {CTRL_VOX_ON, new ControlSubjOnOff("VOX", &cfg.vox.on.val)},
-    {CTRL_VOX_GAIN, new ControlSubjInt("VOX gain", &cfg.vox.gain.val)},
-    {CTRL_VOX_AG, new ControlSubjInt("VOX a-gain", &cfg.vox.ag.val)},
-    {CTRL_VOX_DELAY, new ControlSubjInt("VOX delay", &cfg.vox.delay.val)},
+    {CTRL_VOX_ON, new ControlSubjOnOff("VOX", &cfg_sm.p_vox_en)},
+    {CTRL_VOX_GAIN, new ControlSubjInt("VOX gain", &cfg_sm.p_vox_gain)},
+    {CTRL_VOX_AG, new ControlSubjInt("VOX a-gain", &cfg_sm.p_vox_ag)},
+    {CTRL_VOX_DELAY, new ControlSubjInt("VOX delay", &cfg_sm.p_vox_delay)},
 
-    {CTRL_ANT, new ControlSubjInt("Ant", &cfg.ant_id.val)},
-    {CTRL_RIT, new ControlSubjInt("RIT", &cfg.rit.val)},
-    {CTRL_XIT, new ControlSubjInt("XIT", &cfg.xit.val)},
-    {CTRL_IF_SHIFT, new ControlSubjInt("IF shift", &cfg_cur.band->if_shift.val)},
+    {CTRL_ANT, new ControlSubjInt("Ant", &cfg_sm.p_ant_id)},
+    {CTRL_RIT, new ControlSubjInt("RIT", &cfg_sm.p_rit)},
+    {CTRL_XIT, new ControlSubjInt("XIT", &cfg_sm.p_xit)},
+    {CTRL_IF_SHIFT, new ControlSubjInt("IF shift", &cfg_sm.p_band_if_shift)},
 
-    {CTRL_DNF, new ControlSubjOnOff("Notch filter", &cfg.dnf.val)},
-    {CTRL_DNF_CENTER, new ControlSubjInt("DNF center", &cfg.dnf_center.val)},
-    {CTRL_DNF_WIDTH, new ControlSubjInt("DNF width", &cfg.dnf_width.val)},
-    {CTRL_DNF_AUTO, new ControlSubjOnOff("DNF auto", &cfg.dnf_auto.val)},
-    {CTRL_NB, new ControlSubjOnOff("Noise blanker", &cfg.nb.val)},
-    {CTRL_NB_LEVEL, new ControlSubjInt("NB level", &cfg.nb_level.val)},
-    {CTRL_NB_WIDTH, new ControlSubjInt("NB width", &cfg.nb_width.val)},
-    {CTRL_NR, new ControlSubjOnOff("Noise reduction", &cfg.nr.val)},
-    {CTRL_NR_LEVEL, new ControlSubjInt("NR level", &cfg.nr_level.val)},
+    {CTRL_DNF, new ControlSubjOnOff("Notch filter", &cfg_sm.p_dnf)},
+    {CTRL_DNF_CENTER, new ControlSubjInt("DNF center", &cfg_sm.p_dnf_center)},
+    {CTRL_DNF_WIDTH, new ControlSubjInt("DNF width", &cfg_sm.p_dnf_width)},
+    {CTRL_DNF_AUTO, new ControlSubjOnOff("DNF auto", &cfg_sm.p_dnf_auto)},
+    {CTRL_NB, new ControlSubjOnOff("Noise blanker", &cfg_sm.p_nb)},
+    {CTRL_NB_LEVEL, new ControlSubjInt("NB level", &cfg_sm.p_nb_level)},
+    {CTRL_NB_WIDTH, new ControlSubjInt("NB width", &cfg_sm.p_nb_width)},
+    {CTRL_NR, new ControlSubjOnOff("Noise reduction", &cfg_sm.p_nr)},
+    {CTRL_NR_LEVEL, new ControlSubjInt("NR level", &cfg_sm.p_nr_level)},
 
-    {CTRL_AGC_HANG, new ControlSubjOnOff("AGC hang", &cfg.agc_hang.val)},
-    {CTRL_AGC_KNEE, new ControlSubjInt("AGC knee", &cfg.agc_knee.val)},
-    {CTRL_AGC_SLOPE, new ControlSubjInt("AGC slope", &cfg.agc_slope.val)},
+    {CTRL_AGC_HANG, new ControlSubjOnOff("AGC hang", &cfg_sm.p_agc_hang)},
+    {CTRL_AGC_KNEE, new ControlSubjInt("AGC knee", &cfg_sm.p_agc_knee)},
+    {CTRL_AGC_SLOPE, new ControlSubjInt("AGC slope", &cfg_sm.p_agc_slope)},
 
-    {CTRL_KEY_SPEED, new ControlSubjInt("Key speed", &cfg.key_speed.val)},
-    {CTRL_KEY_TRAIN, new ControlSubjOnOff("Key train", &cfg.key_train.val)},
-    {CTRL_KEY_MODE, new ControlSubjChoices("Key mode", &cfg.key_mode.val, {"Manual", "Auto-L", "Auto-R"})},
-    {CTRL_IAMBIC_MODE, new ControlSubjChoices("Iambic mode", &cfg.iambic_mode.val, {"A", "B"})},
-    {CTRL_KEY_TONE, new ControlSubjInt("Key tone", &cfg.key_tone.val)},
-    {CTRL_KEY_VOL, new ControlSubjInt("Key vol", &cfg.key_vol.val)},
-    {CTRL_QSK_TIME, new ControlSubjInt("QSK time", &cfg.qsk_time.val)},
-    {CTRL_KEY_RATIO, new ControlSubjFloat("Key ratio", &cfg.key_ratio.val)},
-    {CTRL_CW_DECODER, new ControlSubjOnOff("CW decoder", &cfg.cw_decoder.val)},
-    {CTRL_CW_TUNE, new ControlSubjOnOff("CW tuner", &cfg.cw_tune.val)},
-    {CTRL_CW_DECODER_SNR, new ControlSubjFloat("CW decoded snr", &cfg.cw_decoder_snr.val)},
-    {CTRL_CW_PEAK_ON, new ControlSubjOnOff("CW peak", &cfg.cw_peak_on.val)},
-    {CTRL_CW_PEAK_Q, new ControlSubjInt("CW peak Q", &cfg.cw_peak_q.val)},
+    {CTRL_KEY_SPEED, new ControlSubjInt("Key speed", &cfg_sm.p_key_speed)},
+    {CTRL_KEY_TRAIN, new ControlSubjOnOff("Key train", &cfg_sm.p_key_train)},
+    {CTRL_KEY_MODE, new ControlSubjChoices("Key mode", &cfg_sm.p_key_mode, {"Manual", "Auto-L", "Auto-R"})},
+    {CTRL_IAMBIC_MODE, new ControlSubjChoices("Iambic mode", &cfg_sm.p_iambic_mode, {"A", "B"})},
+    {CTRL_KEY_TONE, new ControlSubjInt("Key tone", &cfg_sm.p_key_tone)},
+    {CTRL_KEY_VOL, new ControlSubjInt("Key vol", &cfg_sm.p_key_vol)},
+    {CTRL_QSK_TIME, new ControlSubjInt("QSK time", &cfg_sm.p_qsk_time)},
+    {CTRL_KEY_RATIO, new ControlSubjFloat("Key ratio", &cfg_sm.p_key_ratio)},
+    {CTRL_CW_DECODER, new ControlSubjOnOff("CW decoder", &cfg_sm.p_cw_decoder)},
+    {CTRL_CW_TUNE, new ControlSubjOnOff("CW tuner", &cfg_sm.p_cw_tune)},
+    {CTRL_CW_DECODER_SNR, new ControlSubjFloat("CW decoded snr", &cfg_sm.p_cw_decoder_snr)},
+    {CTRL_CW_PEAK_ON, new ControlSubjOnOff("CW peak", &cfg_sm.p_cw_peak_on)},
+    {CTRL_CW_PEAK_Q, new ControlSubjInt("CW peak Q", &cfg_sm.p_cw_peak_q)},
     // {MFK_RTTY_RATE, Control("RTTY rate", []() { return to_str((float)params.rtty_rate / 100.0f, "%0.2f"); })},
     // {MFK_RTTY_SHIFT, Control("RTTY shift", []() { return std::to_string(params.rtty_shift); })},
     // {MFK_RTTY_CENTER, Control("RTTY center", []() { return std::to_string(params.rtty_center); })},
@@ -295,7 +258,7 @@ void knobs_init(lv_obj_t * parent) {
     // mfk_knob_info = new KnobInfo(mfk_info, LV_SYMBOL_DOWN);
     mfk_knob_info->set_edit_mode(true);
 
-    subject_add_delayed_observer_and_call(cfg.knob_info.val, on_knob_info_enabled_change, nullptr);
+    cfg_sm.p_knob_info.subscribe_delayed_and_notify(on_knob_info_enabled_change, nullptr);
 }
 
 void knobs_display(bool on) {
@@ -348,5 +311,5 @@ void knobs_set_mfk_param(cfg_ctrl_t control) {
 
 
 static void on_knob_info_enabled_change(Subject *subj, void *user_data) {
-    enabled = subject_get_int(subj);
+    enabled = cfg_sm.p_knob_info.get();
 }

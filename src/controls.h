@@ -4,7 +4,7 @@
 
 #ifdef __cplusplus
 
-void controls_encoder_update(cfg_ctrl_t ctrl, int16_t diff, std::string &msg);
+void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg);
 
 
 extern "C" {

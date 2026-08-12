@@ -14,6 +14,7 @@
 #include "events.h"
 #include "msg_tiny.h"
 #include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "scheduler.h"
 #include "styles.h"
 #include "util.h"
@@ -277,7 +278,7 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     lv_obj_set_style_text_color(vswr_label, lv_color_white(), 0);
     lv_label_set_text(vswr_label, "");
 
-    subject_add_observer(cfg_cur.mode, on_cur_mode_change, NULL);
+    subject_subscribe((Subject*)cfg_cur_mode, on_cur_mode_change, NULL);
 
     return obj;
 }
@@ -321,5 +322,5 @@ bool tx_info_refresh(uint8_t *prev_msg_id, float *alc_p, float *pwr_p, float *vs
 
 
 static void on_cur_mode_change(Subject *subj, void *user_data) {
-    cur_mode = subject_get_int(subj);
+    cur_mode = cparam_i_get(cfg_cur_mode);
 }

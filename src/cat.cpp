@@ -12,20 +12,18 @@
 
 #include "cat.h"
 
-#include "cfg/subjects.h"
+#include "cfg/settings_manager.h"
 #include "util.hpp"
-#include "util.h"
 
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <cmath>
+#include <chrono>
 
 extern "C" {
-    // #include "cfg/cfg.h"
     #include "events.h"
-    #include "main_screen.h"
     #include "meter.h"
-    #include "params/params.h"
     #include "radio.h"
     #include "scheduler.h"
     #include "spectrum.h"
@@ -43,6 +41,106 @@ extern "C" {
     #include <unistd.h>
 }
 
+// Resolve the frequency parameter for a CI-V main/sub VFO selector. vfo_id is
+// the CI-V selector (X6100_VFO_A = main/selected VFO, X6100_VFO_B = sub/inactive
+// VFO); cur_vfo identifies which hardware VFO (A or B) is currently active.
+static Parameter<int32_t>& vfo_freq(int vfo_id, int cur_vfo)
+{
+    if (vfo_id == X6100_VFO_A)
+    {
+        return cur_vfo == X6100_VFO_A ? cfg_sm.p_band_vfoa_freq : cfg_sm.p_band_vfob_freq;
+    }
+    else
+    {
+        return cur_vfo == X6100_VFO_A ? cfg_sm.p_band_vfob_freq : cfg_sm.p_band_vfoa_freq;
+    }
+}
+
+static Parameter<int32_t>& vfo_mode(int vfo_id, int cur_vfo)
+{
+    if (vfo_id == X6100_VFO_A)
+    {
+        return cur_vfo == X6100_VFO_A ? cfg_sm.p_band_vfoa_mode : cfg_sm.p_band_vfob_mode;
+    }
+    else
+    {
+        return cur_vfo == X6100_VFO_A ? cfg_sm.p_band_vfob_mode : cfg_sm.p_band_vfoa_mode;
+    }
+}
+
+void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len) {
+    int16_t i;
+
+    for (i = 0; i < len / 2; i++) {
+        uint8_t a = data % 10;
+
+        data /= 10;
+        a |= (data % 10) << 4;
+        data /= 10;
+        bcd_data[i] = a;
+    }
+
+    if (len & 1) {
+        bcd_data[i] &= 0x0f;
+        bcd_data[i] |= data % 10;
+    }
+}
+
+void to_bcd_be(uint8_t bcd_data[], uint64_t data, uint8_t len) {
+    int16_t i;
+
+    for (i = (len / 2); i >= 0; i--) {
+        uint8_t a = data % 10;
+
+        data /= 10;
+        a |= (data % 10) << 4;
+        data /= 10;
+        bcd_data[i] = a;
+    }
+
+    if (len & 1) {
+        bcd_data[i] &= 0x0f;
+        bcd_data[i] |= data % 10;
+    }
+
+}
+
+uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
+    int16_t     i;
+    uint64_t    data = 0;
+
+    if (len & 1) {
+        data = bcd_data[len / 2] & 0x0F;
+    }
+
+    for (i = (len / 2) - 1; i >= 0; i--) {
+        data *= 10;
+        data += bcd_data[i] >> 4;
+        data *= 10;
+        data += bcd_data[i] & 0x0F;
+    }
+
+    return data;
+}
+
+uint64_t from_bcd_be(const uint8_t bcd_data[], uint8_t len) {
+    int16_t     i = 0;
+    uint64_t    data = 0;
+
+    if (len & 1) {
+        data = bcd_data[0] & 0x0F;
+        i++;
+    }
+
+    for (; i <= (len / 2); i++) {
+        data *= 10;
+        data += bcd_data[i] >> 4;
+        data *= 10;
+        data += bcd_data[i] & 0x0F;
+    }
+
+    return data;
+}
 
 #define FRAME_PRE 0xFE
 #define FRAME_END 0xFD
@@ -285,7 +383,7 @@ static void set_vfo(void *arg) {
         LV_LOG_ERROR("arg is NULL");
     }
     x6100_vfo_t vfo = *(x6100_vfo_t *)arg;
-    subject_set_int(cfg_cur.band->vfo.val, vfo);
+    cfg_sm.p_band_current_vfo.set(vfo);
 }
 
 static x6100_mode_t ci_mode_2_x_mode(uint8_t mode, bool data_mode=false) {
@@ -347,8 +445,8 @@ static uint8_t x_mode_2_ci_mode(x6100_mode_t mode, bool *data_mode=nullptr) {
 }
 
 static uint8_t get_if_bandwidth() {
-    uint32_t bw = subject_get_int(cfg_cur.filter.bw);
-    switch (subject_get_int(cfg_cur.mode)) {
+    uint32_t bw = cfg_sm.cp_cur_filter_bw.get();
+    switch (cfg_sm.cp_cur_mode.get()) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
         case x6100_mode_lsb:
@@ -412,22 +510,13 @@ static Frame *process_req(const Frame *req) {
     auto resp = new Frame(req);
 
     int32_t        new_freq;
-    x6100_vfo_t    cur_vfo    = (x6100_vfo_t)subject_get_int(cfg_cur.band->vfo.val);
-    int32_t        cur_freq   = subject_get_int(cfg_cur.fg_freq);
-    x6100_mode_t   cur_mode   = (x6100_mode_t)subject_get_int(cfg_cur.mode);
+    x6100_vfo_t    cur_vfo    = (x6100_vfo_t)cfg_sm.p_band_current_vfo.get();
+    int32_t        cur_freq   = cfg_sm.cp_fg_freq.get();
+    x6100_mode_t   cur_mode   = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
     x6100_vfo_t    target_vfo = cur_vfo;
     uint8_t        vfo_id;
 
     size_t data_size = req->data.size();
-
-    struct vfo_params *vfo_params[2];
-    if (cur_vfo == X6100_VFO_A) {
-        vfo_params[0] = &cfg_cur.band->vfo_a;
-        vfo_params[1] = &cfg_cur.band->vfo_b;
-    } else {
-        vfo_params[0] = &cfg_cur.band->vfo_b;
-        vfo_params[1] = &cfg_cur.band->vfo_a;
-    }
 
 #if 0
     req->log("req");
@@ -436,7 +525,7 @@ static Frame *process_req(const Frame *req) {
     switch (req->command) {
         case C_SND_FREQ:
             if (data_size == 5) {
-                subject_set_int(cfg_cur.fg_freq, from_bcd(req->data.data(), 10));
+                cfg_sm.cp_fg_freq.set(from_bcd(req->data.data(), 10));
                 resp->set_code(CODE_OK);
             } else {
                 set_unsupported(req, resp);
@@ -460,7 +549,7 @@ static Frame *process_req(const Frame *req) {
 
         case C_SET_FREQ:
             if (data_size == 5) {
-                subject_set_int(cfg_cur.fg_freq, from_bcd(req->data.data(), 10));
+                cfg_sm.cp_fg_freq.set(from_bcd(req->data.data(), 10));
                 resp->set_code(CODE_OK);
             } else {
                 set_unsupported(req, resp);
@@ -469,7 +558,7 @@ static Frame *process_req(const Frame *req) {
 
         case C_SET_MODE:
             if ((data_size >= 1) && (data_size <= 2)) {
-                subject_set_int(cfg_cur.mode, ci_mode_2_x_mode(req->data[0]));
+                cfg_sm.cp_cur_mode.set(ci_mode_2_x_mode(req->data[0]));
                 if (data_size == 2) {
                     // filter selector -> req->data[1]
                 }
@@ -486,7 +575,7 @@ static Frame *process_req(const Frame *req) {
                     case S_VFOA:
                         if (cur_vfo != X6100_VFO_A) {
                             new_vfo = X6100_VFO_A;
-                            subject_set_int(cfg_cur.band->vfo.val, new_vfo);
+                            cfg_sm.p_band_current_vfo.set(new_vfo);
                         }
 
                         resp->set_code(CODE_OK);
@@ -495,7 +584,7 @@ static Frame *process_req(const Frame *req) {
                     case S_VFOB:
                         if (cur_vfo != X6100_VFO_B) {
                             new_vfo = X6100_VFO_B;
-                            subject_set_int(cfg_cur.band->vfo.val, new_vfo);
+                            cfg_sm.p_band_current_vfo.set(new_vfo);
                         }
                         resp->set_code(CODE_OK);
                         break;
@@ -506,12 +595,12 @@ static Frame *process_req(const Frame *req) {
                         } else {
                             new_vfo = X6100_VFO_A;
                         }
-                        subject_set_int(cfg_cur.band->vfo.val, new_vfo);
+                        cfg_sm.p_band_current_vfo.set(new_vfo);
                         resp->set_code(CODE_OK);
                         break;
 
                     case S_BTOA:
-                        cfg_band_vfo_copy();
+                        cfg_sm.cfg_band_vfo_copy();
                         resp->set_code(CODE_OK);
                         break;
 
@@ -530,9 +619,9 @@ static Frame *process_req(const Frame *req) {
         case C_CTL_SPLT:
             if (data_size == 0) {
                 resp->set_payload_len(2);
-                resp->data[0] = subject_get_int(cfg_cur.band->split.val);
+                resp->data[0] = cfg_sm.p_band_split.get();
             } else if (data_size == 1) {
-                subject_set_int(cfg_cur.band->split.val, req->data[0]);
+                cfg_sm.p_band_split.set(req->data[0]);
                 resp->set_code(CODE_OK);
             } else {
                 set_unsupported(req, resp);
@@ -542,9 +631,9 @@ static Frame *process_req(const Frame *req) {
         case C_SET_TS:
             if (data_size == 0) {
                 resp->set_payload_len(2);
-                resp->data[0] = freq_step_to_ci(subject_get_int(cfg_cur.freq_step));
+                resp->data[0] = freq_step_to_ci(cfg_sm.p_mode_freq_step.get());
             } else if (data_size == 1) {
-                subject_set_int(cfg_cur.freq_step, freq_step_from_ci(resp->data[0]));
+                cfg_sm.p_mode_freq_step.set(freq_step_from_ci(resp->data[0]));
                 resp->set_code(CODE_OK);
             } else {
                 set_unsupported(req, resp);
@@ -554,9 +643,9 @@ static Frame *process_req(const Frame *req) {
         case C_CTL_ATT:
             if (data_size == 0) {
                 resp->set_payload_len(2);
-                resp->data[0] = subject_get_int(cfg_cur.att) * 0x20;
+                resp->data[0] = cfg_sm.cp_cur_att.get() * 0x20;
             } else if (data_size == 1) {
-                subject_set_int(cfg_cur.att, req->data[0]);
+                cfg_sm.cp_cur_att.set(req->data[0]);
                 resp->set_code(CODE_OK);
             } else {
                 set_unsupported(req, resp);
@@ -570,44 +659,44 @@ static Frame *process_req(const Frame *req) {
                         // VOL
                         if (data_size == 1) {
                             resp->set_payload_len(4);
-                            to_bcd_be(&resp->data[1], subject_get_int(cfg.vol.val) * 255 / 55, 3);
+                            to_bcd_be(&resp->data[1], cfg_sm.p_volume.get() * 255 / 55, 3);
                         } else if (data_size == 3) {
-                            subject_set_int(cfg.vol.val, from_bcd_be(&req->data[1], 3) * 55 / 255);
+                            cfg_sm.p_volume.set(from_bcd_be(&req->data[1], 3) * 55 / 255);
                         }
                         break;
                     case 0x02:
                         // RFG
                         if (data_size == 1) {
                             resp->set_payload_len(4);
-                            to_bcd_be(&resp->data[1], subject_get_int(cfg_cur.band->rfg.val) * 255 / 100, 3);
+                            to_bcd_be(&resp->data[1], cfg_sm.p_rfgain.get() * 255 / 100, 3);
                         } else if (data_size == 3) {
-                            subject_set_int(cfg_cur.band->rfg.val, from_bcd_be(&req->data[1], 3) * 100 / 255);
+                            cfg_sm.p_rfgain.set(from_bcd_be(&req->data[1], 3) * 100 / 255);
                         }
                         break;
                     case 0x03:
                         // Squelch
                         if (data_size == 1) {
                             resp->set_payload_len(4);
-                            to_bcd_be(&resp->data[1], subject_get_int(cfg.sql.val) * 255 / 100, 3);
+                            to_bcd_be(&resp->data[1], cfg_sm.p_squelch.get() * 255 / 100, 3);
                         } else if (data_size == 3) {
-                            subject_set_int(cfg.sql.val, from_bcd_be(&req->data[1], 3) * 100 / 255);
+                            cfg_sm.p_squelch.set(from_bcd_be(&req->data[1], 3) * 100 / 255);
                         }
                         break;
                     case 0x0a:
                         // PWR
                         if (data_size == 1) {
                             resp->set_payload_len(4);
-                            to_bcd_be(&resp->data[1], roundf(subject_get_float(cfg.pwr.val) * 255 / 10), 3);
+                            to_bcd_be(&resp->data[1], std::round(cfg_sm.p_pwr.get() * 255 / 10), 3);
                         } else if (data_size == 3) {
                             float pwr = from_bcd_be(&req->data[1], 3) * 10.0f / 255.0f;
                             pwr = LV_MIN(pwr, 10.0f);
-                            subject_set_float(cfg.pwr.val, pwr);
+                            cfg_sm.p_pwr.set(pwr);
                         }
                         break;
                     case 0x15:
                         // Monitor level
                         resp->set_payload_len(4);
-                        to_bcd_be(&resp->data[1], subject_get_int(cfg.moni.val) * 255 / 100, 3);
+                        to_bcd_be(&resp->data[1], cfg_sm.p_moni.get() * 255 / 100, 3);
                         break;
                     default:
                         set_unsupported(req, resp);
@@ -674,9 +763,9 @@ static Frame *process_req(const Frame *req) {
                         // PRE
                         if (data_size == 1) {
                             resp->set_payload_len(3);
-                            resp->data[1] = subject_get_int(cfg_cur.pre);
+                            resp->data[1] = cfg_sm.cp_cur_pre.get();
                         } else {
-                            subject_set_int(cfg_cur.pre, req->data[1] > 0);
+                            cfg_sm.cp_cur_pre.set(req->data[1] > 0);
                             resp->set_code(CODE_OK);
                         }
                         break;
@@ -684,9 +773,9 @@ static Frame *process_req(const Frame *req) {
                         // NB
                         if (data_size == 1) {
                             resp->set_payload_len(3);
-                            resp->data[1] = subject_get_int(cfg.nb.val);
+                            resp->data[1] = cfg_sm.p_nb.get();
                         } else {
-                            subject_set_int(cfg.nb.val, req->data[1]);
+                            cfg_sm.p_nb.set(req->data[1]);
                             resp->set_code(CODE_OK);
                         }
                         break;
@@ -694,9 +783,9 @@ static Frame *process_req(const Frame *req) {
                         // NR
                         if (data_size == 1) {
                             resp->set_payload_len(3);
-                            resp->data[1] = subject_get_int(cfg.nr.val);
+                            resp->data[1] = cfg_sm.p_nr.get();
                         } else {
-                            subject_set_int(cfg.nr.val, req->data[1]);
+                            cfg_sm.p_nr.set(req->data[1]);
                             resp->set_code(CODE_OK);
                         }
                         break;
@@ -773,7 +862,7 @@ static Frame *process_req(const Frame *req) {
                     case MEM_DM_FG:
                         {
                             x6100_mode_t new_mode  = ci_mode_2_x_mode(req->data[1], req->data[2]);
-                            subject_set_int(cfg_cur.mode, new_mode);
+                            cfg_sm.cp_cur_mode.set(new_mode);
                             resp->set_code(CODE_OK);
                         }
                         break;
@@ -806,18 +895,24 @@ static Frame *process_req(const Frame *req) {
             break;
 
         case C_SEND_SEL_FREQ:
-            if (data_size == 1) {
-                vfo_id       = req->data[0] > 0;
-                int32_t freq = subject_get_int(vfo_params[vfo_id]->freq.val);
-                resp->set_payload_len(7);
-                to_bcd(&resp->data[1], freq, 10);
-            } else if (data_size == 6) {
-                vfo_id       = req->data[0] > 0;
-                int32_t freq = from_bcd(&req->data[1], 10);
-                subject_set_int(vfo_params[vfo_id]->freq.val, freq);
-                resp->set_code(CODE_OK);
-            } else {
-                set_unsupported(req, resp);
+            {
+                ComputedParameter<int32_t> *freq;
+                if (req->data[0] == 0) {
+                    // fg freq
+                    freq = &cfg_sm.cp_fg_freq;
+                } else {
+                    // bg freq
+                    freq = &cfg_sm.cp_bg_freq;
+                }
+                if (data_size == 1) {
+                    resp->set_payload_len(7);
+                    to_bcd(&resp->data[1], freq->get(), 10);
+                } else if (data_size == 6) {
+                    freq->set(from_bcd(&req->data[1], 10));
+                    resp->set_code(CODE_OK);
+                } else {
+                    set_unsupported(req, resp);
+                }
             }
             break;
 
@@ -826,10 +921,19 @@ static Frame *process_req(const Frame *req) {
                 uint8_t v;
                 x6100_mode_t new_mode;
                 bool data_mode = false;
+                Parameter<int32_t> *mode_par;
+
+                if (req->data[0] == 0) {
+                    // fg
+                    mode_par = cfg_sm.p_band_current_vfo.get() == X6100_VFO_A ? &cfg_sm.p_band_vfoa_mode :&cfg_sm.p_band_vfob_mode;
+                } else {
+                    // bg
+                    mode_par = cfg_sm.p_band_current_vfo.get() == X6100_VFO_B ? &cfg_sm.p_band_vfoa_mode :&cfg_sm.p_band_vfob_mode;
+                }
                 switch (data_size) {
                     case 1:
-                        vfo_id    = req->data[0] > 0;
-                        v = x_mode_2_ci_mode((x6100_mode_t)subject_get_int(vfo_params[vfo_id]->mode.val), &data_mode);
+                        // Read command
+                        v = x_mode_2_ci_mode((x6100_mode_t)mode_par->get(), &data_mode);
                         resp->set_payload_len(5);
                         resp->data[1] = v;
                         resp->data[2] = data_mode;
@@ -838,15 +942,14 @@ static Frame *process_req(const Frame *req) {
                         break;
 
                     case 4:
-                        // get filter
+                        // Write command with filter byte
                     case 3:
-                        // get data
+                        // Write command with data byte
                         data_mode = req->data[2];
                     case 2:
-                        // get mode
-                        vfo_id                = req->data[0] > 0;
+                        // Write command
                         new_mode = ci_mode_2_x_mode(req->data[1], data_mode);
-                        subject_set_int(vfo_params[vfo_id]->mode.val, new_mode);
+                        mode_par->set(new_mode);
                         resp->set_code(CODE_OK);
                         break;
                     default:
@@ -953,7 +1056,7 @@ static uint8_t counter = 0;
 //     // Center/Fixed (for lan radio)  [00=cent, 01=fixed]
 //     frame.args[i++] = 0;
 //     // Center freq
-//     to_bcd(frame.args + i, subject_get_int(cfg_cur.fg_freq), 10);
+    // to_bcd(frame.args + i, cfg_sm.cp_fg_freq.get(), 10);
 //     i += 5;
 //     // Span
 //     to_bcd(frame.args + i, 50000, 10);
@@ -991,7 +1094,8 @@ static void cat_thread() {
             conn->send(data.data(), data.size());
         }
         if (sleep) {
-            sleep_usec(10000);
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(10ms);
         }
     }
 }
@@ -1023,7 +1127,7 @@ void cat_init() {
 
     conn = new Connection(fd);
 
-    subject_add_observer(cfg_cur.fg_freq, on_fg_freq_change, NULL);
+    cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change, &cfg_sm.cp_fg_freq);
 
     /* * */
     std::thread thread(cat_thread);
@@ -1031,7 +1135,8 @@ void cat_init() {
 }
 
 static void on_fg_freq_change(Subject *s, void *user_data) {
-    int32_t new_freq = subject_get_int(s);
+    auto *p = static_cast<ComputedParameter<int32_t>*>(user_data);
+    int32_t new_freq = p->get();
     Frame frame{0, LOCAL_ADDRESS, C_SND_FREQ};
     // bcd len - 5 bytes
     frame.set_payload_len(6);

@@ -10,7 +10,6 @@
 
 #include "lvgl/lvgl.h"
 #include "params/params.h"
-#include "cfg/digital_modes.h"
 
 #define MEM_HKEY_MAX_ID         9
 

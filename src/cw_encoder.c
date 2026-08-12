@@ -9,7 +9,7 @@
 
 #include "cw_decoder.h"
 #include "params/params.h"
-#include "cfg/cfg.h"
+#include "cfg/cfg_api.h"
 #include "radio.h"
 #include "msg.h"
 #include "buttons.h"
@@ -81,8 +81,8 @@ static void * endecode_thread(void *arg) {
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
 
-    time_t dit_nsec = 20000000L / (subject_get_int(cfg.key_speed.val)) * 60;
-    time_t dah_nsec = dit_nsec * subject_get_float(cfg.key_ratio.val);
+    time_t dit_nsec = 20000000L / (param_i_get(cfg_key_speed)) * 60;
+    time_t dah_nsec = dit_nsec * param_f_get(cfg_key_ratio);
     time_t world_space_nsec = dit_nsec * 7;
 
     struct timespec t;

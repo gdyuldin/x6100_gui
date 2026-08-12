@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+#include "cfg/encoder_bind_types.h"
 
 
 
@@ -57,3 +58,5 @@ template <typename T> class TSQueue {
         return m_queue.empty();
     }
 };
+
+cfg_ctrl_t loop_modes(int16_t dir, cfg_ctrl_t mode, const uint64_t mask, const std::vector<cfg_ctrl_t> all_modes);

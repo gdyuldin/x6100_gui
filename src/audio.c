@@ -23,6 +23,7 @@
 #include "meter.h"
 #include "dsp.h"
 #include "params/params.h"
+#include "cfg/cfg_api.h"
 
 #define AUDIO_RATE_MS   100
 
@@ -234,8 +235,8 @@ void audio_set_play_mode(audio_play_mode_t mode) {
     {
     case AUDIO_PLAY_OFF:
         x6100_control_record_set(false);
-        x6100_control_hmic_set(subject_get_int(cfg.hmic.val));
-        x6100_control_imic_set(subject_get_int(cfg.imic.val));
+        x6100_control_hmic_set(param_i_get(cfg_hmic));
+        x6100_control_imic_set(param_i_get(cfg_imic));
         break;
 
     case AUDIO_PLAY_ON:

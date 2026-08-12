@@ -11,6 +11,7 @@
 #include "dialog.h"
 #include "styles.h"
 #include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "radio.h"
 #include "events.h"
 #include "util.h"
@@ -69,13 +70,11 @@ static button_data_t btn_scale = {
     .type  = BTN_TEXT_FN,
     .label_fn = scale_label_fn,
     .press = dialog_swrscan_scale_cb,
-    .subj = &cfg.swrscan_linear.val,
 };
 static button_data_t btn_span = {
     .type  = BTN_TEXT_FN,
     .label_fn = span_label_fn,
     .press = dialog_swrscan_span_cb,
-    .subj = &cfg.swrscan_span.val,
 };
 
 static buttons_page_t btn_page = {
@@ -104,7 +103,7 @@ static void do_init() {
     }
 
     freq_index = 0;
-    freq_center = subject_get_int(cfg_cur.fg_freq);
+    freq_center = cparam_i_get(cfg_fg_freq);
 
     freq_start = freq_center - span / 2;
     freq_stop = freq_center + span / 2;
@@ -250,13 +249,16 @@ static void freq_update_cb(Subject *subj, void *user_data) {
 
 static void construct_cb(lv_obj_t *parent) {
     dialog.obj = dialog_init(parent);
-    linear_obs = subject_add_delayed_observer_and_call(cfg.swrscan_linear.val, set_linear, NULL);
-    span_obs = subject_add_delayed_observer_and_call(cfg.swrscan_span.val, set_span, NULL);
+    // Init buttons subjects
+    btn_scale.subj = (Subject*)cfg_swrscan_linear;
+    btn_span.subj = (Subject*)cfg_swrscan_span;
+    linear_obs = subject_subscribe_delayed_and_notify((Subject*)cfg_swrscan_linear, set_linear, NULL);
+    span_obs = subject_subscribe_delayed_and_notify((Subject*)cfg_swrscan_span, set_span, NULL);
 
     buttons_unload_page();
     buttons_load_page(&btn_page);
 
-    freq_obs = subject_add_delayed_observer(cfg_cur.fg_freq, freq_update_cb, NULL);
+    freq_obs = subject_subscribe_delayed((Subject*)cfg_fg_freq, freq_update_cb, NULL);
 
     chart  = lv_obj_create(dialog.obj);
 
@@ -282,18 +284,18 @@ static void destruct_cb() {
         dialog_swrscan_run_cb(NULL);
     }
     if (freq_obs) {
-        observer_delayed_clear(freq_obs);
+        param_unsubscribe((Observer*)freq_obs);
         freq_obs = NULL;
     }
     if (linear_obs) {
-        observer_delayed_clear(linear_obs);
+        param_unsubscribe((Observer*)linear_obs);
         linear_obs = NULL;
     }
     if (span_obs) {
-        observer_delayed_clear(span_obs);
+        param_unsubscribe((Observer*)span_obs);
         span_obs = NULL;
     }
-    radio_set_freq(subject_get_int(cfg_cur.fg_freq));
+    radio_set_freq(cparam_i_get(cfg_fg_freq));
 }
 
 static void key_cb(lv_event_t * e) {
@@ -331,8 +333,8 @@ void dialog_swrscan_run_cb(button_data_t *btn_data) {
 }
 
 void dialog_swrscan_scale_cb(button_data_t *btn_data) {
-    bool new_val = !subject_get_int(cfg.swrscan_linear.val);
-    subject_set_int(cfg.swrscan_linear.val, new_val);
+    bool new_val = !param_i_get(cfg_swrscan_linear);
+    param_i_set(cfg_swrscan_linear, new_val);
 }
 
 void dialog_swrscan_span_cb(button_data_t *btn_data) {
@@ -340,7 +342,7 @@ void dialog_swrscan_span_cb(button_data_t *btn_data) {
         return;
     }
 
-    int32_t span = subject_get_int(cfg.swrscan_span.val);
+    int32_t span = param_i_get(cfg_swrscan_span);
 
     switch (span) {
         case 50000:
@@ -359,22 +361,22 @@ void dialog_swrscan_span_cb(button_data_t *btn_data) {
             span = 50000;
             break;
     }
-    subject_set_int(cfg.swrscan_span.val, span);
+    param_i_set(cfg_swrscan_span, span);
 
     do_init();
     event_send(chart, LV_EVENT_REFRESH, NULL);
 }
 
 void set_span(Subject *subj, void *user_data) {
-    span = subject_get_int(subj);
+    span = subject_i_get((SubjectInt*)subj);
 }
 
 void set_linear(Subject *subj, void *user_data) {
-    linear = subject_get_int(subj);
+    linear = subject_i_get((SubjectInt*)subj);
 }
 
 const char *scale_label_fn() {
-    if (subject_get_int(cfg.swrscan_linear.val)) {
+    if (param_i_get(cfg_swrscan_linear)) {
         return "Scale:\nLinear";
     } else {
         return "Scale:\nLog";
@@ -384,7 +386,7 @@ const char *scale_label_fn() {
 const char *span_label_fn() {
     static char buf[20];
     const char * fmt = "Span:\n%u kHz";
-    int32_t val = subject_get_int(cfg.swrscan_span.val);
+    int32_t val = param_i_get(cfg_swrscan_span);
     sprintf(buf, fmt, val / 1000);
     return buf;
 }

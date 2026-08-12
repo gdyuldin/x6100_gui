@@ -1,470 +1,1046 @@
 /**
- * Work with params table on DB
+ * Work with params table on DB (new cfg version).
+ * The sqlite3 connection and prepared statements are shared with the
+ * template-based cfg_param_load/cfg_param_save defined in db.h.
+ *
+ * Each statement group lives as inline-static fields of its table class
+ * (stmt + guarding mutex + cached :name/:id/:val parameter indices) with a
+ * common prefix per group. Indices are resolved once at Init via
+ * sqlite3_bind_parameter_index() and reused on every bind, which avoids
+ * per-call name lookups.
  */
-#include "db.private.h"
+#include "db.h"
 
 #include "../lvgl/lvgl.h"
-
-#include <stdio.h>
-#include <string.h>
+#include <pthread.h>
 #include <stdlib.h>
-#include <math.h>
-#include <charconv>
 
-static inline int prepare_read_stmt(cfg_item_t *item);
-static inline int prepare_write_stmt(cfg_item_t *item);
+// ---------------------------------------------------------------------------
+// ParamsTable
+// ---------------------------------------------------------------------------
 
-static sqlite3      *db;
-static sqlite3_stmt *insert_stmt;
-static sqlite3_stmt *read_stmt;
-static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
+bool ParamsTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated ParamsTable initialization");
+        return false;
+    }
+    db_ = database;
 
-
-void cfg_params_init(sqlite3 *database) {
-    db = database;
     int rc;
-    rc = sqlite3_prepare_v2(db, "SELECT val FROM params WHERE name = :name", -1, &read_stmt, 0);
+    rc = sqlite3_prepare_v2(db_, "SELECT val FROM params WHERE name = :name", -1, &load_stmt_, 0);
     if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare read statement: %s", sqlite3_errmsg(db));
-        exit(1);
+        LV_LOG_ERROR("Failed prepare read statement: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
     }
-    rc = sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO params(name, val) VALUES(:name, :val)", -1, &insert_stmt, 0);
+    load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
+
+    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO params(name, val) VALUES(:name, :val)", -1, &save_stmt_, 0);
     if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare write statement: %s", sqlite3_errmsg(db));
-        exit(1);
+        LV_LOG_ERROR("Failed prepare write statement: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(load_stmt_);
+        load_stmt_             = nullptr;
+        load_name_param_index_ = 0;
+        db_                    = nullptr;
+        return false;
     }
+    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
+    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+    return true;
 }
 
-// Common sqlite3 code
-class StmtResetGuard {
-    sqlite3_stmt* stmt_;
-    std::unique_lock<std::mutex> lock;
-public:
-    explicit StmtResetGuard(std::mutex &mux, sqlite3_stmt* stmt) : stmt_(stmt), lock(mux) {}
+void ParamsTable::Shutdown() {
+    if (load_stmt_) {
+        sqlite3_finalize(load_stmt_);
+        load_stmt_ = nullptr;
+    }
+    if (save_stmt_) {
+        sqlite3_finalize(save_stmt_);
+        save_stmt_ = nullptr;
+    }
+    load_name_param_index_ = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
+}
 
-    ~StmtResetGuard() {
-        if (stmt_) {
-            sqlite3_reset(stmt_);
-            sqlite3_clear_bindings(stmt_);
+// ---------------------------------------------------------------------------
+// BandsTable
+// ---------------------------------------------------------------------------
+
+bool BandsTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated BandsTable initialization");
+        return false;
+    }
+    db_ = database;
+
+    int rc;
+
+    rc = sqlite3_prepare_v2(db_, "SELECT name, start_freq, stop_freq, type FROM bands WHERE id = :id", -1,
+                            &get_band_by_id_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare get_band_by_id statement: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    get_band_by_id_id_param_index_ = sqlite3_bind_parameter_index(get_band_by_id_stmt_, ":id");
+
+    rc = sqlite3_prepare_v2(
+        db_,
+        "SELECT id, name, start_freq, stop_freq FROM bands WHERE "
+        "   (:freq >= start_freq) AND (:freq <= stop_freq) AND (type = 1) "
+        "UNION SELECT * FROM ("
+        "   SELECT NULL, NULL, a.stop_freq, b.start_freq FROM ("
+        "       SELECT stop_freq FROM bands WHERE :freq > stop_freq AND type = 1 ORDER BY stop_freq DESC LIMIT 1"
+        "   ) AS a FULL OUTER JOIN ("
+        "       SELECT start_freq FROM bands WHERE :freq < start_freq AND type = 1 ORDER BY start_freq LIMIT 1"
+        "   ) AS b"
+        ") ORDER BY id DESC NULLS LAST LIMIT 1",
+        -1, &get_band_by_freq_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare get_band_by_freq statement: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(get_band_by_id_stmt_);
+        get_band_by_id_stmt_ = nullptr;
+        db_                  = nullptr;
+        return false;
+    }
+    get_band_by_freq_freq_param_index_ = sqlite3_bind_parameter_index(get_band_by_freq_stmt_, ":freq");
+
+    rc = sqlite3_prepare_v2(db_,
+                            "SELECT id, name, start_freq, stop_freq, type FROM bands "
+                            "WHERE :freq <= start_freq AND id != :id AND type = 1 ORDER BY start_freq LIMIT 1",
+                            -1, &get_band_up_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare get_band_up statement: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(get_band_by_id_stmt_);
+        sqlite3_finalize(get_band_by_freq_stmt_);
+        get_band_by_id_stmt_   = nullptr;
+        get_band_by_freq_stmt_ = nullptr;
+        db_                    = nullptr;
+        return false;
+    }
+    get_band_up_freq_param_index_ = sqlite3_bind_parameter_index(get_band_up_stmt_, ":freq");
+    get_band_up_id_param_index_   = sqlite3_bind_parameter_index(get_band_up_stmt_, ":id");
+
+    rc = sqlite3_prepare_v2(db_,
+                            "SELECT id, name, start_freq, stop_freq, type FROM bands "
+                            "WHERE :freq >= stop_freq AND id != :id AND type = 1 ORDER BY start_freq DESC LIMIT 1",
+                            -1, &get_band_down_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare get_band_down statement: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(get_band_by_id_stmt_);
+        sqlite3_finalize(get_band_by_freq_stmt_);
+        sqlite3_finalize(get_band_up_stmt_);
+        get_band_by_id_stmt_   = nullptr;
+        get_band_by_freq_stmt_ = nullptr;
+        get_band_up_stmt_      = nullptr;
+        db_                    = nullptr;
+        return false;
+    }
+    get_band_down_freq_param_index_ = sqlite3_bind_parameter_index(get_band_down_stmt_, ":freq");
+    get_band_down_id_param_index_   = sqlite3_bind_parameter_index(get_band_down_stmt_, ":id");
+
+    rc = sqlite3_prepare_v2(db_, "SELECT id, name, start_freq, stop_freq, type FROM bands ORDER BY start_freq", -1,
+                            &read_all_bands_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare read_all_bands statement: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(get_band_by_id_stmt_);
+        sqlite3_finalize(get_band_by_freq_stmt_);
+        sqlite3_finalize(get_band_up_stmt_);
+        sqlite3_finalize(get_band_down_stmt_);
+        get_band_by_id_stmt_   = nullptr;
+        get_band_by_freq_stmt_ = nullptr;
+        get_band_up_stmt_      = nullptr;
+        get_band_down_stmt_    = nullptr;
+        db_                    = nullptr;
+        return false;
+    }
+    return true;
+}
+
+void BandsTable::Shutdown() {
+    if (get_band_by_id_stmt_) {
+        sqlite3_finalize(get_band_by_id_stmt_);
+        get_band_by_id_stmt_ = nullptr;
+    }
+    if (get_band_by_freq_stmt_) {
+        sqlite3_finalize(get_band_by_freq_stmt_);
+        get_band_by_freq_stmt_ = nullptr;
+    }
+    if (get_band_up_stmt_) {
+        sqlite3_finalize(get_band_up_stmt_);
+        get_band_up_stmt_ = nullptr;
+    }
+    if (get_band_down_stmt_) {
+        sqlite3_finalize(get_band_down_stmt_);
+        get_band_down_stmt_ = nullptr;
+    }
+    if (read_all_bands_stmt_) {
+        sqlite3_finalize(read_all_bands_stmt_);
+        read_all_bands_stmt_ = nullptr;
+    }
+    get_band_by_id_id_param_index_     = 0;
+    get_band_by_freq_freq_param_index_ = 0;
+    get_band_up_freq_param_index_      = 0;
+    get_band_up_id_param_index_        = 0;
+    get_band_down_freq_param_index_    = 0;
+    get_band_down_id_param_index_      = 0;
+    {
+        std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
+        last_band = BandInfo{};
+    }
+    db_ = nullptr;
+}
+
+BandInfoLoadResult BandsTable::get_by_id(int32_t band_id) {
+    if (band_id == BAND_UNDEFINED) {
+        return {BandInfo{}, NOT_FOUND};
+    }
+
+    // Fast path: serve from cache without touching the DB.
+    {
+        std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
+        if (last_band.id == band_id) {
+            return {last_band, SUCCESS};
         }
     }
-    // Delete copy constructor and assignment operator to prevent copying
-    StmtResetGuard(const StmtResetGuard&) = delete;
-    StmtResetGuard& operator=(const StmtResetGuard&) = delete;
-};
 
-// Helper trait that is always false, but depends on T
-template <typename>
-inline constexpr bool always_false_v = false;
+    LV_LOG_USER("Loading band info for id: %i", band_id);
 
-// value to std::string converter for logging
-template <typename T>
-std::string value_to_string(const T& value) {
-    if constexpr (std::is_same_v<T, int32_t>) {
-        std::array<char, 12> buf{};  // enough for 32‑bit int
-        auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
-        return std::string(buf.data(), ptr);
-    } else if constexpr (std::is_same_v<T, float>) {
-        // std::to_chars for float is available in C++17, but you may need to handle precision
-        std::array<char, 32> buf{};
-        auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
-        return std::string(buf.data(), ptr);
-    } else if constexpr (std::is_same_v<T, std::string>) {
-        return value;
-    } else {
-        static_assert(always_false_v<T>, "Unsupported type for logging");
-    }
-}
-
-template <typename T>
-struct ParamLoadResult {
-    T value;
-    int rc;  // load_save_error_codes_t (negative) or sqlite3 rc (positive)
-};
-
-
-template <typename T> ParamLoadResult<T> cfg_param_load(const char *name) {
     int            rc;
-    StmtResetGuard guard(read_mutex, read_stmt);
+    StmtResetGuard guard(get_band_by_id_mutex_, get_band_by_id_stmt_);
 
-    rc = sqlite3_bind_text(read_stmt, sqlite3_bind_parameter_index(read_stmt, ":name"),
-                           name, strlen(name), SQLITE_STATIC);
+    rc = sqlite3_bind_int(get_band_by_id_stmt_, get_band_by_id_id_param_index_, band_id);
     if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed to bind name %s: %s", name, sqlite3_errmsg(db));
-        return {T{}, rc};
+        LV_LOG_ERROR("Failed to bind bands_id %i: %s", band_id, sqlite3_errmsg(db_));
+        return {BandInfo{}, rc};
     }
-
-    rc = sqlite3_step(read_stmt);
+    rc = sqlite3_step(get_band_by_id_stmt_);
     if (rc == SQLITE_ROW) {
-        T value;
-        if constexpr (std::is_same_v<T, int32_t>) {
-            value = sqlite3_column_int(read_stmt, 0);
-            LV_LOG_USER("Loaded %s=%i", name, value);
+        BandInfo info;
+        info.id                  = band_id;
+        const unsigned char *txt = sqlite3_column_text(get_band_by_id_stmt_, 0);
+        info.name                = txt ? reinterpret_cast<const char *>(txt) : "";
+        info.start_freq          = sqlite3_column_int(get_band_by_id_stmt_, 1);
+        info.stop_freq           = sqlite3_column_int(get_band_by_id_stmt_, 2);
+        info.type                = static_cast<band_type_t>(sqlite3_column_int(get_band_by_id_stmt_, 3));
+        {
+            std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
+            last_band = info;
         }
-        else if constexpr (std::is_same_v<T, float>) {
-            value = sqlite3_column_double(read_stmt, 0);
-            LV_LOG_USER("Loaded %s=%f", name, value);
-        }
-        else if constexpr (std::is_same_v<T, std::string>) {
-            value = reinterpret_cast<const char *>(sqlite3_column_text(read_stmt, 0));
-            LV_LOG_USER("Loaded %s=%s", name, value);
-        }
-        else {
-            static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_load().");
-        }
-        return {value, SUCCESS};
+        return {info, SUCCESS};
     }
-    else {
-        LV_LOG_WARN("No results for load %s", name);
-        return {T{}, NOT_FOUND};
-    }
+    LV_LOG_USER("No info for band with id: %i", band_id);
+    return {BandInfo{}, NOT_FOUND};
 }
 
-template <typename T> int cfg_param_save(const char *name, const T &value) {
-    int rc;
-    StmtResetGuard guard(write_mutex, insert_stmt);
-    pthread_mutex_lock(&write_mutex);
-
-    rc = sqlite3_bind_text(insert_stmt, sqlite3_bind_parameter_index(insert_stmt, ":name"), name,
-                           strlen(name), 0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_WARN("Can't bind name %s to save params query", name);
-        return rc;
-    }
-
-    int     val_index = sqlite3_bind_parameter_index(insert_stmt, ":val");
-
-    if constexpr (std::is_same_v<T, int32_t>) {
-        rc      = sqlite3_bind_int(insert_stmt, val_index, value);
-    }
-    else if constexpr (std::is_same_v<T, float>) {
-        rc      = sqlite3_bind_double(insert_stmt, val_index, value);
-    }
-    else if constexpr (std::is_same_v<T, std::string>) {
-        rc = sqlite3_bind_text(insert_stmt, val_index, value.c_str(), -1, 0);
-    }
-    else {
-        static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_save().");
-    }
-
-    if (rc != SQLITE_OK) {
-        LV_LOG_WARN("Can't bind val %s to save params query", value_to_string(value).c_str());
-    } else {
-        rc = sqlite3_step(insert_stmt);
-        if (rc != SQLITE_DONE) {
-            LV_LOG_ERROR("Failed save item %s: %s", name, sqlite3_errmsg(db));
-        } else {
-            LV_LOG_USER("Saved %s=%s", name, value_to_string(value).c_str());
-            rc = SUCCESS;
+BandInfoLoadResult BandsTable::get_by_freq(uint32_t freq) {
+    {
+        std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
+        if ((last_band.id != BAND_UNDEFINED) && (freq >= last_band.start_freq) && (freq <= last_band.stop_freq)) {
+            return {last_band, SUCCESS};
         }
     }
-    return rc;
-}
 
-
-int cfg_params_load_item_int(cfg_item_t *item) {
-    if (subject_get_dtype(item->val) != DTYPE_INT) {
-        LV_LOG_WARN("Wrong item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
-        return WRONG_TYPE;
-    }
-    int rc;
-    pthread_mutex_lock(&read_mutex);
-    rc = prepare_read_stmt(item);
+    LV_LOG_USER("Loading band info for freq: %u", freq);
+    int            rc;
+    StmtResetGuard guard(get_band_by_freq_mutex_, get_band_by_freq_stmt_);
+    rc = sqlite3_bind_int(get_band_by_freq_stmt_, get_band_by_freq_freq_param_index_, freq);
     if (rc != SQLITE_OK) {
-        pthread_mutex_unlock(&read_mutex);
-        return rc;
+        LV_LOG_ERROR("Failed to bind freq %u: %s", freq, sqlite3_errmsg(db_));
+        return {BandInfo{}, rc};
     }
-
-    int32_t int_val;
-    rc = sqlite3_step(read_stmt);
+    rc = sqlite3_step(get_band_by_freq_stmt_);
     if (rc == SQLITE_ROW) {
-        int_val = sqlite3_column_int(read_stmt, 0);
-        LV_LOG_USER("Loaded %s=%i (pk=%i)", item->db_name, int_val, item->pk);
-        subject_set_int(item->val, int_val);
-        rc = SUCCESS;
-    } else {
-        LV_LOG_WARN("No results for load %s", item->db_name);
-        rc = NOT_FOUND;
+        BandInfo info;
+        if (sqlite3_column_type(get_band_by_freq_stmt_, 0) != SQLITE_NULL) {
+            // Found an active band
+            info.id                  = sqlite3_column_int(get_band_by_freq_stmt_, 0);
+            const unsigned char *txt = sqlite3_column_text(get_band_by_freq_stmt_, 1);
+            info.name                = txt ? reinterpret_cast<const char *>(txt) : "";
+            info.type                = BAND_ACTIVE;
+        } else {
+            // Found a gap between bands
+            info.id   = BAND_UNDEFINED;
+            info.type = BAND_INACTIVE;
+        }
+        info.start_freq = sqlite3_column_int(get_band_by_freq_stmt_, 2);
+        if (sqlite3_column_type(get_band_by_freq_stmt_, 3) == SQLITE_NULL) {
+            info.stop_freq = 0xFFFFFFFFU;
+        } else {
+            info.stop_freq = sqlite3_column_int(get_band_by_freq_stmt_, 3);
+        }
+        {
+            std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
+            last_band = info;
+        }
+        return {info, SUCCESS};
     }
-    sqlite3_reset(read_stmt);
-    sqlite3_clear_bindings(read_stmt);
-    pthread_mutex_unlock(&read_mutex);
-    return rc;
+    LV_LOG_WARN("No band info for freq: %u", freq);
+    return {BandInfo{}, NOT_FOUND};
 }
 
-int cfg_params_load_item_uint64(cfg_item_t *item) {
-    if (subject_get_dtype(item->val) != DTYPE_UINT64) {
-        LV_LOG_WARN("Wrong item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
-        return WRONG_TYPE;
-    }
-    int rc;
-    pthread_mutex_lock(&read_mutex);
-    rc = prepare_read_stmt(item);
-    if (rc != SQLITE_OK) {
-        pthread_mutex_unlock(&read_mutex);
-        return rc;
+BandInfoLoadResult BandsTable::next(int32_t cur_band_id, uint32_t cur_freq, bool up) {
+    int           rc;
+    sqlite3_stmt *stmt;
+    std::mutex   *mux;
+    int           freq_idx, band_idx;
+    if (up) {
+        stmt     = get_band_up_stmt_;
+        mux      = &get_band_up_mutex_;
+        freq_idx = get_band_up_freq_param_index_;
+        band_idx = get_band_up_id_param_index_;
+    } else {
+        stmt     = get_band_down_stmt_;
+        mux      = &get_band_down_mutex_;
+        freq_idx = get_band_down_freq_param_index_;
+        band_idx = get_band_down_id_param_index_;
     }
 
-    uint64_t uint64_val;
-    rc = sqlite3_step(read_stmt);
+    StmtResetGuard guard(*mux, stmt);
+
+    rc = sqlite3_bind_int(stmt, freq_idx, cur_freq);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind freq %u to find up/down stmt: %s", cur_freq, sqlite3_errmsg(db_));
+        return {BandInfo{}, rc};
+    }
+    rc = sqlite3_bind_int(stmt, band_idx, cur_band_id);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to current band id %i to find up/down stmt: %s", cur_band_id, sqlite3_errmsg(db_));
+        return {BandInfo{}, rc};
+    }
+    rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
-        uint64_val = sqlite3_column_int64(read_stmt, 0);
-        LV_LOG_USER("Loaded %s=%llu (pk=%i)", item->db_name, uint64_val, item->pk);
-        subject_set_uint64(item->val, uint64_val);
-        rc = SUCCESS;
-    } else {
-        LV_LOG_WARN("No results for load %s", item->db_name);
-        rc = NOT_FOUND;
+        BandInfo info;
+        info.id                  = sqlite3_column_int(stmt, 0);
+        const unsigned char *txt = sqlite3_column_text(stmt, 1);
+        info.name                = txt ? reinterpret_cast<const char *>(txt) : "";
+        info.type                = BAND_ACTIVE;
+        info.start_freq          = sqlite3_column_int(stmt, 2);
+        info.stop_freq           = sqlite3_column_int(stmt, 3);
+        {
+            std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
+            last_band = info;
+        }
+        return {info, SUCCESS};
     }
-    sqlite3_reset(read_stmt);
-    sqlite3_clear_bindings(read_stmt);
-    pthread_mutex_unlock(&read_mutex);
-    return rc;
+    LV_LOG_INFO("No next band info for freq: %u, cur_id: %i and direction: %i", cur_freq, cur_band_id, up);
+    return {BandInfo{}, NOT_FOUND};
 }
 
-int cfg_params_load_item_float(cfg_item_t *item) {
-    if (subject_get_dtype(item->val) != DTYPE_FLOAT) {
-        LV_LOG_WARN("Wrong item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
-        return WRONG_TYPE;
+std::vector<BandInfo> BandsTable::all_bands() {
+    int                   rc;
+    StmtResetGuard        guard(read_all_bands_mutex_, read_all_bands_stmt_);
+    std::vector<BandInfo> result;
+    while (1) {
+        rc = sqlite3_step(read_all_bands_stmt_);
+
+        if (rc == SQLITE_ROW) {
+            BandInfo info;
+            info.id                  = sqlite3_column_int(read_all_bands_stmt_, 0);
+            const unsigned char *txt = sqlite3_column_text(read_all_bands_stmt_, 1);
+            info.name                = txt ? reinterpret_cast<const char *>(txt) : "";
+            info.start_freq          = sqlite3_column_int(read_all_bands_stmt_, 2);
+            info.stop_freq           = sqlite3_column_int(read_all_bands_stmt_, 3);
+            info.type                = static_cast<band_type_t>(sqlite3_column_int(read_all_bands_stmt_, 4));
+            result.push_back(info);
+        } else if (rc == SQLITE_DONE) {
+            break;
+        } else {
+            LV_LOG_ERROR("Error while reading bands rows: %s", sqlite3_errmsg(db_));
+            break;
+        }
     }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// BandParamsTable
+// ---------------------------------------------------------------------------
+
+bool BandParamsTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated BandParamsTable initialization");
+        return false;
+    }
+    db_ = database;
+
     int rc;
-    pthread_mutex_lock(&read_mutex);
-    rc = prepare_read_stmt(item);
+
+    rc = sqlite3_prepare_v2(db_, "SELECT val FROM band_params WHERE bands_id = :id AND name = :name", -1, &load_stmt_,
+                            0);
     if (rc != SQLITE_OK) {
-        pthread_mutex_unlock(&read_mutex);
+        LV_LOG_ERROR("Failed prepare BandParamsTable::load: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    load_id_param_index_   = sqlite3_bind_parameter_index(load_stmt_, ":id");
+    load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
+
+    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO band_params(bands_id, name, val) VALUES(:id, :name, :val)", -1,
+                            &save_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare BandParamsTable::save: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(load_stmt_);
+        load_stmt_             = nullptr;
+        load_id_param_index_   = 0;
+        load_name_param_index_ = 0;
+        db_                    = nullptr;
+        return false;
+    }
+    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
+    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
+    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+    return true;
+}
+
+void BandParamsTable::Shutdown() {
+    if (load_stmt_) {
+        sqlite3_finalize(load_stmt_);
+        load_stmt_ = nullptr;
+    }
+    if (save_stmt_) {
+        sqlite3_finalize(save_stmt_);
+        save_stmt_ = nullptr;
+    }
+    load_id_param_index_   = 0;
+    load_name_param_index_ = 0;
+    save_id_param_index_   = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// ModeParamsTable
+// ---------------------------------------------------------------------------
+
+bool ModeParamsTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated ModeParamsTable initialization");
+        return false;
+    }
+    db_ = database;
+
+    int rc;
+
+    rc = sqlite3_prepare_v2(db_, "SELECT val FROM mode_params WHERE mode = :id AND name = :name", -1, &load_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare ModeParamsTable::load: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    load_id_param_index_   = sqlite3_bind_parameter_index(load_stmt_, ":id");
+    load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
+
+    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO mode_params(mode, name, val) VALUES(:id, :name, :val)", -1,
+                            &save_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare ModeParamsTable::save: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(load_stmt_);
+        load_stmt_             = nullptr;
+        load_id_param_index_   = 0;
+        load_name_param_index_ = 0;
+        db_                    = nullptr;
+        return false;
+    }
+    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
+    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
+    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+    return true;
+}
+
+void ModeParamsTable::Shutdown() {
+    if (load_stmt_) {
+        sqlite3_finalize(load_stmt_);
+        load_stmt_ = nullptr;
+    }
+    if (save_stmt_) {
+        sqlite3_finalize(save_stmt_);
+        save_stmt_ = nullptr;
+    }
+    load_id_param_index_   = 0;
+    load_name_param_index_ = 0;
+    save_id_param_index_   = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// TransverterTable
+// ---------------------------------------------------------------------------
+
+bool TransverterTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated TransverterTable initialization");
+        return false;
+    }
+    db_ = database;
+
+    int rc;
+
+    rc = sqlite3_prepare_v2(db_, "SELECT val FROM transverter WHERE name = :name AND id = :id", -1, &load_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare TransverterTable::load: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
+    load_id_param_index_   = sqlite3_bind_parameter_index(load_stmt_, ":id");
+
+    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO transverter(id, name, val) VALUES(:id, :name, :val)", -1,
+                            &save_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare TransverterTable::save: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(load_stmt_);
+        load_stmt_             = nullptr;
+        load_name_param_index_ = 0;
+        load_id_param_index_   = 0;
+        db_                    = nullptr;
+        return false;
+    }
+    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
+    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
+    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+    return true;
+}
+
+void TransverterTable::Shutdown() {
+    if (load_stmt_) {
+        sqlite3_finalize(load_stmt_);
+        load_stmt_ = nullptr;
+    }
+    if (save_stmt_) {
+        sqlite3_finalize(save_stmt_);
+        save_stmt_ = nullptr;
+    }
+    load_id_param_index_   = 0;
+    load_name_param_index_ = 0;
+    save_id_param_index_   = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// MemoryTable
+// ---------------------------------------------------------------------------
+
+bool MemoryTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated MemoryTable initialization");
+        return false;
+    }
+    db_ = database;
+
+    int rc;
+
+    rc = sqlite3_prepare_v2(db_, "SELECT name, val FROM memory WHERE id = :id", -1, &load_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare MemoryTable::load: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    load_id_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":id");
+
+    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO memory(id, name, val) VALUES(:id, :name, :val)", -1,
+                            &save_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare MemoryTable::save: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(load_stmt_);
+        load_stmt_           = nullptr;
+        load_id_param_index_ = 0;
+        db_                  = nullptr;
+        return false;
+    }
+    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
+    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
+    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+    return true;
+}
+
+void MemoryTable::Shutdown() {
+    if (load_stmt_) {
+        sqlite3_finalize(load_stmt_);
+        load_stmt_ = nullptr;
+    }
+    if (save_stmt_) {
+        sqlite3_finalize(save_stmt_);
+        save_stmt_ = nullptr;
+    }
+    load_id_param_index_   = 0;
+    save_id_param_index_   = 0;
+    save_name_param_index_ = 0;
+    save_val_param_index_  = 0;
+    db_                    = nullptr;
+}
+
+int MemoryTable::Save(int32_t id, const char *name, int32_t value) {
+    int            rc;
+    StmtResetGuard guard(save_mutex_, save_stmt_);
+
+    rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, id);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind mem id %i: %s", id, sqlite3_errmsg(db_));
         return rc;
     }
+    rc = sqlite3_bind_text(save_stmt_, save_name_param_index_, name, strlen(name), 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind mem name %s: %s", name, sqlite3_errmsg(db_));
+        return rc;
+    }
+    rc = sqlite3_bind_int(save_stmt_, save_val_param_index_, value);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind mem val %i: %s", value, sqlite3_errmsg(db_));
+        return rc;
+    }
+    rc = sqlite3_step(save_stmt_);
+    if (rc != SQLITE_DONE) {
+        LV_LOG_ERROR("Failed save memory item %s: %s", name, sqlite3_errmsg(db_));
+        return rc;
+    }
+    return SUCCESS;
+}
 
-    float float_val;
-    rc = sqlite3_step(read_stmt);
+bool MemoryTable::Load(int32_t id, int32_t &freq, bool &has_freq, int32_t &mode, bool &has_mode, int32_t &agc,
+                       bool &has_agc, int32_t &att, bool &has_att, int32_t &pre, bool &has_pre) {
+    freq     = 0;
+    mode     = 0;
+    agc      = 0;
+    att      = 0;
+    pre      = 0;
+    has_freq = false;
+    has_mode = false;
+    has_agc  = false;
+    has_att  = false;
+    has_pre  = false;
+
+    int            rc;
+    StmtResetGuard guard(load_mutex_, load_stmt_);
+
+    rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, id);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind mem id %i: %s", id, sqlite3_errmsg(db_));
+        return false;
+    }
+    while (1) {
+        rc = sqlite3_step(load_stmt_);
+        if (rc == SQLITE_ROW) {
+            const unsigned char *name_txt = sqlite3_column_text(load_stmt_, 0);
+            const char          *name     = name_txt ? reinterpret_cast<const char *>(name_txt) : "";
+            const int32_t        val      = sqlite3_column_int(load_stmt_, 1);
+            if (strcmp(name, "vfoa_freq") == 0) {
+                freq     = val;
+                has_freq = true;
+            } else if (strcmp(name, "vfoa_mode") == 0) {
+                mode     = val;
+                has_mode = true;
+            } else if (strcmp(name, "vfoa_agc") == 0) {
+                agc     = val;
+                has_agc = true;
+            } else if (strcmp(name, "vfoa_att") == 0) {
+                att     = val;
+                has_att = true;
+            } else if (strcmp(name, "vfoa_pre") == 0) {
+                pre     = val;
+                has_pre = true;
+            }
+        } else if (rc == SQLITE_DONE) {
+            break;
+        } else {
+            LV_LOG_ERROR("Error while reading memory rows: %s", sqlite3_errmsg(db_));
+            return false;
+        }
+    }
+    return has_freq;
+}
+
+// ---------------------------------------------------------------------------
+// DigitalModesTable
+// ---------------------------------------------------------------------------
+
+bool DigitalModesTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated DigitalModesTable initialization");
+        return false;
+    }
+    db_ = database;
+
+    int rc;
+
+    rc = sqlite3_prepare_v2(
+        db_,
+        "SELECT label, freq, mode FROM digital_modes WHERE type = :type AND freq > :freq ORDER BY freq ASC LIMIT 1", -1,
+        &get_next_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare DigitalModesTable::get_next: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    get_next_type_param_index_ = sqlite3_bind_parameter_index(get_next_stmt_, ":type");
+    get_next_freq_param_index_ = sqlite3_bind_parameter_index(get_next_stmt_, ":freq");
+
+    rc = sqlite3_prepare_v2(
+        db_, "SELECT label, freq, mode FROM digital_modes WHERE type = :type ORDER BY ABS(freq - :freq) ASC LIMIT 1",
+        -1, &get_closest_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare DigitalModesTable::get_closest: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(get_next_stmt_);
+        get_next_stmt_             = nullptr;
+        get_next_type_param_index_ = 0;
+        get_next_freq_param_index_ = 0;
+        db_                        = nullptr;
+        return false;
+    }
+    get_closest_type_param_index_ = sqlite3_bind_parameter_index(get_closest_stmt_, ":type");
+    get_closest_freq_param_index_ = sqlite3_bind_parameter_index(get_closest_stmt_, ":freq");
+
+    rc = sqlite3_prepare_v2(
+        db_,
+        "SELECT label, freq, mode FROM digital_modes WHERE type = :type AND freq < :freq ORDER BY freq DESC LIMIT 1",
+        -1, &get_prev_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare DigitalModesTable::get_prev: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(get_next_stmt_);
+        sqlite3_finalize(get_closest_stmt_);
+        get_next_stmt_                = nullptr;
+        get_closest_stmt_             = nullptr;
+        get_next_type_param_index_    = 0;
+        get_next_freq_param_index_    = 0;
+        get_closest_type_param_index_ = 0;
+        get_closest_freq_param_index_ = 0;
+        db_                           = nullptr;
+        return false;
+    }
+    get_prev_type_param_index_ = sqlite3_bind_parameter_index(get_prev_stmt_, ":type");
+    get_prev_freq_param_index_ = sqlite3_bind_parameter_index(get_prev_stmt_, ":freq");
+    return true;
+}
+
+void DigitalModesTable::Shutdown() {
+    if (get_next_stmt_) {
+        sqlite3_finalize(get_next_stmt_);
+        get_next_stmt_ = nullptr;
+    }
+    if (get_closest_stmt_) {
+        sqlite3_finalize(get_closest_stmt_);
+        get_closest_stmt_ = nullptr;
+    }
+    if (get_prev_stmt_) {
+        sqlite3_finalize(get_prev_stmt_);
+        get_prev_stmt_ = nullptr;
+    }
+    get_next_type_param_index_    = 0;
+    get_next_freq_param_index_    = 0;
+    get_closest_type_param_index_ = 0;
+    get_closest_freq_param_index_ = 0;
+    get_prev_type_param_index_    = 0;
+    get_prev_freq_param_index_    = 0;
+    db_                           = nullptr;
+}
+
+DigitalModesTable::LoadResult DigitalModesTable::find_next(int32_t type, int32_t current_freq) {
+    int            rc;
+    StmtResetGuard guard(get_next_mutex_, get_next_stmt_);
+
+    rc = sqlite3_bind_int(get_next_stmt_, get_next_type_param_index_, type);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital type %i to find_next stmt: %s", type, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_bind_int(get_next_stmt_, get_next_freq_param_index_, current_freq);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital freq %i to find_next stmt: %s", current_freq, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_step(get_next_stmt_);
     if (rc == SQLITE_ROW) {
-        if (item->db_scale != 0) {
-            float_val = sqlite3_column_int(read_stmt, 0) * item->db_scale;
-        } else {
-            float_val = sqlite3_column_double(read_stmt, 0);
-        }
-        LV_LOG_USER("Loaded %s=%f (pk=%i)", item->db_name, float_val, item->pk);
-        subject_set_float(item->val, float_val);
-        rc = SUCCESS;
-    } else {
-        LV_LOG_WARN("No results for load %s", item->db_name);
-        rc = NOT_FOUND;
+        Record               record;
+        const unsigned char *txt = sqlite3_column_text(get_next_stmt_, 0);
+        record.label             = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq              = sqlite3_column_int(get_next_stmt_, 1);
+        record.mode              = sqlite3_column_int(get_next_stmt_, 2);
+        // record.label is copied into a std::string: sqlite3_reset (run by the
+        // guard on scope exit) invalidates the column text pointer.
+        return {record, SUCCESS};
     }
-    sqlite3_reset(read_stmt);
-    sqlite3_clear_bindings(read_stmt);
-    pthread_mutex_unlock(&read_mutex);
-    return rc;
+    if (rc == SQLITE_DONE) {
+        LV_LOG_WARN("No next digital mode for type=%i, freq=%i", type, current_freq);
+        return {Record{}, NOT_FOUND};
+    }
+    LV_LOG_WARN("find_next failed: %s", sqlite3_errmsg(db_));
+    return {Record{}, rc};
 }
 
-int cfg_params_load_item_str(cfg_item_t *item) {
-    if (subject_get_dtype(item->val) != DTYPE_STR) {
-        LV_LOG_WARN("Wrong item %s dtype: %u, can't load", item->db_name, subject_get_dtype(item->val));
-        return WRONG_TYPE;
-    }
-    int rc;
-    pthread_mutex_lock(&read_mutex);
-    rc = prepare_read_stmt(item);
-    if (rc != SQLITE_OK) {
-        pthread_mutex_unlock(&read_mutex);
-        return rc;
-    }
+DigitalModesTable::LoadResult DigitalModesTable::find_closest(int32_t type, int32_t current_freq) {
+    int            rc;
+    StmtResetGuard guard(get_closest_mutex_, get_closest_stmt_);
 
-    const char *text_val;
-    rc = sqlite3_step(read_stmt);
+    rc = sqlite3_bind_int(get_closest_stmt_, get_closest_type_param_index_, type);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital type %i to find_closest stmt: %s", type, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_bind_int(get_closest_stmt_, get_closest_freq_param_index_, current_freq);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital freq %i to find_closest stmt: %s", current_freq, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_step(get_closest_stmt_);
     if (rc == SQLITE_ROW) {
-        text_val = (const char *)sqlite3_column_text(read_stmt, 0);
-        LV_LOG_USER("Loaded %s=%s (pk=%i)", item->db_name, text_val, item->pk);
-        if (item->db_to_val) {
-            char *processed_val = (char *)item->db_to_val((void*)text_val, item->val);
-            subject_set_text(item->val, processed_val);
-            free(processed_val);
-        } else {
-            subject_set_text(item->val, text_val);
-        }
-        rc = SUCCESS;
-    } else {
-        LV_LOG_WARN("No results for load %s", item->db_name);
-        rc = NOT_FOUND;
+        Record               record;
+        const unsigned char *txt = sqlite3_column_text(get_closest_stmt_, 0);
+        record.label             = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq              = sqlite3_column_int(get_closest_stmt_, 1);
+        record.mode              = sqlite3_column_int(get_closest_stmt_, 2);
+        return {record, SUCCESS};
     }
-    sqlite3_reset(read_stmt);
-    sqlite3_clear_bindings(read_stmt);
-    pthread_mutex_unlock(&read_mutex);
-    return rc;
+    if (rc == SQLITE_DONE) {
+        LV_LOG_WARN("No closest digital mode for type=%i, freq=%i", type, current_freq);
+        return {Record{}, NOT_FOUND};
+    }
+    LV_LOG_WARN("find_closest failed: %s", sqlite3_errmsg(db_));
+    return {Record{}, rc};
 }
 
+DigitalModesTable::LoadResult DigitalModesTable::find_prev(int32_t type, int32_t current_freq) {
+    int            rc;
+    StmtResetGuard guard(get_prev_mutex_, get_prev_stmt_);
 
-int cfg_params_save_item_int(cfg_item_t *item) {
-    enum data_type dtype = subject_get_dtype(item->val);
-    if (dtype != DTYPE_INT) {
-        LV_LOG_WARN("Wrong item %s dtype: %u, will not save", item->db_name, dtype);
-        return WRONG_TYPE;
+    rc = sqlite3_bind_int(get_prev_stmt_, get_prev_type_param_index_, type);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital type %i to find_prev stmt: %s", type, sqlite3_errmsg(db_));
+        return {Record{}, rc};
     }
+    rc = sqlite3_bind_int(get_prev_stmt_, get_prev_freq_param_index_, current_freq);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind digital freq %i to find_prev stmt: %s", current_freq, sqlite3_errmsg(db_));
+        return {Record{}, rc};
+    }
+    rc = sqlite3_step(get_prev_stmt_);
+    if (rc == SQLITE_ROW) {
+        Record               record;
+        const unsigned char *txt = sqlite3_column_text(get_prev_stmt_, 0);
+        record.label             = txt ? reinterpret_cast<const char *>(txt) : "";
+        record.freq              = sqlite3_column_int(get_prev_stmt_, 1);
+        record.mode              = sqlite3_column_int(get_prev_stmt_, 2);
+        return {record, SUCCESS};
+    }
+    if (rc == SQLITE_DONE) {
+        LV_LOG_WARN("No prev digital mode for type=%i, freq=%i", type, current_freq);
+        return {Record{}, NOT_FOUND};
+    }
+    LV_LOG_WARN("find_prev failed: %s", sqlite3_errmsg(db_));
+    return {Record{}, rc};
+}
+
+// ---------------------------------------------------------------------------
+// AtuTable
+// ---------------------------------------------------------------------------
+
+bool AtuTable::Init(sqlite3 *database) {
+    if (db_) {
+        LV_LOG_ERROR("Repeated AtuTable initialization");
+        return false;
+    }
+    db_ = database;
 
     int rc;
 
-    pthread_mutex_lock(&write_mutex);
-    rc = prepare_write_stmt(item);
+    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO atu(ant, freq, val) VALUES(:ant, :freq, :val)", -1,
+                            &save_stmt_, 0);
     if (rc != SQLITE_OK) {
-        pthread_mutex_unlock(&write_mutex);
+        LV_LOG_ERROR("Failed prepare AtuTable::save: %s", sqlite3_errmsg(db_));
+        db_ = nullptr;
+        return false;
+    }
+    save_ant_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":ant");
+    save_freq_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":freq");
+    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+
+    rc = sqlite3_prepare_v2(
+        db_, "DELETE FROM atu WHERE ant = :ant AND (freq BETWEEN :freq - :step AND :freq + :step) AND (:freq != freq)",
+        -1, &delete_adjacent_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare AtuTable::delete_adjacent: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(save_stmt_);
+        save_stmt_             = nullptr;
+        save_ant_param_index_  = 0;
+        save_freq_param_index_ = 0;
+        save_val_param_index_  = 0;
+        db_                    = nullptr;
+        return false;
+    }
+    delete_adjacent_ant_param_index_  = sqlite3_bind_parameter_index(delete_adjacent_stmt_, ":ant");
+    delete_adjacent_freq_param_index_ = sqlite3_bind_parameter_index(delete_adjacent_stmt_, ":freq");
+    delete_adjacent_step_param_index_ = sqlite3_bind_parameter_index(delete_adjacent_stmt_, ":step");
+
+    rc =
+        sqlite3_prepare_v2(db_, "SELECT freq, val FROM atu WHERE ant = :ant ORDER BY freq ASC", -1, &load_all_stmt_, 0);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed prepare AtuTable::load_all: %s", sqlite3_errmsg(db_));
+        sqlite3_finalize(save_stmt_);
+        sqlite3_finalize(delete_adjacent_stmt_);
+        save_stmt_                        = nullptr;
+        delete_adjacent_stmt_             = nullptr;
+        save_ant_param_index_             = 0;
+        save_freq_param_index_            = 0;
+        save_val_param_index_             = 0;
+        delete_adjacent_ant_param_index_  = 0;
+        delete_adjacent_freq_param_index_ = 0;
+        delete_adjacent_step_param_index_ = 0;
+        db_                               = nullptr;
+        return false;
+    }
+    load_all_ant_param_index_ = sqlite3_bind_parameter_index(load_all_stmt_, ":ant");
+    return true;
+}
+
+void AtuTable::Shutdown() {
+    if (save_stmt_) {
+        sqlite3_finalize(save_stmt_);
+        save_stmt_ = nullptr;
+    }
+    if (delete_adjacent_stmt_) {
+        sqlite3_finalize(delete_adjacent_stmt_);
+        delete_adjacent_stmt_ = nullptr;
+    }
+    if (load_all_stmt_) {
+        sqlite3_finalize(load_all_stmt_);
+        load_all_stmt_ = nullptr;
+    }
+    save_ant_param_index_             = 0;
+    save_freq_param_index_            = 0;
+    save_val_param_index_             = 0;
+    delete_adjacent_ant_param_index_  = 0;
+    delete_adjacent_freq_param_index_ = 0;
+    delete_adjacent_step_param_index_ = 0;
+    load_all_ant_param_index_         = 0;
+    db_                               = nullptr;
+}
+
+int AtuTable::Save(int32_t ant, int32_t freq, uint32_t network) {
+    int            rc;
+    StmtResetGuard guard(save_mutex_, save_stmt_);
+
+    rc = sqlite3_bind_int(save_stmt_, save_ant_param_index_, ant);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind atu ant %i: %s", ant, sqlite3_errmsg(db_));
         return rc;
     }
-
-    int     val_index = sqlite3_bind_parameter_index(insert_stmt, ":val");
-    int32_t int_val;
-
-    int_val = subject_get_int(item->val);
-    rc      = sqlite3_bind_int(insert_stmt, val_index, int_val);
+    rc = sqlite3_bind_int(save_stmt_, save_freq_param_index_, freq);
     if (rc != SQLITE_OK) {
-        LV_LOG_WARN("Can't bind val %i to save params query", int_val);
-    } else {
-        rc = sqlite3_step(insert_stmt);
-        if (rc != SQLITE_DONE) {
-            LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
-        } else {
-            LV_LOG_USER("Saved %s=%i (pk=%i)", item->db_name, int_val, item->pk);
-            rc = SUCCESS;
-        }
-    }
-    sqlite3_reset(insert_stmt);
-    sqlite3_clear_bindings(insert_stmt);
-    pthread_mutex_unlock(&write_mutex);
-    return rc;
-}
-
-int cfg_params_save_item_uint64(cfg_item_t *item) {
-    enum data_type dtype = subject_get_dtype(item->val);
-    if (dtype != DTYPE_UINT64) {
-        LV_LOG_WARN("Wrong item %s dtype: %u, will not save", item->db_name, dtype);
-        return WRONG_TYPE;
-    }
-
-    int rc;
-
-    pthread_mutex_lock(&write_mutex);
-    rc = prepare_write_stmt(item);
-    if (rc != SQLITE_OK) {
-        pthread_mutex_unlock(&write_mutex);
+        LV_LOG_ERROR("Failed to bind atu freq %i: %s", freq, sqlite3_errmsg(db_));
         return rc;
     }
-
-    int      val_index = sqlite3_bind_parameter_index(insert_stmt, ":val");
-    uint64_t uint64_val;
-    uint64_val = subject_get_uint64(item->val);
-    rc         = sqlite3_bind_int64(insert_stmt, val_index, uint64_val);
+    rc = sqlite3_bind_int(save_stmt_, save_val_param_index_, static_cast<int32_t>(network));
     if (rc != SQLITE_OK) {
-        LV_LOG_WARN("Can't bind val %llu to save params query", uint64_val);
-    } else {
-        rc = sqlite3_step(insert_stmt);
-        if (rc != SQLITE_DONE) {
-            LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
-        } else {
-            LV_LOG_USER("Saved %s=%llu (pk=%i)", item->db_name, uint64_val, item->pk);
-            rc = SUCCESS;
-        }
-    }
-    sqlite3_reset(insert_stmt);
-    sqlite3_clear_bindings(insert_stmt);
-    pthread_mutex_unlock(&write_mutex);
-    return rc;
-}
-
-int cfg_params_save_item_float(cfg_item_t *item) {
-    enum data_type dtype = subject_get_dtype(item->val);
-    if (dtype != DTYPE_FLOAT) {
-        LV_LOG_WARN("Wrong item %s dtype: %u, will not save", item->db_name, dtype);
-        return WRONG_TYPE;
-    }
-
-    int rc;
-
-    pthread_mutex_lock(&write_mutex);
-    rc = prepare_write_stmt(item);
-    if (rc != SQLITE_OK) {
-        pthread_mutex_unlock(&write_mutex);
+        LV_LOG_ERROR("Failed to bind atu val %u: %s", network, sqlite3_errmsg(db_));
         return rc;
     }
-
-    int   val_index = sqlite3_bind_parameter_index(insert_stmt, ":val");
-    float float_val;
-
-    float_val = subject_get_float(item->val);
-    if (item->db_scale != 0) {
-        rc = sqlite3_bind_int(insert_stmt, val_index, roundf(float_val / item->db_scale));
-    } else {
-        rc = sqlite3_bind_double(insert_stmt, val_index, float_val);
-    }
-    if (rc != SQLITE_OK) {
-        LV_LOG_WARN("Can't bind val %f to save params query", float_val);
-    } else {
-        rc = sqlite3_step(insert_stmt);
-        if (rc != SQLITE_DONE) {
-            LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
-        } else {
-            LV_LOG_USER("Saved %s=%f (pk=%i)", item->db_name, float_val, item->pk);
-            rc = SUCCESS;
-        }
-    }
-    sqlite3_reset(insert_stmt);
-    sqlite3_clear_bindings(insert_stmt);
-    pthread_mutex_unlock(&write_mutex);
-    return rc;
-}
-
-int cfg_params_save_item_str(cfg_item_t *item) {
-    enum data_type dtype = subject_get_dtype(item->val);
-    if (dtype != DTYPE_STR) {
-        LV_LOG_WARN("Wrong item %s dtype: %u, will not save", item->db_name, dtype);
-        return WRONG_TYPE;
-    }
-
-    int rc;
-
-    pthread_mutex_lock(&write_mutex);
-    rc = prepare_write_stmt(item);
-    if (rc != SQLITE_OK) {
-        pthread_mutex_unlock(&write_mutex);
+    rc = sqlite3_step(save_stmt_);
+    if (rc != SQLITE_DONE) {
+        LV_LOG_ERROR("Failed save atu row for ant %i, freq %i: %s", ant, freq, sqlite3_errmsg(db_));
         return rc;
     }
+    return SUCCESS;
+}
 
-    int         val_index = sqlite3_bind_parameter_index(insert_stmt, ":val");
-    const char *text_val;
+int AtuTable::DeleteAdjacent(int32_t ant, int32_t freq, int32_t step) {
+    int            rc;
+    StmtResetGuard guard(delete_adjacent_mutex_, delete_adjacent_stmt_);
 
-    text_val = subject_get_text(item->val);
-    rc       = sqlite3_bind_text(insert_stmt, val_index, text_val, -1, 0);
+    rc = sqlite3_bind_int(delete_adjacent_stmt_, delete_adjacent_ant_param_index_, ant);
     if (rc != SQLITE_OK) {
-        LV_LOG_WARN("Can't bind val '%s' to save params query", text_val);
-    } else {
-        rc = sqlite3_step(insert_stmt);
-        if (rc != SQLITE_DONE) {
-            LV_LOG_ERROR("Failed save item %s: %s", item->db_name, sqlite3_errmsg(db));
+        LV_LOG_ERROR("Failed to bind atu delete ant %i: %s", ant, sqlite3_errmsg(db_));
+        return rc;
+    }
+    rc = sqlite3_bind_int(delete_adjacent_stmt_, delete_adjacent_freq_param_index_, freq);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind atu delete freq %i: %s", freq, sqlite3_errmsg(db_));
+        return rc;
+    }
+    rc = sqlite3_bind_int(delete_adjacent_stmt_, delete_adjacent_step_param_index_, step);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind atu delete step %i: %s", step, sqlite3_errmsg(db_));
+        return rc;
+    }
+    rc = sqlite3_step(delete_adjacent_stmt_);
+    if (rc != SQLITE_DONE) {
+        LV_LOG_ERROR("Failed delete adjacent atu rows for ant %i, freq %i: %s", ant, freq, sqlite3_errmsg(db_));
+        return rc;
+    }
+    return SUCCESS;
+}
+
+int AtuTable::LoadAll(int32_t ant, std::vector<AtuEntry> &out) {
+    int            rc;
+    StmtResetGuard guard(load_all_mutex_, load_all_stmt_);
+
+    out.clear();
+    rc = sqlite3_bind_int(load_all_stmt_, load_all_ant_param_index_, ant);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Failed to bind atu load ant %i: %s", ant, sqlite3_errmsg(db_));
+        return rc;
+    }
+    while (1) {
+        rc = sqlite3_step(load_all_stmt_);
+        if (rc == SQLITE_ROW) {
+            AtuEntry entry;
+            entry.freq    = sqlite3_column_int(load_all_stmt_, 0);
+            entry.network = static_cast<uint32_t>(sqlite3_column_int(load_all_stmt_, 1));
+            out.push_back(entry);
+        } else if (rc == SQLITE_DONE) {
+            break;
         } else {
-            LV_LOG_USER("Saved %s=%s (pk=%i)", item->db_name, text_val, item->pk);
-            rc = SUCCESS;
+            LV_LOG_ERROR("Error while reading atu rows: %s", sqlite3_errmsg(db_));
+            return rc;
         }
     }
-    sqlite3_reset(insert_stmt);
-    sqlite3_clear_bindings(insert_stmt);
-    pthread_mutex_unlock(&write_mutex);
-    return rc;
+    return SUCCESS;
 }
 
-static inline int prepare_read_stmt(cfg_item_t *item) {
-    int rc;
-    rc = sqlite3_bind_text(read_stmt, sqlite3_bind_parameter_index(read_stmt, ":name"), item->db_name, strlen(item->db_name), 0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed to bind name %s: %s", item->db_name, sqlite3_errmsg(db));
-    }
-    return rc;
+// ---------------------------------------------------------------------------
+// Global database entry points
+// ---------------------------------------------------------------------------
+
+extern "C" void cfg_db_init(sqlite3 *database) {
+    bool ok;
+    ok = ParamsTable::Init(database);
+    if (!ok)
+        exit(1);
+    ok = BandsTable::Init(database);
+    if (!ok)
+        exit(1);
+    ok = BandParamsTable::Init(database);
+    if (!ok)
+        exit(1);
+    ok = ModeParamsTable::Init(database);
+    if (!ok)
+        exit(1);
+    ok = TransverterTable::Init(database);
+    if (!ok)
+        exit(1);
+    ok = MemoryTable::Init(database);
+    if (!ok)
+        exit(1);
+    ok = DigitalModesTable::Init(database);
+    if (!ok)
+        exit(1);
+    ok = AtuTable::Init(database);
+    if (!ok)
+        exit(1);
 }
 
-
-static inline int prepare_write_stmt(cfg_item_t *item) {
-    int rc;
-    rc = sqlite3_bind_text(insert_stmt, sqlite3_bind_parameter_index(insert_stmt, ":name"), item->db_name,
-                           strlen(item->db_name), 0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_WARN("Can't bind name %s to save params query", item->db_name);
-    }
-    return rc;
+void cfg_db_shutdown() {
+    ParamsTable::Shutdown();
+    BandsTable::Shutdown();
+    BandParamsTable::Shutdown();
+    ModeParamsTable::Shutdown();
+    TransverterTable::Shutdown();
+    MemoryTable::Shutdown();
+    DigitalModesTable::Shutdown();
+    AtuTable::Shutdown();
 }

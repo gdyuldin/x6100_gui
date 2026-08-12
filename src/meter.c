@@ -10,6 +10,7 @@
 #include "styles.h"
 #include "events.h"
 #include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "spectrum.h"
 #include "util.h"
 #include "scheduler.h"
@@ -51,7 +52,7 @@ static s_item_t s_items[NUM_ITEMS] = {
 };
 
 static void on_bool_value_change(Subject *subj, void *user_data) {
-    *(bool*)user_data = subject_get_int(subj);
+    *(bool*)user_data = subject_i_get((SubjectInt*)subj);
 }
 
 static void update_db_label() {
@@ -163,10 +164,8 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
     lv_obj_add_event_cb(obj, rx_cb, EVENT_RADIO_RX, NULL);
     lv_obj_add_event_cb(obj, meter_draw_cb, LV_EVENT_DRAW_MAIN_END, NULL);
 
-    subject_add_delayed_observer(cfg_cur.pre, on_bool_value_change, &pre);
-    on_bool_value_change(cfg_cur.pre, &pre);
-    subject_add_delayed_observer(cfg_cur.att, on_bool_value_change, &att);
-    on_bool_value_change(cfg_cur.att, &att);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_cur_pre, on_bool_value_change, &pre);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_cur_att, on_bool_value_change, &att);
 
     db_val_label = lv_label_create(obj);
     lv_obj_set_style_text_font(db_val_label, &sony_20, 0);

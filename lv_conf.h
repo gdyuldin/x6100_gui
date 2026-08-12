@@ -42,7 +42,9 @@
 #define LV_COLOR_CHROMA_KEY lv_color_hex(0x00ff00)         /*pure green*/
 
 // Use NEON for some draw functions
+#ifndef LV_DRAW_NEON
 #define LV_DRAW_NEON 1
+#endif
 
 /*=========================
    MEMORY SETTINGS

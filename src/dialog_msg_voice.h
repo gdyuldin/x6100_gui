@@ -8,10 +8,7 @@
 
 #pragma once
 
-#include "dialog.h"
-
 #include "buttons.h"
-
 #include "lvgl/lvgl.h"
 
 typedef enum {
@@ -20,7 +17,16 @@ typedef enum {
     MSG_VOICE_PLAY
 } msg_voice_state_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include "dialog.h"
+
 extern dialog_t *dialog_msg_voice;
 
 msg_voice_state_t dialog_msg_voice_get_state();
 void dialog_msg_voice_put_audio_samples(size_t nsamples, int16_t *samples);
+
+#ifdef __cplusplus
+}
+#endif

@@ -11,14 +11,13 @@
 #include "util.h"
 #include "knobs.h"
 #include "controls.h"
+#include "voice.h"
 
 extern "C" {
     #include "msg.h"
     #include "radio.h"
     #include "main.h"
     #include "params/params.h"
-    #include "voice.h"
-    #include "cfg/mode.h"
 }
 
 static cfg_ctrl_t   vol_ctrl = CTRL_VOL;

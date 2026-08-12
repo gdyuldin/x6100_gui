@@ -17,6 +17,9 @@
 #include "../dialog_msg_cw.h"
 #include "../qth/qth.h"
 
+#include "../cfg/db.h"
+#include "../cfg/cfg_api.h"
+
 #include "lvgl/lvgl.h"
 
 #include <unistd.h>
@@ -100,9 +103,6 @@ params_t params = {
     .theme                  = { .x = THEME_SIMPLE, .name="theme"},
 };
 
-static sqlite3_stmt     *write_mode_stmt;
-static sqlite3_stmt     *bands_find_all_stmt;
-static sqlite3_stmt     *bands_find_stmt;
 
 
 /* System params */
@@ -383,34 +383,21 @@ static void * params_thread(void *arg) {
 void params_init() {
     int rc;
     if (database_init()) {
-        cfg_init(db);
+        // Init new cfg statements
+        cfg_db_init(db);
+
+        // Init the new SettingsManager-backed C-API: loads global/band/mode
+        // params into cfg_sm and fills the cfg_* handles (Stage 1 migration).
+        cfg_api_init(NULL);
+
+        // Background deferred-save thread for the new params (Idle until the
+        // consumers begin writing through the new API).
+        cfg_api_start_flush_thread();
+
         if (!params_load()) {
             LV_LOG_ERROR("Load params");
             sqlite3_close(db);
             db = NULL;
-        }
-
-        rc = sqlite3_prepare_v2(db, "INSERT INTO mode_params(mode, name, val) VALUES(?, ?, ?)", -1, &write_mode_stmt, 0);
-
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Prepare mode write");
-        }
-
-        rc = sqlite3_prepare_v2(db,
-            "SELECT id,name,start_freq,stop_freq,type FROM bands "
-                "WHERE (stop_freq BETWEEN ? AND ?) OR (start_freq BETWEEN ? AND ?) OR (start_freq <= ? AND stop_freq >= ?) "
-                "ORDER BY start_freq ASC",
-                -1, &bands_find_all_stmt, 0
-        );
-
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Prepare bands all find");
-        }
-
-        rc = sqlite3_prepare_v2(db,  "SELECT id,name,start_freq,stop_freq,type FROM bands WHERE (? BETWEEN start_freq AND stop_freq)", -1, &bands_find_stmt, 0);
-
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Prepare bands find");
         }
 
     } else {

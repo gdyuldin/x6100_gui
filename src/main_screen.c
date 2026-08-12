@@ -47,7 +47,7 @@
 #include "recorder.h"
 #include "voice.h"
 #include "pubsub_ids.h"
-#include "cfg/mode.h"
+#include "cfg/cfg_api.h"
 #include "cfg/memory.h"
 #include "knobs.h"
 
@@ -59,7 +59,7 @@
 static uint16_t     spectrum_height = (480 / 3);
 static uint16_t     freq_height = 36;
 static lv_obj_t     *obj;
-static Subject      *freq_lock;
+static SubjectInt   *freq_lock;
 static bool         mode_lock = false;
 static bool         ab_lock = false;
 static bool         band_lock = false;
@@ -113,8 +113,8 @@ static void low_power_timer_cb(lv_timer_t * timer) {
 }
 
 static void toggle_atu_enabled() {
-    bool new_atu_enabled = !subject_get_int(cfg.atu_enabled.val);
-    subject_set_int(cfg.atu_enabled.val, new_atu_enabled);
+    bool new_atu_enabled = !param_i_get(cfg_atu_enabled);
+    param_i_set(cfg_atu_enabled, new_atu_enabled);
     voice_say_text_fmt("Auto tuner %s", new_atu_enabled ? "On" : "Off");
 }
 
@@ -218,16 +218,16 @@ void main_screen_action(press_action_t action) {
             break;
 
         case ACTION_NR_TOGGLE:
-            b = subject_get_int(cfg.nr.val);
+            b = param_i_get(cfg_nr);
             b = !b;
-            subject_set_int(cfg.nr.val, b);
+            param_i_set(cfg_nr, b);
             msg_update_text_fmt("#FFFFFF NR: %s", b ? "On" : "Off");
             break;
 
         case ACTION_NB_TOGGLE:
-            b = subject_get_int(cfg.nb.val);
+            b = param_i_get(cfg_nb);
             b = !b;
-            subject_set_int(cfg.nb.val, b);
+            param_i_set(cfg_nb, b);
             msg_update_text_fmt("#FFFFFF NB: %s", b ? "On" : "Off");
             break;
 
@@ -254,7 +254,7 @@ void main_screen_action(press_action_t action) {
 }
 
 static x6100_mode_t get_next_mode_am_fm(bool long_press) {
-    x6100_mode_t    mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t    mode = cparam_i_get(cfg_cur_mode);
     switch (mode) {
         case x6100_mode_am:
             mode = x6100_mode_nfm;
@@ -268,7 +268,7 @@ static x6100_mode_t get_next_mode_am_fm(bool long_press) {
 }
 
 static x6100_mode_t get_next_mode_cw(bool long_press) {
-    x6100_mode_t    mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t    mode = cparam_i_get(cfg_cur_mode);
     switch (mode) {
         case x6100_mode_cw:
             mode = x6100_mode_cwr;
@@ -282,7 +282,7 @@ static x6100_mode_t get_next_mode_cw(bool long_press) {
 }
 
 static x6100_mode_t get_next_mode_ssb(bool long_press) {
-    x6100_mode_t    mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t    mode = cparam_i_get(cfg_cur_mode);
     switch (mode) {
         case x6100_mode_lsb_dig:
             if (long_press) {
@@ -367,7 +367,7 @@ static void change_mode(keypad_key_t key, keypad_state_t state) {
             break;
         }
     }
-    subject_set_int(cfg_cur.mode, next_mode);
+    cparam_i_set(cfg_cur_mode, next_mode);
 }
 
 static void main_screen_keypad_cb(lv_event_t * e) {
@@ -375,11 +375,11 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
     switch (keypad->key) {
         case KEYPAD_PRE: ;
-            int32_t pre = subject_get_int(cfg_cur.pre);
-            int32_t att = subject_get_int(cfg_cur.att);
+            int32_t pre = cparam_i_get(cfg_cur_pre);
+            int32_t att = cparam_i_get(cfg_cur_att);
             if (keypad->state == KEYPAD_RELEASE) {
                 pre = !pre;
-                subject_set_int(cfg_cur.pre, pre);
+                cparam_i_set(cfg_cur_pre, pre);
                 voice_say_text_fmt("Preamplifier %s", pre ? "On" : "Off");
 
                 if (params.mag_info.x) {
@@ -387,7 +387,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 }
             } else if (keypad->state == KEYPAD_LONG) {
                 att = !att;
-                subject_set_int(cfg_cur.att, att);
+                cparam_i_set(cfg_cur_att, att);
                 voice_say_text_fmt("Attenuator %s", att ? "On" : "Off");
 
                 if (params.mag_info.x) {
@@ -424,7 +424,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
         case KEYPAD_AGC:
             if (keypad->state == KEYPAD_RELEASE) {
-                x6100_agc_t agc = subject_get_int(cfg_cur.agc);
+                x6100_agc_t agc = cparam_i_get(cfg_cur_agc);
                 switch (agc) {
                     case x6100_agc_off:
                         agc = x6100_agc_slow;
@@ -446,7 +446,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                         voice_say_text_fmt("Auto gain off");
                         break;
                 }
-                subject_set_int(cfg_cur.agc, agc);
+                cparam_i_set(cfg_cur_agc, agc);
                 // radio_change_agc();
                 //
 
@@ -454,8 +454,8 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                     msg_tiny_set_text_fmt("AGC: %s", info_params_agc());
                 }
             } else if (keypad->state == KEYPAD_LONG) {
-                bool new_split = !subject_get_int(cfg_cur.band->split.val);
-                subject_set_int(cfg_cur.band->split.val, new_split);
+                bool new_split = !param_i_get(cfg_band_split);
+                param_i_set(cfg_band_split, new_split);
                 voice_say_text_fmt("Split %s", new_split ? "On" : "Off");
 
                 spectrum_clear();
@@ -479,7 +479,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 toggle_atu_enabled();
 
                 if (params.mag_info.x) {
-                    msg_tiny_set_text_fmt("ATU: %s", subject_get_int(cfg.atu_enabled.val) ? "On" : "Off");
+                    msg_tiny_set_text_fmt("ATU: %s", param_i_get(cfg_atu_enabled) ? "On" : "Off");
                 }
             } else if (keypad->state == KEYPAD_LONG) {
                 radio_start_atu();
@@ -555,7 +555,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
         case KEYPAD_MSG:
             if (keypad->state == KEYPAD_RELEASE) {
-                switch (subject_get_int(cfg_cur.mode)) {
+                switch (cparam_i_get(cfg_cur_mode)) {
                     case x6100_mode_cw:
                     case x6100_mode_cwr:
                         if (!dialog_type_is_run(dialog_msg_cw)) {
@@ -619,7 +619,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                         msg_tiny_set_text_fmt("%s", info_params_vfo_label_get());
                     }
                 } else if (keypad->state == KEYPAD_LONG) {
-                    x6100_vfo_t cur_vfo = subject_get_int(cfg_cur.band->vfo.val);
+                    x6100_vfo_t cur_vfo = param_i_get(cfg_band_current_vfo);
                     cfg_band_vfo_copy();
                     // radio_vfo_set();
                     msg_update_text_fmt("Clone VFO %s", cur_vfo == X6100_VFO_A ? "A->B" : "B->A");
@@ -640,8 +640,8 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
         case KEYPAD_LOCK:
             if (keypad->state == KEYPAD_RELEASE) {
-                subject_set_int(freq_lock, !subject_get_int(freq_lock));
-                voice_say_text_fmt("Frequency %s", subject_get_int(freq_lock) ? "locked" : "unlocked");
+                subject_i_set(freq_lock, !subject_i_get(freq_lock));
+                voice_say_text_fmt("Frequency %s", subject_i_get(freq_lock) ? "locked" : "unlocked");
             } else if (keypad->state == KEYPAD_LONG) {
                 radio_bb_reset();
                 exit(1);
@@ -653,7 +653,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 case KEYPAD_PRESS:
                     radio_set_ptt(true);
 
-                    switch (subject_get_int(cfg_cur.mode)) {
+                    switch (cparam_i_get(cfg_cur_mode)) {
                         case x6100_mode_cw:
                         case x6100_mode_cwr:
                             radio_set_morse_key(true);
@@ -663,7 +663,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
                 case KEYPAD_RELEASE:
                 case KEYPAD_LONG_RELEASE:
-                    switch (subject_get_int(cfg_cur.mode)) {
+                    switch (cparam_i_get(cfg_cur_mode)) {
                         case x6100_mode_cw:
                         case x6100_mode_cwr:
                             radio_set_morse_key(false);
@@ -713,8 +713,8 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_SPCH:
             if (hkey->state == HKEY_RELEASE) {
-                subject_set_int(freq_lock, !subject_get_int(freq_lock));
-                voice_say_text_fmt("Frequency %s", subject_get_int(freq_lock) ? "locked" : "unlocked");
+                subject_i_set(freq_lock, !subject_i_get(freq_lock));
+                voice_say_text_fmt("Frequency %s", subject_i_get(freq_lock) ? "locked" : "unlocked");
             }
             break;
 
@@ -737,7 +737,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_UP:
             if (hkey->state == HKEY_RELEASE) {
-                if (!subject_get_int(freq_lock)) {
+                if (!subject_i_get(freq_lock)) {
                     freq_shift(+1);
                 }
             } else if (hkey->state == HKEY_LONG) {
@@ -750,7 +750,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_DOWN:
             if (hkey->state == HKEY_RELEASE) {
-                if (!subject_get_int(freq_lock)) {
+                if (!subject_i_get(freq_lock)) {
                     freq_shift(-1);
                 }
             } else if (hkey->state == HKEY_LONG) {
@@ -817,14 +817,14 @@ static uint16_t freq_accel(uint16_t diff) {
 }
 
 static void freq_shift(int16_t diff) {
-    if (subject_get_int(freq_lock)) {
+    if (subject_i_get(freq_lock)) {
         return;
     }
 
-    int32_t freq = subject_get_int(cfg_cur.fg_freq);
-    int32_t df = diff * subject_get_int(cfg_cur.freq_step) * freq_accel(abs(diff));
+    int32_t freq = cparam_i_get(cfg_fg_freq);
+    int32_t df = diff * param_i_get(cfg_mode_freq_step) * freq_accel(abs(diff));
     freq = align_int(freq + df, abs(df));
-    subject_set_int(cfg_cur.fg_freq, freq);
+    cparam_i_set(cfg_fg_freq, freq);
 
     voice_say_freq(freq);
 }
@@ -842,13 +842,13 @@ static void spectrum_key_cb(lv_event_t * e) {
 
     switch (key) {
         case '-':
-            if (!subject_get_int(freq_lock)) {
+            if (!subject_i_get(freq_lock)) {
                 freq_shift(-1);
             }
             break;
 
         case '=':
-            if (!subject_get_int(freq_lock)) {
+            if (!subject_i_get(freq_lock)) {
                 freq_shift(+1);
             }
             break;
@@ -935,7 +935,7 @@ static void spectrum_key_cb(lv_event_t * e) {
             break;
 
         case KEYBOARD_SCRL_LOCK:
-            subject_set_int(freq_lock, !subject_get_int(freq_lock));
+            subject_i_set(freq_lock, !subject_i_get(freq_lock));
             break;
 
         case KEYBOARD_PGUP:
@@ -954,7 +954,7 @@ static void spectrum_key_cb(lv_event_t * e) {
 
         case HKEY_FINP:
         case 'f':
-            if (!subject_get_int(freq_lock)) {
+            if (!subject_i_get(freq_lock)) {
                 voice_say_text_fmt("Enter frequency");
                 dialog_construct(dialog_freq, obj);
             }
@@ -998,7 +998,7 @@ void main_screen_keys_enable(bool value) {
 }
 
 void main_screen_lock_freq(bool lock) {
-    subject_set_int(freq_lock, lock);
+    subject_i_set(freq_lock, lock);
 }
 
 void main_screen_lock_band(bool lock) {
@@ -1015,14 +1015,14 @@ void main_screen_lock_ab(bool lock) {
 }
 
 void main_screen_set_freq(uint64_t freq) {
-    subject_set_int(cfg_cur.fg_freq, freq);
+    cparam_i_set(cfg_fg_freq, freq);
     event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
 }
 
 lv_obj_t * main_screen() {
     uint16_t y = 0;
 
-    freq_lock = subject_create_int(false);
+    freq_lock = subject_i_create(false);
 
     obj = lv_obj_create(NULL);
 
@@ -1097,21 +1097,18 @@ lv_obj_t * main_screen() {
 
     msg_schedule_text_fmt("X6100 de R1CBU es Others " VERSION);
 
-    subject_add_delayed_observer(freq_lock, on_fg_freq_change, NULL);
-    subject_add_delayed_observer(cfg_cur.band->split.val, on_fg_freq_change, NULL);
-    subject_add_delayed_observer(cfg_cur.fg_freq, on_fg_freq_change, NULL);
+    subject_subscribe_delayed((Subject*)freq_lock, on_fg_freq_change, NULL);
+    subject_subscribe_delayed((Subject*)cfg_band_split, on_fg_freq_change, NULL);
+    subject_subscribe_delayed((Subject*)cfg_fg_freq, on_fg_freq_change, NULL);
 
-    subject_add_delayed_observer(freq_lock, update_freq_boundaries, NULL);
-    // update boundaries on TX with split
-    subject_add_delayed_observer(cfg_cur.fg_freq, update_freq_boundaries, NULL);
-    subject_add_delayed_observer(cfg_cur.zoom, update_freq_boundaries, NULL);
-    update_freq_boundaries(cfg_cur.zoom, NULL);
+    subject_subscribe_delayed((Subject*)freq_lock, update_freq_boundaries, NULL);
+    subject_subscribe_delayed((Subject*)cfg_fg_freq, update_freq_boundaries, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_mode_zoom, update_freq_boundaries, NULL);
 
-    subject_add_delayed_observer(cfg_cur.bg_freq, on_fg_freq_change, NULL);
-    on_fg_freq_change(cfg_cur.bg_freq, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_bg_freq, on_fg_freq_change, NULL);
 
-    subject_add_delayed_observer(cfg_cur.band->if_shift.val, update_zoom_on_if_shift_change, NULL);
-    subject_add_delayed_observer(cfg_cur.zoom, update_zoom_on_if_shift_change, NULL);
+    subject_subscribe_delayed((Subject*)cfg_band_if_shift, update_zoom_on_if_shift_change, NULL);
+    subject_subscribe_delayed((Subject*)cfg_mode_zoom, update_zoom_on_if_shift_change, NULL);
 
     return obj;
 }
@@ -1142,18 +1139,17 @@ void main_screen_notify_low_power(bool is_low) {
 
 static void on_fg_freq_change(Subject *subj, void *user_data) {
     int32_t    f;
-    uint32_t    color = subject_get_int(freq_lock) ? 0xBBBBBB : 0xFFFFFF;
+    uint32_t    color = subject_i_get(freq_lock) ? 0xBBBBBB : 0xFFFFFF;
 
-    bool split = subject_get_int(cfg_cur.band->split.val);
-    Subject *freq_fg_subj = cfg_cur.fg_freq;
-    Subject *freq_bg_subj = cfg_cur.bg_freq;
+    bool split = param_i_get(cfg_band_split);
+    int32_t fg = cparam_i_get(cfg_fg_freq);
+    int32_t bg = cparam_i_get(cfg_bg_freq);
 
     if (split && radio_get_state() == RADIO_TX) {
-        freq_fg_subj = cfg_cur.bg_freq;
-        freq_bg_subj = cfg_cur.fg_freq;
+        f = bg;
+    } else {
+        f = fg;
     }
-
-    f = subject_get_int(freq_fg_subj);
 
     uint16_t    mhz, khz, hz;
 
@@ -1169,7 +1165,7 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
 
     if (split) {
         uint16_t    mhz2, khz2, hz2;
-        int32_t    f2 = subject_get_int(freq_bg_subj);
+        int32_t    f2 = (fg == f) ? bg : fg;
 
         split_freq(f2, &mhz2, &khz2, &hz2);
 
@@ -1180,19 +1176,22 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
 }
 
 static void update_freq_boundaries(Subject *subj, void *user_data) {
-    bool split = subject_get_int(cfg_cur.band->split.val);
-    Subject *freq_fg_subj = cfg_cur.fg_freq;
+    bool split = param_i_get(cfg_band_split);
+    int32_t fg = cparam_i_get(cfg_fg_freq);
+    int32_t bg = cparam_i_get(cfg_bg_freq);
+    int32_t f;
 
     if (split && radio_get_state() == RADIO_TX) {
-        freq_fg_subj = cfg_cur.bg_freq;
+        f = bg;
+    } else {
+        f = fg;
     }
-    int32_t  f = subject_get_int(freq_fg_subj);
 
     uint16_t    mhz, khz, hz;
     uint32_t    half_width = 50000;
-    uint32_t    color = subject_get_int(freq_lock) ? 0xBBBBBB : 0xFFFFFF;
+    uint32_t    color = subject_i_get(freq_lock) ? 0xBBBBBB : 0xFFFFFF;
 
-    int32_t zoom = subject_get_int(cfg_cur.zoom);
+    int32_t zoom = param_i_get(cfg_mode_zoom);
 
     if (params.waterfall_zoom.x) {
         half_width /= zoom;
@@ -1207,14 +1206,14 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
 
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data) {
     int32_t half_width = 40000;
-    int32_t new_if_shift = subject_get_int(cfg_cur.band->if_shift.val);
-    uint32_t zoom = subject_get_int(cfg_cur.zoom);
+    int32_t new_if_shift = param_i_get(cfg_band_if_shift);
+    uint32_t zoom = param_i_get(cfg_mode_zoom);
     uint32_t new_zoom = zoom;
     while ((abs(new_if_shift) * new_zoom / half_width) && (new_zoom > 1))
     {
         new_zoom >>= 1;
     }
     if (new_zoom != zoom) {
-        subject_set_int(cfg_cur.zoom, new_zoom);
+        param_i_set(cfg_mode_zoom, new_zoom);
     }
 }

@@ -43,7 +43,7 @@ if(ENABLE_TESTING)
         add_subdirectory(src/qth)
         # TODO: ft8 tests support
         # add_subdirectory(src/ft8)
-        add_subdirectory(src/app_cfg)
+        add_subdirectory(src/cfg)
         add_subdirectory(tests)
 else()
         add_subdirectory(src)

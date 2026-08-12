@@ -8,7 +8,7 @@
 
 #include "info.h"
 
-#include "cfg/transverter.h"
+#include "cfg/cfg_api.h"
 #include "styles.h"
 #include "params/params.h"
 #include "pubsub_ids.h"
@@ -27,7 +27,7 @@ typedef enum {
 static lv_obj_t     *obj;
 static lv_obj_t     *items[7];
 
-static Subject *mode_lock;
+static SubjectInt *mode_lock;
 
 static void wifi_state_change_cb(void *s, lv_msg_t *m);
 
@@ -35,11 +35,12 @@ static void vfo_label_update(Subject *subj, void * user_data);
 static void mode_label_update(Subject *subj, void * user_data);
 static void atu_label_update(Subject *subj, void * user_data);
 static void agc_label_update(Subject *subj, void * user_data);
-static void att_pre_label_update(Subject *subj, void * user_data);
+static void att_label_update(Subject *subj, void * user_data);
+static void pre_label_update(Subject *subj, void * user_data);
 
 lv_obj_t * info_init(lv_obj_t * parent) {
 
-    mode_lock = subject_create_int(false);
+    mode_lock = subject_i_create(false);
 
     obj = lv_obj_create(parent);
 
@@ -88,25 +89,21 @@ lv_obj_t * info_init(lv_obj_t * parent) {
     lv_label_set_text(items[INFO_WIFI], LV_SYMBOL_WIFI " ");
     lv_obj_set_style_text_color(items[INFO_WIFI], lv_color_hex(0x909090), 0);
 
-    subject_add_delayed_observer(cfg_cur.band->vfo.val, vfo_label_update, NULL);
-    subject_add_delayed_observer(cfg_cur.band->split.val, vfo_label_update, NULL);
-    vfo_label_update(cfg_cur.band->vfo.val, NULL);
+    subject_subscribe_delayed((Subject*)cfg_band_current_vfo, vfo_label_update, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_band_split, vfo_label_update, NULL);
 
-    subject_add_delayed_observer(cfg_cur.mode, mode_label_update, NULL);
-    subject_add_delayed_observer(mode_lock, mode_label_update, NULL);
-    mode_label_update(cfg_cur.band->vfo.val, NULL);
+    subject_subscribe_delayed((Subject*)cfg_cur_mode, mode_label_update, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)mode_lock, mode_label_update, NULL);
 
-    subject_add_delayed_observer(cfg.ant_id.val, atu_label_update, NULL);
-    subject_add_delayed_observer(cfg_cur.fg_freq, atu_label_update, NULL);
-    subject_add_delayed_observer(cfg_cur.atu->loaded, atu_label_update, NULL);
-    subject_add_delayed_observer(cfg.atu_enabled.val, atu_label_update, NULL);
-    atu_label_update(cfg.atu_enabled.val, NULL);
+    subject_subscribe_delayed((Subject*)cfg_ant_id, atu_label_update, NULL);
+    subject_subscribe_delayed((Subject*)cfg_fg_freq, atu_label_update, NULL);
+    cfg_atu_loaded_subscribe_delayed(atu_label_update, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_atu_enabled, atu_label_update, NULL);
 
-    subject_add_delayed_observer(cfg_cur.agc, agc_label_update, NULL);
-    agc_label_update(cfg_cur.agc, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_cur_agc, agc_label_update, NULL);
 
-    subject_add_delayed_observer_and_call(cfg_cur.att, att_pre_label_update, NULL);
-    subject_add_delayed_observer_and_call(cfg_cur.pre, att_pre_label_update, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_cur_att, att_label_update, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_cur_pre, pre_label_update, NULL);
 
     lv_msg_subscribe(MSG_WIFI_STATE_CHANGED, wifi_state_change_cb, NULL);
 
@@ -114,7 +111,7 @@ lv_obj_t * info_init(lv_obj_t * parent) {
 }
 
 const char* info_params_mode_label_get() {
-    x6100_mode_t    mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t    mode = cparam_i_get(cfg_cur_mode);
     char            *str;
 
     switch (mode) {
@@ -159,7 +156,7 @@ const char* info_params_mode_label_get() {
 }
 
 const char* info_params_agc() {
-    x6100_agc_t     agc = subject_get_int(cfg_cur.agc);
+    x6100_agc_t     agc = cparam_i_get(cfg_cur_agc);
     char            *str;
 
     switch (agc) {
@@ -189,10 +186,10 @@ const char* info_params_agc() {
 }
 
 const char* info_params_vfo_label_get() {
-    x6100_vfo_t cur_vfo = subject_get_int(cfg_cur.band->vfo.val);
+    x6100_vfo_t cur_vfo = param_i_get(cfg_band_current_vfo);
     char            *str;
 
-    if (subject_get_int(cfg_cur.band->split.val)) {
+    if (param_i_get(cfg_band_split)) {
         str = cur_vfo == X6100_VFO_A ? "SPL-A" : "SPL-B";
     } else {
         str = cur_vfo == X6100_VFO_A ? "VFO-A" : "VFO-B";
@@ -202,7 +199,7 @@ const char* info_params_vfo_label_get() {
 }
 
 void info_lock_mode(bool lock) {
-    subject_set_int(mode_lock, lock);
+    subject_i_set(mode_lock, lock);
 }
 
 static void wifi_state_change_cb(void *s, lv_msg_t *m) {
@@ -228,10 +225,10 @@ static void vfo_label_update(Subject *subj, void * user_data) {
 
 static void mode_label_update(Subject *subj, void *user_data) {
     lv_label_set_text(items[INFO_MODE], info_params_mode_label_get());
-    x6100_mode_t mode = subject_get_int(cfg_cur.mode);
+    x6100_mode_t mode = cparam_i_get(cfg_cur_mode);
     if ((mode == x6100_mode_lsb_dig) || (mode == x6100_mode_usb_dig)) {
         lv_obj_set_style_text_color(items[INFO_MODE], lv_color_hex(COLOR_LIGHT_RED), 0);
-    } else if (subject_get_int(mode_lock)) {
+    } else if (subject_i_get(mode_lock)) {
         lv_obj_set_style_text_color(items[INFO_MODE], lv_color_hex(0xAAAAAA), 0);
     } else {
         lv_obj_set_style_text_color(items[INFO_MODE], lv_color_white(), 0);
@@ -239,20 +236,20 @@ static void mode_label_update(Subject *subj, void *user_data) {
 }
 
 static void atu_label_update(Subject *subj, void * user_data) {
-    int32_t ant = subject_get_int(cfg.ant_id.val);
+    int32_t ant = param_i_get(cfg_ant_id);
     lv_label_set_text_fmt(items[INFO_ATU], "ATU%i", ant);
-    int32_t freq = subject_get_int(cfg_cur.fg_freq);
+    int32_t freq = cparam_i_get(cfg_fg_freq);
 
-    if (!subject_get_int(cfg.atu_enabled.val)) {
+    if (!param_i_get(cfg_atu_enabled)) {
         lv_obj_set_style_text_color(items[INFO_ATU], lv_color_white(), 0);
         lv_obj_set_style_bg_color(items[INFO_ATU], lv_color_black(), 0);
         lv_obj_set_style_bg_opa(items[INFO_ATU], LV_OPA_0, 0);
     } else {
-        if (cfg_transverter_get_shift(freq)) {
+        if (cfg_transverter_shift_for(freq)) {
             lv_obj_set_style_text_color(items[INFO_ATU], lv_color_hex(0xAAAAAA), 0);
             lv_obj_set_style_bg_opa(items[INFO_ATU], LV_OPA_20, 0);
         } else {
-            lv_obj_set_style_text_color(items[INFO_ATU], subject_get_int(cfg_cur.atu->loaded) ? lv_color_black() : lv_color_hex(0xFF0000), 0);
+            lv_obj_set_style_text_color(items[INFO_ATU], cfg_atu_is_loaded() ? lv_color_black() : lv_color_hex(0xFF0000), 0);
             lv_obj_set_style_bg_opa(items[INFO_ATU], LV_OPA_50, 0);
         }
         lv_obj_set_style_bg_color(items[INFO_ATU], lv_color_white(), 0);
@@ -263,20 +260,26 @@ static void agc_label_update(Subject *subj, void * user_data) {
     lv_label_set_text(items[INFO_AGC], info_params_agc());
 }
 
-static void att_pre_label_update(Subject *subj, void * user_data) {
-    info_items_t item_id;
-    if (subj == cfg_cur.att) {
-        item_id = INFO_ATT;
+static void att_label_update(Subject *subj, void * user_data) {
+    if (cparam_i_get(cfg_cur_att)) {
+        lv_obj_set_style_text_color(items[INFO_ATT], lv_color_black(), 0);
+        lv_obj_set_style_bg_color(items[INFO_ATT], lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(items[INFO_ATT], LV_OPA_50, 0);
     } else {
-        item_id = INFO_PRE;
+        lv_obj_set_style_text_color(items[INFO_ATT], lv_color_white(), 0);
+        lv_obj_set_style_bg_color(items[INFO_ATT], lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(items[INFO_ATT], LV_OPA_0, 0);
     }
-    if (subject_get_int(subj)) {
-        lv_obj_set_style_text_color(items[item_id], lv_color_black(), 0);
-        lv_obj_set_style_bg_color(items[item_id], lv_color_white(), 0);
-        lv_obj_set_style_bg_opa(items[item_id], LV_OPA_50, 0);
+}
+
+static void pre_label_update(Subject *subj, void * user_data) {
+    if (cparam_i_get(cfg_cur_pre)) {
+        lv_obj_set_style_text_color(items[INFO_PRE], lv_color_black(), 0);
+        lv_obj_set_style_bg_color(items[INFO_PRE], lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(items[INFO_PRE], LV_OPA_50, 0);
     } else {
-        lv_obj_set_style_text_color(items[item_id], lv_color_white(), 0);
-        lv_obj_set_style_bg_color(items[item_id], lv_color_black(), 0);
-        lv_obj_set_style_bg_opa(items[item_id], LV_OPA_0, 0);
+        lv_obj_set_style_text_color(items[INFO_PRE], lv_color_white(), 0);
+        lv_obj_set_style_bg_color(items[INFO_PRE], lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(items[INFO_PRE], LV_OPA_0, 0);
     }
 }

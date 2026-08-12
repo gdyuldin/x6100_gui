@@ -11,14 +11,18 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <aether_radio/x6100_control/control.h>
 #include <ft8lib/constants.h>
+#include "../voice.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <aether_radio/x6100_control/control.h>
 #include "../radio.h"
 #include "../clock.h"
-#include "../voice.h"
 #include "common.h"
 #include "types.h"
-#include "../cfg/cfg.h"
 
 typedef enum {
     BUTTONS_DARK = 0,
@@ -237,3 +241,8 @@ char *params_key_mode_str_get(x6100_key_mode_t val);
 
 char *params_iambic_mode_str_ger(x6100_iambic_mode_t val);
 char *params_comp_str_get(uint8_t comp);
+
+
+#ifdef __cplusplus
+}
+#endif

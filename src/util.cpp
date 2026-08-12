@@ -7,7 +7,8 @@
  */
 #include "util.h"
 #include "util.hpp"
-#include "cfg/subjects.h"
+
+#include <algorithm>
 
 #define COMPARE(a, b) ((a > b) - (a < b))
 
@@ -88,79 +89,6 @@ void lpf_block(float *x, float *current, float beta, unsigned int count) {
     liquid_vectorf_add(x, current, count, x);
 }
 
-void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len) {
-    int16_t i;
-
-    for (i = 0; i < len / 2; i++) {
-        uint8_t a = data % 10;
-
-        data /= 10;
-        a |= (data % 10) << 4;
-        data /= 10;
-        bcd_data[i] = a;
-    }
-
-    if (len & 1) {
-        bcd_data[i] &= 0x0f;
-        bcd_data[i] |= data % 10;
-    }
-}
-
-void to_bcd_be(uint8_t bcd_data[], uint64_t data, uint8_t len) {
-    int16_t i;
-
-    for (i = (len / 2); i >= 0; i--) {
-        uint8_t a = data % 10;
-
-        data /= 10;
-        a |= (data % 10) << 4;
-        data /= 10;
-        bcd_data[i] = a;
-    }
-
-    if (len & 1) {
-        bcd_data[i] &= 0x0f;
-        bcd_data[i] |= data % 10;
-    }
-
-}
-
-uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
-    int16_t     i;
-    uint64_t    data = 0;
-
-    if (len & 1) {
-        data = bcd_data[len / 2] & 0x0F;
-    }
-
-    for (i = (len / 2) - 1; i >= 0; i--) {
-        data *= 10;
-        data += bcd_data[i] >> 4;
-        data *= 10;
-        data += bcd_data[i] & 0x0F;
-    }
-
-    return data;
-}
-
-uint64_t from_bcd_be(const uint8_t bcd_data[], uint8_t len) {
-    int16_t     i = 0;
-    uint64_t    data = 0;
-
-    if (len & 1) {
-        data = bcd_data[0] & 0x0F;
-        i++;
-    }
-
-    for (; i <= (len / 2); i++) {
-        data *= 10;
-        data += bcd_data[i] >> 4;
-        data *= 10;
-        data += bcd_data[i] & 0x0F;
-    }
-
-    return data;
-}
 
 int sign(int x) {
     return (x > 0) - (x < 0);

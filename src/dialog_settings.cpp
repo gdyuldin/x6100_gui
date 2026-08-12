@@ -10,11 +10,11 @@
 
 #include "voice.h"
 #include "dsp.h"
+#include "cfg/settings_manager.h"
 #include <vector>
 
 extern "C" {
 
-    #include "cfg/transverter.h"
     #include "dialog.h"
     #include "styles.h"
     #include "params/params.h"
@@ -168,9 +168,9 @@ static void bool_update_cb(lv_event_t * e) {
 
 static void bool_update_subj_cb(lv_event_t *e) {
     lv_obj_t *obj  = lv_event_get_target(e);
-    Subject  *subj = (Subject *)lv_event_get_user_data(e);
+    ParamInt *param = (ParamInt *)lv_event_get_user_data(e);
 
-    subject_set_int(subj, lv_obj_has_state(obj, LV_STATE_CHECKED));
+    param->set(lv_obj_has_state(obj, LV_STATE_CHECKED));
 }
 
 static void uint8_spinbox_update_cb(lv_event_t * e) {
@@ -216,11 +216,11 @@ static lv_obj_t * switch_bool(lv_obj_t *parent, params_bool_t *var) {
     return obj;
 }
 
-static lv_obj_t * switch_bool(lv_obj_t *parent, Subject *subj) {
+static lv_obj_t * switch_bool(lv_obj_t *parent, ParamInt &param) {
     lv_obj_t *obj = create_switch(parent);
-    lv_obj_add_event_cb(obj, bool_update_subj_cb, LV_EVENT_VALUE_CHANGED, subj);
+    lv_obj_add_event_cb(obj, bool_update_subj_cb, LV_EVENT_VALUE_CHANGED, &param);
 
-    if (subject_get_int(subj)) {
+    if (param.get()) {
         lv_obj_add_state(obj, LV_STATE_CHECKED);
     }
     return obj;
@@ -1100,34 +1100,22 @@ static uint8_t make_audio_gain(uint8_t row) {
 
 /* Transverter */
 
-static void transverter_from_update_cb(lv_event_t * e) {
+static void transverter_update_cb(lv_event_t * e) {
     lv_obj_t        *obj = lv_event_get_target(e);
-    cfg_transverter_t   *transverter = (cfg_transverter_t*)lv_event_get_user_data(e);
-    subject_set_int(transverter->from.val, lv_spinbox_get_value(obj) * 1000000L);
+    ParamInt        *param = (ParamInt*)lv_event_get_user_data(e);
+
+    param->set(lv_spinbox_get_value(obj) * 1000000L);
 }
 
-static void transverter_to_update_cb(lv_event_t * e) {
-    lv_obj_t        *obj = lv_event_get_target(e);
-    cfg_transverter_t   *transverter = (cfg_transverter_t*)lv_event_get_user_data(e);
-    subject_set_int(transverter->to.val, lv_spinbox_get_value(obj) * 1000000L);
-}
-
-static void transverter_shift_update_cb(lv_event_t * e) {
-    lv_obj_t        *obj = lv_event_get_target(e);
-    cfg_transverter_t   *transverter = (cfg_transverter_t*)lv_event_get_user_data(e);
-    subject_set_int(transverter->shift.val, lv_spinbox_get_value(obj) * 1000000L);
-}
-
-static uint8_t make_transverter(uint8_t row, uint8_t n) {
+static uint8_t make_transverter(uint8_t row, ParamInt &from, ParamInt &to, ParamInt &shift) {
     lv_obj_t        *obj;
     uint8_t         col = 0;
-    cfg_transverter_t   *transverter = &cfg_transverters[n];
 
     /* Label */
 
     obj = lv_label_create(grid);
 
-    lv_label_set_text_fmt(obj, "Transverter %i", n + 1);
+    lv_label_set_text_fmt(obj, "Transverter %i", from.context_id() + 1);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     /* From */
@@ -1136,14 +1124,14 @@ static uint8_t make_transverter(uint8_t row, uint8_t n) {
 
     dialog_item(&dialog, obj);
 
-    lv_spinbox_set_value(obj, subject_get_int(transverter->from.val) / 1000000L);
+    lv_spinbox_set_value(obj, from.get() / 1000000L);
     lv_spinbox_set_range(obj, 70, 500);
     lv_spinbox_set_digit_format(obj, 3, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
 
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
-    lv_obj_add_event_cb(obj, transverter_from_update_cb, LV_EVENT_VALUE_CHANGED, transverter);
+    lv_obj_add_event_cb(obj, transverter_update_cb, LV_EVENT_VALUE_CHANGED, &from);
 
     /* To */
 
@@ -1151,14 +1139,14 @@ static uint8_t make_transverter(uint8_t row, uint8_t n) {
 
     dialog_item(&dialog, obj);
 
-    lv_spinbox_set_value(obj, subject_get_int(transverter->to.val) / 1000000L);
+    lv_spinbox_set_value(obj, to.get() / 1000000L);
     lv_spinbox_set_range(obj, 70, 500);
     lv_spinbox_set_digit_format(obj, 3, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
 
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
-    lv_obj_add_event_cb(obj, transverter_to_update_cb, LV_EVENT_VALUE_CHANGED, transverter);
+    lv_obj_add_event_cb(obj, transverter_update_cb, LV_EVENT_VALUE_CHANGED, &to);
 
     /* Shift */
 
@@ -1166,14 +1154,14 @@ static uint8_t make_transverter(uint8_t row, uint8_t n) {
 
     dialog_item(&dialog, obj);
 
-    lv_spinbox_set_value(obj, subject_get_int(transverter->shift.val) / 1000000L);
+    lv_spinbox_set_value(obj, shift.get() / 1000000L);
     lv_spinbox_set_range(obj, 42, 500);
     lv_spinbox_set_digit_format(obj,3, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
 
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
-    lv_obj_add_event_cb(obj, transverter_shift_update_cb, LV_EVENT_VALUE_CHANGED, transverter);
+    lv_obj_add_event_cb(obj, transverter_update_cb, LV_EVENT_VALUE_CHANGED, &shift);
 
     return row + 1;
 }
@@ -1263,8 +1251,7 @@ static void auto_level_offset_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    Subject *subj = (Subject *)lv_event_get_user_data(e);
-    subject_set_float(subj, val);
+    cfg_sm.p_auto_level_offset.set(val);
 }
 
 static uint8_t make_auto_offset(uint8_t row) {
@@ -1282,7 +1269,7 @@ static uint8_t make_auto_offset(uint8_t row) {
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
-    obj = switch_bool(obj, cfg.auto_level_enabled.val);
+    obj = switch_bool(obj, cfg_sm.p_auto_level_enabled);
     lv_obj_set_width(obj, SMALL_3 - 30);
 
     /* Offset */
@@ -1292,8 +1279,8 @@ static uint8_t make_auto_offset(uint8_t row) {
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
-    obj = slider_with_text(obj, subject_get_float(cfg.auto_level_offset.val), -15.0f, 15.0f, AUTO_LEVEL_STEP,
-                           SMALL_3 - 120, "%0.1f", auto_level_offset_update_cb, (void *)cfg.auto_level_offset.val);
+    obj = slider_with_text(obj, cfg_sm.p_auto_level_offset.get(), -15.0f, 15.0f, AUTO_LEVEL_STEP,
+                           SMALL_3 - 120, "%0.1f", auto_level_offset_update_cb);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
 
@@ -1302,15 +1289,15 @@ static uint8_t make_auto_offset(uint8_t row) {
 
 /* Spectrum  min, max (when no auto)*/
 
-static void spectrum_min_max_update_cb(lv_event_t *e) {
+static void grid_min_max_update_cb(lv_event_t *e) {
     lv_obj_t *obj = lv_event_get_target(e);
     int       val = lv_slider_get_value(obj);
 
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char     *fmt          = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    Subject *subj = (Subject *)lv_event_get_user_data(e);
-    subject_set_int(subj, val);
+    auto param = static_cast<ParamInt*>(lv_event_get_user_data(e));
+    param->set(val);
 }
 
 uint8_t make_spectrum_min_max(uint8_t row) {
@@ -1330,8 +1317,8 @@ uint8_t make_spectrum_min_max(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    obj = slider_with_text(cell, subject_get_int(cfg_cur.band->grid.min.val), S_MIN, S7, 1, SMALL_3 - 120, "%d",
-                           spectrum_min_max_update_cb, (void *)cfg_cur.band->grid.min.val);
+    obj = slider_with_text(cell, cfg_sm.p_band_grid_min.get(), S_MIN, S7, 1, SMALL_3 - 120, "%d",
+                           grid_min_max_update_cb, (void*)&cfg_sm.p_band_grid_min);
 
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
@@ -1344,8 +1331,8 @@ uint8_t make_spectrum_min_max(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    obj = slider_with_text(cell, subject_get_int(cfg_cur.band->grid.max.val), S8, S9_40, 1, SMALL_3 - 120, "%d",
-                           spectrum_min_max_update_cb, (void *)cfg_cur.band->grid.max.val);
+    obj = slider_with_text(cell, cfg_sm.p_band_grid_max.get(), S8, S9_40, 1, SMALL_3 - 120, "%d",
+                           grid_min_max_update_cb, (void*)&cfg_sm.p_band_grid_max);
 
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
@@ -1519,7 +1506,7 @@ static uint8_t make_knob_info(uint8_t row) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
 
-    obj = switch_bool(obj, cfg.knob_info.val);
+    obj = switch_bool(obj, cfg_sm.p_knob_info);
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 
@@ -1572,15 +1559,16 @@ static uint8_t make_sp_mode(uint8_t row) {
 /* Compressor threshold, makeup */
 #define COMP_TH_MAKEUP_STEP 0.5f
 
-static void comp_th_gain_update_cb(lv_event_t * e) {
+static void comp_update_cb(lv_event_t *e) {
     lv_obj_t *obj = lv_event_get_target(e);
     float val = lv_slider_get_value(obj) * COMP_TH_MAKEUP_STEP;
 
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    Subject *subj = (Subject *)lv_event_get_user_data(e);
-    subject_set_float(subj, val);
+
+    ParamFloat *param = (ParamFloat *)lv_event_get_user_data(e);
+    param->set(val);
 }
 
 
@@ -1601,9 +1589,10 @@ static uint8_t make_comp_th_makeup(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, subject_get_float(cfg.comp_threshold_offset.val),
+    slider_with_text(cell, cfg_sm.p_comp_threshold_offset.get(),
         -15.0f, 15.0f, COMP_TH_MAKEUP_STEP,
-        SMALL_3 - 120, "%0.1f", comp_th_gain_update_cb, (void*)cfg.comp_threshold_offset.val);
+        SMALL_3 - 120, "%0.1f", comp_update_cb,
+        (void *)&cfg_sm.p_comp_threshold_offset);
 
     cell = lv_obj_create(grid);
 
@@ -1613,9 +1602,10 @@ static uint8_t make_comp_th_makeup(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, subject_get_float(cfg.comp_makeup_offset.val),
+    slider_with_text(cell, cfg_sm.p_comp_makeup_offset.get(),
         -15.0f, 15.0f, COMP_TH_MAKEUP_STEP,
-        SMALL_3 - 120, "%0.1f", comp_th_gain_update_cb, (void*)cfg.comp_makeup_offset.val);
+        SMALL_3 - 120, "%0.1f", comp_update_cb,
+        (void *)&cfg_sm.p_comp_makeup_offset);
 
     return row + 1;
 }
@@ -1623,20 +1613,22 @@ static uint8_t make_comp_th_makeup(uint8_t row) {
 /* TX offset */
 #define TX_OFFSET_SCALE 50
 
-static void tx_iq_offset_update_cb(lv_event_t * e) {
+static void tx_offset_update_cb(lv_event_t *e) {
     lv_obj_t *obj = lv_event_get_target(e);
     int32_t val = lv_slider_get_value(obj);
 
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    Subject *subj = (Subject *)lv_event_get_user_data(e);
-    subject_set_int(subj, val * TX_OFFSET_SCALE);
+
+    ParamInt *param = (ParamInt *)lv_event_get_user_data(e);
+    param->set(val * TX_OFFSET_SCALE);
 }
 
-static void on_iq_change(Subject *subj, void *user_data) {
-    lv_obj_t *slider = (lv_obj_t*)user_data;
-    lv_slider_set_value(slider, subject_get_int(subj) / TX_OFFSET_SCALE, LV_ANIM_OFF);
+static void on_tx_offset_change(Subject *subj, void *user_data) {
+    lv_obj_t *slider = (lv_obj_t *)user_data;
+    auto *subj_t = static_cast<SubjectInt *>(subj);
+    lv_slider_set_value(slider, subj_t->get() / TX_OFFSET_SCALE, LV_ANIM_OFF);
     lv_event_send(slider, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
@@ -1659,11 +1651,12 @@ static uint8_t make_tx_offset(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider = slider_with_text(cell, subject_get_int(cfg_cur.band->tx_i_offset.val) / TX_OFFSET_SCALE,
+    slider = slider_with_text(cell, cfg_sm.p_band_tx_i_offset.get() / TX_OFFSET_SCALE,
         -10000 / TX_OFFSET_SCALE, 10000 / TX_OFFSET_SCALE, 1,
-        SMALL_3 - 110, "%d", tx_iq_offset_update_cb, (void*)cfg_cur.band->tx_i_offset.val);
+        SMALL_3 - 110, "%d", tx_offset_update_cb,
+        (void *)&cfg_sm.p_band_tx_i_offset);
 
-    observer = cfg_cur.band->tx_i_offset.val->subscribe(on_iq_change, slider);
+    observer = cfg_sm.p_band_tx_i_offset.subscribe(on_tx_offset_change, slider);
     observers.emplace_back(observer);
 
     cell = lv_obj_create(grid);
@@ -1674,11 +1667,12 @@ static uint8_t make_tx_offset(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider = slider_with_text(cell, subject_get_int(cfg_cur.band->tx_q_offset.val) / TX_OFFSET_SCALE,
+    slider = slider_with_text(cell, cfg_sm.p_band_tx_q_offset.get() / TX_OFFSET_SCALE,
         -10000 / TX_OFFSET_SCALE, 10000 / TX_OFFSET_SCALE, 1,
-        SMALL_3 - 110, "%d", tx_iq_offset_update_cb, (void*)cfg_cur.band->tx_q_offset.val);
+        SMALL_3 - 110, "%d", tx_offset_update_cb,
+        (void *)&cfg_sm.p_band_tx_q_offset);
 
-    observer = cfg_cur.band->tx_q_offset.val->subscribe(on_iq_change, slider);
+    observer = cfg_sm.p_band_tx_q_offset.subscribe(on_tx_offset_change, slider);
     observers.emplace_back(observer);
 
     return row + 1;
@@ -1694,7 +1688,7 @@ static void codec_gain_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    subject_set_float(cfg.output_gain.val, val);
+    cfg_sm.p_output_gain.set(val);
 }
 
 static uint8_t make_codec_gain(uint8_t row) {
@@ -1714,7 +1708,7 @@ static uint8_t make_codec_gain(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, subject_get_float(cfg.output_gain.val),
+    slider_with_text(cell, cfg_sm.p_output_gain.get(),
         -25.0f, 25.0f, OUTPUT_GAIN_STEP,
         SMALL_6 - 120, "%0.1f", codec_gain_update_cb);
 
@@ -1730,13 +1724,12 @@ static void band_out_gain_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    subject_set_float(cfg_cur.band->dac_offset.val, val);
-    printf("out gain: %f\n", val);
+    cfg_sm.p_band_dac_offset.set(val);
 }
 
 static void on_dac_gain_change(Subject *subj, void *user_data) {
     lv_obj_t *slider = (lv_obj_t*)user_data;
-    lv_slider_set_value(slider, subject_get_float(subj) / OUTPUT_GAIN_STEP, LV_ANIM_OFF);
+    lv_slider_set_value(slider, cfg_sm.p_band_dac_offset.get() / OUTPUT_GAIN_STEP, LV_ANIM_OFF);
     lv_event_send(slider, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
@@ -1758,11 +1751,11 @@ static uint8_t band_out_gain_correction(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider = slider_with_text(cell, subject_get_float(cfg_cur.band->dac_offset.val),
+    slider = slider_with_text(cell, cfg_sm.p_band_dac_offset.get(),
         -6.0f, 6.0f, OUTPUT_GAIN_STEP,
         SMALL_6 - 120, "%0.1f", band_out_gain_update_cb);
 
-    Observer *observer = cfg_cur.band->dac_offset.val->subscribe(on_dac_gain_change, slider);
+    Observer *observer = cfg_sm.p_band_dac_offset.subscribe(on_dac_gain_change, slider);
     observers.emplace_back(observer);
 
     return row + 1;
@@ -1786,7 +1779,7 @@ uint8_t make_fm_emphasis(uint8_t row) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
 
-    obj = switch_bool(obj, cfg.fm_emphasis.val);
+    obj = switch_bool(obj, cfg_sm.p_fm_emphasis);
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 
@@ -1797,24 +1790,15 @@ uint8_t make_fm_emphasis(uint8_t row) {
 
 #define TX_FILTER_STEP 10
 
-static void tx_filter_low_update_cb(lv_event_t * e) {
+static void tx_filter_low_high_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
     uint32_t val = lv_slider_get_value(obj) * TX_FILTER_STEP;
 
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    subject_set_int(cfg.tx_filter_low.val, val);
-}
-
-static void tx_filter_high_update_cb(lv_event_t * e) {
-    lv_obj_t *obj = lv_event_get_target(e);
-    uint32_t val = lv_slider_get_value(obj) * TX_FILTER_STEP;
-
-    lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
-    char *fmt = (char *)lv_obj_get_user_data(slider_label);
-    lv_label_set_text_fmt(slider_label, fmt, val);
-    subject_set_int(cfg.tx_filter_high.val, val);
+    ParamInt *param = (ParamInt *)lv_event_get_user_data(e);
+    param->set(val);
 }
 
 uint8_t make_tx_filter(uint8_t row) {
@@ -1834,9 +1818,9 @@ uint8_t make_tx_filter(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, subject_get_int(cfg.tx_filter_low.val),
+    slider_with_text(cell, cfg_sm.p_tx_filter_low.get(),
         50, 400, TX_FILTER_STEP,
-        SMALL_6 - 150, "%d", tx_filter_low_update_cb);
+        SMALL_6 - 150, "%d", tx_filter_low_high_update_cb, (void*)&cfg_sm.p_tx_filter_low);
     row++;
 
     cell = lv_label_create(grid);
@@ -1852,9 +1836,9 @@ uint8_t make_tx_filter(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, subject_get_int(cfg.tx_filter_high.val),
+    slider_with_text(cell, cfg_sm.p_tx_filter_high.get(),
         2000, 4000, TX_FILTER_STEP,
-        SMALL_6 - 150, "%d", tx_filter_high_update_cb);
+        SMALL_6 - 150, "%d", tx_filter_low_high_update_cb, (void*)&cfg_sm.p_tx_filter_high);
     row++;
 
     return row;
@@ -1871,8 +1855,7 @@ static void cessb_power_up_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    Subject *subj = (Subject *)lv_event_get_user_data(e);
-    subject_set_float(subj, val);
+    cfg_sm.p_cessb_power_up.set(val);
 }
 
 uint8_t make_cessb(uint8_t row) {
@@ -1896,7 +1879,7 @@ uint8_t make_cessb(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    obj = switch_bool(cell, cfg.cessb.on.val);
+    obj = switch_bool(cell, cfg_sm.p_cessb_on);
     lv_obj_set_width(obj, SMALL_2 - 30);
 
 
@@ -1909,8 +1892,8 @@ uint8_t make_cessb(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    obj = slider_with_text(cell, subject_get_float(cfg.cessb.power_up.val), 0.0f, 5.0f, CESSB_POWER_UP_STEP,
-                           SMALL_3 - 40, "%0.1f", cessb_power_up_update_cb, (void *)cfg.cessb.power_up.val);
+    obj = slider_with_text(cell, cfg_sm.p_cessb_power_up.get(), 0.0f, 5.0f, CESSB_POWER_UP_STEP,
+                           SMALL_3 - 40, "%0.1f", cessb_power_up_update_cb);
 
     row++;
 
@@ -2066,8 +2049,8 @@ static void make_general_page() {
     row = make_charger(row);
     row = make_delimiter(row);
 
-    for (uint8_t i = 0; i < TRANSVERTER_NUM; i++)
-        row = make_transverter(row, i);
+    row = make_transverter(row, cfg_sm.p_transverter_0_from, cfg_sm.p_transverter_0_to, cfg_sm.p_transverter_0_shift);
+    row = make_transverter(row, cfg_sm.p_transverter_1_from, cfg_sm.p_transverter_1_to, cfg_sm.p_transverter_1_shift);
 
     row_dsc[row] = LV_GRID_TEMPLATE_LAST;
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);

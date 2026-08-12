@@ -9,7 +9,6 @@
 #pragma once
 
 #include "helpers.h"
-#include "cfg/cfg.h"
 
 #ifdef __cplusplus
 
@@ -39,10 +38,6 @@ float sqr(float x);
 void lpf(float *x, float current, float beta, float initial);
 void lpf_block(float *x, float *current, float beta, unsigned int count);
 
-void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len);
-void to_bcd_be(uint8_t bcd_data[], uint64_t data, uint8_t len);
-uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len);
-uint64_t from_bcd_be(const uint8_t bcd_data[], uint8_t len);
 int sign(int x);
 
 size_t argmax(float *x, size_t n);
@@ -55,7 +50,4 @@ int32_t util_compare_version(x6100_base_ver_t a, x6100_base_ver_t b);
 
 #ifdef __cplusplus
 }
-/* C++ only part */
-cfg_ctrl_t loop_modes(int16_t dir, cfg_ctrl_t mode, const uint64_t mask, const std::vector<cfg_ctrl_t> all_modes);
-
 #endif

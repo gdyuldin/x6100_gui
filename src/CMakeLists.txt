@@ -6,7 +6,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     waterfall.c rotary.c keyboard.c encoder.c
     events.c msg.c msg_tiny.c keypad.c
     hkey.c clock.c info.c
-    meter.c band_info.c tx_info.c
+    meter.c band_info.cpp tx_info.c
     audio.c mfk.cpp cw.cpp cw_decoder.c panel.cpp
     rtty.c screenshot.c backlight.c gps.c cat.cpp
     dialog.c dialog_settings.cpp dialog_swrscan.c
@@ -24,7 +24,6 @@ add_subdirectory(widgets)
 add_subdirectory(params)
 add_subdirectory(qth)
 add_subdirectory(cfg)
-add_subdirectory(app_cfg)
 
 include_directories(utf8)
 include_directories(${CMAKE_SYSROOT}/usr/include/RHVoice/)
@@ -42,7 +41,7 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
 target_link_libraries(${PROJECT_NAME} PRIVATE
 PkgConfig::deps
 FT8 QTH
-app_cfg
+cfg
 Threads::Threads
 lvgl lvgl::drivers
 aether_x6100_control
@@ -50,6 +49,14 @@ liquid
 RHVoice RHVoice_core RHVoice_audio
 ft8
 )
+
+# string(TOUPPER "${CMAKE_BUILD_TYPE}" UPPERCASE_BUILD_TYPE)
+if(UPPERCASE_BUILD_TYPE STREQUAL "DEBUG")
+    target_compile_options(${PROJECT_NAME} PRIVATE -g -O0 -fno-omit-frame-pointer -fasynchronous-unwind-tables)
+    target_link_options(${PROJECT_NAME} PRIVATE -g -rdynamic)
+
+
+endif()
 
 # target_compile_options(${PROJECT_NAME} PRIVATE -g -fno-omit-frame-pointer -fasynchronous-unwind-tables)
 # target_link_options(${PROJECT_NAME} PRIVATE -g -rdynamic)
