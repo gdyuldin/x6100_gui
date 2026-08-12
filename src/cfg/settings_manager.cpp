@@ -431,6 +431,27 @@ SettingsManager::FilterMode SettingsManager::filter_mode(int32_t mode) const {
     }
 }
 
+int32_t SettingsManager::filter_low_validate(int32_t v) {
+    switch (cp_cur_mode.get()) {
+        case x6100_mode_cw:
+        case x6100_mode_cwr:
+        case x6100_mode_am:
+        case x6100_mode_nfm:
+            return 0;
+    }
+    int high = p_mode_filter_high.get();
+    int hi    = high - 1;
+    if (hi < 0) {
+        hi = 0;
+    }
+    return clamp_val(v, 0, hi);
+}
+
+int32_t SettingsManager::filter_high_validate(int32_t v) {
+    int low = clamp_val(p_mode_filter_low.get(), 0, 5999);
+    return clamp_val(v, low + 1, 6000);
+}
+
 int32_t SettingsManager::cur_filter_low_compute() {
     // Current mode category drives the edge mapping. The filter params are
     // MODE-scoped to cp_cur_mode.get() (matches mode_id_ at steady state).
@@ -722,6 +743,13 @@ std::string SettingsManager::make_default_encoder_bind() {
     s[CTRL_AGC_KNEE]        = static_cast<char>(ENCODER_BIND_MFK);
 
     return s;
+}
+
+std::string SettingsManager::encoder_bind_validate(const std::string &val) {
+    std::string result = val;
+    if (result.size() != static_cast<size_t>(CTRL_FAST_ACCESS_LAST))
+        result.resize(CTRL_FAST_ACCESS_LAST, static_cast<char>(ENCODER_BIND_NONE));
+    return result;
 }
 
 int32_t SettingsManager::lo_offset_compute() {

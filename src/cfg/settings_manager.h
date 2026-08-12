@@ -119,13 +119,7 @@ class SettingsManager {
                                           make_default_encoder_bind(),
                                           StorageType::GLOBAL,
                                           pending_writes_,
-                                          [](const std::string &val) -> std::string {
-                                              std::string result = val;
-                                              if (result.size() != static_cast<size_t>(CTRL_FAST_ACCESS_LAST))
-                                                  result.resize(CTRL_FAST_ACCESS_LAST,
-                                                                static_cast<char>(ENCODER_BIND_NONE));
-                                              return result;
-                                          },
+                                           encoder_bind_validate,
                                           {},
                                           &global_params_};
 
@@ -364,26 +358,15 @@ class SettingsManager {
                                          50,
                                          StorageType::MODE,
                                          pending_writes_,
-                                         [this](int32_t v) {
-                                             int other = p_mode_filter_high.get();
-                                              int hi    = other - 1;
-                                              if (hi < 0)
-                                              {
-                                                  hi = 0;
-                                              }
-                                              return clamp_val(v, 0, hi);
-                                         },
+                                         [this](int32_t v) { return filter_low_validate(v); },
                                          {},
                                          &mode_params_};
     Parameter<int32_t> p_mode_filter_high{"filter_high",
                                           2900,
                                           StorageType::MODE,
-                                          pending_writes_,
-                                          [this](int32_t v) {
-                                              int other = clamp_val(p_mode_filter_low.get(), 0, 5999);
-                                              return clamp_val(v, other + 1, 6000);
-                                          },
-                                          {},
+                                           pending_writes_,
+                                           [this](int32_t v) { return filter_high_validate(v); },
+                                           {},
                                           &mode_params_};
 
   public:
@@ -568,6 +551,10 @@ class SettingsManager {
     // VOL/MFK positions). Static: callable from the ctor init list.
     static std::string make_default_encoder_bind();
 
+    // Validate/pad the encoder-bind string to CTRL_FAST_ACCESS_LAST chars
+    // (filling any shorter input with ENCODER_BIND_NONE). Pure function.
+    static std::string encoder_bind_validate(const std::string &val);
+
     // Filter category of a mode (SSB/AM/FM/CW; unknown/default -> SSB).
     enum class FilterMode {
         SSB,
@@ -576,6 +563,11 @@ class SettingsManager {
         CW
     };
     FilterMode filter_mode(int32_t mode) const;
+
+    // Validate filters (cross-validate against the sibling filter edge; read
+    // member params via `this`).
+    int32_t filter_low_validate(int32_t v);
+    int32_t filter_high_validate(int32_t v);
 
     // compute fns for cp_cur_filter_{low,high,bw}.
     int32_t cur_filter_low_compute();

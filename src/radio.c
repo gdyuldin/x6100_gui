@@ -80,7 +80,8 @@ static void on_vfo_mode_change(Subject *subj, void *user_data);
 static void on_vfo_agc_change(Subject *subj, void *user_data);
 static void on_vfo_att_change(Subject *subj, void *user_data);
 static void on_vfo_pre_change(Subject *subj, void *user_data);
-static void update_filters(Subject *subj, void *user_data);
+static void on_low_filter_change(Subject *subj, void *user_data);
+static void on_high_filter_change(Subject *subj, void *user_data);
 
 static void on_if_shift_change(Subject *subj, void *user_data);
 static void on_band_change(Subject *subj, void *user_data);
@@ -189,9 +190,10 @@ void radio_start() {
     subject_subscribe((Subject*)cfg_cur_agc, update_agc_time, NULL);
     subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_agc_time, NULL);
 
-    // filter bw depends on both high and low.
-    subject_subscribe((Subject*)cfg_cur_filter_bw, update_filters, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_filters, NULL);
+    subject_subscribe((Subject*)cfg_cur_filter_low, on_low_filter_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg_cur_mode, on_low_filter_change, NULL);
+    subject_subscribe((Subject*)cfg_cur_filter_high, on_high_filter_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg_cur_mode, on_high_filter_change, NULL);
 
     subject_subscribe_and_notify((Subject*)cfg_volume, on_change_uint8, x6100_control_rxvol_set);
     subject_subscribe_and_notify((Subject*)cfg_squelch, on_change_uint8, x6100_control_sql_set);
@@ -568,25 +570,39 @@ static void on_atu_network_change(Subject *subj, void *user_data) {
     LV_LOG_USER("Radio set atu network=%u", new_val);
 }
 
-static void update_filters(Subject *subj, void *user_data) {
+static void on_low_filter_change(Subject *subj, void *user_data) {
+    x6100_mode_t mode = cparam_i_get(cfg_cur_mode);
+    if ((mode == x6100_mode_am) || (mode == x6100_mode_nfm)) {
+        // No update low on AM/FM, low should be -high
+        return;
+    }
     int32_t low = cparam_i_get(cfg_cur_filter_low);
-    int32_t high = cparam_i_get(cfg_cur_filter_high);
     int32_t low2 = LV_MAX(0, low - FILTER_2_OFFSET_OUT);
+    radio_lock();
+    LV_LOG_USER("Radio set filters: low=%i, low2=%i", low, low2);
+    x6100_control_cmd(x6100_filter1_low, low);
+    x6100_control_cmd(x6100_filter2_low, low2);
+    radio_unlock();
+}
+
+static void on_high_filter_change(Subject *subj, void *user_data) {
+    int32_t high = cparam_i_get(cfg_cur_filter_high);
     int32_t high2 = high + FILTER_2_OFFSET_OUT;
     switch (cparam_i_get(cfg_cur_mode)) {
         case x6100_mode_am:
         case x6100_mode_nfm:
             // For AM BASE uses absolute low and high values to choose LPF filters for I and Q
-            low = -high;
-            low2 = -high2;
+            radio_lock();
+            LV_LOG_USER("Radio set filters: low=%i, low2=%i", -high, -high2);
+            x6100_control_cmd(x6100_filter1_low, -high);
+            x6100_control_cmd(x6100_filter2_low, -high2);
+            radio_unlock();
             break;
         default:
             break;
     }
     radio_lock();
-    LV_LOG_USER("Radio set filters: low=%i, low2=%i, high=%i, high2=%i", low, low2, high, high2);
-    x6100_control_cmd(x6100_filter1_low, low);
-    x6100_control_cmd(x6100_filter2_low, low2);
+    LV_LOG_USER("Radio set filters: high=%i, high2=%i", high, high2);
     x6100_control_cmd(x6100_filter1_high, high);
     x6100_control_cmd(x6100_filter2_high, high2);
     radio_unlock();
