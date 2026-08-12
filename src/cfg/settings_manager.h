@@ -287,9 +287,9 @@ class SettingsManager {
     Parameter<int32_t> p_band_vfob_agc{"vfob_agc", x6100_agc_auto, StorageType::BAND, pending_writes_};
 
     // --- MODE params (`mode_params` table) ---
-    Parameter<int32_t> p_mode_squelch{
-        "squelch",    0, StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
-        &mode_params_};
+    // Parameter<int32_t> p_mode_squelch{
+    //     "squelch",    0, StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
+    //     &mode_params_};
     Parameter<int32_t> p_mode_freq_step{
         "freq_step", 500,          StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 1, 10000); },
         {},          &mode_params_};

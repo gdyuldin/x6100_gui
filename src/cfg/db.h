@@ -261,24 +261,24 @@ class BandParamsTable {
             T value;
             if constexpr (std::is_same_v<T, int32_t>) {
                 value = sqlite3_column_int(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%i", name, value);
+                LV_LOG_USER("Loaded %s=%i (band_id=%i)", name, value, band_id);
             } else if constexpr (std::is_same_v<T, float>) {
                 value = sqlite3_column_double(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%f", name, value);
+                LV_LOG_USER("Loaded %s=%f (band_id=%i)", name, value, band_id);
             } else if constexpr (std::is_same_v<T, std::string>) {
                 const unsigned char *txt = sqlite3_column_text(load_stmt_, 0);
                 value                    = txt ? reinterpret_cast<const char *>(txt) : "";
-                LV_LOG_USER("Loaded %s=%s", name, value.c_str());
+                LV_LOG_USER("Loaded %s=%sm (band_id=%i)", name, value.c_str(), band_id);
             } else {
                 static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_load().");
             }
             return {value, SUCCESS};
         }
         if (rc == SQLITE_DONE) {
-            LV_LOG_WARN("No results for load %s", name);
+            LV_LOG_WARN("No results for load %s (band_id=%i)", name, band_id);
             return {T{}, NOT_FOUND};
         }
-        LV_LOG_WARN("Load %s failed: %s", name, sqlite3_errmsg(db_));
+        LV_LOG_WARN("Load %s (band_id=%i) failed: %s", name, band_id, sqlite3_errmsg(db_));
         return {T{}, rc};
     }
 
@@ -308,13 +308,13 @@ class BandParamsTable {
         }
 
         if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind val %s to save params query", value_to_string(value).c_str());
+            LV_LOG_WARN("Can't bind val %s (band_id=%i) to save params query", value_to_string(value).c_str(), band_id);
         } else {
             rc = sqlite3_step(save_stmt_);
             if (rc != SQLITE_DONE) {
-                LV_LOG_ERROR("Failed save item %s: %s", name, sqlite3_errmsg(db_));
+                LV_LOG_ERROR("Failed save item %s (band_id=%i): %s", name, band_id, sqlite3_errmsg(db_));
             } else {
-                LV_LOG_USER("Saved %s=%s", name, value_to_string(value).c_str());
+                LV_LOG_USER("Saved %s=%s, (band_id=%i)", name, value_to_string(value).c_str(), band_id);
                 rc = SUCCESS;
             }
         }
@@ -346,7 +346,7 @@ class ModeParamsTable {
     static bool Init(sqlite3 *database);
     static void Shutdown();
 
-    template <typename T> static ParamLoadResult<T> Load(const int32_t band_id, const char *name) {
+    template <typename T> static ParamLoadResult<T> Load(const int32_t mode, const char *name) {
         int            rc;
         StmtResetGuard guard(load_mutex_, load_stmt_);
 
@@ -355,9 +355,9 @@ class ModeParamsTable {
             LV_LOG_ERROR("Failed to bind name %s: %s", name, sqlite3_errmsg(db_));
             return {T{}, rc};
         }
-        rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, band_id);
+        rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, mode);
         if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind bands_id %i: %s", band_id, sqlite3_errmsg(db_));
+            LV_LOG_ERROR("Failed to bind mode %i: %s", mode, sqlite3_errmsg(db_));
             return {T{}, rc};
         }
 
@@ -366,28 +366,28 @@ class ModeParamsTable {
             T value;
             if constexpr (std::is_same_v<T, int32_t>) {
                 value = sqlite3_column_int(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%i", name, value);
+                LV_LOG_USER("Loaded %s=%i (mode=%i)", name, value, mode);
             } else if constexpr (std::is_same_v<T, float>) {
                 value = sqlite3_column_double(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%f", name, value);
+                LV_LOG_USER("Loaded %s=%f (mode=%i)", name, value, mode);
             } else if constexpr (std::is_same_v<T, std::string>) {
                 const unsigned char *txt = sqlite3_column_text(load_stmt_, 0);
                 value                    = txt ? reinterpret_cast<const char *>(txt) : "";
-                LV_LOG_USER("Loaded %s=%s", name, value.c_str());
+                LV_LOG_USER("Loaded %s=%s (mode=%i)", name, value.c_str(), mode);
             } else {
                 static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_load().");
             }
             return {value, SUCCESS};
         }
         if (rc == SQLITE_DONE) {
-            LV_LOG_WARN("No results for load %s", name);
+            LV_LOG_WARN("No results for load %s (mode=%i)", name, mode);
             return {T{}, NOT_FOUND};
         }
-        LV_LOG_WARN("Load %s failed: %s", name, sqlite3_errmsg(db_));
+        LV_LOG_WARN("Load %s (mode=%i) failed: %s", name, mode, sqlite3_errmsg(db_));
         return {T{}, rc};
     }
 
-    template <typename T> static int Save(const int32_t band_id, const char *name, const T &value) {
+    template <typename T> static int Save(const int32_t mode, const char *name, const T &value) {
         int            rc;
         StmtResetGuard guard(save_mutex_, save_stmt_);
 
@@ -396,9 +396,9 @@ class ModeParamsTable {
             LV_LOG_WARN("Can't bind name %s to save params query", name);
             return rc;
         }
-        rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, band_id);
+        rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, mode);
         if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind bands_id %i: %s", band_id, sqlite3_errmsg(db_));
+            LV_LOG_ERROR("Failed to bind mode %i: %s", mode, sqlite3_errmsg(db_));
             return rc;
         }
 
@@ -413,13 +413,13 @@ class ModeParamsTable {
         }
 
         if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind val %s to save params query", value_to_string(value).c_str());
+            LV_LOG_WARN("Can't bind val %s to save params query (mode=%i)", value_to_string(value).c_str(), mode);
         } else {
             rc = sqlite3_step(save_stmt_);
             if (rc != SQLITE_DONE) {
-                LV_LOG_ERROR("Failed save item %s: %s", name, sqlite3_errmsg(db_));
+                LV_LOG_ERROR("Failed save item %s (mode=%i): %s", name, mode, sqlite3_errmsg(db_));
             } else {
-                LV_LOG_USER("Saved %s=%s", name, value_to_string(value).c_str());
+                LV_LOG_USER("Saved %s=%s (mode=%i)", name, value_to_string(value).c_str(), mode);
                 rc = SUCCESS;
             }
         }

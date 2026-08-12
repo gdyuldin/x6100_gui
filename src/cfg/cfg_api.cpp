@@ -217,7 +217,7 @@ void cfg_api_init(void (*on_db_error)(const char *)) {
     cfg_band_vfob_agc    = &cfg_sm.p_band_vfob_agc;
 
     // MODE
-    cfg_mode_squelch     = &cfg_sm.p_mode_squelch;
+    // cfg_mode_squelch     = &cfg_sm.p_mode_squelch;
     cfg_mode_zoom        = &cfg_sm.p_mode_zoom;
     cfg_mode_freq_step   = &cfg_sm.p_mode_freq_step;
 

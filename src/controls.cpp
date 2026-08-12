@@ -205,8 +205,8 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             if (diff) {
                 // TODO: make step depending on freq
                 i = align_int(i + diff * 10, 10);
-                cfg_sm.p_tx_filter_low.set(i);
-                i = cfg_sm.p_tx_filter_low.get();
+                cfg_sm.cp_cur_filter_low.set(i);
+                i = cfg_sm.cp_cur_filter_low.get();
             }
             snprintf(msg.data(), msg.capacity(), "Filter low: %i Hz", i);
 
@@ -229,8 +229,8 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
                     break;
                 }
                 i = align_int(i + diff * freq_step, freq_step);
-                cfg_sm.p_tx_filter_high.set(i);
-                i = cfg_sm.p_tx_filter_high.get();
+                cfg_sm.cp_cur_filter_high.set(i);
+                i = cfg_sm.cp_cur_filter_high.get();
             }
 
             snprintf(msg.data(), msg.capacity(), "Filter high: %i Hz", i);

@@ -111,13 +111,13 @@ TEST_CASE("cfg_api_init wires the extern globals and loads preseeded values", "[
     REQUIRE(cfg_band_vfoa_freq != nullptr);
     REQUIRE(cfg_band_vfob_freq != nullptr);
     REQUIRE(cfg_band_current_vfo != nullptr);
-    REQUIRE(cfg_mode_squelch != nullptr);
+    REQUIRE(cfg_mode_freq_step != nullptr);
     REQUIRE(cfg_fg_freq != nullptr);
 
     // Preseeded DB value is loaded through the C accessor.
     REQUIRE(param_i_get(cfg_volume) == 55);
     // A key with no DB row keeps its construction-time default.
-    REQUIRE(param_i_get(cfg_mode_squelch) == 0);
+    REQUIRE(param_i_get(cfg_mode_freq_step) == 500);
 }
 
 TEST_CASE("cfg_api_init wires the extended global param handles", "[cfg_api]") {

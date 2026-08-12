@@ -189,8 +189,8 @@ void radio_start() {
     subject_subscribe((Subject*)cfg_cur_agc, update_agc_time, NULL);
     subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_agc_time, NULL);
 
-    subject_subscribe((Subject*)cfg_cur_filter_low, update_filters, NULL);
-    subject_subscribe((Subject*)cfg_cur_filter_high, update_filters, NULL);
+    // filter bw depends on both high and low.
+    subject_subscribe((Subject*)cfg_cur_filter_bw, update_filters, NULL);
     subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_filters, NULL);
 
     subject_subscribe_and_notify((Subject*)cfg_volume, on_change_uint8, x6100_control_rxvol_set);

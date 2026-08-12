@@ -238,7 +238,7 @@ BandInfoLoadResult BandsTable::get_by_id(int32_t band_id) {
 BandInfoLoadResult BandsTable::get_by_freq(uint32_t freq) {
     {
         std::lock_guard<std::mutex> cache_lock(last_band_mutex_);
-        if ((last_band.id != BAND_UNDEFINED) && (freq >= last_band.start_freq) && (freq <= last_band.stop_freq)) {
+        if ((freq >= last_band.start_freq) && (freq <= last_band.stop_freq)) {
             return {last_band, SUCCESS};
         }
     }

@@ -247,7 +247,6 @@ void knobs_init(lv_obj_t * parent) {
     lv_obj_set_pos(vol_info, x_static, y - KNOBS_HEIGHT * 2);
     lv_label_set_recolor(vol_info, true);
     lv_label_set_text(vol_info, "");
-    // vol_knob_info = new KnobInfo(vol_info, LV_SYMBOL_UP);
     vol_knob_info->set_edit_mode(true);
 
     mfk_info = lv_label_create(parent);
@@ -255,7 +254,6 @@ void knobs_init(lv_obj_t * parent) {
     lv_obj_set_pos(mfk_info, x_static, y - KNOBS_HEIGHT * 1);
     lv_label_set_recolor(mfk_info, true);
     lv_label_set_text(mfk_info, "");
-    // mfk_knob_info = new KnobInfo(mfk_info, LV_SYMBOL_DOWN);
     mfk_knob_info->set_edit_mode(true);
 
     cfg_sm.p_knob_info.subscribe_delayed_and_notify(on_knob_info_enabled_change, nullptr);

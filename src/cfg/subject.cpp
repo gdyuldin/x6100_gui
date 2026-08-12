@@ -58,7 +58,7 @@ Observer *Subject::subscribe(observer_cb fn, void *user_data) {
 }
 Observer *Subject::subscribe_and_notify(observer_cb fn, void *user_data) {
     auto *obs = subscribe(fn, user_data);
-    obs->notify();
+    fn(this, user_data);
     return obs;
 }
 
@@ -72,7 +72,7 @@ ObserverDelayed *Subject::subscribe_delayed(observer_cb fn, void *user_data) {
 
 ObserverDelayed *Subject::subscribe_delayed_and_notify(observer_cb fn, void *user_data) {
     auto *obs = subscribe_delayed(fn, user_data);
-    static_cast<Observer *>(obs)->notify();
+    fn(this, user_data);
     return obs;
 }
 

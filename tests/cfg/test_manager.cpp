@@ -112,7 +112,7 @@ TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]"
         // The starting mode is derived from the active VFO (B) -> 3.
         REQUIRE(b.save_int(5, "vfob_mode", 3) == SUCCESS);
         StoragePolicy &m = storage_policy_for(StorageType::MODE);
-        REQUIRE(m.save_int(3, "squelch", 9) == SUCCESS);
+        REQUIRE(m.save_int(3, "freq_step", 9) == SUCCESS);
     }
 
     SettingsManager mgr;
@@ -126,7 +126,7 @@ TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]"
     REQUIRE(mgr.p_band_vfoa_freq.get() == 7100);
     REQUIRE(mgr.p_band_vfob_freq.get() == 14300);
     REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_B);
-    REQUIRE(mgr.p_mode_squelch.get() == 9);
+    REQUIRE(mgr.p_mode_freq_step.get() == 9);
 
     // fg_freq mirrors the active VFO (current_vfo == 1 -> vfob).
     REQUIRE(mgr.cp_fg_freq.get() == 14300);
@@ -264,19 +264,19 @@ TEST_CASE("switch_mode saves and loads mode params", "[manager]") {
     // The starting mode is derived from the active VFO (A) -> 3.
     REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
     StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(x6100_mode_usb, "squelch", 5) == SUCCESS);
-    REQUIRE(m.save_int(x6100_mode_cw, "squelch", 15) == SUCCESS);
+    REQUIRE(m.save_int(x6100_mode_usb, "freq_step", 5) == SUCCESS);
+    REQUIRE(m.save_int(x6100_mode_cw, "freq_step", 15) == SUCCESS);
 
     SettingsManager mgr;
     mgr.p_band_id.set_quiet(5);
     mgr.init_load();
-    REQUIRE(mgr.p_mode_squelch.get() == 5);
+    REQUIRE(mgr.p_mode_freq_step.get() == 5);
 
-    mgr.p_mode_squelch.set(11);
+    mgr.p_mode_freq_step.set(11);
     mgr.switch_mode(x6100_mode_cw);
 
     REQUIRE(mgr.current_mode_id() == x6100_mode_cw);
-    REQUIRE(mgr.p_mode_squelch.get() == 15);
+    REQUIRE(mgr.p_mode_freq_step.get() == 15);
 }
 
 TEST_CASE("init_load loads vfo modes, cur_mode mirrors active VFO", "[manager]") {
@@ -305,8 +305,8 @@ TEST_CASE("cp_cur_mode.set writes active VFO mode and triggers switch_mode", "[m
     REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_nfm) == SUCCESS);
     REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
     StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(x6100_mode_usb, "squelch", 9) == SUCCESS);
-    REQUIRE(m.save_int(x6100_mode_cw, "squelch", 15) == SUCCESS);
+    REQUIRE(m.save_int(x6100_mode_usb, "freq_step", 9) == SUCCESS);
+    REQUIRE(m.save_int(x6100_mode_cw, "freq_step", 15) == SUCCESS);
 
     SettingsManager mgr;
     mgr.p_band_id.set_quiet(5);
@@ -321,7 +321,7 @@ TEST_CASE("cp_cur_mode.set writes active VFO mode and triggers switch_mode", "[m
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_cw);
     // switch_mode() was triggered by the cp_cur_mode change.
     REQUIRE(mgr.current_mode_id() == x6100_mode_cw);
-    REQUIRE(mgr.p_mode_squelch.get() == 15);
+    REQUIRE(mgr.p_mode_freq_step.get() == 15);
 }
 
 TEST_CASE("VFO toggle changes cur_mode and triggers switch_mode", "[manager]") {
@@ -332,8 +332,8 @@ TEST_CASE("VFO toggle changes cur_mode and triggers switch_mode", "[manager]") {
     REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_usb) == SUCCESS);
     REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
     StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(x6100_mode_lsb, "squelch", 9) == SUCCESS);
-    REQUIRE(m.save_int(x6100_mode_usb, "squelch", 21) == SUCCESS);
+    REQUIRE(m.save_int(x6100_mode_lsb, "freq_step", 510) == SUCCESS);
+    REQUIRE(m.save_int(x6100_mode_usb, "freq_step", 520) == SUCCESS);
 
     SettingsManager mgr;
     mgr.p_band_id.set_quiet(5);
@@ -347,7 +347,7 @@ TEST_CASE("VFO toggle changes cur_mode and triggers switch_mode", "[manager]") {
 
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_usb);
     REQUIRE(mgr.current_mode_id() == x6100_mode_usb);
-    REQUIRE(mgr.p_mode_squelch.get() == 21);
+    REQUIRE(mgr.p_mode_freq_step.get() == 520);
 }
 
 TEST_CASE("band switch via p_band_id loads both vfo modes", "[manager]") {
@@ -725,8 +725,8 @@ TEST_CASE("parameter validators clamp out-of-range values on set", "[manager]") 
     mgr.p_squelch.set(-50);
     REQUIRE(mgr.p_squelch.get() == 0);
 
-    mgr.p_mode_squelch.set(1000);
-    REQUIRE(mgr.p_mode_squelch.get() == 100);
+    mgr.p_mode_zoom.set(1000);
+    REQUIRE(mgr.p_mode_zoom.get() == 8);
 
     // Enum-like params are intentionally unvalidated (values pass through).
     mgr.p_band_current_vfo.set(7);

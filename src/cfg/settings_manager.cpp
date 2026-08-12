@@ -544,7 +544,7 @@ void SettingsManager::vfo_freq_change_cb(Subject *subj, void *user_data) {
     auto              *freq_subj = static_cast<SubjectT<int32_t> *>(subj);
     const int32_t      freq      = freq_subj->get();
     BandInfoLoadResult result    = BandsTable::get_by_freq(static_cast<uint32_t>(freq));
-    if (result.rc == SUCCESS && result.value.id != BAND_UNDEFINED && result.value.id != mgr->band_id_) {
+    if (result.rc == SUCCESS && result.value.id != mgr->band_id_) {
         mgr->switch_band(result.value.id, true);
     }
 }
