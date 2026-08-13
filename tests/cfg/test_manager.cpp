@@ -101,7 +101,7 @@ struct TestDbGuard {
 TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]") {
     TestDbGuard db;
 
-    // Pre-populate the DB with known values for band 5 / mode 3.
+    // Pre-populate the DB with known values for band 5 / MODE_GROUP_DIGI.
     {
         StoragePolicy &g = storage_policy_for(StorageType::GLOBAL);
         REQUIRE(g.save_int(0, "volume", 77) == SUCCESS);
@@ -110,9 +110,9 @@ TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]"
         REQUIRE(b.save_int(5, "vfob_freq", 14300) == SUCCESS);
         REQUIRE(b.save_int(5, "vfo", X6100_VFO_B) == SUCCESS);
         // The starting mode is derived from the active VFO (B) -> 3.
-        REQUIRE(b.save_int(5, "vfob_mode", 3) == SUCCESS);
+        REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_usb_dig) == SUCCESS);
         StoragePolicy &m = storage_policy_for(StorageType::MODE);
-        REQUIRE(m.save_int(3, "freq_step", 9) == SUCCESS);
+        REQUIRE(m.save_int(MODE_GROUP_DIGI, "freq_step", 9) == SUCCESS);
     }
 
     SettingsManager mgr;
@@ -120,7 +120,7 @@ TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]"
     mgr.init_load();
 
     REQUIRE(mgr.current_band_id() == 5);
-    REQUIRE(mgr.current_mode_id() == 3);
+    REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_DIGI);
 
     REQUIRE(mgr.p_volume.get() == 77);
     REQUIRE(mgr.p_band_vfoa_freq.get() == 7100);
@@ -261,11 +261,11 @@ TEST_CASE("switch_mode saves and loads mode params", "[manager]") {
     TestDbGuard db;
 
     StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    // The starting mode is derived from the active VFO (A) -> 3.
+    // The starting mode group is derived from the active VFO (A) -> 3.
     REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
     StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(x6100_mode_usb, "freq_step", 5) == SUCCESS);
-    REQUIRE(m.save_int(x6100_mode_cw, "freq_step", 15) == SUCCESS);
+    REQUIRE(m.save_int(MODE_GROUP_SSB, "freq_step", 5) == SUCCESS);
+    REQUIRE(m.save_int(MODE_GROUP_CW, "freq_step", 15) == SUCCESS);
 
     SettingsManager mgr;
     mgr.p_band_id.set_quiet(5);
@@ -273,9 +273,9 @@ TEST_CASE("switch_mode saves and loads mode params", "[manager]") {
     REQUIRE(mgr.p_mode_freq_step.get() == 5);
 
     mgr.p_mode_freq_step.set(11);
-    mgr.switch_mode(x6100_mode_cw);
+    mgr.cp_cur_mode.set(x6100_mode_cwr);
 
-    REQUIRE(mgr.current_mode_id() == x6100_mode_cw);
+    REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_CW);
     REQUIRE(mgr.p_mode_freq_step.get() == 15);
 }
 
@@ -305,14 +305,14 @@ TEST_CASE("cp_cur_mode.set writes active VFO mode and triggers switch_mode", "[m
     REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_nfm) == SUCCESS);
     REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
     StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(x6100_mode_usb, "freq_step", 9) == SUCCESS);
-    REQUIRE(m.save_int(x6100_mode_cw, "freq_step", 15) == SUCCESS);
+    REQUIRE(m.save_int(MODE_GROUP_SSB, "freq_step", 9) == SUCCESS);
+    REQUIRE(m.save_int(MODE_GROUP_CW, "freq_step", 15) == SUCCESS);
 
     SettingsManager mgr;
     mgr.p_band_id.set_quiet(5);
     mgr.init_load();
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_usb);
-    REQUIRE(mgr.current_mode_id() == x6100_mode_usb);
+    REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_SSB);
 
     mgr.cp_cur_mode.set(x6100_mode_cw);
 
@@ -320,7 +320,7 @@ TEST_CASE("cp_cur_mode.set writes active VFO mode and triggers switch_mode", "[m
     REQUIRE(mgr.p_band_vfoa_mode.get() == x6100_mode_cw);
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_cw);
     // switch_mode() was triggered by the cp_cur_mode change.
-    REQUIRE(mgr.current_mode_id() == x6100_mode_cw);
+    REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_CW);
     REQUIRE(mgr.p_mode_freq_step.get() == 15);
 }
 
@@ -329,24 +329,24 @@ TEST_CASE("VFO toggle changes cur_mode and triggers switch_mode", "[manager]") {
 
     StoragePolicy &b = storage_policy_for(StorageType::BAND);
     REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_lsb) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_usb) == SUCCESS);
+    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_usb_dig) == SUCCESS);
     REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
     StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(x6100_mode_lsb, "freq_step", 510) == SUCCESS);
-    REQUIRE(m.save_int(x6100_mode_usb, "freq_step", 520) == SUCCESS);
+    REQUIRE(m.save_int(MODE_GROUP_SSB, "freq_step", 510) == SUCCESS);
+    REQUIRE(m.save_int(MODE_GROUP_DIGI, "freq_step", 520) == SUCCESS);
 
     SettingsManager mgr;
     mgr.p_band_id.set_quiet(5);
     mgr.init_load();
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_lsb);
-    REQUIRE(mgr.current_mode_id() == x6100_mode_lsb);
+    REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_SSB);
 
     // Switch active VFO to B: cur_mode now reflects vfob_mode and switch_mode
     // follows the new mode context.
     mgr.p_band_current_vfo.set(X6100_VFO_B);
 
-    REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_usb);
-    REQUIRE(mgr.current_mode_id() == x6100_mode_usb);
+    REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_usb_dig);
+    REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_DIGI);
     REQUIRE(mgr.p_mode_freq_step.get() == 520);
 }
 
@@ -816,13 +816,13 @@ namespace {
 // context is `mode`, with filter_low/filter_high seeded for that mode. This
 // mirrors production (cp_cur_mode == mode context) so filter_mode() picks the
 // right category and reads the right MODE pair.
-void init_filter_manager(SettingsManager &mgr, TestDbGuard &db, int mode, int low, int high) {
+void init_filter_manager(SettingsManager &mgr, TestDbGuard &db, int32_t mode, ModeGroup group, int low, int high) {
     StoragePolicy &b = storage_policy_for(StorageType::BAND);
     REQUIRE(b.save_int(5, "vfo", 0) == SUCCESS);
     REQUIRE(b.save_int(5, "vfoa_mode", mode) == SUCCESS);
     StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(mode, "filter_low", low) == SUCCESS);
-    REQUIRE(m.save_int(mode, "filter_high", high) == SUCCESS);
+    REQUIRE(m.save_int(group, "filter_low", low) == SUCCESS);
+    REQUIRE(m.save_int(group, "filter_high", high) == SUCCESS);
     mgr.p_band_id.set_quiet(5);
     mgr.init_load();
 }
@@ -856,7 +856,7 @@ TEST_CASE("cur_filter_* per category from DB-seeded filter pair", "[manager]") {
     // SSB (usb): low/high mirror the stored pair directly.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_usb, 100, 3000);
+        init_filter_manager(mgr, db, x6100_mode_usb, MODE_GROUP_SSB, 100, 3000);
         REQUIRE(mgr.cp_cur_filter_low.get() == 100);
         REQUIRE(mgr.cp_cur_filter_high.get() == 3000);
         REQUIRE(mgr.cp_cur_filter_bw.get() == 2900);
@@ -864,7 +864,7 @@ TEST_CASE("cur_filter_* per category from DB-seeded filter pair", "[manager]") {
     // AM: low == 0, bw == filter_high.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_am, 500, 5000);
+        init_filter_manager(mgr, db, x6100_mode_am, MODE_GROUP_AM,  500, 5000);
         REQUIRE(mgr.cp_cur_filter_low.get() == 0);
         REQUIRE(mgr.cp_cur_filter_high.get() == 5000);
         REQUIRE(mgr.cp_cur_filter_bw.get() == 5000);
@@ -872,7 +872,7 @@ TEST_CASE("cur_filter_* per category from DB-seeded filter pair", "[manager]") {
     // FM (nfm): low == 0, bw == filter_high.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_nfm, 500, 6000);
+        init_filter_manager(mgr, db, x6100_mode_nfm, MODE_GROUP_FM, 500, 6000);
         REQUIRE(mgr.cp_cur_filter_low.get() == 0);
         REQUIRE(mgr.cp_cur_filter_high.get() == 6000);
         REQUIRE(mgr.cp_cur_filter_bw.get() == 6000);
@@ -881,7 +881,7 @@ TEST_CASE("cur_filter_* per category from DB-seeded filter pair", "[manager]") {
     {
         SettingsManager mgr;
         // BW = 400, save low=0, high=bw
-        init_filter_manager(mgr, db, x6100_mode_cw, 0, 400);
+        init_filter_manager(mgr, db, x6100_mode_cw,  MODE_GROUP_CW, 0, 400);
         auto key_tone = mgr.p_key_tone.get();
         REQUIRE(mgr.cp_cur_filter_low.get() == key_tone - 200);
         REQUIRE(mgr.cp_cur_filter_high.get() == key_tone + 200);
@@ -895,7 +895,7 @@ TEST_CASE("cp_cur_filter_low/high.set reverse into MODE filter params", "[manage
     // SSB: writes the matching filter param.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_usb, 200, 3000);
+        init_filter_manager(mgr, db, x6100_mode_usb, MODE_GROUP_SSB, 200, 3000);
         mgr.cp_cur_filter_low.set(300);
         REQUIRE(mgr.cp_cur_filter_low.get() == 300);
         REQUIRE(mgr.cp_cur_filter_high.get() == 3000);
@@ -908,7 +908,7 @@ TEST_CASE("cp_cur_filter_low/high.set reverse into MODE filter params", "[manage
     // AM: low is a no-op; high writes filter_high.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_am, 500, 3000);
+        init_filter_manager(mgr, db, x6100_mode_am, MODE_GROUP_AM, 500, 3000);
         mgr.cp_cur_filter_low.set(200);
         REQUIRE(mgr.cp_cur_filter_low.get() == 0); // unchanged (always 0)
         mgr.cp_cur_filter_high.set(2500);
@@ -918,7 +918,7 @@ TEST_CASE("cp_cur_filter_low/high.set reverse into MODE filter params", "[manage
     // CW: low/high map back to filter_high = 2*(key_tone -/+ v).
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_cw, 100, 300);
+        init_filter_manager(mgr, db, x6100_mode_cw, MODE_GROUP_CW, 100, 300);
         mgr.p_key_tone.set(600);
         mgr.cp_cur_filter_low.set(200);
         REQUIRE(mgr.cp_cur_filter_low.get() == 200);
@@ -941,7 +941,7 @@ TEST_CASE("cp_cur_filter_bw.set reverse per category", "[manager]") {
     // AM: filter_high == bw.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_am, 500, 3000);
+        init_filter_manager(mgr, db, x6100_mode_am, MODE_GROUP_AM, 500, 3000);
         mgr.cp_cur_filter_bw.set(2500);
         REQUIRE(mgr.cp_cur_filter_high.get() == 2500);
         REQUIRE(mgr.cp_cur_filter_low.get() == 0);
@@ -950,7 +950,7 @@ TEST_CASE("cp_cur_filter_bw.set reverse per category", "[manager]") {
     // SSB symmetric: edges recentred about (low+high)/2, width preserved.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_usb, 500, 3000);
+        init_filter_manager(mgr, db, x6100_mode_usb, MODE_GROUP_SSB, 500, 3000);
         mgr.cp_cur_filter_bw.set(1000);
         REQUIRE(mgr.cp_cur_filter_low.get() == 1250);  // 1750 - 500
         REQUIRE(mgr.cp_cur_filter_high.get() == 2250); // 1750 + 500
@@ -959,7 +959,7 @@ TEST_CASE("cp_cur_filter_bw.set reverse per category", "[manager]") {
     // SSB low<0 fallback: low -> 0, high -> bw.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_usb, 2000, 3000);
+        init_filter_manager(mgr, db, x6100_mode_usb, MODE_GROUP_SSB, 2000, 3000);
         mgr.cp_cur_filter_bw.set(6000);
         REQUIRE(mgr.cp_cur_filter_low.get() == 0);
         REQUIRE(mgr.cp_cur_filter_high.get() == 6000);
@@ -969,7 +969,7 @@ TEST_CASE("cp_cur_filter_bw.set reverse per category", "[manager]") {
     // are then centred on key_tone with offset filter_high/2.
     {
         SettingsManager mgr;
-        init_filter_manager(mgr, db, x6100_mode_cw, 500, 3000);
+        init_filter_manager(mgr, db, x6100_mode_cw, MODE_GROUP_CW,  500, 3000);
         mgr.p_key_tone.set(700);
         mgr.cp_cur_filter_bw.set(2000);
         REQUIRE(mgr.cp_cur_filter_low.get() == 0);
@@ -989,7 +989,7 @@ TEST_CASE("cp_cur_filter_bw.set reverse per category", "[manager]") {
 TEST_CASE("cur_filter set chain terminates and stays consistent", "[manager]") {
     TestDbGuard     db;
     SettingsManager mgr;
-    init_filter_manager(mgr, db, x6100_mode_usb, 500, 3000);
+    init_filter_manager(mgr, db, x6100_mode_usb, MODE_GROUP_SSB, 500, 3000);
 
     // Repeated bw sets (bounded width client) must not recurse/overflow and
     // must keep cur_* mutually consistent each time.
@@ -1013,10 +1013,10 @@ TEST_CASE("switch_mode recomputes cur_filter_* for the new mode's pair", "[manag
         REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
         REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
         StoragePolicy &m = storage_policy_for(StorageType::MODE);
-        REQUIRE(m.save_int(x6100_mode_usb, "filter_low", 500) == SUCCESS);
-        REQUIRE(m.save_int(x6100_mode_usb, "filter_high", 3000) == SUCCESS);
-        REQUIRE(m.save_int(x6100_mode_cw, "filter_low", 0) == SUCCESS);
-        REQUIRE(m.save_int(x6100_mode_cw, "filter_high", 200) == SUCCESS);
+        REQUIRE(m.save_int(MODE_GROUP_SSB, "filter_low", 500) == SUCCESS);
+        REQUIRE(m.save_int(MODE_GROUP_SSB, "filter_high", 3000) == SUCCESS);
+        REQUIRE(m.save_int(MODE_GROUP_CW, "filter_low", 0) == SUCCESS);
+        REQUIRE(m.save_int(MODE_GROUP_CW, "filter_high", 200) == SUCCESS);
     }
 
     SettingsManager mgr;
@@ -1030,7 +1030,7 @@ TEST_CASE("switch_mode recomputes cur_filter_* for the new mode's pair", "[manag
     mgr.cp_cur_mode.set(x6100_mode_cw);
     mgr.p_key_tone.set(700);
 
-    REQUIRE(mgr.current_mode_id() == x6100_mode_cw);
+    REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_CW);
     REQUIRE(mgr.cp_cur_filter_low.get() == 600);  // key_tone - high/2
     REQUIRE(mgr.cp_cur_filter_high.get() == 800); // key_tone + high/2
     REQUIRE(mgr.cp_cur_filter_bw.get() == 200);

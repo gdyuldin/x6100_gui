@@ -40,6 +40,14 @@ template <typename T> static inline T clamp_val(T v, T lo, T hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+enum ModeGroup {
+    MODE_GROUP_SSB = x6100_mode_lsb,
+    MODE_GROUP_DIGI = x6100_mode_lsb_dig,
+    MODE_GROUP_CW = x6100_mode_cw,
+    MODE_GROUP_AM = x6100_mode_am,
+    MODE_GROUP_FM = x6100_mode_nfm,
+};
+
 class SettingsManager {
   public:
     // Deferred-write buffer (PendingWrites). Declared BEFORE the parameters
@@ -271,25 +279,18 @@ class SettingsManager {
                                         [](int32_t v) { return clamp_val(v, 0, 500'000'000); }};
     Parameter<int32_t> p_band_vfob_freq{"vfob_freq", 14'150'000, StorageType::BAND, pending_writes_,
                                         [](int32_t v) { return clamp_val(v, 0, 500'000'000); }};
-    Parameter<int32_t> p_band_vfoa_mode{"vfoa_mode", x6100_mode_usb, StorageType::BAND, pending_writes_};
-    Parameter<int32_t> p_band_vfob_mode{"vfob_mode", x6100_mode_usb, StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfoa_mode{"vfoa_mode", x6100_mode_usb, StorageType::BAND, pending_writes_, [](int32_t v) {
+                                            return clamp_val(v, (int32_t)x6100_mode_lsb, (int32_t)x6100_mode_nfm);
+                                        }};
+    Parameter<int32_t> p_band_vfob_mode{"vfob_mode", x6100_mode_usb, StorageType::BAND, pending_writes_, [](int32_t v) {
+                                            return clamp_val(v, (int32_t)x6100_mode_lsb, (int32_t)x6100_mode_nfm);
+                                        }};
     Parameter<int32_t> p_band_vfoa_att{"vfoa_att", x6100_att_off, StorageType::BAND, pending_writes_};
     Parameter<int32_t> p_band_vfoa_pre{"vfoa_pre", x6100_pre_off, StorageType::BAND, pending_writes_};
     Parameter<int32_t> p_band_vfoa_agc{"vfoa_agc", x6100_agc_auto, StorageType::BAND, pending_writes_};
     Parameter<int32_t> p_band_vfob_att{"vfob_att", x6100_att_off, StorageType::BAND, pending_writes_};
     Parameter<int32_t> p_band_vfob_pre{"vfob_pre", x6100_pre_off, StorageType::BAND, pending_writes_};
     Parameter<int32_t> p_band_vfob_agc{"vfob_agc", x6100_agc_auto, StorageType::BAND, pending_writes_};
-
-    // --- MODE params (`mode_params` table) ---
-    // Parameter<int32_t> p_mode_squelch{
-    //     "squelch",    0, StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
-    //     &mode_params_};
-    Parameter<int32_t> p_mode_freq_step{
-        "freq_step", 500,          StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 1, 10000); },
-        {},          &mode_params_};
-    Parameter<int32_t> p_mode_zoom{
-        "spectrum_factor", 1, StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 1, 8); }, {},
-        &mode_params_};
 
     // --- Transverter params (OTHER storage, fixed HW conversion) ---
     // context_id is the fixed transverter number (0 or 1) — never switched. NOT registered
@@ -346,6 +347,21 @@ class SettingsManager {
                                              nullptr,
                                              1};
 
+    // --- MODE params (`mode_params` table) ---
+    // Parameter<int32_t> p_mode_squelch{
+    //     "squelch",    0, StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
+    //     &mode_params_};
+    Parameter<int32_t> p_mode_freq_step{
+        "freq_step", 500,          StorageType::MODE, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 1, 10000); },
+        [this]() { on_mode_freq_step_not_found(); },
+        &mode_params_};
+    Parameter<int32_t> p_mode_zoom{
+        "spectrum_factor", 1, StorageType::MODE, pending_writes_,
+        [](int32_t v) { return clamp_val(v, 1, 8); },
+        [this]() { on_mode_zoom_not_found(); },
+        &mode_params_};
+
   private:
     // MODE-scoped filter band edges. PRIVATE: never read/written directly
     // outside this class; external C++ reads the effective values via the
@@ -359,14 +375,14 @@ class SettingsManager {
                                          StorageType::MODE,
                                          pending_writes_,
                                          [this](int32_t v) { return filter_low_validate(v); },
-                                         {},
+                                         [this]() { on_mode_filter_low_not_found(); },
                                          &mode_params_};
     Parameter<int32_t> p_mode_filter_high{"filter_high",
                                           2900,
                                           StorageType::MODE,
                                            pending_writes_,
                                            [this](int32_t v) { return filter_high_validate(v); },
-                                           {},
+                                           [this]() { on_mode_filter_high_not_found(); },
                                           &mode_params_};
 
   public:
@@ -418,19 +434,9 @@ class SettingsManager {
     // failures; parameters keep their current values on NOT_FOUND.
     void init_load(void (*on_db_error)(const char *msg) = nullptr);
 
-    // -- Context switching --
-    // Switches mode context: saves pending mode writes and loads mode params
-    // for new_mode_id.
-    void switch_mode(int new_mode_id);
-
     // -- PendingWrites --
     void flush_all();
     void flush_storage(StorageType type, int context_id);
-
-    // -- VFO operations --
-    // Copies VFO-related band parameters (freq, mode, agc, att, pre) from the
-    // active VFO to the inactive VFO, based on the current p_band_current_vfo.
-    void cfg_band_vfo_copy();
 
     // Background deferred-save thread: wakes every 3 seconds (or on notify)
     // and calls flush_all().
@@ -445,12 +451,17 @@ class SettingsManager {
 
     // -- Accessors --
     int current_band_id() const { return band_id_; }
-    int current_mode_id() const { return mode_id_; }
+    int current_mode_group_id() const { return mode_group_id_; }
 
     // Hardware-usable frequency range limits (in Hz). HF is the native
     // 0.5-55 MHz band; anything above must be covered by a transverter.
     static constexpr int32_t HF_MIN_FREQ = 500'000;
     static constexpr int32_t HF_MAX_FREQ = 55'000'000;
+
+    // -- VFO operations --
+    // Copies VFO-related band parameters (freq, mode, agc, att, pre) from the
+    // active VFO to the inactive VFO, based on the current p_band_current_vfo.
+    void cfg_band_vfo_copy();
 
     // Transverter shift for a frequency: the shift of the transverter whose
     // [from, to] range contains `freq`, or 0 when no transverter covers it.
@@ -516,9 +527,26 @@ class SettingsManager {
     // by setting p_band_id; the observer runs switch_band with implicit=false.
     static void switch_band_observer_cb(Subject *subj, void *user_data);
 
+    // Mode group functions
+    static ModeGroup mode_group(x6100_mode_t mode);
+    static int32_t mode_group_filter_low_default(ModeGroup group);
+    static int32_t mode_group_filter_high_default(ModeGroup group);
+    static int32_t mode_group_freq_step_default(ModeGroup group);
+    static int32_t mode_group_zoom_default(ModeGroup group);
+
+    void on_mode_filter_low_not_found();
+    void on_mode_filter_high_not_found();
+    void on_mode_freq_step_not_found();
+    void on_mode_zoom_not_found();
+
     // Shared band-switch core: flush, rebind context, switch-time loads and
     // recomputes. `implicit` selects whether the active VFO's freq+mode is kept.
     void switch_band(int new_band_id, bool implicit);
+
+    // -- Context switching --
+    // Switches mode context: saves pending mode writes and loads mode params
+    // for new_group_id.
+    void switch_mode(ModeGroup new_group_id);
 
     // Apply the current band/mode context to every parameter in the group.
     void set_band_context(int band_id);
@@ -526,7 +554,7 @@ class SettingsManager {
 
     // Full group loads (used by init_load).
     void load_band_all(int band_id);
-    void load_mode_all(int mode_id);
+    void load_mode_all();
 
     // Switch-time band loads: never loads current_vfo; when `implicit` is true
     // also keeps the active VFO's freq+mode (loads only the inactive VFO).
@@ -584,7 +612,7 @@ class SettingsManager {
 
     // -- Member data --
     int band_id_ = 0;
-    int mode_id_ = 0;
+    int mode_group_id_ = 0;
 
     // Re-entrancy guard for switch_band: prevents the p_band_id observer (which
     // fires from inside switch_band's p_band_id.set) from running a nested

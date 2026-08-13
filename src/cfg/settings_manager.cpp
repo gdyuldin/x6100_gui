@@ -10,7 +10,7 @@ extern "C" {
 
 // SettingsManager implementation.
 //
-// Band/mode switching semantics (aligned with src/cfg/band.c):
+// Band/mode switching semantics (aligned with old src/cfg/band.c):
 //   - Explicit band switch: setting p_band_id triggers an observer that calls
 //     switch_band(implicit=false). Save the pending writes of the current band,
 //     then load all band params of the new band EXCEPT current_vfo (the active
@@ -19,7 +19,7 @@ extern "C" {
 //     (via cp_fg_freq or the active p_band_vfo*_freq), an observer triggers a
 //     band switch. The active VFO's frequency that caused the switch is kept,
 //     but its mode/att/pre/agc are loaded from the new band.
-//   - switch_mode: the user changed the mode. Save pending mode writes and
+//   - Switch mode: the user changed the mode. Save pending mode writes and
 //     load the mode params for the new mode.
 //
 // All loads use Parameter::load(), which reads the context_id bound via
@@ -128,11 +128,11 @@ void SettingsManager::init_load(void (*on_db_error)(const char *msg)) {
     cp_cur_mode.recompute();
 
     // The starting mode is the active VFO's mode of the restored band.
-    mode_id_ = cp_cur_mode.get();
+    mode_group_id_ = mode_group((x6100_mode_t)cp_cur_mode.get());
 
-    set_mode_context(mode_id_);
+    set_mode_context(mode_group_id_);
 
-    load_mode_all(mode_id_);
+    load_mode_all();
 
     // Subscribe an observer that calls switch_mode() whenever the current mode
     // changes (e.g. from cp_cur_mode.set() or a VFO switch).
@@ -181,6 +181,22 @@ void SettingsManager::init_load(void (*on_db_error)(const char *msg)) {
     cp_cur_filter_bw.recompute();
 }
 
+void SettingsManager::on_mode_filter_low_not_found() {
+    p_mode_filter_low.set_quiet(mode_group_filter_low_default((ModeGroup)p_mode_filter_low.context_id()));
+}
+
+void SettingsManager::on_mode_filter_high_not_found() {
+    p_mode_filter_high.set_quiet(mode_group_filter_high_default((ModeGroup)p_mode_filter_high.context_id()));
+}
+
+void SettingsManager::on_mode_freq_step_not_found() {
+    p_mode_freq_step.set_quiet(mode_group_freq_step_default((ModeGroup)p_mode_freq_step.context_id()));
+}
+
+void SettingsManager::on_mode_zoom_not_found() {
+    p_mode_zoom.set_quiet(mode_group_zoom_default((ModeGroup)p_mode_zoom.context_id()));
+}
+
 void SettingsManager::switch_band(int new_band_id, bool implicit) {
     // Re-entrancy guard: an explicit switch triggered by setting p_band_id calls
     // switch_band(implicit=false). If that happens from inside this call (the
@@ -223,19 +239,22 @@ void SettingsManager::switch_band(int new_band_id, bool implicit) {
     band_switch_active_ = false;
 }
 
-void SettingsManager::switch_mode(int new_mode_id) {
+void SettingsManager::switch_mode(ModeGroup new_group_id) {
     // Batch the mode switch into a single notification round: the mode-param
     // loads (set_quiet) and the freq/filter recomputes below are coalesced so
     // every changed subject fires exactly one callback.
+    if (new_group_id == mode_group_id_) {
+        return;
+    }
     NotifySuppressGuard guard;
 
-    pending_writes_.flush_storage(StorageType::MODE, mode_id_);
+    pending_writes_.flush_storage(StorageType::MODE, mode_group_id_);
 
-    mode_id_ = new_mode_id;
+    mode_group_id_ = new_group_id;
 
-    set_mode_context(mode_id_);
+    set_mode_context(mode_group_id_);
 
-    load_mode_all(mode_id_);
+    load_mode_all();
 
     // The mode context can affect computed parameters that depend on mode
     // (e.g. current_mode_id); recompute the fg frequency chain.
@@ -552,7 +571,8 @@ void SettingsManager::switch_mode_observer_cb(Subject * /*subj*/, void *user_dat
     // MODE params (set_quiet) and recomputes cp_fg_freq, never cp_cur_mode, so
     // this does not recurse.
     SettingsManager *mgr = static_cast<SettingsManager *>(user_data);
-    mgr->switch_mode(mgr->cp_cur_mode.get());
+    auto group = mode_group((x6100_mode_t)mgr->cp_cur_mode.get());
+    mgr->switch_mode(group);
 }
 
 void SettingsManager::vfo_freq_change_cb(Subject *subj, void *user_data) {
@@ -578,6 +598,69 @@ void SettingsManager::switch_band_observer_cb(Subject * /*subj*/, void *user_dat
     // nested switch when this fires from the implicit path.
     SettingsManager *mgr = static_cast<SettingsManager *>(user_data);
     mgr->switch_band(mgr->p_band_id.get(), false);
+}
+
+ModeGroup SettingsManager::mode_group(x6100_mode_t mode) {
+    switch (mode) {
+        case x6100_mode_lsb:
+        case x6100_mode_usb:
+            return MODE_GROUP_SSB;
+
+        case x6100_mode_lsb_dig:
+        case x6100_mode_usb_dig:
+            return MODE_GROUP_DIGI;
+
+        case x6100_mode_cw:
+        case x6100_mode_cwr:
+            return MODE_GROUP_CW;
+
+        default:
+            return static_cast<ModeGroup>(mode);
+    }
+}
+
+int32_t SettingsManager::mode_group_filter_low_default(ModeGroup group) {
+    switch (group) {
+        case MODE_GROUP_SSB:
+        case MODE_GROUP_DIGI:
+            return 50;
+
+        default:
+            return 0;
+    }
+}
+
+int32_t SettingsManager::mode_group_filter_high_default(ModeGroup group) {
+    switch (group) {
+        case MODE_GROUP_SSB:
+        case MODE_GROUP_DIGI:
+            return 2950;
+        case MODE_GROUP_CW:
+            return 500;
+        default:
+            return 4000;
+    }
+}
+
+int32_t SettingsManager::mode_group_freq_step_default(ModeGroup group) {
+    switch (group) {
+        case MODE_GROUP_SSB:
+        case MODE_GROUP_DIGI:
+            return 500;
+        case MODE_GROUP_CW:
+            return 10;
+        default:
+            return 1000;
+    }
+}
+
+int32_t SettingsManager::mode_group_zoom_default(ModeGroup group) {
+    switch (group) {
+        case MODE_GROUP_CW:
+            return 4;
+        default:
+            return 1;
+    }
 }
 
 void SettingsManager::set_band_context(int band_id) {
@@ -617,9 +700,9 @@ void SettingsManager::load_band_all(int band_id) {
     load_band_vfo(band_id, false);
 }
 
-void SettingsManager::load_mode_all(int mode_id) {
+void SettingsManager::load_mode_all() {
     for (ParamBase *p : mode_params_) {
-        p->load(mode_id);
+        p->load(p->context_id());
     }
 }
 
