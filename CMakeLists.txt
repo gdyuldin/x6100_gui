@@ -40,10 +40,6 @@ add_subdirectory(lvgl)
 
 if(ENABLE_TESTING)
         enable_testing()
-        add_subdirectory(src/qth)
-        # TODO: ft8 tests support
-        # add_subdirectory(src/ft8)
-        add_subdirectory(src/cfg)
         add_subdirectory(tests)
 else()
         add_subdirectory(src)
