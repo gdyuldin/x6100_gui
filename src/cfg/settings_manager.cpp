@@ -47,8 +47,8 @@ SettingsManager::SettingsManager()
       cp_cur_pre([this]() { return cur_pre_get(); }, [this](int32_t pre) { cur_pre_set(pre); }),
       cp_cur_agc([this]() { return cur_agc_get(); }, [this](int32_t agc) { cur_agc_set(agc); }),
 
-      // LO offset: CW→-key_tone, CWR→+key_tone, else 0. One-way (no reverse).
-      cp_lo_offset([this]() { return lo_offset_compute(); }),
+      // Mode LO offset: CW→-key_tone, CWR→+key_tone, else 0. One-way (no reverse).
+      cp_mode_lo_offset([this]() { return lo_offset_compute(); }),
 
       // Computed current filter params. The compute fns derive the effective
       // filter edges/bw from the MODE-scoped filter params (and key_tone for
@@ -160,9 +160,9 @@ void SettingsManager::init_load(void (*on_db_error)(const char *msg)) {
     cp_bg_freq.bind(p_band_current_vfo);
     cp_bg_freq.recompute();
 
-    cp_lo_offset.bind(cp_cur_mode);
-    cp_lo_offset.bind(p_key_tone);
-    cp_lo_offset.recompute();
+    cp_mode_lo_offset.bind(cp_cur_mode);
+    cp_mode_lo_offset.bind(p_key_tone);
+    cp_mode_lo_offset.recompute();
 
     // Bind the computed filter params to their sources (filter_low/high +
     // key_tone) so reverse writes to them propagate to the sibling cur_* and

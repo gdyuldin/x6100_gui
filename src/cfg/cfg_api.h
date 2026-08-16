@@ -169,7 +169,7 @@ extern ComputedParamInt *cfg_bg_freq;          // cp_bg_freq
 extern ComputedParamInt *cfg_cur_filter_low;   // cp_cur_filter_low
 extern ComputedParamInt *cfg_cur_filter_high;  // cp_cur_filter_high
 extern ComputedParamInt *cfg_cur_filter_bw;    // cp_cur_filter_bw
-extern ComputedParamInt *cfg_lo_offset;        // cp_lo_offset
+extern ComputedParamInt *cfg_mode_lo_offset;   // cp_mode_lo_offset
 
 #ifdef __cplusplus
 } // extern "C"

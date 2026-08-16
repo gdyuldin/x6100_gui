@@ -51,7 +51,9 @@ static bool spectrum_tx = false;
 
 static int32_t filter_from = 0;
 static int32_t filter_to   = 3000;
-static int32_t lo_offset;
+static int32_t fg_freq;
+static int32_t rit;
+static int32_t mode_lo_offset;
 static int32_t if_shift;
 
 static int32_t dnf_show = false;
@@ -60,9 +62,9 @@ static int32_t dnf_width;
 
 static bool center_line_show = true;
 
-static int32_t cur_freq;
+static int32_t cur_base_lo_freq;
+static uint8_t prev_fft_dec = 1;
 static int16_t freq_mod;
-
 
 
 static pthread_mutex_t data_mux;
@@ -71,11 +73,12 @@ static void on_zoom_changed(Subject *subj, void *user_data);
 static void update_filters(Subject *subj, void *user_data);
 static void update_dnf(Subject *subj, void *user_data);
 static void update_center_line(Subject *subj, void *user_data);
-static void on_lo_offset_change(Subject *subj, void *user_data);
+static void on_mode_lo_offset_change(Subject *subj, void *user_data);
 static void on_if_shift_change(Subject *subj, void *user_data);
 static void on_grid_min_change(Subject *subj, void *user_data);
 static void on_grid_max_change(Subject *subj, void *user_data);
-static void on_cur_freq_change(Subject *subj, void *user_data);
+static void on_cur_base_lo_freq_change(Subject *subj, void *user_data);
+static void on_rit_change(Subject *subj, void *user_data);
 static void shift_peaks(int32_t df);
 
 static void spectrum_draw_cb(lv_event_t *e) {
@@ -114,10 +117,19 @@ static void spectrum_draw_cb(lv_event_t *e) {
     lv_coord_t w = lv_obj_get_width(obj);
     lv_coord_t h = lv_obj_get_height(obj);
 
+    lv_coord_t spectrum_offset, markers_offset;
+    // spectrum_offset: shift for the spectrum data
+    // markers_offset: shift for filter data, notch, etc
+    markers_offset = ((mode_lo_offset + if_shift) * zoom_factor * w + width_hz / 2) / width_hz;
     if (spectrum_tx) {
-        x1 += (lo_offset + if_shift) * zoom_factor * w / width_hz;
+        spectrum_offset = markers_offset;
     } else {
-        x1 += lo_offset * zoom_factor * w / width_hz;
+        lv_coord_t data_shift = 0;
+        if (cur_base_lo_freq) {
+            // Handle delay between sending new settings to base and new data flow
+            data_shift = cur_base_lo_freq - (fg_freq + mode_lo_offset - if_shift + rit);
+        }
+        spectrum_offset = ((mode_lo_offset + data_shift) * zoom_factor * w + width_hz / 2) / width_hz;
     }
 
     lv_point_t main_a, main_b;
@@ -140,7 +152,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
         if (params.spectrum_peak.x && !spectrum_tx) {
             float v_peak = (spectrum_peak[i].val - min) / (max - min);
 
-            peak_a.x = x1 + x;
+            peak_a.x = x1 + spectrum_offset + x;
             peak_a.y = y1 + (1.0f - v_peak) * h;
 
             lv_draw_line(draw_ctx, &peak_line_dsc, &peak_a, &peak_b);
@@ -150,7 +162,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
 
         /* Main */
 
-        main_a.x = x1 + x;
+        main_a.x = x1 + spectrum_offset + x;
         main_a.y = y1 + (1.0f - v) * h;
 
         if (params.spectrum_filled.x) {
@@ -183,13 +195,10 @@ static void spectrum_draw_cb(lv_event_t *e) {
     int32_t f1 = (float)(w * filter_from) / w_hz + 1.0f;
     int32_t f2 = (float)(w * filter_to) / w_hz + 1.0f;
 
-    if (!spectrum_tx) {
-        x1 += if_shift * zoom_factor * w / width_hz;
-    }
 
-    area.x1 = x1 + w / 2 + f1;
+    area.x1 = x1 + markers_offset + w / 2 + f1;
     area.y1 = y1;
-    area.x2 = x1 + w / 2 + f2;
+    area.x2 = x1 + markers_offset + w / 2 + f2;
     area.y2 = y1 + h;
 
     lv_draw_rect(draw_ctx, &rect_dsc, &area);
@@ -212,9 +221,9 @@ static void spectrum_draw_cb(lv_event_t *e) {
             f2 = (w * from) / w_hz;
         }
 
-        area.x1 = x1 + w / 2 + f1;
+        area.x1 = x1 + markers_offset + w / 2 + f1;
         area.y1 = y1;
-        area.x2 = x1 + w / 2 + f2;
+        area.x2 = x1 + markers_offset + w / 2 + f2;
         area.y2 = y1 + h;
 
         lv_draw_rect(draw_ctx, &rect_dsc, &area);
@@ -229,13 +238,13 @@ static void spectrum_draw_cb(lv_event_t *e) {
         f1 = (int64_t)(w * from) / w_hz;
         f2 = (int64_t)(w * to) / w_hz;
 
-        main_a.x = x1 + w / 2 + f1;
+        main_a.x = x1 + markers_offset + w / 2 + f1;
         main_a.y = y1;
         main_b.x = main_a.x;
         main_b.y = y1 + h;
         lv_draw_line(draw_ctx, &main_line_dsc, &main_a, &main_b);
 
-        main_a.x = x1 + w / 2 + f2;
+        main_a.x = x1 + markers_offset + w / 2 + f2;
         main_b.x = main_a.x;
         lv_draw_line(draw_ctx, &main_line_dsc, &main_a, &main_b);
     }
@@ -244,7 +253,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
 
     main_line_dsc.width = 1;
 
-    main_a.x = x1 + w / 2;
+    main_a.x = x1 + markers_offset + w / 2;
     main_a.y = y1;
     main_b.x = main_a.x;
     main_b.y = y1 + h;
@@ -293,7 +302,7 @@ lv_obj_t *spectrum_init(lv_obj_t *parent) {
     subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_filters, NULL);
 
     subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_center_line, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_lo_offset, on_lo_offset_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg_mode_lo_offset, on_mode_lo_offset_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg_band_if_shift, on_if_shift_change, NULL);
 
     subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_min_change, NULL);
@@ -307,16 +316,17 @@ lv_obj_t *spectrum_init(lv_obj_t *parent) {
     subject_subscribe((Subject*)cfg_dnf_center, update_dnf, NULL);
     subject_subscribe_and_notify((Subject*)cfg_dnf_width, update_dnf, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg_fg_freq, on_cur_freq_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg_fg_freq, on_cur_base_lo_freq_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg_rit, on_rit_change, NULL);
     return obj;
 }
 
-void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq) {
+void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_lo_freq, uint8_t fft_dec) {
     uint64_t now = get_time();
 
-    if (base_freq != cur_freq) {
-        int32_t df = base_freq - cur_freq;
-        cur_freq = base_freq;
+    if (base_lo_freq != cur_base_lo_freq) {
+        int32_t df = base_lo_freq - cur_base_lo_freq;
+        cur_base_lo_freq = base_lo_freq;
         shift_peaks(df);
     }
 
@@ -329,7 +339,7 @@ void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq) 
             float   v    = spectrum_buf[i];
             peak_t *peak = &spectrum_peak[i];
 
-            if (v > peak->val) {
+            if ((v > peak->val) || (fft_dec != prev_fft_dec)) {
                 peak->time = now;
                 peak->val  = v;
             } else {
@@ -339,6 +349,7 @@ void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq) 
             }
         }
     }
+    prev_fft_dec = fft_dec;
 
     pthread_mutex_unlock(&data_mux);
     scheduler_put_noargs(spectrum_refresh);
@@ -443,8 +454,8 @@ static void update_center_line(Subject *subj, void *user_data) {
     center_line_show = (mode != x6100_mode_cw && mode != x6100_mode_cwr);
 }
 
-static void on_lo_offset_change(Subject *subj, void *user_data) {
-    lo_offset = subject_i_get((SubjectInt*)subj);
+static void on_mode_lo_offset_change(Subject *subj, void *user_data) {
+    mode_lo_offset = subject_i_get((SubjectInt*)subj);
 }
 
 static void on_if_shift_change(Subject *subj, void *user_data) {
@@ -460,6 +471,15 @@ static void on_grid_max_change(Subject *subj, void *user_data) {
     if (!param_i_get(cfg_auto_level_enabled)) {
         grid_max = param_i_get(cfg_band_grid_max);
     }
+}
+
+static void on_cur_base_lo_freq_change(Subject *subj, void *user_data) {
+    fg_freq = cparam_i_get(cfg_fg_freq);
+    scheduler_put_noargs(spectrum_refresh);
+}
+
+static void on_rit_change(Subject *subj, void *user_data) {
+    rit = param_i_get(cfg_rit);
 }
 
 static void shift_peaks(int32_t df) {
@@ -485,8 +505,4 @@ static void shift_peaks(int32_t df) {
             *to = spectrum_peak[src_id];
         }
     }
-}
-
-void on_cur_freq_change(Subject *subj, void *user_data) {
-    scheduler_put_noargs(spectrum_refresh);
 }

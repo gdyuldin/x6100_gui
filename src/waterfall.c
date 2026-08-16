@@ -57,7 +57,7 @@ static uint16_t         last_row_id;
 
 static int32_t          radio_center_freq = 0;
 static int32_t          wf_center_freq = 0;
-static int32_t          lo_offset = 0;
+static int32_t          mode_lo_offset = 0;
 static int32_t          if_shift = 0;
 
 static uint8_t          refresh_period = 1;
@@ -71,7 +71,7 @@ static void middle_line_cb(lv_event_t * event);
 static void redraw_cb(lv_event_t * e);
 static void on_zoom_changed(Subject *subj, void *user_data);
 static void on_fg_freq_change(Subject *subj, void *user_data);
-static void on_lo_offset_change(Subject *subj, void *user_data);
+static void on_mode_lo_offset_change(Subject *subj, void *user_data);
 static void on_if_shift_changed(Subject *subj, void *user_data);
 static void on_grid_min_change(Subject *subj, void *user_data);
 static void on_grid_max_change(Subject *subj, void *user_data);
@@ -103,7 +103,7 @@ lv_obj_t * waterfall_init(lv_obj_t * parent) {
     subject_subscribe_delayed_and_notify((Subject*)cfg_mode_zoom, on_zoom_changed, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg_band_if_shift, on_if_shift_changed, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg_lo_offset, on_lo_offset_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg_mode_lo_offset, on_mode_lo_offset_change, NULL);
     subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_min_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg_band_grid_min, on_grid_min_change, NULL);
     subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_max_change, NULL);
@@ -133,10 +133,10 @@ void waterfall_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq,
         max = grid_max;
     }
     if (base_freq == 0) {
-        base_freq = radio_center_freq + lo_offset;
+        base_freq = radio_center_freq + mode_lo_offset;
     } else if (tx) {
         // New patched firmware
-        base_freq += lo_offset;
+        base_freq += mode_lo_offset;
     }
     wf_rows[last_row_id].center_freq = base_freq;
     wf_rows[last_row_id].width = width_hz;
@@ -345,8 +345,8 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
     radio_center_freq = subject_i_get((SubjectInt*)subj) - if_shift;
 }
 
-static void on_lo_offset_change(Subject *subj, void *user_data) {
-    lo_offset = subject_i_get((SubjectInt*)subj);
+static void on_mode_lo_offset_change(Subject *subj, void *user_data) {
+    mode_lo_offset = subject_i_get((SubjectInt*)subj);
 }
 
 static void update_middle_line() {

@@ -715,6 +715,20 @@ static bool radio_tick() {
 
         uint32_t base_freq = 0;
         uint8_t fft_dec = 0;
+        /*
+        On patched:
+            RX:
+                SSB: base_freq = fg_freq - if_shift + rit
+                CW: base_freq = fg_freq - key_tone - if_shift + rit
+                CWR: base_freq = fg_freq + key_tone - if_shift + rit
+                AM: base_freq = fg_freq - 100 + rit
+                FM: base_freq = fg_freq - 200 + rit
+            TX:
+                SSB: base_freq = fg_freq + xit
+                CW: base_freq = fg_freq + xit
+
+            On OEM: base_freq = 0
+        */
         if (base_ver.rev >= 8) {
             base_freq = flow_info.lo_freq;
             fft_dec = 1U << flow_info.fft_dec;

@@ -405,9 +405,9 @@ class SettingsManager {
     ComputedParameter<int32_t> cp_cur_agc;
     ComputedParameter<int32_t> cp_bg_freq;
 
-    // Computed LO offset: CW → -key_tone, CWR → +key_tone, else 0.
+    // Computed mode LO offset: CW → -key_tone, CWR → +key_tone, else 0.
     // Driven by cp_cur_mode and p_key_tone.
-    ComputedParameter<int32_t> cp_lo_offset;
+    ComputedParameter<int32_t> cp_mode_lo_offset;
 
     // Computed current filter params for the active MODE category. The compute
     // fns map the MODE-scoped filter_low/filter_high (and key_tone for CW)

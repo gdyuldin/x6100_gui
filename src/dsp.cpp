@@ -364,7 +364,7 @@ static void process_samples(cfloat *buf_samples, uint16_t size, firdecim_crcf sp
     }
 }
 
-static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_t base_freq) {
+static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_t base_freq, uint8_t fft_dec) {
     if ((now - spectrum_time > spectrum_fps_ms) && sp_sg->ready()) {
         sp_sg->get_psd(spectrum_psd);
         liquid_vectorf_addscalar(spectrum_psd, SPECTRUM_NFFT, DB_OFFSET + zoom_level_offset, spectrum_psd);
@@ -396,7 +396,7 @@ static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_
             spectrum_prev_freq = base_freq;
         }
         lpf_block(spectrum_psd_filtered, spectrum_psd, spectrum_beta, SPECTRUM_NFFT);
-        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx, base_freq);
+        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx, base_freq, fft_dec);
         spectrum_time = now;
         return true;
     }
@@ -486,7 +486,7 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
     }
     process_samples(buf_samples, size, sp_decim, sp_sg, wf_sg, tx);
     if (spectrum_enabled.load(std::memory_order_relaxed)) {
-        update_spectrum(sp_sg, now, tx, base_freq);
+        update_spectrum(sp_sg, now, tx, base_freq, fft_dec);
     }
     pthread_mutex_unlock(&spectrum_mux);
 
