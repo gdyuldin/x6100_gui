@@ -1,5 +1,6 @@
 #include "settings_manager.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 
@@ -463,12 +464,12 @@ int32_t SettingsManager::filter_low_validate(int32_t v) {
     if (hi < 0) {
         hi = 0;
     }
-    return clamp_val(v, 0, hi);
+    return clip(v, 0, hi);
 }
 
 int32_t SettingsManager::filter_high_validate(int32_t v) {
-    int low = clamp_val(p_mode_filter_low.get(), 0, 5999);
-    return clamp_val(v, low + 1, 6000);
+    int low = clip(p_mode_filter_low.get(), 0, 5999);
+    return clip(v, low + 1, 6000);
 }
 
 int32_t SettingsManager::cur_filter_low_compute() {
@@ -482,7 +483,7 @@ int32_t SettingsManager::cur_filter_low_compute() {
         case FilterMode::CW:
             // Low can't be negative
             low = p_key_tone.get() - p_mode_filter_high.get() / 2;
-            return LV_MAX(0, low);
+            return std::max(0, low);
         case FilterMode::SSB:
         default:
             return p_mode_filter_low.get();
@@ -499,7 +500,7 @@ int32_t SettingsManager::cur_filter_high_compute() {
             return p_mode_filter_high.get();
         case FilterMode::CW:
             low = p_key_tone.get() - p_mode_filter_high.get() / 2;
-            low = LV_MAX(0, low);
+            low = std::max(0, low);
             return low + p_mode_filter_high.get();
     }
 }
@@ -538,7 +539,7 @@ void SettingsManager::cur_filter_high_reverse(int32_t v) {
 }
 
 void SettingsManager::cur_filter_bw_reverse(int32_t v) {
-    v = clamp_val(v, 10, 6000);
+    v = clip(v, 10, 6000);
     switch (filter_mode(cp_cur_mode.get())) {
         case FilterMode::AM:
         case FilterMode::FM:

@@ -14,6 +14,8 @@
 #include <vector>
 
 #include "../lvgl/lvgl.h"
+
+#include "../common/type_utils.h"
 #endif
 
 #ifndef BAND_UNDEFINED
@@ -50,9 +52,6 @@ class StmtResetGuard {
     StmtResetGuard(StmtResetGuard &&)                 = delete;
     StmtResetGuard &operator=(StmtResetGuard &&)      = delete;
 };
-
-// Helper trait that is always false, but depends on T
-template <typename> inline constexpr bool always_false_v = false;
 
 // value to std::string converter for logging
 template <typename T> std::string value_to_string(const T &value) {

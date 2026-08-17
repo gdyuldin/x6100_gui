@@ -10,6 +10,8 @@
 
 #include <algorithm>
 
+#include "common/math.h"
+
 #define COMPARE(a, b) ((a > b) - (a < b))
 
 extern "C" {
@@ -45,29 +47,17 @@ void get_time_str(char *str, size_t str_size) {
 }
 
 void split_freq(int32_t freq, uint16_t *mhz, uint16_t *khz, uint16_t *hz) {
-    *mhz = freq / 1000000;
-    *khz = (freq / 1000) % 1000;
-    *hz = freq % 1000;
+    *mhz = freq / 1'000'000;
+    *khz = (freq / 1'000) % 1'000;
+    *hz = freq % 1'000;
 }
 
 int32_t align_int(int32_t x, uint16_t step) {
-    if (step == 0) {
-        return x;
-    }
-
-    return x - (x % step);
-}
-
-uint64_t align_long(uint64_t x, uint16_t step) {
-    if (step == 0) {
-        return x;
-    }
-
-    return x - (x % step);
+    return align(x, static_cast<int32_t>(step));
 }
 
 int32_t limit(int32_t x, int32_t min, int32_t max) {
-    return clip(x, min, max);
+    return std::clamp(x, min, max);
 }
 
 float sqr(float x) {
@@ -88,26 +78,6 @@ void lpf_block(float *x, float *current, float beta, unsigned int count) {
     liquid_vectorf_mulscalar(x, count, beta, x);
     liquid_vectorf_add(x, current, count, x);
 }
-
-
-int sign(int x) {
-    return (x > 0) - (x < 0);
-}
-
-
-size_t argmax(float * x, size_t n) {
-    float max = -INFINITY;
-    size_t pos = 0;
-    for (size_t i = 0; i < n; i++)
-    {
-        if (x[i] > max) {
-            max = x[i];
-            pos = i;
-        }
-    }
-    return pos;
-}
-
 
 char * util_canonize_callsign(const char * callsign, bool strip_slashes) {
     if (!callsign) {

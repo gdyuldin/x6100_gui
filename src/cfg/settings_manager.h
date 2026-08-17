@@ -24,6 +24,7 @@
 
 #include <ft8lib/constants.h>
 
+#include "../common/math.h"
 #include "computed_parameter.h"
 #include "encoder_bind_types.h"
 #include "parameter.h"
@@ -31,13 +32,6 @@
 
 extern "C" {
 #include <aether_radio/x6100_control/control.h>
-}
-
-// Clamp a value into [lo, hi]. Used by the parameter validators so C-API / set()
-// values cannot leave their documented range. Template on the value type so the
-// same helper handles both int32_t and float parameters.
-template <typename T> static inline T clamp_val(T v, T lo, T hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
 }
 
 enum ModeGroup {
@@ -292,11 +286,11 @@ class SettingsManager {
 
     // --- MODE params (`mode_params` table) ---
     // Parameter<int32_t> p_mode_squelch{
-    //     "squelch",    0, StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
+    //     "squelch",    0, StorageType::MODE, pending_writes_, [](int32_t v) { return clip(v, 0, 100); }, {},
     //     &mode_params_};
-    Parameter<int32_t> p_mode_freq_step{"freq_step", 500, [](int32_t v) { return clamp_val(v, 1, 10000); },
+    Parameter<int32_t> p_mode_freq_step{"freq_step", 500, [](int32_t v) { return clip(v, 1, 10000); },
         StorageType::MODE, pending_writes_, [this]() { on_mode_freq_step_not_found(); }, &mode_params_};
-    Parameter<int32_t> p_mode_zoom{"spectrum_factor", 1, [](int32_t v) { return clamp_val(v, 1, 8); },
+    Parameter<int32_t> p_mode_zoom{"spectrum_factor", 1, [](int32_t v) { return clip(v, 1, 8); },
         StorageType::MODE, pending_writes_, [this]() { on_mode_zoom_not_found(); }, &mode_params_};
 
   private:

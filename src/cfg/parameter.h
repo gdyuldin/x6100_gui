@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../common/math.h"
 #include "db.h"
 #include "storage_policy.h"
 #include "subject.h"
@@ -112,7 +113,7 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
               WriteSink &sink, std::vector<ParamBase *> *group = nullptr,
               int context_id = 0)
         : SubjectT<ValueType>(default_val), db_name_(db_name), storage_(storage), sink_(sink), context_id_(context_id) {
-        validator_ = [min, max](ValueType v) { return LV_CLAMP(min, v, max); };
+        validator_ = [min, max](ValueType v) { return clip(v, min, max); };
         if (group) {
             group->push_back(this);
         }

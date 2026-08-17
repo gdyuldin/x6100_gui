@@ -13,7 +13,7 @@
 #include "cat.h"
 
 #include "cfg/settings_manager.h"
-#include "util.hpp"
+#include "common/queue.h"
 
 #include <mutex>
 #include <thread>
