@@ -201,13 +201,13 @@ void waterfall_set_height(lv_coord_t h) {
     band_info_init(obj);
     middle_line_points[1].y = height;
     lv_line_set_points(middle_line, middle_line_points, 2);
+    lv_obj_move_background(img);
     ready = true;
 }
 
 static void middle_line_cb(lv_event_t * event) {
     if (params.waterfall_center_line.x && lv_obj_has_flag(middle_line, LV_OBJ_FLAG_HIDDEN)) {
         lv_obj_clear_flag(middle_line, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(middle_line, 600, 0);
         return;
     }
     if (!params.waterfall_center_line.x && !lv_obj_has_flag(middle_line, LV_OBJ_FLAG_HIDDEN)) {
