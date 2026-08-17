@@ -104,7 +104,7 @@ TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]"
     // Pre-populate the DB with known values for band 5 / MODE_GROUP_DIGI.
     {
         StoragePolicy &g = storage_policy_for(StorageType::GLOBAL);
-        REQUIRE(g.save_int(0, "volume", 45) == SUCCESS);
+        REQUIRE(g.save_int(0, "vol", 45) == SUCCESS);
         StoragePolicy &b = storage_policy_for(StorageType::BAND);
         REQUIRE(b.save_int(5, "vfoa_freq", 7100) == SUCCESS);
         REQUIRE(b.save_int(5, "vfob_freq", 14300) == SUCCESS);
@@ -142,12 +142,12 @@ TEST_CASE("SettingsManager deferred writes round-trip after flush", "[manager]")
     // Change parameters; the new values go to the journal (not the DB yet).
     mgr.p_volume.set(45);
     mgr.p_band_if_shift.set(10);
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 45);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") != 45);
 
     mgr.flush_all();
 
     // Values are now persisted.
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 45);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") == 45);
     auto if_shift = storage_policy_for(StorageType::BAND).load_int(5, "if_shift");
     REQUIRE(if_shift.has_value());
     REQUIRE(*if_shift == 10);
@@ -692,7 +692,7 @@ TEST_CASE("flush thread persists pending writes within the wake timeout", "[mana
 
     // Queue a write (not yet in the DB).
     mgr.p_volume.set(45);
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 45);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") != 45);
 
     mgr.start_flush_thread();
 
@@ -700,7 +700,7 @@ TEST_CASE("flush thread persists pending writes within the wake timeout", "[mana
     bool       persisted = false;
     const auto deadline  = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline) {
-        if (storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 45) {
+        if (storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") == 45) {
             persisted = true;
             break;
         }
@@ -824,13 +824,13 @@ TEST_CASE("set to an already-clamped value does not enqueue a write", "[manager]
     // 500 clamps to 55; pending write holds 55.
     mgr.p_volume.set(500);
     REQUIRE(
-        PendingWritesTestAccess::peek_int(mgr.pending_writes_, StorageKey{StorageType::GLOBAL, 0, "volume"}).value() ==
+        PendingWritesTestAccess::peek_int(mgr.pending_writes_, StorageKey{StorageType::GLOBAL, 0, "vol"}).value() ==
         55);
 
     // Setting 55 again is already the clamped value -> no change -> no write.
     mgr.p_volume.set(55);
     REQUIRE(
-        PendingWritesTestAccess::peek_int(mgr.pending_writes_, StorageKey{StorageType::GLOBAL, 0, "volume"}).value() ==
+        PendingWritesTestAccess::peek_int(mgr.pending_writes_, StorageKey{StorageType::GLOBAL, 0, "vol"}).value() ==
         55);
 }
 

@@ -99,7 +99,7 @@ void prime_band(sqlite3 *db, int band_id) {
 TEST_CASE("cfg_api_init wires the extern globals and loads preseeded values", "[cfg_api]") {
     TestDbGuard db;
     prime_band(db.db, 5);
-    storage_policy_for(StorageType::GLOBAL).save_int(0, "volume", 55);
+    storage_policy_for(StorageType::GLOBAL).save_int(0, "vol", 55);
 
     cfg_api_init(nullptr);
 
@@ -241,11 +241,11 @@ TEST_CASE("cfg_api set runs the validator and persists via flush", "[cfg_api]") 
     REQUIRE(param_i_get(cfg_volume) == 55);
 
     // The value is queued, not yet in the DB.
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 55);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") != 55);
 
     cfg_api_flush_all();
 
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 55);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") == 55);
 }
 
 TEST_CASE("cfg_fg_freq mirrors the active VFO and writes back through reverse fn", "[cfg_api]") {
