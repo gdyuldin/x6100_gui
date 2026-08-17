@@ -87,6 +87,18 @@ static T update_param(Parameter<T, U, N> &param, int32_t diff, T step=1) {
     return param.get();
 }
 
+template <typename T>
+static T update_param(ComputedParameter<T> &param, int32_t diff, T step=1) {
+    T val = param.get();
+    if (!diff) {
+        return val;
+    }
+    val = align(val + diff * step, step);
+    param.set(val);
+    // Read again
+    return param.get();
+}
+
 
 void control_name_say(cfg_ctrl_t ctrl) {
     auto item = control_name_voice.find(ctrl);
@@ -208,13 +220,8 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_FILTER_LOW:
-            i = cfg_sm.cp_cur_filter_low.get();
-            if (diff) {
-                // TODO: make step depending on freq
-                i = align_int(i + diff * 10, 10);
-                cfg_sm.cp_cur_filter_low.set(i);
-                i = cfg_sm.cp_cur_filter_low.get();
-            }
+            // TODO: make step depending on freq
+            i = update_param(cfg_sm.cp_cur_filter_low, diff, 10);
             snprintf(msg.data(), msg.capacity(), "Filter low: %i Hz", i);
 
             if (diff) {
@@ -225,7 +232,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
         case CTRL_FILTER_HIGH:
             i = cfg_sm.cp_cur_filter_high.get();
             if (diff) {
-                uint8_t freq_step;
+                int32_t freq_step;
                 switch (cfg_sm.cp_cur_mode.get()) {
                 case x6100_mode_cw:
                 case x6100_mode_cwr:
@@ -235,9 +242,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
                     freq_step = 50;
                     break;
                 }
-                i = align_int(i + diff * freq_step, freq_step);
-                cfg_sm.cp_cur_filter_high.set(i);
-                i = cfg_sm.cp_cur_filter_high.get();
+                i = update_param(cfg_sm.cp_cur_filter_high, diff, freq_step);
             }
 
             snprintf(msg.data(), msg.capacity(), "Filter high: %i Hz", i);
@@ -248,18 +253,11 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_FILTER_BW:
-            {
-                int32_t bw = cfg_sm.cp_cur_filter_bw.get();
-                if (diff) {
-                    bw = align_int(bw + diff * 20, 20);
-                    cfg_sm.cp_cur_filter_bw.set(bw);
-                    bw = cfg_sm.cp_cur_filter_bw.get();
-                }
-                snprintf(msg.data(), msg.capacity(), "Filter bw: %i Hz", bw);
+            i = update_param(cfg_sm.cp_cur_filter_bw, diff, 20);
+            snprintf(msg.data(), msg.capacity(), "Filter bw: %i Hz", i);
 
-                if (diff) {
-                    voice_say_int("Filter bandwidth", bw);
-                }
+            if (diff) {
+                voice_say_int("Filter bandwidth", i);
             }
             break;
 
@@ -320,8 +318,8 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
                 } else {
                     i >>= -diff;
                 }
-                i = clip(i, 1, 8);
                 cfg_sm.p_mode_zoom.set(i);
+                i = cfg_sm.p_mode_zoom.get();
             }
             snprintf(msg.data(), msg.capacity(), "Zoom: x%i", i);
 
@@ -500,11 +498,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_RIT:
-            i = cfg_sm.p_rit.get();
-            if (diff) {
-                i = clip(align(i + diff * 10, 10), -1500, +1500);
-                cfg_sm.p_rit.set(i);
-            }
+            i = update_param(cfg_sm.p_rit, diff, 10);
             snprintf(msg.data(), msg.capacity(), "RIT: %c%i", (i < 0 ? '-' : '+'), abs(i));
 
             if (diff) {
@@ -513,11 +507,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_XIT:
-            i = cfg_sm.p_xit.get();
-            if (diff) {
-                i = clip(align(i + diff * 10, 10), -1500, +1500);
-                cfg_sm.p_xit.set(i);
-            }
+            i = update_param(cfg_sm.p_xit, diff, 10);
             snprintf(msg.data(), msg.capacity(), "XIT: %c%i", (i < 0 ? '-' : '+'), abs(i));
 
             if (diff) {
