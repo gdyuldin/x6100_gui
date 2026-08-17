@@ -233,16 +233,19 @@ TEST_CASE("cfg_api set runs the validator and persists via flush", "[cfg_api]") 
     prime_band(db.db, 5);
     cfg_api_init(nullptr);
 
-    // 150 is outside the 0..100 volume range -> clamped by the validator.
+    // 150 is outside the 0..55 volume range -> clamped by the validator.
+    // Set a distinct low value first so the clamped change is detected even if
+    // a prior test in the same binary left the global volume at 55.
+    param_i_set(cfg_volume, 10);
     param_i_set(cfg_volume, 150);
-    REQUIRE(param_i_get(cfg_volume) == 100);
+    REQUIRE(param_i_get(cfg_volume) == 55);
 
     // The value is queued, not yet in the DB.
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 100);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 55);
 
     cfg_api_flush_all();
 
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 100);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 55);
 }
 
 TEST_CASE("cfg_fg_freq mirrors the active VFO and writes back through reverse fn", "[cfg_api]") {

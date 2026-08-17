@@ -26,11 +26,11 @@ if(ENABLE_TESTING)
 
         # include_directories(${CMAKE_CURRENT_SOURCE_DIR}/tests/mock_gpiod)
         FetchContent_Declare(
-        AetherX6100Control
+        aether_x6100_control
         GIT_REPOSITORY https://github.com/gdyuldin/X6100Control.git
         GIT_TAG        v0.16.1
         )
-        FetchContent_MakeAvailable(AetherX6100Control)
+        FetchContent_MakeAvailable(aether_x6100_control)
 
 else()
         add_compile_options(-mtune=cortex-a7 -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4)

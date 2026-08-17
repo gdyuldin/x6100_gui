@@ -104,7 +104,7 @@ TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]"
     // Pre-populate the DB with known values for band 5 / MODE_GROUP_DIGI.
     {
         StoragePolicy &g = storage_policy_for(StorageType::GLOBAL);
-        REQUIRE(g.save_int(0, "volume", 77) == SUCCESS);
+        REQUIRE(g.save_int(0, "volume", 45) == SUCCESS);
         StoragePolicy &b = storage_policy_for(StorageType::BAND);
         REQUIRE(b.save_int(5, "vfoa_freq", 7100) == SUCCESS);
         REQUIRE(b.save_int(5, "vfob_freq", 14300) == SUCCESS);
@@ -122,7 +122,7 @@ TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]"
     REQUIRE(mgr.current_band_id() == 5);
     REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_DIGI);
 
-    REQUIRE(mgr.p_volume.get() == 77);
+    REQUIRE(mgr.p_volume.get() == 45);
     REQUIRE(mgr.p_band_vfoa_freq.get() == 7100);
     REQUIRE(mgr.p_band_vfob_freq.get() == 14300);
     REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_B);
@@ -140,14 +140,14 @@ TEST_CASE("SettingsManager deferred writes round-trip after flush", "[manager]")
     mgr.init_load();
 
     // Change parameters; the new values go to the journal (not the DB yet).
-    mgr.p_volume.set(80);
+    mgr.p_volume.set(45);
     mgr.p_band_if_shift.set(10);
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 80);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 45);
 
     mgr.flush_all();
 
     // Values are now persisted.
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 80);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 45);
     auto if_shift = storage_policy_for(StorageType::BAND).load_int(5, "if_shift");
     REQUIRE(if_shift.has_value());
     REQUIRE(*if_shift == 10);
@@ -156,7 +156,7 @@ TEST_CASE("SettingsManager deferred writes round-trip after flush", "[manager]")
     SettingsManager mgr2;
     mgr2.p_band_id.set_quiet(5);
     mgr2.init_load();
-    REQUIRE(mgr2.p_volume.get() == 80);
+    REQUIRE(mgr2.p_volume.get() == 45);
     REQUIRE(mgr2.p_band_if_shift.get() == 10);
 }
 
@@ -691,8 +691,8 @@ TEST_CASE("flush thread persists pending writes within the wake timeout", "[mana
     mgr.init_load();
 
     // Queue a write (not yet in the DB).
-    mgr.p_volume.set(80);
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 80);
+    mgr.p_volume.set(45);
+    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") != 45);
 
     mgr.start_flush_thread();
 
@@ -700,7 +700,7 @@ TEST_CASE("flush thread persists pending writes within the wake timeout", "[mana
     bool       persisted = false;
     const auto deadline  = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline) {
-        if (storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 80) {
+        if (storage_policy_for(StorageType::GLOBAL).load_int(0, "volume") == 45) {
             persisted = true;
             break;
         }
@@ -720,7 +720,7 @@ TEST_CASE("parameter validators clamp out-of-range values on set", "[manager]") 
 
     // Clamping validators bound the documented ranges.
     mgr.p_volume.set(500);
-    REQUIRE(mgr.p_volume.get() == 100);
+    REQUIRE(mgr.p_volume.get() == 55);
 
     mgr.p_squelch.set(-50);
     REQUIRE(mgr.p_squelch.get() == 0);
@@ -728,9 +728,90 @@ TEST_CASE("parameter validators clamp out-of-range values on set", "[manager]") 
     mgr.p_mode_zoom.set(1000);
     REQUIRE(mgr.p_mode_zoom.get() == 8);
 
-    // Enum-like params are intentionally unvalidated (values pass through).
     mgr.p_band_current_vfo.set(7);
-    REQUIRE(mgr.p_band_current_vfo.get() == 7);
+    REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_B);
+}
+
+TEST_CASE("numeric validators clamp to the UI-derived ranges", "[manager][validators]") {
+    TestDbGuard db;
+
+    SettingsManager mgr;
+    mgr.p_band_id.set_quiet(5);
+    mgr.init_load();
+
+    // Exceptions (ranges NOT taken from the UI clip).
+    mgr.p_volume.set(500);                      // CTRL_VOL 0..55
+    REQUIRE(mgr.p_volume.get() == 55);
+    mgr.p_pwr.set(-5.0f);                       // CTRL_PWR 0.1..10 (UI min was 0.0)
+    REQUIRE(mgr.p_pwr.get() == 0.1f);
+    mgr.p_imic.set(200);                        // CTRL_IMIC 0..50 (UI max was 35)
+    REQUIRE(mgr.p_imic.get() == 50);
+
+    // Numeric ranges from the UI clip.
+    mgr.p_rit.set(99999);                       // -1500..1500
+    REQUIRE(mgr.p_rit.get() == 1500);
+    mgr.p_xit.set(-99999);
+    REQUIRE(mgr.p_xit.get() == -1500);
+    mgr.p_key_speed.set(100);                   // 5..50
+    REQUIRE(mgr.p_key_speed.get() == 50);
+    mgr.p_key_vol.set(-5);                      // 0..32
+    REQUIRE(mgr.p_key_vol.get() == 0);
+    mgr.p_key_tone.set(99999);                  // 400..1200
+    REQUIRE(mgr.p_key_tone.get() == 1200);
+    mgr.p_band_if_shift.set(99999999);          // -40000..40000
+    REQUIRE(mgr.p_band_if_shift.get() == 40000);
+    mgr.p_vox_delay.set(0);                     // 100..2000
+    REQUIRE(mgr.p_vox_delay.get() == 100);
+    mgr.p_comp.set(999);                        // 1..8
+    REQUIRE(mgr.p_comp.get() == 8);
+    mgr.p_ant_id.set(99);                       // 0..5
+    REQUIRE(mgr.p_ant_id.get() == 5);
+    mgr.p_nr_level.set(999);                    // 0..60
+    REQUIRE(mgr.p_nr_level.get() == 60);
+
+    // Float scalars.
+    mgr.p_key_ratio.set(10.0f);                 // 2.5..4.5
+    REQUIRE(mgr.p_key_ratio.get() == 4.5f);
+    mgr.p_cw_decoder_snr.set(0.0f);             // 3.0..30.0
+    REQUIRE(mgr.p_cw_decoder_snr.get() == 3.0f);
+}
+
+TEST_CASE("enum validators clamp to the documented bounds", "[manager][validators]") {
+    TestDbGuard db;
+
+    SettingsManager mgr;
+    mgr.p_band_id.set_quiet(5);
+    mgr.init_load();
+
+    mgr.p_mic.set(99);                          // 0..2
+    REQUIRE(mgr.p_mic.get() == (int32_t)x6100_mic_auto);
+    mgr.p_key_mode.set(-1);                     // 0..2
+    REQUIRE(mgr.p_key_mode.get() == 0);
+    mgr.p_iambic_mode.set(99);                  // 0..1
+    REQUIRE(mgr.p_iambic_mode.get() == (int32_t)x6100_iambic_b);
+    mgr.p_ft8_protocol.set(99);                 // 0..1
+    REQUIRE(mgr.p_ft8_protocol.get() == (int32_t)FTX_PROTOCOL_FT8);
+    mgr.p_band_vfoa_att.set(99);                // 0..1
+    REQUIRE(mgr.p_band_vfoa_att.get() == (int32_t)x6100_att_on);
+    mgr.p_band_vfoa_pre.set(99);                // 0..1
+    REQUIRE(mgr.p_band_vfoa_pre.get() == (int32_t)x6100_pre_on);
+    mgr.p_band_vfoa_agc.set(99);                // 0..3
+    REQUIRE(mgr.p_band_vfoa_agc.get() == (int32_t)x6100_agc_auto);
+}
+
+TEST_CASE("boolean validators clamp to 0/1", "[manager][validators]") {
+    TestDbGuard db;
+
+    SettingsManager mgr;
+    mgr.p_band_id.set_quiet(5);
+    mgr.init_load();
+
+    mgr.p_vox_en.set(7);
+    REQUIRE(mgr.p_vox_en.get() == 1);
+    mgr.p_dnf.set(-3);
+    REQUIRE(mgr.p_dnf.get() == 0);
+    mgr.p_band_split.set(5);
+    REQUIRE(mgr.p_band_split.get() == 1);
 }
 
 TEST_CASE("set to an already-clamped value does not enqueue a write", "[manager]") {
@@ -740,17 +821,17 @@ TEST_CASE("set to an already-clamped value does not enqueue a write", "[manager]
     mgr.p_band_id.set_quiet(5);
     mgr.init_load();
 
-    // 500 clamps to 100; pending write holds 100.
+    // 500 clamps to 55; pending write holds 55.
     mgr.p_volume.set(500);
     REQUIRE(
         PendingWritesTestAccess::peek_int(mgr.pending_writes_, StorageKey{StorageType::GLOBAL, 0, "volume"}).value() ==
-        100);
+        55);
 
-    // Setting 100 again is already the clamped value -> no change -> no write.
-    mgr.p_volume.set(100);
+    // Setting 55 again is already the clamped value -> no change -> no write.
+    mgr.p_volume.set(55);
     REQUIRE(
         PendingWritesTestAccess::peek_int(mgr.pending_writes_, StorageKey{StorageType::GLOBAL, 0, "volume"}).value() ==
-        100);
+        55);
 }
 
 TEST_CASE("encoder_bind round-trip via DB", "[manager]") {

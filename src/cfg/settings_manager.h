@@ -74,293 +74,230 @@ class SettingsManager {
 
     // --- GLOBAL params (flat `params` table) ---
     // General
-    Parameter<int32_t> p_volume{
-        "volume",       30, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
-        &global_params_};
-    Parameter<float, int32_t, 10> p_pwr{
-        "pwr", 5.0f,           StorageType::GLOBAL, pending_writes_, [](float v) { return clamp_val(v, 0.1f, 10.0f); },
-        {},    &global_params_};
-    Parameter<int32_t> p_squelch{
-        "sql",      0, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
-        &global_params_};
-    Parameter<int32_t> p_rfgain{
-        "rfgain",       63, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
-        &global_params_};
+    // clang-format off
+    Parameter<int32_t> p_volume{"volume", 30, 0, 55,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float, int32_t, 10> p_pwr{"pwr", 5.0f, 0.1f, 10.0f,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_squelch{"sql", 0, 0, 100,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_rfgain{"rfgain", 63, 0, 100,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
-    Parameter<int32_t> p_rit{"rit",
-                             0,
-                             StorageType::GLOBAL,
-                             pending_writes_,
-                             [](int32_t v) { return clamp_val(v, -5000, 5000); },
-                             {},
-                             &global_params_};
-    Parameter<int32_t> p_xit{"xit",
-                             0,
-                             StorageType::GLOBAL,
-                             pending_writes_,
-                             [](int32_t v) { return clamp_val(v, -5000, 5000); },
-                             {},
-                             &global_params_};
+    Parameter<int32_t> p_rit{"rit", 0, -1500, 1500,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_xit{"xit", 0, -1500, 1500,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
     // Current band id, persisted in the global `params` table (mirrors the
     // legacy cfg.band_id). Restored at init_load to pick the starting band;
     // updated on every band switch so a restart returns to the last band.
     // Default 7 = 20m SSB, matching the VFOA default frequency of 14.1 MHz.
-    Parameter<int32_t> p_band_id{"band_id", 7, StorageType::GLOBAL, pending_writes_, {}, {}, &global_params_};
-    Parameter<int32_t> p_mic{"mic", x6100_mic_auto, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_hmic{"hmic", 20, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_imic{"imic", 30, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_moni{"moni", 30, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_ant_id{"ant", 1, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_atu_enabled{"atu", false, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
+    Parameter<int32_t> p_band_id{"band_id", 7, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_mic{"mic", x6100_mic_auto, 0, 2,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_hmic{"hmic", 20, 0, 50,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_imic{"imic", 30, 0, 50,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_moni{"moni", 30, 0, 100,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_ant_id{"ant", 1, 0, 5,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_atu_enabled{"atu", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // UI
-    Parameter<int32_t> p_auto_level_enabled{
-        "auto_level_enabled", true, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<float, int32_t, 2> p_auto_level_offset{
-        "auto_level_offset", 0.0f, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_knob_info{"knob_info", true, StorageType::GLOBAL, pending_writes_,
-                                   nullptr,     {},   &global_params_};
+    Parameter<int32_t> p_auto_level_enabled{"auto_level_enabled", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float, int32_t, 2> p_auto_level_offset{"auto_level_offset", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_knob_info{"knob_info", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
     // String mapping encoder (cfg_ctrl_t) positions to bind values
     // (ENCODER_BIND_VOL/ENCODER_BIND_MFK/ENCODER_BIND_NONE). GLOBAL: persisted in the flat `params` table under key
     // "encoder_bind", matching the legacy src/cfg key for DB compatibility.
-    Parameter<std::string> p_encoder_bind{"encoder_bind",
-                                          make_default_encoder_bind(),
-                                          StorageType::GLOBAL,
-                                          pending_writes_,
-                                           encoder_bind_validate,
-                                          {},
-                                          &global_params_};
+    Parameter<std::string> p_encoder_bind{"encoder_bind", make_default_encoder_bind(), encoder_bind_validate,
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
 
     // VOX
-    Parameter<int32_t> p_vox_en{"vox_en", false, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_vox_gain{"vox_gain", 0, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_vox_ag{"vox_ag", 0, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_vox_delay{"vox_delay", 500, StorageType::GLOBAL, pending_writes_,
-                                   nullptr,     {},  &global_params_};
+    Parameter<int32_t> p_vox_en{"vox_en", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_vox_gain{"vox_gain", 0, 0, 100,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_vox_ag{"vox_ag", 0, 0, 100,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_vox_delay{"vox_delay", 500, 100, 2000,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // FT8
-    Parameter<int32_t> p_ft8_show_all{"ft8_show_all", true, StorageType::GLOBAL, pending_writes_,
-                                      nullptr,        {},   &global_params_};
-    Parameter<int32_t> p_ft8_protocol{
-        "ft8_protocol", FTX_PROTOCOL_FT8, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_ft8_auto{"ft8_auto", true, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_ft8_hold_freq{"ft8_hold_freq", true, StorageType::GLOBAL, pending_writes_,
-                                       nullptr,         {},   &global_params_};
-    Parameter<int32_t> p_ft8_max_repeats{"ft8_max_repeats", 6,  StorageType::GLOBAL, pending_writes_,
-                                         nullptr,           {}, &global_params_};
+    Parameter<int32_t> p_ft8_show_all{"ft8_show_all", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_ft8_protocol{"ft8_protocol", FTX_PROTOCOL_FT8, 0, (int32_t)FTX_PROTOCOL_FT8,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_ft8_auto{"ft8_auto", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_ft8_hold_freq{"ft8_hold_freq", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_ft8_max_repeats{"ft8_max_repeats", 6, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
 
     // SWR scan
-    Parameter<int32_t> p_swrscan_linear{"swrscan_linear", true, StorageType::GLOBAL, pending_writes_,
-                                        nullptr,          {},   &global_params_};
-    Parameter<int32_t> p_swrscan_span{"swrscan_span", 200000, StorageType::GLOBAL, pending_writes_,
-                                      nullptr,        {},     &global_params_};
+    Parameter<int32_t> p_swrscan_linear{"swrscan_linear", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_swrscan_span{"swrscan_span", 200'000, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
 
     // CW
-    Parameter<int32_t> p_key_tone{"key_tone",
-                                  700,
-                                  StorageType::GLOBAL,
-                                  pending_writes_,
-                                  [](int32_t v) { return clamp_val(v, 400, 1400); },
-                                  {},
-                                  &global_params_};
-    Parameter<int32_t> p_key_speed{
-        "key_speed",    15, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 1, 60); }, {},
-        &global_params_};
-    Parameter<int32_t> p_key_mode{"key_mode", x6100_key_manual, StorageType::GLOBAL, pending_writes_, nullptr,
-                                  {},         &global_params_};
-    Parameter<int32_t> p_iambic_mode{"iambic_mode",  x6100_iambic_a, StorageType::GLOBAL, pending_writes_, nullptr, {},
-                                     &global_params_};
-    Parameter<int32_t> p_key_vol{
-        "key_vol",      10, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
-        &global_params_};
-    Parameter<int32_t> p_key_train{"key_train", false, StorageType::GLOBAL, pending_writes_,
-                                   nullptr,     {},    &global_params_};
-    Parameter<int32_t> p_qsk_time{
-        "qsk_time",     100, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 1000); }, {},
-        &global_params_};
-    Parameter<float, int32_t, 10> p_key_ratio{"key_ratio",
-                                              3.0f,
-                                              StorageType::GLOBAL,
-                                              pending_writes_,
-                                              [](float v) { return clamp_val(v, 2.5f, 4.0f); },
-                                              {},
-                                              &global_params_};
-    Parameter<int32_t>            p_cw_peak_on{"cw_peak_on", false, StorageType::GLOBAL, pending_writes_,
-                                    nullptr,      {},    &global_params_};
-    Parameter<int32_t>            p_cw_peak_q{
-        "cw_peak_q",    1, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 10); }, {},
-        &global_params_};
+    Parameter<int32_t> p_key_tone{"key_tone", 700, 400, 1200,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_key_speed{"key_speed", 15, 5, 50,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_key_mode{"key_mode", x6100_key_manual, 0, 2,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_iambic_mode{"iambic_mode", x6100_iambic_a, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_key_vol{"key_vol", 10, 0, 32,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_key_train{"key_train", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_qsk_time{"qsk_time", 100, 0, 1000,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float, int32_t, 10> p_key_ratio{"key_ratio", 3.0f, 2.5f, 4.5f,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t>            p_cw_peak_on{"cw_peak_on", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t>            p_cw_peak_q{"cw_peak_q", 1, 1, 16,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // CW decoder
-    Parameter<int32_t> p_cw_decoder{
-        "cw_decoder",   true, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 1); }, {},
-        &global_params_};
-    Parameter<int32_t> p_cw_tune{
-        "cw_tune", true,           StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 1); },
-        {},        &global_params_};
-    Parameter<float, int32_t, 10> p_cw_decoder_snr{"cw_decoder_snr_2",
-                                                   5.0f,
-                                                   StorageType::GLOBAL,
-                                                   pending_writes_,
-                                                   [](float v) { return clamp_val(v, 0.0f, 30.0f); },
-                                                   {},
-                                                   &global_params_};
-    Parameter<float, int32_t, 10> p_cw_decoder_snr_gist{"cw_decoder_snr_gist",
-                                                        1.0f,
-                                                        StorageType::GLOBAL,
-                                                        pending_writes_,
-                                                        [](float v) { return clamp_val(v, 0.0f, 30.0f); },
-                                                        {},
-                                                        &global_params_};
+    Parameter<int32_t> p_cw_decoder{"cw_decoder", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_cw_tune{"cw_tune", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float, int32_t, 10> p_cw_decoder_snr{"cw_decoder_snr_2", 5.0f, 3.0f, 30.0f,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float, int32_t, 10> p_cw_decoder_snr_gist{"cw_decoder_snr_gist", 1.0f, 0.0f, 30.0f,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // AGC
-    Parameter<int32_t> p_agc_hang{
-        "agc_hang", false,          StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 1); },
-        {},         &global_params_};
-    Parameter<int32_t> p_agc_knee{
-        "agc_knee",     -60, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, -120, 0); }, {},
-        &global_params_};
-    Parameter<int32_t> p_agc_slope{
-        "agc_slope",    6, StorageType::GLOBAL, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 20); }, {},
-        &global_params_};
+    Parameter<int32_t> p_agc_hang{"agc_hang", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_agc_knee{"agc_knee", -60, -100, 0,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_agc_slope{"agc_slope", 6, 0, 10,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // DSP
-    Parameter<int32_t> p_dnf{"dnf", false, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_dnf_center{"dnf_center", 1000, StorageType::GLOBAL, pending_writes_,
-                                    nullptr,      {},   &global_params_};
-    Parameter<int32_t> p_dnf_width{"dnf_width", 50, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_dnf_auto{"dnf_auto", false, StorageType::GLOBAL, pending_writes_,
-                                  nullptr,    {},    &global_params_};
-    Parameter<int32_t> p_nb{"nb", false, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_nb_level{"nb_level", 10, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_nb_width{"nb_width", 10, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_nr{"nr", false, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t> p_nr_level{"nr_level", 0, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
+    Parameter<int32_t> p_dnf{"dnf", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_dnf_center{"dnf_center", 1000, 100, 3000,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_dnf_width{"dnf_width", 50, 10, 100,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_dnf_auto{"dnf_auto", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_nb{"nb", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_nb_level{"nb_level", 10, 0, 100,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_nb_width{"nb_width", 10, 0, 100,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_nr{"nr", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_nr_level{"nr_level", 0, 0, 60,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // DSP custom
-    Parameter<float, int32_t, 5> p_output_gain{"output_gain", 0.0f, StorageType::GLOBAL, pending_writes_,
-                                               nullptr,       {},   &global_params_};
-    Parameter<int32_t>           p_comp{"comp", 4, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<float, int32_t, 2> p_comp_threshold_offset{
-        "comp_threshold_offset", 0.0f, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<float, int32_t, 2> p_comp_makeup_offset{
-        "comp_makeup_offset", 0.0f, StorageType::GLOBAL, pending_writes_, nullptr, {}, &global_params_};
-    Parameter<int32_t>            p_fm_emphasis{"fm_emphasis", false, StorageType::GLOBAL, pending_writes_,
-                                     nullptr,       {},    &global_params_};
-    Parameter<int32_t>            p_tx_filter_low{"tx_filter_low", 160, StorageType::GLOBAL, pending_writes_,
-                                       nullptr,         {},  &global_params_};
-    Parameter<int32_t>            p_tx_filter_high{"tx_filter_high", 3000, StorageType::GLOBAL, pending_writes_,
-                                        nullptr,          {},   &global_params_};
-    Parameter<int32_t>            p_cessb_on{"cessb_on", false, StorageType::GLOBAL, pending_writes_,
-                                  nullptr,    {},    &global_params_};
-    Parameter<float, int32_t, 10> p_cessb_power_up{"cessb_power_up", 3.7f, StorageType::GLOBAL, pending_writes_,
-                                                   nullptr,          {},   &global_params_};
+    Parameter<float, int32_t, 5> p_output_gain{"output_gain", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t>           p_comp{"comp", 4, 1, 8,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float, int32_t, 2> p_comp_threshold_offset{"comp_threshold_offset", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<float, int32_t, 2> p_comp_makeup_offset{"comp_makeup_offset", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t>            p_fm_emphasis{"fm_emphasis", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t>            p_tx_filter_low{"tx_filter_low", 160, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t>            p_tx_filter_high{"tx_filter_high", 3000, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t>            p_cessb_on{"cessb_on", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float, int32_t, 10> p_cessb_power_up{"cessb_power_up", 3.7f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
 
     // --- BAND params (`band_params` table) ---
-    Parameter<int32_t> p_band_current_vfo{"vfo",   X6100_VFO_A, StorageType::BAND, pending_writes_,
-                                          nullptr, {},          &band_params_};
-    Parameter<int32_t> p_band_if_shift{"if_shift", 0, StorageType::BAND, pending_writes_, nullptr, {}, &band_params_};
-    Parameter<int32_t> p_band_grid_min{"grid_min", -121, StorageType::BAND, pending_writes_,
-                                       nullptr,    {},   &band_params_};
-    Parameter<int32_t> p_band_grid_max{"grid_max", -73, StorageType::BAND, pending_writes_, nullptr, {}, &band_params_};
-    Parameter<int32_t> p_band_split{"split", false, StorageType::BAND, pending_writes_, nullptr, {}, &band_params_};
-    Parameter<int32_t> p_band_tx_i_offset{"tx_i_offset", 0,  StorageType::BAND, pending_writes_,
-                                          nullptr,       {}, &band_params_};
-    Parameter<int32_t> p_band_tx_q_offset{"tx_q_offset", 0,  StorageType::BAND, pending_writes_,
-                                          nullptr,       {}, &band_params_};
+    Parameter<int32_t> p_band_current_vfo{"vfo", (int32_t)X6100_VFO_A, 0, 1,
+        StorageType::BAND, pending_writes_, &band_params_};
+    Parameter<int32_t> p_band_if_shift{"if_shift", 0, -40'000, 40'000,
+        StorageType::BAND, pending_writes_, &band_params_};
+    Parameter<int32_t> p_band_grid_min{"grid_min", -121, {},
+        StorageType::BAND, pending_writes_, {}, &band_params_};
+    Parameter<int32_t> p_band_grid_max{"grid_max", -73, {},
+        StorageType::BAND, pending_writes_, {}, &band_params_};
+    Parameter<int32_t> p_band_split{"split", false, 0, 1,
+        StorageType::BAND, pending_writes_, &band_params_};
+    Parameter<int32_t> p_band_tx_i_offset{"tx_i_offset", 0, {},
+        StorageType::BAND, pending_writes_, {}, &band_params_};
+    Parameter<int32_t> p_band_tx_q_offset{"tx_q_offset", 0, {},
+        StorageType::BAND, pending_writes_, {}, &band_params_};
     // dB offset of the front panel audio chain (float, scaled x10 to an int
     // in the DB: 0.2 dB <-> 2).
-    Parameter<float, int32_t, 10> p_band_dac_offset{"dac_offset", 0.0f, StorageType::BAND, pending_writes_,
-                                                    {},           {},   &band_params_};
+    Parameter<float, int32_t, 10> p_band_dac_offset{"dac_offset", 0.0f, {},
+        StorageType::BAND, pending_writes_, {}, &band_params_};
     // BAND VFO params (context_id = bands_id). These are NOT in the band
     // registry: load_band_vfo() loads them in explicit dependency order so the
     // DB restore/clamp rules can reference already-loaded siblings.
-    Parameter<int32_t> p_band_vfoa_freq{"vfoa_freq", 14'100'000, StorageType::BAND, pending_writes_,
-                                        [](int32_t v) { return clamp_val(v, 0, 500'000'000); }};
-    Parameter<int32_t> p_band_vfob_freq{"vfob_freq", 14'150'000, StorageType::BAND, pending_writes_,
-                                        [](int32_t v) { return clamp_val(v, 0, 500'000'000); }};
-    Parameter<int32_t> p_band_vfoa_mode{"vfoa_mode", x6100_mode_usb, StorageType::BAND, pending_writes_, [](int32_t v) {
-                                            return clamp_val(v, (int32_t)x6100_mode_lsb, (int32_t)x6100_mode_nfm);
-                                        }};
-    Parameter<int32_t> p_band_vfob_mode{"vfob_mode", x6100_mode_usb, StorageType::BAND, pending_writes_, [](int32_t v) {
-                                            return clamp_val(v, (int32_t)x6100_mode_lsb, (int32_t)x6100_mode_nfm);
-                                        }};
-    Parameter<int32_t> p_band_vfoa_att{"vfoa_att", x6100_att_off, StorageType::BAND, pending_writes_};
-    Parameter<int32_t> p_band_vfoa_pre{"vfoa_pre", x6100_pre_off, StorageType::BAND, pending_writes_};
-    Parameter<int32_t> p_band_vfoa_agc{"vfoa_agc", x6100_agc_auto, StorageType::BAND, pending_writes_};
-    Parameter<int32_t> p_band_vfob_att{"vfob_att", x6100_att_off, StorageType::BAND, pending_writes_};
-    Parameter<int32_t> p_band_vfob_pre{"vfob_pre", x6100_pre_off, StorageType::BAND, pending_writes_};
-    Parameter<int32_t> p_band_vfob_agc{"vfob_agc", x6100_agc_auto, StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfoa_freq{"vfoa_freq", 14'100'000, 0, 500'000'000,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfob_freq{"vfob_freq", 14'150'000, 0, 500'000'000,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfoa_mode{"vfoa_mode", x6100_mode_usb, (int32_t)x6100_mode_lsb, (int32_t)x6100_mode_nfm,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfob_mode{"vfob_mode", x6100_mode_usb, (int32_t)x6100_mode_lsb, (int32_t)x6100_mode_nfm,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfoa_att{"vfoa_att", x6100_att_off, 0, (int32_t)x6100_att_on,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfoa_pre{"vfoa_pre", x6100_pre_off, 0, (int32_t)x6100_pre_on,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfoa_agc{"vfoa_agc", x6100_agc_auto, 0, (int32_t)x6100_agc_auto,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfob_att{"vfob_att", x6100_att_off, 0, (int32_t)x6100_att_on,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfob_pre{"vfob_pre", x6100_pre_off, 0, (int32_t)x6100_pre_on,
+        StorageType::BAND, pending_writes_};
+    Parameter<int32_t> p_band_vfob_agc{"vfob_agc", x6100_agc_auto, 0, (int32_t)x6100_agc_auto,
+        StorageType::BAND, pending_writes_};
 
     // --- Transverter params (OTHER storage, fixed HW conversion) ---
     // context_id is the fixed transverter number (0 or 1) — never switched. NOT registered
     // in any load-all registry (group = nullptr): they are loaded individually
     // in init_load() with explicit load(0)/load(1). Values are frequencies in Hz.
     // Transverter 0 (2m: 144-150 MHz, IF at 28 MHz)
-    Parameter<int32_t> p_transverter_0_from{"from",
-                                            144000000,
-                                            StorageType::TRANSVERTER,
-                                            pending_writes_,
-                                            [](int32_t v) { return clamp_val(v, 70000000, 500000000); },
-                                            {},
-                                            nullptr,
-                                            0};
-    Parameter<int32_t> p_transverter_0_to{"to",
-                                          150000000,
-                                          StorageType::TRANSVERTER,
-                                          pending_writes_,
-                                          [](int32_t v) { return clamp_val(v, 70000000, 500000000); },
-                                          {},
-                                          nullptr,
-                                          0};
-    Parameter<int32_t> p_transverter_0_shift{"shift",
-                                             116000000,
-                                             StorageType::TRANSVERTER,
-                                             pending_writes_,
-                                             [](int32_t v) { return clamp_val(v, 0, 500000000); },
-                                             {},
-                                             nullptr,
-                                             0};
+    Parameter<int32_t> p_transverter_0_from{"from", 144'000'000, 70'000'000, 500'000'000,
+        StorageType::TRANSVERTER, pending_writes_, nullptr, 0};
+    Parameter<int32_t> p_transverter_0_to{"to", 150'000'000, 70'000'000, 500'000'000,
+        StorageType::TRANSVERTER, pending_writes_, nullptr, 0};
+    Parameter<int32_t> p_transverter_0_shift{"shift", 116'000'000, 0, 500'000'000,
+        StorageType::TRANSVERTER, pending_writes_, nullptr, 0};
     // Transverter 1 (70cm: 432-438 MHz, IF at 28 MHz)
-    Parameter<int32_t> p_transverter_1_from{"from",
-                                            432000000,
-                                            StorageType::TRANSVERTER,
-                                            pending_writes_,
-                                            [](int32_t v) { return clamp_val(v, 70000000, 500000000); },
-                                            {},
-                                            nullptr,
-                                            1};
-    Parameter<int32_t> p_transverter_1_to{"to",
-                                          438000000,
-                                          StorageType::TRANSVERTER,
-                                          pending_writes_,
-                                          [](int32_t v) { return clamp_val(v, 70000000, 500000000); },
-                                          {},
-                                          nullptr,
-                                          1};
-    Parameter<int32_t> p_transverter_1_shift{"shift",
-                                             404000000,
-                                             StorageType::TRANSVERTER,
-                                             pending_writes_,
-                                             [](int32_t v) { return clamp_val(v, 0, 500000000); },
-                                             {},
-                                             nullptr,
-                                             1};
+    Parameter<int32_t> p_transverter_1_from{"from", 432'000'000, 70'000'000, 500'000'000,
+        StorageType::TRANSVERTER, pending_writes_, nullptr, 1};
+    Parameter<int32_t> p_transverter_1_to{"to", 438'000'000, 70'000'000, 500'000'000,
+        StorageType::TRANSVERTER, pending_writes_, nullptr, 1};
+    Parameter<int32_t> p_transverter_1_shift{"shift", 404'000'000, 0, 500'000'000,
+        StorageType::TRANSVERTER, pending_writes_, nullptr, 1};
 
     // --- MODE params (`mode_params` table) ---
     // Parameter<int32_t> p_mode_squelch{
     //     "squelch",    0, StorageType::MODE, pending_writes_, [](int32_t v) { return clamp_val(v, 0, 100); }, {},
     //     &mode_params_};
-    Parameter<int32_t> p_mode_freq_step{
-        "freq_step", 500,          StorageType::MODE, pending_writes_,
-        [](int32_t v) { return clamp_val(v, 1, 10000); },
-        [this]() { on_mode_freq_step_not_found(); },
-        &mode_params_};
-    Parameter<int32_t> p_mode_zoom{
-        "spectrum_factor", 1, StorageType::MODE, pending_writes_,
-        [](int32_t v) { return clamp_val(v, 1, 8); },
-        [this]() { on_mode_zoom_not_found(); },
-        &mode_params_};
+    Parameter<int32_t> p_mode_freq_step{"freq_step", 500, [](int32_t v) { return clamp_val(v, 1, 10000); },
+        StorageType::MODE, pending_writes_, [this]() { on_mode_freq_step_not_found(); }, &mode_params_};
+    Parameter<int32_t> p_mode_zoom{"spectrum_factor", 1, [](int32_t v) { return clamp_val(v, 1, 8); },
+        StorageType::MODE, pending_writes_, [this]() { on_mode_zoom_not_found(); }, &mode_params_};
 
   private:
     // MODE-scoped filter band edges. PRIVATE: never read/written directly
@@ -370,20 +307,11 @@ class SettingsManager {
     // mode_params_ so load_mode_all/switch_mode load them like any mode param.
     // Cross-validators reference the sibling member; they only run on set /
     // set_quiet (never during construction), by which time both exist.
-    Parameter<int32_t> p_mode_filter_low{"filter_low",
-                                         50,
-                                         StorageType::MODE,
-                                         pending_writes_,
-                                         [this](int32_t v) { return filter_low_validate(v); },
-                                         [this]() { on_mode_filter_low_not_found(); },
-                                         &mode_params_};
-    Parameter<int32_t> p_mode_filter_high{"filter_high",
-                                          2900,
-                                          StorageType::MODE,
-                                           pending_writes_,
-                                           [this](int32_t v) { return filter_high_validate(v); },
-                                           [this]() { on_mode_filter_high_not_found(); },
-                                          &mode_params_};
+    Parameter<int32_t> p_mode_filter_low{"filter_low", 50, [this](int32_t v) { return filter_low_validate(v); },
+        StorageType::MODE, pending_writes_, [this]() { on_mode_filter_low_not_found(); }, &mode_params_};
+    Parameter<int32_t> p_mode_filter_high{"filter_high", 2900, [this](int32_t v) { return filter_high_validate(v); },
+        StorageType::MODE, pending_writes_, [this]() { on_mode_filter_high_not_found(); }, &mode_params_};
+    // clang-format on
 
   public:
     // Computed parameter: front-panel ("FG") frequency = the frequency of the

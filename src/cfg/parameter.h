@@ -89,19 +89,30 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
   public:
     // db_name       - key in the database table
     // default_val   - initial value before loading
+    // validator     - clamp/correct on set()
     // storage       - GLOBAL / BAND / MODE / TRANSVERTER marker (for flush sorting)
     // sink          - deferred-write sink receiving pending writes
-    // validator     - optional clamp/correct on set()
     // on_not_found  - optional callback on load NOT_FOUND
     // group         - optional registry vector; push_back(this) on construction
     // context_id    - initial context bound to this parameter (band_id/mode_id/
     //                 transverter_id). Defaults to 0; SettingsManager sets it
     //                 when loading a band/mode context.
-    Parameter(const char *db_name, ValueType default_val, StorageType storage, WriteSink &sink,
-              std::function<ValueType(ValueType)> validator = {}, std::function<void()> on_not_found = {},
+    Parameter(const char *db_name, ValueType default_val, std::function<ValueType(ValueType)> validator,
+              StorageType storage, WriteSink &sink, std::function<void()> on_not_found = {},
               std::vector<ParamBase *> *group = nullptr, int context_id = 0)
         : SubjectT<ValueType>(default_val), db_name_(db_name), storage_(storage), sink_(sink),
           validator_(std::move(validator)), on_not_found_(std::move(on_not_found)), context_id_(context_id) {
+        if (group) {
+            group->push_back(this);
+        }
+    }
+
+    // Constructor for min/max clamp validator
+    Parameter(const char *db_name, ValueType default_val, ValueType min, ValueType max, StorageType storage,
+              WriteSink &sink, std::vector<ParamBase *> *group = nullptr,
+              int context_id = 0)
+        : SubjectT<ValueType>(default_val), db_name_(db_name), storage_(storage), sink_(sink), context_id_(context_id) {
+        validator_ = [min, max](ValueType v) { return LV_CLAMP(min, v, max); };
         if (group) {
             group->push_back(this);
         }
