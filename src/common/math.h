@@ -24,7 +24,7 @@ template <typename T> inline T align(T x, T step) {
     if constexpr (std::is_integral_v<T>) {
         return x - (x % step);
     } else if constexpr ((std::is_same_v<T, float> || std::is_same_v<T, double>)) {
-        return x - std::fmod(x, step);
+        return x - std::remainder(x, step);
     } else {
         static_assert(always_false_v<T>, "Unsupported type passed to align");
     }
