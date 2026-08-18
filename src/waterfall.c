@@ -38,7 +38,6 @@ static lv_obj_t         *obj;
 static lv_obj_t         *img;
 static bool             ready = false;
 
-static lv_style_t       middle_line_style;
 static lv_obj_t         *middle_line;
 static lv_point_t       middle_line_points[] = { {0, 0}, {0, 0} };
 
@@ -84,19 +83,6 @@ lv_obj_t * waterfall_init(lv_obj_t * parent) {
 
     lv_obj_add_style(obj, &waterfall_style, 0);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-
-    // Middle line style
-    lv_style_init(&middle_line_style);
-    if (params.theme.x == THEME_LEGACY || params.theme.x == THEME_SIMPLE) {
-    lv_style_set_line_width(&middle_line_style, 1);
-    lv_style_set_line_color(&middle_line_style, lv_color_hex(0xAAAAAA));
-    } else {
-        lv_style_set_line_width(&middle_line_style, 2);
-        lv_style_set_line_color(&middle_line_style, lv_color_hex(0xFF0000));
-    }
-    lv_style_set_line_opa(&middle_line_style, LV_OPA_60);
-    lv_style_set_blend_mode(&middle_line_style, LV_BLEND_MODE_ADDITIVE);
-    lv_style_set_pad_all(&middle_line_style, 0);
 
     subject_add_delayed_observer(cfg_cur.zoom, on_zoom_changed, NULL);
     subject_add_delayed_observer(cfg_cur.band->if_shift.val, on_if_shift_changed, NULL);
@@ -206,7 +192,6 @@ void waterfall_set_height(lv_coord_t h) {
 static void middle_line_cb(lv_event_t * event) {
     if (params.waterfall_center_line.x && lv_obj_has_flag(middle_line, LV_OBJ_FLAG_HIDDEN)) {
         lv_obj_clear_flag(middle_line, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(middle_line, 600, 0);
         return;
     }
     if (!params.waterfall_center_line.x && !lv_obj_has_flag(middle_line, LV_OBJ_FLAG_HIDDEN)) {
@@ -219,8 +204,7 @@ static void draw_middle_line() {
     middle_line_points[1].y = height;
     middle_line = lv_line_create(obj);
     lv_line_set_points(middle_line, middle_line_points, 2);
-    lv_obj_add_style(middle_line, &middle_line_style, 0);
-    lv_obj_center(middle_line);
+    lv_obj_add_style(middle_line, &style_waterfall_middle_line, 0);
     lv_obj_add_event_cb(obj, middle_line_cb, LV_EVENT_DRAW_POST_END, NULL);
 }
 
@@ -359,8 +343,15 @@ static void on_lo_offset_change(Subject *subj, void *user_data) {
 
 static void update_middle_line() {
     lv_coord_t width = zoom / 2 + 2;
-    lv_obj_set_pos(middle_line, if_shift * zoom * WIDTH / width_hz + width / 2, 0);
-    lv_style_set_line_width(&middle_line_style, width);
+    lv_style_value_t width_default;
+    lv_style_get_prop(&style_waterfall_middle_line, LV_STYLE_LINE_WIDTH, &width_default);
+    width = LV_MAX(width, width_default.num);
+
+    lv_coord_t center = if_shift * zoom * WIDTH / width_hz + WIDTH / 2;
+    middle_line_points[0].x = center;
+    middle_line_points[1].x = center;
+    lv_line_set_points(middle_line, middle_line_points, 2);
+    lv_obj_set_style_line_width(middle_line, width, LV_PART_MAIN);
 }
 
 static void on_grid_min_change(Subject *subj, void *user_data) {

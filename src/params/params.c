@@ -100,9 +100,9 @@ params_t params = {
     .theme                  = { .x = THEME_SIMPLE, .name="theme"},
 
 
-    .spectrum_r             = { .x = 170, .min = 0, .max = 255, .name = "Spectrum R" },
-    .spectrum_g             = { .x = 170, .min = 0, .max = 255, .name = "Spectrum G" },
-    .spectrum_b             = { .x = 170, .min = 0, .max = 255, .name = "Spectrum B" },
+    .spectrum_r             = { .x = 0, .min = 0, .max = 255, .name = "spectrum_r" },
+    .spectrum_g             = { .x = 0, .min = 0, .max = 255, .name = "spectrum_g" },
+    .spectrum_b             = { .x = 0, .min = 0, .max = 255, .name = "spectrum_b" },
     .meter_color            = { .x = METER_GRAY, .name="meter_color"},
     .swr_color              = { .x = SWR_GRAY,   .name="swr_color"},
 };

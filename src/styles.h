@@ -66,6 +66,8 @@ extern lv_style_t   dialog_item_focus_style;
 extern lv_style_t   dialog_item_edited_style;
 extern lv_style_t   dialog_dropdown_list_style;
 
+extern lv_style_t style_waterfall_middle_line;
+
 extern lv_style_t   cw_tune_style;
 
 /* RGB Picker */

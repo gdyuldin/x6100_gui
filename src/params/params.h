@@ -236,12 +236,6 @@ typedef struct {
         bool    press_f2;
         bool    long_f1;
         bool    long_f2;
-
-        /* Spectrum Color */
-        bool    spectrum_r;
-        bool    spectrum_g;
-        bool    spectrum_b;
-
     } dirty;
 } params_t;
 

@@ -116,6 +116,8 @@ lv_style_t  dialog_item_focus_style;
 lv_style_t  dialog_item_edited_style;
 lv_style_t  dialog_dropdown_list_style;
 
+lv_style_t  style_waterfall_middle_line;
+
 lv_style_t  cw_tune_style;
 
 /* RGB Picker */
@@ -290,12 +292,21 @@ void styles_init(themes_t theme) {
     lv_style_init(&dialog_dropdown_list_style);
     lv_style_set_text_font(&dialog_dropdown_list_style, &sony_30);
 
+    /* Waterfall elements */
+    lv_style_init(&style_waterfall_middle_line);
+    lv_style_set_line_opa(&style_waterfall_middle_line, LV_OPA_60);
+    lv_style_set_blend_mode(&style_waterfall_middle_line, LV_BLEND_MODE_ADDITIVE);
+    lv_style_set_pad_all(&style_waterfall_middle_line, 0);
+    lv_style_set_line_width(&style_waterfall_middle_line, 2);
+
     /* Clock */
     lv_style_init(&clock_style);
     lv_style_set_text_color(&clock_style, lv_color_white());
     lv_style_set_align(&clock_style, LV_ALIGN_TOP_RIGHT);
     lv_style_set_radius(&clock_style, 0);
     lv_style_set_bg_img_opa(&clock_style, LV_OPA_COVER);
+    lv_style_set_width(&clock_style, 209);
+    lv_style_set_height(&clock_style, 61);
 
     /* Knobs */
     lv_style_init(&knobs_style);
@@ -318,6 +329,8 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_img_opa(&info_style, LV_OPA_COVER);
     lv_style_set_border_width(&info_style, 0);
     lv_style_set_bg_opa(&info_style, LV_OPA_0);
+    lv_style_set_width(&info_style, 209);
+    lv_style_set_height(&info_style, 61);
 
     lv_style_init(&info_row_style);
     lv_style_set_align(&info_row_style, LV_ALIGN_CENTER);
@@ -340,6 +353,8 @@ void styles_init(themes_t theme) {
     lv_style_set_border_width(&meter_style, 0);
     lv_style_set_bg_img_opa(&meter_style, LV_OPA_COVER);
     lv_style_set_bg_opa(&meter_style, LV_OPA_0);
+    lv_style_set_width(&meter_style, 380);
+    lv_style_set_height(&meter_style, 61);
 
     /* TX info */
     lv_style_init(&tx_info_style);
@@ -348,7 +363,10 @@ void styles_init(themes_t theme) {
     lv_style_set_border_width(&tx_info_style, 0);
     lv_style_set_bg_img_opa(&tx_info_style, LV_OPA_COVER);
     lv_style_set_bg_opa(&tx_info_style, LV_OPA_0);
+    lv_style_set_width(&tx_info_style, 380);
+    lv_style_set_height(&tx_info_style, 123);
 
+    /* CW tune */
     lv_style_init(&cw_tune_style);
     lv_style_set_radius(&cw_tune_style, 5);
     lv_style_set_bg_color(&cw_tune_style, lv_color_black());
@@ -443,11 +461,15 @@ void styles_set_theme(themes_t theme) {
 static void setup_theme_legacy() {
     wf_palette = wf_palette_legacy;
 
+    lv_style_set_line_color(&style_waterfall_middle_line, lv_color_hex(0xAAAAAA));
+
     bg_color = lv_color_hex(0x0040A0);
     lv_style_set_bg_color(&background_style, bg_color);
 
     /* Buttons */
     lv_style_set_bg_img_src(&btn_style, PATH "images/btn.bin");
+    lv_style_remove_prop(&btn_style, LV_STYLE_WIDTH);
+    lv_style_remove_prop(&btn_style, LV_STYLE_HEIGHT);
 
     lv_style_set_bg_img_src(&msg_style, PATH "images/msg.bin");
     /* Clock */
@@ -477,39 +499,37 @@ static void setup_theme_legacy() {
 static void setup_theme_black() {
     wf_palette = wf_palette_gauss;
 
+    lv_style_set_line_color(&style_waterfall_middle_line, lv_color_hex(0xFF0000));
+
     bg_color = lv_color_hex(0x000000);
     lv_style_set_bg_color(&background_style, bg_color);
 
     /* Buttons */
     lv_style_set_bg_img_src(&btn_style, PATH "images/btn_black.bin");
+    lv_style_remove_prop(&btn_style, LV_STYLE_WIDTH);
+    lv_style_remove_prop(&btn_style, LV_STYLE_HEIGHT);
 
     lv_style_set_bg_img_src(&msg_style, PATH "images/msg_black.bin");
     /* Clock */
     lv_style_set_bg_img_src(&clock_style, PATH "images/top_short_black.bin");
-    lv_style_set_width(&clock_style, 209);
-    lv_style_set_height(&clock_style, 61);
     /* Info */
     lv_style_set_bg_img_src(&info_style, PATH "images/top_short_black.bin");
-    lv_style_set_width(&info_style, 209);
-    lv_style_set_height(&info_style, 61);
     /* Meter */
     lv_style_set_bg_img_src(&meter_style, PATH "images/top_long_black.bin");
-    lv_style_set_width(&meter_style, 380);
-    lv_style_set_height(&meter_style, 61);
 
     lv_style_set_bg_img_src(&panel_style, PATH "images/panel_black.bin");
     lv_style_set_bg_img_src(&msg_tiny_style, PATH "images/msg_tiny_black.bin");
     lv_style_set_bg_img_src(&dialog_style, PATH "images/dialog_black.bin");
     /* TX info */
     lv_style_set_bg_img_src(&tx_info_style, PATH "images/top_big_black.bin");
-    lv_style_set_width(&tx_info_style, 380);
-    lv_style_set_height(&tx_info_style, 123);
 
     lv_obj_invalidate(lv_scr_act());
 }
 
 static void setup_theme_flat() {
     wf_palette = wf_palette_gauss;
+
+    lv_style_set_line_color(&style_waterfall_middle_line, lv_color_hex(0xFF0000));
 
     bg_color = lv_color_hex(0x36454F);
     lv_style_set_bg_color(&background_style, bg_color);
@@ -520,24 +540,16 @@ static void setup_theme_flat() {
     lv_style_set_height(&btn_style, 61);
     /* Clock */
     lv_style_set_bg_img_src(&clock_style, PATH "images/dialog_dark.bin");
-    lv_style_set_width(&clock_style, 209);
-    lv_style_set_height(&clock_style, 61);
     /* Info */
     lv_style_set_bg_img_src(&info_style, PATH "images/dialog_dark.bin");
-    lv_style_set_width(&info_style, 209);
-    lv_style_set_height(&info_style, 61);
     /* Meter */
     lv_style_set_bg_img_src(&meter_style, PATH "images/dialog_dark.bin");
-    lv_style_set_width(&meter_style, 380);
-    lv_style_set_height(&meter_style, 61);
 
     lv_style_set_bg_img_src(&panel_style, PATH "images/panel_dark.bin");
     lv_style_set_bg_img_src(&msg_tiny_style, PATH "images/msg_tiny_dark.bin");
     lv_style_set_bg_img_src(&dialog_style, PATH "images/dialog_dark.bin");
     /* TX info */
     lv_style_set_bg_img_src(&tx_info_style, PATH "images/dialog_dark.bin");
-    lv_style_set_width(&tx_info_style, 380);
-    lv_style_set_height(&tx_info_style, 123);
 
     lv_obj_invalidate(lv_scr_act());
 }
@@ -545,33 +557,29 @@ static void setup_theme_flat() {
 static void setup_theme_simple() {
     wf_palette = wf_palette_gauss;
 
+    lv_style_set_line_color(&style_waterfall_middle_line, lv_color_hex(0xAAAAAA));
+
     bg_color = lv_color_hex(0x27313a);
     lv_style_set_bg_color(&background_style, bg_color);
 
     /* Buttons */
     lv_style_set_bg_img_src(&btn_style, PATH "images/btn_dark.bin");
+    lv_style_remove_prop(&btn_style, LV_STYLE_WIDTH);
+    lv_style_remove_prop(&btn_style, LV_STYLE_HEIGHT);
 
     lv_style_set_bg_img_src(&msg_style, PATH "images/msg_dark.bin");
     /* Clock */
     lv_style_set_bg_img_src(&clock_style, PATH "images/top_short_dark.bin");
-    lv_style_set_width(&clock_style, 209);
-    lv_style_set_height(&clock_style, 61);
     /* Info */
     lv_style_set_bg_img_src(&info_style, PATH "images/top_short_dark.bin");
-    lv_style_set_width(&info_style, 209);
-    lv_style_set_height(&info_style, 61);
     /* Meter */
     lv_style_set_bg_img_src(&meter_style, PATH "images/top_long_dark.bin");
-    lv_style_set_width(&meter_style, 380);
-    lv_style_set_height(&meter_style, 61);
 
     lv_style_set_bg_img_src(&panel_style, PATH "images/panel_dark.bin");
     lv_style_set_bg_img_src(&msg_tiny_style, PATH "images/msg_tiny_dark.bin");
     lv_style_set_bg_img_src(&dialog_style, PATH "images/dialog_dark.bin");
     /* TX info */
     lv_style_set_bg_img_src(&tx_info_style, PATH "images/top_big_dark.bin");
-    lv_style_set_width(&tx_info_style, 380);
-    lv_style_set_height(&tx_info_style, 123);
 
     lv_obj_invalidate(lv_scr_act());
 }

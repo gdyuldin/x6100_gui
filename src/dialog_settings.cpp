@@ -2095,17 +2095,8 @@ static uint8_t make_rgb_color_picker(uint8_t row)
         lv_obj_add_style(letter_label, &style_rgb_letter, 0);
 
         // Slider
-        rgb_sliders[i] = slider_with_text(
-            slider_row,
-            init_values[i],
-            (uint8_t)0,
-            (uint8_t)255,
-            (uint8_t)1,
-            SMALL_4 - 100,
-            "%d",
-            rgb_color_update_cb,
-            NULL
-        );
+        rgb_sliders[i] = slider_with_text<uint8_t>(slider_row, init_values[i], 0, 255, 1, SMALL_4 - 100, "%d",
+                                                   rgb_color_update_cb, NULL);
 
         // Dynamic Color
         lv_obj_set_style_bg_color(rgb_sliders[i], lv_palette_main(palettes[i]), LV_PART_INDICATOR | LV_PART_KNOB);
