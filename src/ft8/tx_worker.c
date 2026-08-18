@@ -16,8 +16,7 @@
 #include "lvgl/lvgl.h"
 
 #include "../audio.h"
-#include "../cfg/cfg.h"
-#include "../cfg/subjects.h"
+#include "../cfg/cfg_api.h"
 #include "../params/params.h"
 #include "../radio.h"
 #include "../tx_info.h"
@@ -37,7 +36,7 @@ static float get_correction(void) {
     float alc        = 0.0f;
 
     if (tx_info_refresh(&msg_id, &alc, &pwr, NULL)) {
-        float target_pwr = LV_MIN(subject_get_float(cfg.pwr.val), MAX_PWR_W);
+        float target_pwr = LV_MIN(param_f_get(cfg_pwr), MAX_PWR_W);
         if (alc > 0.5f) {
             correction = log10f(log10f(11.1f - alc)) * 20.0f - 0.38f;
         } else if (target_pwr - pwr > 0.5f) {
@@ -61,7 +60,7 @@ bool tx_worker_run(const char    *tx_text,
         return true; /* nothing to send; not an abort */
     }
 
-    if (subject_get_float(cfg.pwr.val) > MAX_PWR_W) {
+    if (param_f_get(cfg_pwr) > MAX_PWR_W) {
         radio_set_pwr(MAX_PWR_W);
     }
 
@@ -69,7 +68,7 @@ bool tx_worker_run(const char    *tx_text,
     float play_gain_offset = audio_set_play_vol(gain_offset + 6.0f);
     gain_offset           -= play_gain_offset;
 
-    uint64_t radio_freq = subject_get_int(cfg_cur.fg_freq);
+    uint64_t radio_freq = cparam_i_get(cfg_fg_freq);
     radio_set_freq((int32_t)radio_freq + (int32_t)params.ft8_tx_freq.x - SIGNAL_FREQ_HZ);
     radio_set_modem(true);
 

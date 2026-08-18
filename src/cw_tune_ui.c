@@ -10,6 +10,7 @@
 
 #include "styles.h"
 #include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "pubsub_ids.h"
 
 #include <math.h>
@@ -56,9 +57,8 @@ void cw_tune_init(lv_obj_t *parent)
     lv_obj_add_style(obj, &cw_tune_style, 0);
 
     lv_obj_add_event_cb(obj, update_cb, LV_EVENT_DRAW_MAIN, NULL);
-    subject_add_delayed_observer(cfg_cur.mode, update_visibility, NULL);
-    subject_add_delayed_observer(cfg.cw_tune.val, update_visibility, NULL);
-    update_visibility(cfg.cw_tune.val, NULL);
+    subject_subscribe_delayed((Subject*)cfg_cur_mode, update_visibility, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg_cw_tune, update_visibility, NULL);
 }
 
 // bool cw_tune_toggle(int16_t diff) {
@@ -120,8 +120,8 @@ static void update_cb(lv_event_t * e) {
 }
 
 static void update_visibility(Subject *subj, void *user_data) {
-    x6100_mode_t mode = subject_get_int(cfg_cur.mode);
-    bool on = subject_get_int(cfg.cw_tune.val) && ((mode == x6100_mode_cw) || (mode == x6100_mode_cwr));
+    x6100_mode_t mode = cparam_i_get(cfg_cur_mode);
+    bool on = param_i_get(cfg_cw_tune) && ((mode == x6100_mode_cw) || (mode == x6100_mode_cwr));
     if (on) {
         lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
     } else {

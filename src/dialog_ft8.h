@@ -10,4 +10,12 @@
 
 #include "dialog.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern dialog_t *dialog_ft8;
+
+#ifdef __cplusplus
+}
+#endif

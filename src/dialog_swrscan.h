@@ -11,6 +11,14 @@
 #include "lvgl/lvgl.h"
 #include "dialog.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern dialog_t *dialog_swrscan;
 
 void dialog_swrscan_update(float vswr);
+
+#ifdef __cplusplus
+}
+#endif

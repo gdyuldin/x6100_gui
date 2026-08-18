@@ -9,8 +9,7 @@
 
 #pragma once
 
-#include "cfg/subjects.h"
-#include "cfg/cfg.h"
+#include "cfg/encoder_bind_types.h"
 
 #ifdef __cplusplus
 extern "C" {

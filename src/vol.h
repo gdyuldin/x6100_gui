@@ -8,13 +8,12 @@
 
 #pragma once
 
-#include "cfg/subjects.h"
+#include "cfg/encoder_bind_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "cfg/cfg.h"
 
 #include <stdint.h>
 #include <stdbool.h>

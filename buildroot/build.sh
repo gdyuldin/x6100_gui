@@ -8,9 +8,10 @@ mkdir build
 
 cd build
 
+
 cmake \
     ../../ \
-    -G"Unix Makefiles" \
+    -DCMAKE_BUILD_TYPE:STRING=Release \
     -DCMAKE_TOOLCHAIN_FILE=../${BUILDROOT}/host/share/buildroot/toolchainfile.cmake \
     -DCMAKE_INSTALL_PREFIX="/usr" \
     -DCMAKE_INSTALL_RUNSTATEDIR="/run" \
@@ -22,8 +23,8 @@ cmake \
     -DBUILD_TEST=OFF \
     -DBUILD_TESTS=OFF \
     -DBUILD_TESTING=OFF \
-    -DBUILD_SHARED_LIBS=ON \
-    -DBUILD_SHARED_LIB=ON \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_SHARED_LIB=OFF \
     -DLV_CONF_BUILD_DISABLE_EXAMPLES=ON \
     -DLV_CONF_BUILD_DISABLE_DEMOS=ON
 

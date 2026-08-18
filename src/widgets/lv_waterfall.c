@@ -69,7 +69,7 @@ void lv_waterfall_set_size(lv_obj_t * obj, lv_coord_t w, lv_coord_t h) {
     lv_waterfall_t * waterfall = (lv_waterfall_t *)obj;
 
     waterfall->dsc = lv_img_buf_alloc(w, h, LV_IMG_CF_TRUE_COLOR);
-    memset(waterfall->dsc->data, 0, waterfall->dsc->data_size);
+    memset((void*)waterfall->dsc->data, 0, waterfall->dsc->data_size);
 
     waterfall->line_len = waterfall->dsc->data_size / waterfall->dsc->header.h;
     waterfall->line_buf = lv_mem_realloc(waterfall->line_buf, waterfall->line_len);
@@ -83,7 +83,7 @@ void lv_waterfall_clear_data(lv_obj_t * obj) {
 
     lv_waterfall_t * waterfall = (lv_waterfall_t *)obj;
 
-    memset(waterfall->dsc->data, 0, waterfall->dsc->data_size);
+    memset((void*)waterfall->dsc->data, 0, waterfall->dsc->data_size);
     lv_img_cache_invalidate_src(waterfall->dsc);
     lv_obj_invalidate(obj);
 }
@@ -110,7 +110,7 @@ void lv_waterfall_add_data_with_ts(lv_obj_t * obj, float * data, uint16_t cnt, s
 
     /* Scroll down */
 
-    memmove(dsc->data + line_len, dsc->data, dsc->data_size - line_len);
+    memmove((void*)(dsc->data + line_len), dsc->data, dsc->data_size - line_len);
 
     /* Paint */
 

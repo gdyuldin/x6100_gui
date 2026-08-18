@@ -8,22 +8,24 @@
 
 #pragma once
 
+#include "mfk.h"
+#include "vol.h"
+#include "cfg/cfg_api.h"
+
 #define BUTTONS 5
 #define BTN_HEIGHT 62
 #define BTN_WIDTH 160
 
+
 #ifdef __cplusplus
 
-#include "cfg/subjects.h"
+#include "params/params.h"
 
 extern "C" {
 #endif
 
 #include "lvgl/lvgl.h"
-#include "params/params.h"
 #include "main_screen.h"
-#include "mfk.h"
-#include "vol.h"
 
 
 typedef enum {
@@ -49,7 +51,7 @@ typedef struct button_data_t {
     int32_t                ctrl;
     bool                   encoder_allowed;
     disp_btn_t            *disp_btn;
-    Subject              **subj;
+    Subject               *subj;
     Observer              *observer;
     bool                   mark;
     bool                   disabled;

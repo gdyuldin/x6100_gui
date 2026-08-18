@@ -10,6 +10,7 @@
 #include "panel.h"
 #include "knobs.h"
 #include "util.h"
+#include "cfg/settings_manager.h"
 
 extern "C" {
     #include "rtty.h"
@@ -100,11 +101,11 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
     lv_anim_set_var(&dim_anim, obj);
     lv_anim_set_time(&dim_anim, 200);
 
-    prev_mode = (x6100_mode_t)subject_get_int(cfg_cur.mode);
+    prev_mode = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
 
-    subject_add_delayed_observer(cfg_cur.mode, update_visibility_cb, NULL);
-    subject_add_delayed_observer_and_call(cfg.cw_decoder.val, update_visibility_cb, NULL);
-    subject_add_delayed_observer(cfg_cur.fg_freq, on_freq_change, NULL);
+    cfg_sm.cp_cur_mode.subscribe_delayed(update_visibility_cb, NULL);
+    cfg_sm.p_cw_decoder.subscribe_delayed_and_notify(update_visibility_cb, NULL);
+    cfg_sm.cp_fg_freq.subscribe_delayed(on_freq_change, NULL);
 
     info = lv_label_create(obj);
     lv_obj_add_style(info, &panel_info_style, 0);
@@ -135,13 +136,13 @@ void panel_clear() {
 }
 
 void panel_update_visibility(bool clear) {
-    x6100_mode_t    mode = (x6100_mode_t)subject_get_int(cfg_cur.mode);
+    x6100_mode_t    mode = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
     bool            on = false;
 
     switch (mode) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
-            on = subject_get_int(cfg.cw_decoder.val);
+            on = cfg_sm.p_cw_decoder.get();
             break;
 
         case x6100_mode_usb:
@@ -167,7 +168,7 @@ void panel_update_visibility(bool clear) {
 }
 
 static void update_visibility_cb(Subject *subj, void *user_data) {
-    x6100_mode_t cur_mode = (x6100_mode_t)subject_get_int(cfg_cur.mode);
+    x6100_mode_t cur_mode = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
     x6100_mode_t tmp_mode = prev_mode;
     bool clear = true;
 

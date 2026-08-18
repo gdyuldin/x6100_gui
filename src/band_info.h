@@ -13,5 +13,13 @@
 
 #include "lvgl/lvgl.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 lv_obj_t * band_info_init(lv_obj_t *parent);
 void band_info_update(int32_t f);
+
+#ifdef __cplusplus
+}
+#endif

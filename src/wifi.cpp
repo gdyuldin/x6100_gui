@@ -8,7 +8,6 @@
 
 
 #include "wifi.h"
-#include "cfg/cfg.h"
 
 extern "C" {
 

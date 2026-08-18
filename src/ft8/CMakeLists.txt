@@ -9,3 +9,4 @@ add_library(FT8 STATIC
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/..")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../qth")
 
+target_link_libraries(FT8 PUBLIC aether_x6100_control)

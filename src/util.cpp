@@ -7,7 +7,10 @@
  */
 #include "util.h"
 #include "util.hpp"
-#include "cfg/subjects.h"
+
+#include <algorithm>
+
+#include "common/math.h"
 
 #define COMPARE(a, b) ((a > b) - (a < b))
 
@@ -44,29 +47,17 @@ void get_time_str(char *str, size_t str_size) {
 }
 
 void split_freq(int32_t freq, uint16_t *mhz, uint16_t *khz, uint16_t *hz) {
-    *mhz = freq / 1000000;
-    *khz = (freq / 1000) % 1000;
-    *hz = freq % 1000;
+    *mhz = freq / 1'000'000;
+    *khz = (freq / 1'000) % 1'000;
+    *hz = freq % 1'000;
 }
 
 int32_t align_int(int32_t x, uint16_t step) {
-    if (step == 0) {
-        return x;
-    }
-
-    return x - (x % step);
-}
-
-uint64_t align_long(uint64_t x, uint16_t step) {
-    if (step == 0) {
-        return x;
-    }
-
-    return x - (x % step);
+    return align(x, static_cast<int32_t>(step));
 }
 
 int32_t limit(int32_t x, int32_t min, int32_t max) {
-    return clip(x, min, max);
+    return std::clamp(x, min, max);
 }
 
 float sqr(float x) {
@@ -87,99 +78,6 @@ void lpf_block(float *x, float *current, float beta, unsigned int count) {
     liquid_vectorf_mulscalar(x, count, beta, x);
     liquid_vectorf_add(x, current, count, x);
 }
-
-void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len) {
-    int16_t i;
-
-    for (i = 0; i < len / 2; i++) {
-        uint8_t a = data % 10;
-
-        data /= 10;
-        a |= (data % 10) << 4;
-        data /= 10;
-        bcd_data[i] = a;
-    }
-
-    if (len & 1) {
-        bcd_data[i] &= 0x0f;
-        bcd_data[i] |= data % 10;
-    }
-}
-
-void to_bcd_be(uint8_t bcd_data[], uint64_t data, uint8_t len) {
-    int16_t i;
-
-    for (i = (len / 2); i >= 0; i--) {
-        uint8_t a = data % 10;
-
-        data /= 10;
-        a |= (data % 10) << 4;
-        data /= 10;
-        bcd_data[i] = a;
-    }
-
-    if (len & 1) {
-        bcd_data[i] &= 0x0f;
-        bcd_data[i] |= data % 10;
-    }
-
-}
-
-uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
-    int16_t     i;
-    uint64_t    data = 0;
-
-    if (len & 1) {
-        data = bcd_data[len / 2] & 0x0F;
-    }
-
-    for (i = (len / 2) - 1; i >= 0; i--) {
-        data *= 10;
-        data += bcd_data[i] >> 4;
-        data *= 10;
-        data += bcd_data[i] & 0x0F;
-    }
-
-    return data;
-}
-
-uint64_t from_bcd_be(const uint8_t bcd_data[], uint8_t len) {
-    int16_t     i = 0;
-    uint64_t    data = 0;
-
-    if (len & 1) {
-        data = bcd_data[0] & 0x0F;
-        i++;
-    }
-
-    for (; i <= (len / 2); i++) {
-        data *= 10;
-        data += bcd_data[i] >> 4;
-        data *= 10;
-        data += bcd_data[i] & 0x0F;
-    }
-
-    return data;
-}
-
-int sign(int x) {
-    return (x > 0) - (x < 0);
-}
-
-
-size_t argmax(float * x, size_t n) {
-    float max = -INFINITY;
-    size_t pos = 0;
-    for (size_t i = 0; i < n; i++)
-    {
-        if (x[i] > max) {
-            max = x[i];
-            pos = i;
-        }
-    }
-    return pos;
-}
-
 
 char * util_canonize_callsign(const char * callsign, bool strip_slashes) {
     if (!callsign) {

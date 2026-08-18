@@ -6,7 +6,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     waterfall.c rotary.cpp keyboard.c encoder.c
     events.c msg.c msg_tiny.c keypad.c
     hkey.c clock.c info.c
-    meter.c band_info.c tx_info.c
+    meter.c band_info.cpp tx_info.c
     audio.c mfk.cpp cw.cpp cw_decoder.c panel.cpp
     rtty.c screenshot.c backlight.c gps.c cat.cpp
     dialog.c dialog_settings.cpp dialog_swrscan.c
@@ -41,6 +41,7 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
 target_link_libraries(${PROJECT_NAME} PRIVATE
 PkgConfig::deps
 FT8 QTH
+cfg
 Threads::Threads
 lvgl lvgl::drivers
 aether_x6100_control

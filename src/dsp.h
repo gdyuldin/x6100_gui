@@ -12,7 +12,6 @@
 
 #ifdef __cplusplus
 
-#include "cfg/subjects.h"
 #include <liquid/liquid.h>
 #include <map>
 

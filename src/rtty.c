@@ -11,6 +11,7 @@
 #include "audio.h"
 #include "panel.h"
 #include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "util.h"
 
 #include "lvgl/lvgl.h"
@@ -143,7 +144,7 @@ static void update() {
 
 void rtty_init() {
     pthread_mutex_init(&rtty_mux, NULL);
-    subject_add_observer_and_call(cfg_cur.mode, on_cur_mode_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg_cur_mode, on_cur_mode_change, NULL);
     init();
 }
 
@@ -427,5 +428,5 @@ bool rtty_change_reverse(int16_t df) {
 }
 
 static void on_cur_mode_change(Subject *subj, void *user_data) {
-    cur_mode = subject_get_int(subj);
+    cur_mode = cparam_i_get(cfg_cur_mode);
 }

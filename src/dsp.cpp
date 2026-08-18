@@ -8,19 +8,19 @@
 
 #include "dsp.h"
 
+#include "cfg/settings_manager.h"
+
 #include "cw.h"
 #include "util.h"
-#include "buttons.h"
-#include "cfg/subjects.h"
 
 #include <algorithm>
 #include <atomic>
 #include <numeric>
 
+#include "dialog_msg_voice.h"
+
 extern "C" {
     #include "audio.h"
-    #include "cfg/cfg.h"
-    #include "dialog_msg_voice.h"
     #include "meter.h"
     #include "radio.h"
     #include "recorder.h"
@@ -100,8 +100,7 @@ static float noise_level = S_MIN;
 static void dsp_update_min_max(float *psd_lin, uint16_t size);
 static void update_zoom(int32_t new_zoom);
 static void on_zoom_change(Subject *subj, void *user_data);
-static void update_filter_from(Subject *subj, void *user_data);
-static void update_filter_to(Subject *subj, void *user_data);
+static void update_filters(Subject *subj, void *user_data);
 static void update_cur_mode(Subject *subj, void *user_data);
 static void on_cur_freq_change(Subject *subj, void *user_data);
 
@@ -305,14 +304,16 @@ void dsp_init() {
     firdecim_rrrf_set_scale(audio_decim, 1.0f / AUDIO_DECIM);
     audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 50.0f * AUDIO_DECIM / AUDIO_CAPTURE_RATE);
 
-    subject_add_observer_and_call(cfg_cur.zoom, on_zoom_change, NULL);
-    subject_add_observer(cfg_cur.band->if_shift.val, update_filter_to, NULL);
-    subject_add_observer(cfg_cur.band->if_shift.val, update_filter_from, NULL);
-    subject_add_observer_and_call(cfg_cur.filter.real.from, update_filter_from, NULL);
-    subject_add_observer_and_call(cfg_cur.filter.real.to, update_filter_to, NULL);
-    cfg_cur.mode->subscribe(update_cur_mode)->notify();
+    cfg_sm.p_mode_zoom.subscribe_and_notify(on_zoom_change);
 
-    cfg_cur.fg_freq->subscribe(on_cur_freq_change);
+    cfg_sm.p_band_if_shift.subscribe(update_filters);
+    cfg_sm.cp_cur_filter_low.subscribe(update_filters);
+    cfg_sm.cp_cur_filter_high.subscribe_and_notify(update_filters);
+    cfg_sm.cp_cur_mode.subscribe_and_notify(update_filters);
+
+    cfg_sm.cp_cur_mode.subscribe_and_notify(update_cur_mode);
+
+    cfg_sm.cp_fg_freq.subscribe(on_cur_freq_change);
     ready = true;
 }
 
@@ -363,7 +364,7 @@ static void process_samples(cfloat *buf_samples, uint16_t size, firdecim_crcf sp
     }
 }
 
-static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_t base_freq) {
+static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_t base_freq, uint8_t fft_dec) {
     if ((now - spectrum_time > spectrum_fps_ms) && sp_sg->ready()) {
         sp_sg->get_psd(spectrum_psd);
         liquid_vectorf_addscalar(spectrum_psd, SPECTRUM_NFFT, DB_OFFSET + zoom_level_offset, spectrum_psd);
@@ -395,7 +396,7 @@ static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_
             spectrum_prev_freq = base_freq;
         }
         lpf_block(spectrum_psd_filtered, spectrum_psd, spectrum_beta, SPECTRUM_NFFT);
-        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx, base_freq);
+        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx, base_freq, fft_dec);
         spectrum_time = now;
         return true;
     }
@@ -485,7 +486,7 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
     }
     process_samples(buf_samples, size, sp_decim, sp_sg, wf_sg, tx);
     if (spectrum_enabled.load(std::memory_order_relaxed)) {
-        update_spectrum(sp_sg, now, tx, base_freq);
+        update_spectrum(sp_sg, now, tx, base_freq, fft_dec);
     }
     pthread_mutex_unlock(&spectrum_mux);
 
@@ -546,7 +547,7 @@ static void update_zoom(int32_t new_zoom) {
 }
 
 static void on_zoom_change(Subject *subj, void *user_data) {
-    int32_t new_zoom = subject_get_int(subj);
+    int32_t new_zoom = cfg_sm.p_mode_zoom.get();
     if ((base_ver.rev < 8) && (util_compare_version(base_ver, (x6100_base_ver_t){1, 1, 9, 0}) < 0)) {
         update_zoom(new_zoom);
     } else {
@@ -560,16 +561,33 @@ static void on_zoom_change(Subject *subj, void *user_data) {
     }
 }
 
-static void update_filter_from(Subject *subj, void *user_data) {
-    filter_from = subject_get_int(cfg_cur.filter.real.from) + subject_get_int(cfg_cur.band->if_shift.val);
-}
+static void update_filters(Subject *subj, void *user_data) {
+    auto low = cfg_sm.cp_cur_filter_low.get();
+    auto high = cfg_sm.cp_cur_filter_high.get();
+    auto if_shift = cfg_sm.p_band_if_shift.get();
+    auto mode = cfg_sm.cp_cur_mode.get();
+    switch (mode) {
+        case x6100_mode_lsb:
+        case x6100_mode_lsb_dig:
+        case x6100_mode_cwr:
+            filter_from = -high + if_shift;
+            filter_to = -low + if_shift;
+            break;
 
-static void update_filter_to(Subject *subj, void *user_data) {
-    filter_to = subject_get_int(cfg_cur.filter.real.to) + subject_get_int(cfg_cur.band->if_shift.val);
+        case x6100_mode_am:
+        case x6100_mode_nfm:
+            filter_from = -high + if_shift;
+            filter_to = high + if_shift;
+            break;
+        default:
+            filter_from = low + if_shift;
+            filter_to = high + if_shift;
+            break;
+    }
 }
 
 static void update_cur_mode(Subject *subj, void *user_data) {
-    cur_mode = (x6100_mode_t)subject_get_int(cfg_cur.mode);
+    cur_mode = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
 }
 
 static void on_cur_freq_change(Subject *subj, void *user_data) {
