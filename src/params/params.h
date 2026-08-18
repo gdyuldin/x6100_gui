@@ -59,8 +59,21 @@ typedef enum {
 typedef enum {
     THEME_SIMPLE,
     THEME_LEGACY,
+    THEME_BLACK,
+    THEME_FLAT,
 } themes_t;
 
+/* Meter Color */
+typedef enum {
+    METER_GRAY,
+    METER_COLORED,
+} meter_color_t;
+
+/* SWR Color */
+typedef enum {
+    SWR_GRAY,
+    SWR_COLORED,
+} swr_color_t;
 
 /* Params */
 
@@ -162,6 +175,20 @@ typedef struct {
 
     params_uint8_t       theme;
 
+    /* Spectrum Color */
+
+    params_uint8_t       spectrum_r;
+    params_uint8_t       spectrum_g;
+    params_uint8_t       spectrum_b;
+
+    /* Meter Color */
+
+    params_uint8_t       meter_color;
+
+    /* SWR Color */
+
+    params_uint8_t       swr_color;
+
     /* durty flags */
 
     struct {
@@ -209,7 +236,6 @@ typedef struct {
         bool    press_f2;
         bool    long_f1;
         bool    long_f2;
-
     } dirty;
 } params_t;
 
