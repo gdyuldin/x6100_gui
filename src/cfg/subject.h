@@ -18,6 +18,11 @@ class Observer {
     void (*fn)(Subject *, void *);
     void *user_data;
 
+    // Set by ObserverDelayed dtor when the observer is destroyed while still
+    // queued for delivery. drain_delayed() skips cancelled entries and deletes
+    // the observer (subscription RAII already unsubscribed it).
+    std::atomic<bool> cancelled_{false};
+
   public:
     Observer(Subject *subj, observer_cb fn, void *user_data) : subj(subj), fn(fn), user_data(user_data){};
     virtual ~Observer() = default;
@@ -30,16 +35,6 @@ class Observer {
     void *get_user_data() const { return user_data; }
 };
 
-// RAII-wrapper for deleting
-struct ObserverDeleter {
-    void operator()(Observer *obs) const {
-        if (obs) {
-            obs->unsubscribe();
-            delete obs;
-        }
-    }
-};
-
 class ObserverDelayed : public Observer {
 
   public:
@@ -48,12 +43,40 @@ class ObserverDelayed : public Observer {
 
     void notify() override;
 
+    // Atomically takes ownership of a pending queue entry. Sets cancelled_ so
+    // drain() skips the callback and deletes this observer. Returns true if the
+    // observer was still queued (caller must NOT delete — drain() will).
+    // Must be called from the main thread, before ~ObserverDelayed runs.
+    bool cancel_if_queued();
+
+    // Drain the delayed-observer queue on the main thread. Must be called
+    // periodically from the main LVGL thread (same loop as lv_timer_handler).
+    // Each queued ObserverDelayed gets its callback fired exactly once with
+    // the latest value; cancelled observers are cleaned up and skipped.
+    static void drain();
+
   private:
-    // Coalescing guard: true while one lv_async_call is pending for this
-    // observer. A call to notify() while one is pending collapses into the
-    // single scheduled delivery (latest value wins).
-    static void       async_trampoline(void *user_data);
+    // Coalescing guard: true while one enqueue is pending for this observer.
+    // A call to notify() while one is pending collapses into the single
+    // queued delivery (latest value wins when drain_delayed() runs).
     std::atomic<bool> scheduled_{false};
+};
+
+// RAII-wrapper for deleting
+struct ObserverDeleter {
+    void operator()(Observer *obs) const {
+        if (obs) {
+            obs->unsubscribe();
+            // ObserverDelayed may still be sitting in the drain queue.
+            // cancel_if_queued() atomically claims the entry and marks it
+            // cancelled so drain() deletes it — we must not double-delete.
+            auto *delayed = dynamic_cast<ObserverDelayed *>(obs);
+            if (delayed && delayed->cancel_if_queued()) {
+                return;
+            }
+            delete obs;
+        }
+    }
 };
 
 using Subscription = std::unique_ptr<Observer, ObserverDeleter>;

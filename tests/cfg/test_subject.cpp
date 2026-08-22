@@ -1,7 +1,6 @@
 // test_subject.cpp
 #include <catch2/catch_test_macros.hpp>
 
-#include "lvgl.h"    // lv_init / lv_timer_handler for delayed-notify tests
 #include "subject.h" // SubjectT, Observer, Subscription, ObserverDeleter
 #include <atomic>
 #include <thread>
@@ -127,10 +126,9 @@ TEST_CASE("Concurrent set/get integrity", "[subject][threads]") {
 
 // Delayed observers deliver through lvgl's async queue. lv_init() makes that
 // queue functional in the test process; pending calls are run by
-// lv_timer_handler().
+// ObserverDelayed::drain().
 
 TEST_CASE("ObserverDelayed coalesces many sets into one latest delivery", "[subject][delayed]") {
-    lv_init();
     SubjectT<int> s(0);
     TestObserver  obs;
     Subscription  sub{s.subscribe_delayed(TestObserver::staticCallback, &obs)};
@@ -143,14 +141,13 @@ TEST_CASE("ObserverDelayed coalesces many sets into one latest delivery", "[subj
     // Nothing delivered yet (async work is pending, not run inline).
     REQUIRE(obs.values.empty());
 
-    lv_timer_handler();
+    ObserverDelayed::drain();
 
     // Exactly one callback, carrying the final (latest) value.
     REQUIRE(obs.values == std::vector<int>{3});
 }
 
 TEST_CASE("ObserverDelayed cancels pending delivery on destruction", "[subject][delayed]") {
-    lv_init();
     SubjectT<int> s(0);
     TestObserver  obs;
     {
@@ -159,7 +156,7 @@ TEST_CASE("ObserverDelayed cancels pending delivery on destruction", "[subject][
         // Subscription is destroyed here: the pending async call is cancelled
         // so the stale observer is never invoked after it is gone.
     }
-    lv_timer_handler();
+    ObserverDelayed::drain();
     REQUIRE(obs.values.empty());
 }
 
@@ -259,7 +256,6 @@ TEST_CASE("NotifySuppressGuard RAII suppresses the whole scope", "[subject][supp
 }
 
 TEST_CASE("ObserverDelayed keeps one coalesced delivery through suppression", "[subject][suppress][delayed]") {
-    lv_init();
     SubjectT<int> s(0);
     TestObserver  obs;
     Subscription  sub{s.subscribe_delayed(TestObserver::staticCallback, &obs)};
@@ -270,7 +266,7 @@ TEST_CASE("ObserverDelayed keeps one coalesced delivery through suppression", "[
     Subject::pop_suppress();
     REQUIRE(obs.values.empty()); // delivery is async
 
-    lv_timer_handler();
+    ObserverDelayed::drain();
     REQUIRE(obs.values == std::vector<int>{2});
 }
 

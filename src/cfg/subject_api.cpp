@@ -51,3 +51,8 @@ ObserverDelayed *subject_subscribe_delayed(Subject *subj, observer_cb fn, void *
 ObserverDelayed *subject_subscribe_delayed_and_notify(Subject *subj, observer_cb fn, void *user_data) {
     return subj->subscribe_delayed_and_notify(fn, user_data);
 }
+
+
+void observer_delayed_drain(void) {
+    ObserverDelayed::drain();
+}

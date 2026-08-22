@@ -51,6 +51,10 @@ Observer *subject_subscribe_and_notify(Subject *subj, observer_cb fn, void *user
 ObserverDelayed *subject_subscribe_delayed(Subject *subj, observer_cb fn, void *user_data);
 ObserverDelayed *subject_subscribe_delayed_and_notify(Subject *subj, observer_cb fn, void *user_data);
 
+// Drain the delayed-observer queue. Must be called from the main thread
+// periodically (same loop as lv_timer_handler / scheduler_work).
+void observer_delayed_drain(void);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

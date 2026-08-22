@@ -13,6 +13,8 @@
 #include <time.h>
 #include <sys/time.h>
 
+#include "cfg/subject_api.h"
+
 #include "main.h"
 #include "main_screen.h"
 #include "styles.h"
@@ -138,7 +140,7 @@ int main(void) {
     int64_t next_loop_time, sleep_time, loop_start_time;
     while (1) {
         loop_start_time = get_time();
-        // observer_delayed_notify_all();
+        observer_delayed_drain();
         event_obj_check();
         scheduler_work();
         next_loop_time = lv_timer_handler() + loop_start_time;
