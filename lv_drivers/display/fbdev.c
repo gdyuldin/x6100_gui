@@ -18,6 +18,7 @@
 #include <sys/ioctl.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <arm_neon.h>
 
 #if USE_BSD_FBDEV
 #include <sys/fcntl.h>
@@ -44,6 +45,19 @@
 /**********************
  *      TYPEDEFS
  **********************/
+
+ typedef struct {
+    const lv_color_t *src_buf;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool ready_to_rotate;
+} rotation_worker_t;
+
+static rotation_worker_t worker = {
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
+    .cond = PTHREAD_COND_INITIALIZER,
+    .ready_to_rotate = false
+};
 
 /**********************
  *      STRUCTURES
@@ -79,7 +93,7 @@ struct draw_queue {
 /**********************
  *  STATIC PROTOTYPES
  **********************/
-static void * flush_thread(void *arg);
+static void *rotation_thread_fbdev(void *arg);
 
 /**********************
  *  STATIC VARIABLES
@@ -181,7 +195,7 @@ void fbdev_init(void)
 
     LV_LOG_INFO("The framebuffer device was mapped to memory successfully");
 
-    pthread_create(&thread, NULL, flush_thread, NULL);
+    pthread_create(&thread, NULL, rotation_thread_fbdev, NULL);
 
 }
 
@@ -208,23 +222,20 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
         return;
     }
 
-    pthread_mutex_lock(&queue.mut);
-    while (((queue.head + 1) % QUEUE_SIZE) == queue.tail) {
-        pthread_cond_wait(&queue.cond, &queue.mut);
+    // Check if LVGL has finished rendering the ENTIRE screen (for frame stability)
+    if (lv_disp_flush_is_last(drv)) {
+        drv->hor_res;
+        drv->ver_res;
+        pthread_mutex_lock(&worker.mutex);
+
+        worker.src_buf = color_p; // Pass a pointer to the filled buffer
+        worker.ready_to_rotate = true;
+
+        pthread_cond_signal(&worker.cond);
+        pthread_mutex_unlock(&worker.mutex);
     }
-    struct draw_task *t = &queue.tasks[queue.head];
 
-    // copy data
-    t->area = *area;
-    size_t n_bytes = sizeof(*color_p) * (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
-    memcpy(t->color_p, color_p, n_bytes);
-    // t->color_p = color_p;
-
-    // Update pointer
-    queue.head = (queue.head + 1) % QUEUE_SIZE;
-    pthread_cond_broadcast(&queue.cond);
-    pthread_mutex_unlock(&queue.mut);
-
+    // Release LVGL to draw the next frame into the second buffer
     lv_disp_flush_ready(drv);
 }
 
@@ -248,114 +259,57 @@ void fbdev_set_offset(uint32_t xoffset, uint32_t yoffset) {
  *   STATIC FUNCTIONS
  **********************/
 
-static void rotate_sw(uint32_t *src, uint32_t src_w, uint32_t src_h, uint32_t *dst) {
-    // rotate 90 ccw
-    uint32_t dst_w = src_h;
-    uint32_t dst_h = src_w;
-    for (size_t src_y = 0; src_y < src_h; src_y++)
-    {
-        for (size_t src_x = 0; src_x < src_w; src_x++)
-        {
-            uint32_t dst_x = src_y;
-            uint32_t dst_y = src_w - src_x - 1;
-            dst[dst_y * dst_w + dst_x] = src[src_y * src_w + src_x];
+void neon_rotate_90_ccw_32bpp(const uint32_t *src, uint32_t *dst, int src_w, int src_h) {
+    for (int y = 0; y < src_h; y += 4) {
+        for (int x = 0; x < src_w; x += 4) {
+
+            // Load a 4x4 pixel block (rows r0, r1, r2, r3)
+            uint32x4_t r0 = vld1q_u32(src + (y + 0) * src_w + x);
+            uint32x4_t r1 = vld1q_u32(src + (y + 1) * src_w + x);
+            uint32x4_t r2 = vld1q_u32(src + (y + 2) * src_w + x);
+            uint32x4_t r3 = vld1q_u32(src + (y + 3) * src_w + x);
+
+            // The first stage of transposition (exchange of elements within pairs of rows)
+            uint32x4x2_t t0 = vtrnq_u32(r0, r1);
+            uint32x4x2_t t1 = vtrnq_u32(r2, r3);
+
+            // Final assembly of columns with correct linear pixel order
+            uint32x4_t o0 = vcombine_u32(vget_low_u32(t0.val[0]),  vget_low_u32(t1.val[0]));  // Col 0: {r0_0, r1_0, r2_0, r3_0}
+            uint32x4_t o1 = vcombine_u32(vget_low_u32(t0.val[1]),  vget_low_u32(t1.val[1]));  // Col 1: {r0_1, r1_1, r2_1, r3_1}
+            uint32x4_t o2 = vcombine_u32(vget_high_u32(t0.val[0]), vget_high_u32(t1.val[0])); // Col 2: {r0_2, r1_2, r2_2, r3_2}
+            uint32x4_t o3 = vcombine_u32(vget_high_u32(t0.val[1]), vget_high_u32(t1.val[1])); // Col 3: {r0_3, r1_3, r2_3, r3_3}
+
+            // Calculating coordinates for counterclockwise rotation
+            int dest_y = (src_w - 4) - x;
+
+            // Unloading to a rotated framebuffer
+            vst1q_u32(dst + (dest_y + 3) * src_h + y, o0);
+            vst1q_u32(dst + (dest_y + 2) * src_h + y, o1);
+            vst1q_u32(dst + (dest_y + 1) * src_h + y, o2);
+            vst1q_u32(dst + (dest_y + 0) * src_h + y, o3);
         }
     }
 }
 
-static void flush_imp(const lv_area_t * area, lv_color_t * color_p) {
-    /*Truncate the area to the screen*/
-    int32_t act_x1 = area->x1 < 0 ? 0 : area->x1;
-    int32_t act_y1 = area->y1 < 0 ? 0 : area->y1;
-    int32_t act_x2 = area->x2 > (int32_t)vinfo.xres - 1 ? (int32_t)vinfo.xres - 1 : area->x2;
-    int32_t act_y2 = area->y2 > (int32_t)vinfo.yres - 1 ? (int32_t)vinfo.yres - 1 : area->y2;
 
+#define SCREEN_WIDTH  800
+#define SCREEN_HEIGHT 480
 
-    lv_coord_t w = (act_x2 - act_x1 + 1);
-    long int location = 0;
-    long int byte_location = 0;
-    unsigned char bit_location = 0;
-
-    /*32 or 24 bit per pixel*/
-    if(vinfo.bits_per_pixel == 32 || vinfo.bits_per_pixel == 24) {
-        uint32_t * fbp32 = (uint32_t *)fbp;
-        int32_t y;
-        for(y = act_y1; y <= act_y2; y++) {
-            location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * finfo.line_length / 4;
-            memcpy(&fbp32[location], (uint32_t *)color_p, (act_x2 - act_x1 + 1) * 4);
-            color_p += w;
+void *rotation_thread_fbdev(void *arg) {
+    while (1) {
+        pthread_mutex_lock(&worker.mutex);
+        while (!worker.ready_to_rotate) {
+            pthread_cond_wait(&worker.cond, &worker.mutex);
         }
-    }
-    /*16 bit per pixel*/
-    else if(vinfo.bits_per_pixel == 16) {
-        uint16_t * fbp16 = (uint16_t *)fbp;
-        int32_t y;
-        for(y = act_y1; y <= act_y2; y++) {
-            location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * finfo.line_length / 2;
-            memcpy(&fbp16[location], (uint32_t *)color_p, (act_x2 - act_x1 + 1) * 2);
-            color_p += w;
-        }
-    }
-    /*8 bit per pixel*/
-    else if(vinfo.bits_per_pixel == 8) {
-        uint8_t * fbp8 = (uint8_t *)fbp;
-        int32_t y;
-        for(y = act_y1; y <= act_y2; y++) {
-            location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * finfo.line_length;
-            memcpy(&fbp8[location], (uint32_t *)color_p, (act_x2 - act_x1 + 1));
-            color_p += w;
-        }
-    }
-    /*1 bit per pixel*/
-    else if(vinfo.bits_per_pixel == 1) {
-        uint8_t * fbp8 = (uint8_t *)fbp;
-        int32_t x;
-        int32_t y;
-        for(y = act_y1; y <= act_y2; y++) {
-            for(x = act_x1; x <= act_x2; x++) {
-                location = (x + vinfo.xoffset) + (y + vinfo.yoffset) * vinfo.xres;
-                byte_location = location / 8; /* find the byte we need to change */
-                bit_location = location % 8; /* inside the byte found, find the bit we need to change */
-                fbp8[byte_location] &= ~(((uint8_t)(1)) << bit_location);
-                fbp8[byte_location] |= ((uint8_t)(color_p->full)) << bit_location;
-                color_p++;
-            }
 
-            color_p += area->x2 - act_x2;
-        }
-    } else {
-        /*Not supported bit per pixel*/
-    }
+        const uint32_t *raw_lvgl_pixels = (const uint32_t *)worker.src_buf;
+        worker.ready_to_rotate = false;
+        pthread_mutex_unlock(&worker.mutex);
 
-    //May be some direct update command is required
-    //ret = ioctl(state->fd, FBIO_UPDATE, (unsigned long)((uintptr_t)rect));
+        neon_rotate_90_ccw_32bpp(raw_lvgl_pixels, (uint32_t*)fbp, vinfo.yres, vinfo.xres);
+    }
+    return NULL;
 }
 
-static void * flush_thread(void *arg) {
-    lv_area_t area;
-    lv_color_t color_p[800*480];
-
-    while (true) {
-        pthread_mutex_lock(&queue.mut);
-        while (queue.tail == queue.head) {
-            // Empty
-            pthread_cond_wait(&queue.cond, &queue.mut);
-        }
-        struct draw_task *t = &queue.tasks[queue.tail];
-        queue.tail = (queue.tail + 1) % QUEUE_SIZE;
-
-        rotate_sw(t->color_p, t->area.x2 - t->area.x1 + 1, t->area.y2 - t->area.y1 + 1, color_p);
-
-        area.x1 = t->area.y1;
-        area.x2 = t->area.y2;
-        area.y1 = 800 - t->area.x2;
-        area.y2 = 800 - t->area.x1;
-
-        flush_imp(&area, color_p);
-        pthread_cond_broadcast(&queue.cond);
-        pthread_mutex_unlock(&queue.mut);
-    }
-
-}
 
 #endif

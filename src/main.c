@@ -39,7 +39,10 @@
 #include "wifi.h"
 #include "usb_devices.h"
 
-#define DISP_BUF_SIZE (800 * 480 * 4)
+#define SCREEN_WIDTH  800
+#define SCREEN_HEIGHT 480
+
+#define DISP_BUF_SIZE (SCREEN_WIDTH * SCREEN_HEIGHT)
 
 rotary_t                    *vol;
 encoder_t                   *mfk;
@@ -60,15 +63,16 @@ int main(void) {
     event_init();
     usb_devices_monitor_init();
 
-    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, DISP_BUF_SIZE);
+    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, DISP_BUF_SIZE);
     lv_disp_drv_init(&disp_drv);
 
     disp_drv.draw_buf   = &disp_buf;
     disp_drv.flush_cb   = fbdev_flush;
     // disp_drv.hor_res    = 480;
     // disp_drv.ver_res    = 800;
-    disp_drv.hor_res    = 800;
-    disp_drv.ver_res    = 480;
+    disp_drv.hor_res    = SCREEN_WIDTH;
+    disp_drv.ver_res    = SCREEN_HEIGHT;
+    disp_drv.direct_mode = true;
     // disp_drv.sw_rotate  = 1;
     // disp_drv.rotated    = LV_DISP_ROT_90;
 
