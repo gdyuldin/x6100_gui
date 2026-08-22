@@ -18,9 +18,8 @@
 #include "scheduler.h"
 #include "styles.h"
 #include "util.h"
+#include "widgets/lv_bar_indicator.h"
 
-#define NUM_PWR_ITEMS 6
-#define NUM_VSWR_ITEMS 5
 #define UPDATE_UI_MS 40
 
 static const float min_pwr = 0.0f;
@@ -40,18 +39,16 @@ static uint64_t prev_ui_update = 0;
 static x6100_mode_t cur_mode;
 
 static lv_obj_t     *obj;
-static lv_obj_t     *alc_label;
 static lv_obj_t     *pwr_label;
 static lv_obj_t     *vswr_label;
+static lv_obj_t     *alc_label;
+static lv_obj_t     *pwr_bar;
+static lv_obj_t     *swr_bar;
 static lv_grad_dsc_t grad;
 
+static swr_color_t last_swr_color = -1;
 
-typedef struct {
-    char *label;
-    float val;
-} item_t;
-
-static item_t pwr_items[NUM_PWR_ITEMS] = {
+static bar_tick_t pwr_ticks[] = {
     {.label = "PWR", .val = 0.0f },
     {.label = "2",   .val = 2.0f },
     {.label = "4",   .val = 4.0f },
@@ -60,7 +57,7 @@ static item_t pwr_items[NUM_PWR_ITEMS] = {
     {.label = "10",  .val = 10.0f}
 };
 
-static item_t vswr_items[NUM_VSWR_ITEMS] = {
+static bar_tick_t vswr_ticks[] = {
     {.label = "SWR", .val = 1.0f},
     {.label = "2",   .val = 2.0f},
     {.label = "3",   .val = 3.0f},
@@ -70,147 +67,12 @@ static item_t vswr_items[NUM_VSWR_ITEMS] = {
 
 static void on_cur_mode_change(Subject *subj, void *user_data);
 
-static void tx_info_draw_cb(lv_event_t *e) {
-    lv_obj_t           *obj      = lv_event_get_target(e);
-    lv_draw_ctx_t      *draw_ctx = lv_event_get_draw_ctx(e);
-    lv_draw_rect_dsc_t  rect_dsc;
-    lv_draw_label_dsc_t label_dsc;
-    lv_area_t           area;
-    lv_point_t          label_size;
-    uint32_t            count;
-    uint8_t             slices_total;
-    uint8_t             slice_spacing = 2;
-
-    lv_coord_t x1 = obj->coords.x1 + 7;
-    lv_coord_t y1 = obj->coords.y1 + 17;
-
-    lv_coord_t w = lv_obj_get_width(obj) - 60;
-    lv_coord_t h = lv_obj_get_height(obj) - 1;
-
-    /* PWR rects */
-
-    lv_draw_rect_dsc_init(&rect_dsc);
-
-    rect_dsc.bg_opa = LV_OPA_80;
-
-    float slice_pwr_step    = 0.25f;
-    slices_total            = (max_pwr - min_pwr) / slice_pwr_step;
-    uint8_t slice_pwr_width = w / slices_total;
-
-    count = (pwr - min_pwr + slice_pwr_step) / slice_pwr_step;
-    count = LV_MIN(count, slices_total);
-
-    area.y1 = y1 - 5;
-    area.y2 = y1 + 32;
-
-    rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
-
-    for (uint16_t i = 0; i < count; i++) {
-
-        area.x1 = x1 + 30 + i * slice_pwr_width - slice_pwr_width / 2 + slice_spacing / 2;
-        area.x2 = area.x1 + slice_pwr_width - slice_spacing;
-
-        lv_draw_rect(draw_ctx, &rect_dsc, &area);
-    }
-
-    /* SWR rects */
-
-    lv_draw_rect_dsc_init(&rect_dsc);
-
-    rect_dsc.bg_opa = LV_OPA_80;
-
-    float slice_swr_step    = 0.1f;
-    slices_total            = (max_swr - min_swr) / slice_swr_step;
-    uint8_t slice_swr_width = w / slices_total;
-
-    count = (vswr - min_swr + slice_swr_step) / slice_swr_step;
-
-    area.y1 = y1 - 5 + 54;
-    area.y2 = y1 + 32 + 54;
-
-    float swr_val = vswr_items[0].val;
-
-    lv_color_t good_color;
-    lv_color_t fair_color;
-    lv_color_t bad_color;
-    if (params.swr_color.x == SWR_GRAY) {
-        good_color = lv_color_hex(0xAAAAAA);
-        fair_color = lv_color_hex(0xAAAA00);
-        bad_color = lv_color_hex(0xAA0000);
-    } else {
-        good_color = lv_color_hex(0x00CC00);
-        fair_color = lv_color_hex(0xAAAA00);
-        bad_color = lv_color_hex(0xAA0000);
-    }
-    for (uint16_t i = 0; i < count; i++) {
-        if (swr_val <= 2.0f) {
-            rect_dsc.bg_color = good_color;
-        } else if (swr_val <= 3.0f) {
-            rect_dsc.bg_color = fair_color;
-        } else {
-            rect_dsc.bg_color = bad_color;
-        }
-
-        area.x1 = x1 + 30 + i * slice_swr_width - slice_swr_width / 2 + slice_spacing / 2;
-        area.x2 = area.x1 + slice_swr_width - slice_spacing;
-
-        lv_draw_rect(draw_ctx, &rect_dsc, &area);
-        swr_val += slice_swr_step;
-    }
-
-    /* PWR Labels */
-
-    lv_draw_label_dsc_init(&label_dsc);
-
-    label_dsc.color = lv_color_white();
-    label_dsc.font  = &sony_22;
-
-    area.x1 = x1;
-    area.x2 = x1 + 20;
-
-    area.y1 = y1 + 5;
-    area.y2 = area.y1 + 18;
-
-    for (uint8_t i = 0; i < NUM_PWR_ITEMS; i++) {
-        char *label = pwr_items[i].label;
-        float val   = pwr_items[i].val;
-
-        lv_txt_get_size(&label_size, label, label_dsc.font, 0, 0, LV_COORD_MAX, 0);
-
-        area.x1 = x1 + 30 + slice_pwr_width * ((val - min_pwr) / slice_pwr_step) - label_size.x / 2;
-        area.x2 = area.x1 + label_size.x;
-
-        lv_draw_label(draw_ctx, &label_dsc, &area, label, NULL);
-    }
-
-    /* SWR Labels */
-
-    area.x1 = x1;
-    area.x2 = x1 + 20;
-
-    area.y1 = y1 + 60;
-    area.y2 = y1 + 32 + 60;
-
-    for (uint8_t i = 0; i < NUM_VSWR_ITEMS; i++) {
-        char *label = vswr_items[i].label;
-        float val   = vswr_items[i].val;
-
-        lv_txt_get_size(&label_size, label, label_dsc.font, 0, 0, LV_COORD_MAX, 0);
-
-        area.x1 = x1 + 30 + slice_swr_width * ((val - min_swr) / slice_swr_step) - label_size.x / 2;
-        area.x2 = area.x1 + label_size.x;
-
-        lv_draw_label(draw_ctx, &label_dsc, &area, label, NULL);
-    }
-}
-
 static void tx_cb(lv_event_t *e) {
     pwr  = 0.0f;
     vswr = 0.0f;
     alc  = 0.0f;
 
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(obj);
 }
 
 static void rx_cb(lv_event_t *e) {
@@ -221,17 +83,10 @@ static void update_tx_info(void *arg) {
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
         return;
     }
-    lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
-    lv_label_set_text_fmt(vswr_label, "%.2f", vswr);
-    lv_label_set_text_fmt(pwr_label, "%.2f", pwr);
-    /* PWR / SWR bars are drawn in obj's DRAW_MAIN_END handler. The labels
-     * only invalidate their own (small) bounding boxes, which does not cover
-     * the bar area. Explicitly invalidate the container so the bars repaint
-     * on every update -- previously we relied on the main_screen spectrum
-     * widget (which fully overlaps tx_info) being invalidated periodically
-     * by spectrum_data(), but FT8 dialog turns the spectrum/waterfall DSP
-     * off, removing that side effect. */
-    lv_obj_invalidate(obj);
+
+    lv_bar_indicator_set_value(pwr_bar, pwr);
+    lv_bar_indicator_set_value(swr_bar, vswr);
+
     if (params.mag_alc.x) {
         lv_obj_add_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
         msg_tiny_set_text_fmt("ALC: %.1f", alc);
@@ -245,16 +100,35 @@ static void update_tx_info(void *arg) {
     }
 }
 
+static void update_labels_cb(lv_timer_t *t) {
+    // TODO: add check for visibility
+    lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
+    lv_label_set_text_fmt(vswr_label, "%.2f", vswr);
+    lv_label_set_text_fmt(pwr_label, "%.2f", pwr);
+}
+
+static lv_color_t swr_bar_color_cb(float val) {
+    if (val <= 2.0f) {
+        return params.swr_color.x == SWR_GRAY ? lv_color_hex(0xAAAAAA) : lv_color_hex(0x00CC00);
+    } else if (val <= 3.0f) {
+        return lv_color_hex(0xAAAA00);
+    } else {
+        return lv_color_hex(0xAA0000);
+    }
+}
+
 lv_obj_t *tx_info_init(lv_obj_t *parent) {
     obj = lv_obj_create(parent);
-
+    lv_obj_remove_style_all(obj);
     lv_obj_add_style(obj, &tx_info_style, 0);
     lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+
+    // Use pad to align
+    lv_coord_t pad = lv_obj_get_style_pad_top(obj, 0);
 
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(obj, tx_cb, EVENT_RADIO_TX, NULL);
     lv_obj_add_event_cb(obj, rx_cb, EVENT_RADIO_RX, NULL);
-    lv_obj_add_event_cb(obj, tx_info_draw_cb, LV_EVENT_DRAW_MAIN_END, NULL);
 
     grad.dir         = LV_GRAD_DIR_VER;
     grad.stops_count = 4;
@@ -269,6 +143,33 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     grad.stops[2].frac = 128 + 10;
     grad.stops[3].frac = 255;
 
+    lv_obj_update_layout(obj);
+    lv_coord_t w = lv_obj_get_content_width(obj);
+    lv_coord_t h = lv_obj_get_content_height(obj);
+
+    /* PWR indicator */
+    pwr_bar = lv_bar_indicator_create(obj);
+    lv_obj_set_size(pwr_bar, w, (h - pad) / 2);
+    // lv_obj_set_y(pwr_bar, 0);
+    // lv_obj_set_align(pwr_bar, LV_ALIGN_TOP_LEFT);
+    lv_bar_indicator_set_range(pwr_bar, min_pwr, max_pwr, 0.25f);
+    lv_bar_indicator_set_ticks(pwr_bar, pwr_ticks, ARRAY_SIZE(pwr_ticks));
+    lv_bar_indicator_set_default_color(pwr_bar, lv_color_hex(0xAAAAAA));
+
+    lv_bar_indicator_set_font(pwr_bar, &sony_22);
+
+    /* SWR indicator */
+    swr_bar = lv_bar_indicator_create(obj);
+    lv_obj_set_size(swr_bar, w, (h - pad) / 2);
+    lv_bar_indicator_set_range(swr_bar, min_swr, max_swr, 0.1f);
+    lv_bar_indicator_set_ticks(swr_bar, vswr_ticks, ARRAY_SIZE(vswr_ticks));
+
+    lv_bar_indicator_set_font(swr_bar, &sony_22);
+    lv_obj_set_y(swr_bar, (h + pad) / 2);
+
+    lv_bar_indicator_set_default_color(swr_bar, lv_color_hex(0xAA0000));
+    lv_bar_indicator_set_color_cb(swr_bar, swr_bar_color_cb);
+
     // Small alc indicator
     alc_label = lv_label_create(obj);
     lv_obj_set_style_text_font(alc_label, &sony_20, 0);
@@ -279,24 +180,25 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     // pwr indicator
     pwr_label = lv_label_create(obj);
     lv_obj_set_style_text_font(pwr_label, &sony_20, 0);
-    lv_obj_align(pwr_label, LV_ALIGN_BOTTOM_RIGHT, 12, -46);
+    lv_obj_align(pwr_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, -h / 2 - 2);
     lv_obj_set_style_text_color(pwr_label, lv_color_white(), 0);
     lv_label_set_text(pwr_label, "");
 
     // swr indicator
     vswr_label = lv_label_create(obj);
     lv_obj_set_style_text_font(vswr_label, &sony_20, 0);
-    lv_obj_align(vswr_label, LV_ALIGN_BOTTOM_RIGHT, 12, 16);
+    lv_obj_align(vswr_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, pad - 2);
     lv_obj_set_style_text_color(vswr_label, lv_color_white(), 0);
     lv_label_set_text(vswr_label, "");
 
     subject_subscribe((Subject*)cfg_cur_mode, on_cur_mode_change, NULL);
 
+    lv_timer_create(update_labels_cb, LV_DISP_DEF_REFR_PERIOD * 3, NULL);
+
     return obj;
 }
 
 void tx_info_update(float p, float s, float a) {
-    // Use EMA for smoothing values
     const float beta = 0.9f;
 
     a = 10.f - a;

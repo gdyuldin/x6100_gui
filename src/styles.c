@@ -365,6 +365,7 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_opa(&tx_info_style, LV_OPA_0);
     lv_style_set_width(&tx_info_style, 380);
     lv_style_set_height(&tx_info_style, 123);
+    lv_style_set_pad_all(&tx_info_style, 10);
 
     /* CW tune */
     lv_style_init(&cw_tune_style);
