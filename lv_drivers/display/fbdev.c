@@ -108,6 +108,8 @@ static struct fb_fix_screeninfo finfo;
 static char *fbp = 0;
 static long int screensize = 0;
 static int fbfd = 0;
+static lv_disp_draw_buf_t disp_buf;
+
 
 static pthread_t thread;
 static struct draw_queue queue = {.head=0, .tail=0,  .mut=PTHREAD_MUTEX_INITIALIZER, .cond=PTHREAD_COND_INITIALIZER};
@@ -124,7 +126,7 @@ static struct draw_queue queue = {.head=0, .tail=0,  .mut=PTHREAD_MUTEX_INITIALI
  *   GLOBAL FUNCTIONS
  **********************/
 
-void fbdev_init(void)
+void fbdev_init(lv_disp_drv_t *disp_drv)
 {
     // Open the file for reading and writing
     fbfd = open(FBDEV_PATH, O_RDWR);
@@ -194,6 +196,17 @@ void fbdev_init(void)
     // This is important for applications that only draw to a subsection of the full framebuffer.
 
     LV_LOG_INFO("The framebuffer device was mapped to memory successfully");
+
+    lv_color_t *buf1 = calloc(sizeof(lv_color_t), vinfo.xres * vinfo.yres);
+    lv_color_t *buf2 = calloc(sizeof(lv_color_t), vinfo.xres * vinfo.yres);
+
+    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, vinfo.xres * vinfo.yres);
+    lv_disp_drv_init(disp_drv);
+
+    disp_drv->draw_buf = &disp_buf;
+    disp_drv->flush_cb = fbdev_flush;
+    disp_drv->hor_res  = vinfo.yres;
+    disp_drv->ver_res  = vinfo.xres;
 
     pthread_create(&thread, NULL, rotation_thread_fbdev, NULL);
 

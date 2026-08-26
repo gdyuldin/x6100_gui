@@ -1,10 +1,10 @@
 /**
- * @file fbdev.h
+ * @file drm.h
  *
  */
 
-#ifndef FBDEV_H
-#define FBDEV_H
+#ifndef DRM_H
+#define DRM_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,7 +21,7 @@ extern "C" {
 #endif
 #endif
 
-#if USE_FBDEV || USE_BSD_FBDEV
+#if USE_DRM
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE
 #include "lvgl.h"
@@ -40,26 +40,20 @@ extern "C" {
 /**********************
  * GLOBAL PROTOTYPES
  **********************/
-void fbdev_init(lv_disp_drv_t *disp_drv);
-void fbdev_exit(void);
-void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color_p);
-void fbdev_get_sizes(uint32_t *width, uint32_t *height, uint32_t *dpi);
-/**
- * Set the X and Y offset in the variable framebuffer info.
- * @param xoffset horizontal offset
- * @param yoffset vertical offset
- */
-void fbdev_set_offset(uint32_t xoffset, uint32_t yoffset);
+void drm_init(lv_disp_drv_t *disp_drv);
+void drm_get_sizes(lv_coord_t *width, lv_coord_t *height, uint32_t *dpi);
+void drm_exit(void);
+void drm_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color_p);
 
 
 /**********************
  *      MACROS
  **********************/
 
-#endif  /*USE_FBDEV*/
+#endif  /*USE_DRM*/
 
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
 
-#endif /*FBDEV_H*/
+#endif /*DRM_H*/

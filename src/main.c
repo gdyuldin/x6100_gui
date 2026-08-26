@@ -8,6 +8,7 @@
 
 #include "lvgl/lvgl.h"
 #include "lv_drivers/display/fbdev.h"
+#include "lv_drivers/display/drm.h"
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
@@ -49,34 +50,33 @@
 rotary_t                    *vol;
 encoder_t                   *mfk;
 
-static lv_color_t           buf1[DISP_BUF_SIZE];
-static lv_color_t           buf2[DISP_BUF_SIZE];
-static lv_disp_draw_buf_t   disp_buf;
 static lv_disp_drv_t        disp_drv;
 
 void * tick_thread (void *args);
 
 int main(void) {
-    lv_init();
-    // lv_png_init();
 
-    fbdev_init();
+    bool drm = true;
+    lv_init();
+
+    if (drm) {
+        drm_init(&disp_drv);
+    } else {
+        fbdev_init(&disp_drv);
+    }
     audio_init();
     event_init();
     usb_devices_monitor_init();
 
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, DISP_BUF_SIZE);
-    lv_disp_drv_init(&disp_drv);
 
-    disp_drv.draw_buf   = &disp_buf;
-    disp_drv.flush_cb   = fbdev_flush;
-    // disp_drv.hor_res    = 480;
-    // disp_drv.ver_res    = 800;
-    disp_drv.hor_res    = SCREEN_WIDTH;
-    disp_drv.ver_res    = SCREEN_HEIGHT;
-    disp_drv.direct_mode = true;
-    // disp_drv.sw_rotate  = 1;
-    // disp_drv.rotated    = LV_DISP_ROT_90;
+    // disp_drv.full_refresh = true;
+    if (drm) {
+        disp_drv.direct_mode = false;
+        disp_drv.sw_rotate  = 1;
+        disp_drv.rotated    = LV_DISP_ROT_90;
+    } else {
+        disp_drv.direct_mode = true;
+    }
 
     lv_disp_drv_register(&disp_drv);
 
