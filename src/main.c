@@ -42,15 +42,13 @@
 #include "wifi.h"
 #include "usb_devices.h"
 
-#define SCREEN_WIDTH  800
-#define SCREEN_HEIGHT 480
+rotary_t  *vol;
+encoder_t *mfk;
+lv_obj_t  *overlay_scr;
+lv_obj_t  *primary_scr;
 
-#define DISP_BUF_SIZE (SCREEN_WIDTH * SCREEN_HEIGHT)
-
-rotary_t                    *vol;
-encoder_t                   *mfk;
-
-static lv_disp_drv_t        disp_drv;
+static lv_disp_drv_t        disp_drv_primary;
+static lv_disp_drv_t        disp_drv_overlay;
 
 void * tick_thread (void *args);
 
@@ -60,28 +58,56 @@ int main(void) {
     lv_init();
 
     if (drm) {
-        drm_init(&disp_drv);
+        drm_init(&disp_drv_primary, &disp_drv_overlay);
     } else {
-        fbdev_init(&disp_drv);
+        fbdev_init(&disp_drv_primary);
     }
     audio_init();
     event_init();
     usb_devices_monitor_init();
 
-
     // disp_drv.full_refresh = true;
+    lv_disp_t *disp_primary = NULL;
+    lv_disp_t *disp_overlay = NULL;
     if (drm) {
-        disp_drv.direct_mode = false;
-        disp_drv.sw_rotate  = 1;
-        disp_drv.rotated    = LV_DISP_ROT_90;
+        disp_drv_primary.direct_mode   = false;
+        disp_drv_primary.sw_rotate     = 1;
+        disp_drv_primary.rotated       = LV_DISP_ROT_90;
+        disp_drv_primary.screen_transp = 0;
+
+        disp_drv_overlay.direct_mode   = false;
+        disp_drv_overlay.sw_rotate     = 1;
+        disp_drv_overlay.rotated       = LV_DISP_ROT_90;
+        disp_drv_overlay.screen_transp = 1;
+
+        disp_overlay                   = lv_disp_drv_register(&disp_drv_overlay);
     } else {
-        disp_drv.direct_mode = true;
+        disp_drv_primary.direct_mode = true;
     }
 
-    lv_disp_drv_register(&disp_drv);
+    disp_primary = lv_disp_drv_register(&disp_drv_primary);
 
-    lv_disp_set_bg_color(lv_disp_get_default(), lv_color_black());
-    lv_disp_set_bg_opa(lv_disp_get_default(), LV_OPA_COVER);
+    // Init screens
+    lv_disp_set_default(disp_primary);
+    primary_scr = lv_obj_create(NULL);
+    // lv_obj_remove_style_all(primary_scr);
+    lv_obj_set_style_bg_opa(primary_scr, LV_OPA_COVER, LV_PART_MAIN);
+    lv_disp_set_bg_opa(disp_primary, LV_OPA_COVER);
+    lv_scr_load(primary_scr);
+    if (drm) {
+        // overlay_scr = primary_scr;
+        lv_disp_set_default(disp_overlay);
+        overlay_scr = lv_obj_create(NULL);
+        // lv_obj_remove_style_all(overlay_scr);
+        lv_obj_set_style_bg_opa(overlay_scr, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_disp_set_bg_opa(disp_overlay, LV_OPA_TRANSP);
+        lv_scr_load(overlay_scr);
+    } else {
+        overlay_scr = primary_scr;
+    }
+
+    // lv_disp_set_bg_color(lv_disp_get_default(), lv_color_black());
+    // lv_disp_set_bg_opa(lv_disp_get_default(), LV_OPA_COVER);
 
     keyboard_init();
 
@@ -110,7 +136,8 @@ int main(void) {
     radio_init();
     audio_mixer_setup(x6100_control_get_base_ver());
     dsp_init();
-    lv_obj_t *main_obj = main_screen();
+    main_screen(primary_scr, overlay_scr);
+
     radio_start();
 
     cw_init();
@@ -134,7 +161,7 @@ int main(void) {
     lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_0, 0);
     lv_scr_load_anim(main_obj, LV_SCR_LOAD_ANIM_FADE_IN, 250, 0, false);
 #else
-    lv_scr_load(main_obj);
+    // lv_scr_load(main_obj);
 #endif
 
     int64_t next_loop_time, sleep_time, loop_start_time;
@@ -144,6 +171,7 @@ int main(void) {
         event_obj_check();
         scheduler_work();
         next_loop_time = lv_timer_handler() + loop_start_time;
+        drm_flip();
         sleep_time = next_loop_time - get_time();
         if (sleep_time > 0) {
             usleep(sleep_time * 1000);

@@ -44,6 +44,12 @@
     }
 // #define dbg(msg, ...) print(DBG_TAG ": " msg "\n", ##__VA_ARGS__)
 
+enum {
+    PLANE_PRIMARY_ID,
+    PLANE_OVERLAY_ID,
+    PLANE_LAST,
+};
+
 typedef struct {
     lv_area_t  rects[MAX_DIRTY_RECTS];
     uint32_t   rects_cnt;
@@ -51,20 +57,13 @@ typedef struct {
     uint32_t   buf_size;
 } damaged_areas_t;
 
-static lv_disp_draw_buf_t disp_buf;
-static lv_disp_drv_t     *lvgl_disp_drv;
-static volatile bool      flip_pending          = 0;
-static volatile bool      need_dump_cur_damaged = 0;
+static lv_disp_draw_buf_t disp_buf[PLANE_LAST];
+static volatile bool      flip_pending[PLANE_LAST];
+static volatile bool      flip_needed[PLANE_LAST];
+static volatile bool      need_dump_cur_damaged[PLANE_LAST];
 
-static damaged_areas_t damaged_areas[2];
-static uint8_t         damaged_cur_i = 0;
-
-static struct {
-    lv_area_t  rects[MAX_DIRTY_RECTS];
-    uint32_t   rects_cnt;
-    lv_color_t buf[MAX_DIRTY_BUF];
-    uint32_t   buf_size;
-} dirty_queue;
+static damaged_areas_t damaged_areas[PLANE_LAST][2];
+static uint8_t         damaged_cur_i[PLANE_LAST];
 
 struct drm_buffer {
     uint32_t          handle;
@@ -74,7 +73,6 @@ struct drm_buffer {
     void             *map;
     uint32_t          fb_handle;
     uint32_t          fourcc;
-    bool              initialized;
 };
 
 struct drm_dev {
@@ -167,8 +165,13 @@ static uint32_t get_conn_property_id(const char *name) {
 
 static void page_flip_handler(int fd, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec,
                               void *user_data) {
-    dbg("flip handler");
-    flip_pending = 0;
+    (void)fd;
+    (void)sequence;
+    (void)tv_sec;
+    (void)tv_usec;
+    (void)user_data;
+    for (int i = 0; i < PLANE_LAST; i++)
+        flip_pending[i] = 0;
 }
 
 static int drm_get_plane_props(uint32_t plane_id, drmModePropertyPtr *plane_props, uint32_t *count_plane_props) {
@@ -284,44 +287,133 @@ static int drm_add_conn_property(drmModeAtomicReq *req, const char *name, uint64
     return 0;
 }
 
-static int drm_dmabuf_set_plane(uint32_t plane_id, struct drm_buffer *buf, drmModePropertyPtr *plane_props,
-                                uint32_t count_plane_props, void *user_data) {
-    int      ret;
-    uint32_t flags = DRM_MODE_PAGE_FLIP_EVENT | DRM_MODE_ATOMIC_NONBLOCK;
+static void wait_flip(int plane_id, bool block) {
+    if (flip_pending[plane_id]) {
+        struct pollfd pfd[1];
+        pfd[0].fd     = drm_dev.fd;
+        pfd[0].events = POLLIN;
 
-    drmModeAtomicReqPtr req = drmModeAtomicAlloc();
+        int timeout = 0;
+        if (block) {
+            timeout = -1;
+        }
+        int ret = poll(pfd, 1, timeout);
 
-    /* On first Atomic commit, do a modeset */
-    if (!buf->initialized) {
-        drm_add_conn_property(req, "CRTC_ID", drm_dev.crtc_id);
+        if (ret > 0 && (pfd[0].revents & POLLIN)) {
+            drmHandleEvent(drm_dev.fd, &drm_dev.drm_event_ctx);
+        }
+    }
+}
 
-        drm_add_crtc_property(req, "MODE_ID", drm_dev.blob_id);
-        drm_add_crtc_property(req, "ACTIVE", 1);
-        flags |= DRM_MODE_ATOMIC_ALLOW_MODESET;
+static int drm_add_plane_fb(drmModeAtomicReqPtr req, int plane_id) {
+    uint32_t            drm_plane_id;
+    drmModePropertyPtr *props;
+    uint32_t            count;
+    struct drm_buffer  *fbuf;
 
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "CRTC_ID", drm_dev.crtc_id);
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "SRC_X", 0);
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "SRC_Y", 0);
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "SRC_W", drm_dev.width << 16);
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "SRC_H", drm_dev.height << 16);
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "CRTC_X", 0);
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "CRTC_Y", 0);
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "CRTC_W", drm_dev.width);
-        drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "CRTC_H", drm_dev.height);
-
-        buf->initialized = 1;
+    if (plane_id == PLANE_OVERLAY_ID) {
+        drm_plane_id = drm_dev.overlay_plane_id;
+        props        = drm_dev.overlay_plane_props;
+        count        = drm_dev.count_overlay_plane_props;
+        fbuf         = drm_dev.overlay_cur_bufs[0];
+    } else {
+        drm_plane_id = drm_dev.primary_plane_id;
+        props        = drm_dev.primary_plane_props;
+        count        = drm_dev.count_primary_plane_props;
+        fbuf         = drm_dev.primary_cur_bufs[0];
     }
 
-    drm_add_plane_property(req, plane_id, plane_props, count_plane_props, "FB_ID", buf->fb_handle);
+    return drm_add_plane_property(req, drm_plane_id, props, count, "FB_ID", fbuf->fb_handle);
+}
 
-    ret = drmModeAtomicCommit(drm_dev.fd, req, flags, user_data);
+static int drm_modeset(void) {
+    drmModeAtomicReqPtr req   = drmModeAtomicAlloc();
+    uint32_t            flags = DRM_MODE_ATOMIC_ALLOW_MODESET;
+    int                 ret;
+
+    drm_add_conn_property(req, "CRTC_ID", drm_dev.crtc_id);
+    drm_add_crtc_property(req, "MODE_ID", drm_dev.blob_id);
+    drm_add_crtc_property(req, "ACTIVE", 1);
+
+    for (int p = 0; p < PLANE_LAST; p++) {
+        uint32_t            plane_id;
+        drmModePropertyPtr *props;
+        uint32_t            count;
+        uint32_t            fb_handle;
+
+        if (p == PLANE_OVERLAY_ID) {
+            plane_id  = drm_dev.overlay_plane_id;
+            props     = drm_dev.overlay_plane_props;
+            count     = drm_dev.count_overlay_plane_props;
+            fb_handle = drm_dev.overlay_bufs[0].fb_handle;
+        } else {
+            plane_id  = drm_dev.primary_plane_id;
+            props     = drm_dev.primary_plane_props;
+            count     = drm_dev.count_primary_plane_props;
+            fb_handle = drm_dev.primary_bufs[0].fb_handle;
+        }
+
+        drm_add_plane_property(req, plane_id, props, count, "CRTC_ID", drm_dev.crtc_id);
+        drm_add_plane_property(req, plane_id, props, count, "SRC_X", 0);
+        drm_add_plane_property(req, plane_id, props, count, "SRC_Y", 0);
+        drm_add_plane_property(req, plane_id, props, count, "SRC_W", drm_dev.width << 16);
+        drm_add_plane_property(req, plane_id, props, count, "SRC_H", drm_dev.height << 16);
+        drm_add_plane_property(req, plane_id, props, count, "CRTC_X", 0);
+        drm_add_plane_property(req, plane_id, props, count, "CRTC_Y", 0);
+        drm_add_plane_property(req, plane_id, props, count, "CRTC_W", drm_dev.width);
+        drm_add_plane_property(req, plane_id, props, count, "CRTC_H", drm_dev.height);
+        drm_add_plane_property(req, plane_id, props, count, "FB_ID", fb_handle);
+    }
+
+    ret = drmModeAtomicCommit(drm_dev.fd, req, flags, NULL);
+    drmModeAtomicFree(req);
+    if (ret)
+        err("drm_modeset failed: %s", strerror(errno));
+
+    return ret;
+}
+
+void drm_flip(void) {
+    bool any = false;
+    for (int p = 0; p < PLANE_LAST; p++) {
+        if (flip_needed[p]) {
+            any = true;
+            break;
+        }
+    }
+    if (!any)
+        return;
+
+    /* Wait for any in-flight commit before submitting a new one (avoids EBUSY). */
+    for (int p = 0; p < PLANE_LAST; p++) {
+        while (flip_pending[p])
+            wait_flip(p, true);
+    }
+
+    drmModeAtomicReqPtr req = drmModeAtomicAlloc();
+    for (int p = 0; p < PLANE_LAST; p++) {
+        if (!flip_needed[p])
+            continue;
+        if (drm_add_plane_fb(req, p) < 0) {
+            drmModeAtomicFree(req);
+            return; /* keep flip_needed -> retry next frame */
+        }
+    }
+
+    uint32_t flags = DRM_MODE_PAGE_FLIP_EVENT | DRM_MODE_ATOMIC_NONBLOCK;
+    int      ret   = drmModeAtomicCommit(drm_dev.fd, req, flags, NULL);
     drmModeAtomicFree(req);
     if (ret) {
         err("drmModeAtomicCommit failed: %s", strerror(errno));
-        return ret;
+        return; /* keep flip_needed -> retry next frame */
     }
 
-    return 0;
+    for (int p = 0; p < PLANE_LAST; p++) {
+        if (flip_needed[p]) {
+            flip_needed[p]  = false;
+            flip_pending[p] = 1;
+        }
+    }
 }
 
 static int find_plane_by_type(uint32_t fourcc, uint32_t type, uint32_t *plane_id, uint32_t crtc_id, uint32_t crtc_idx) {
@@ -739,8 +831,7 @@ static int drm_allocate_dumb(struct drm_buffer *buf) {
 }
 
 static void drm_init_buf(struct drm_buffer *buf, uint32_t fourcc) {
-    buf->fourcc      = fourcc;
-    buf->initialized = false;
+    buf->fourcc = fourcc;
 }
 
 static int drm_setup_buffers(void) {
@@ -767,30 +858,12 @@ static int drm_setup_buffers(void) {
         return ret;
 
     /* Set buffering handling */
-    drm_dev.primary_cur_bufs[0] = NULL;
-    drm_dev.primary_cur_bufs[1] = &drm_dev.primary_bufs[0];
-    drm_dev.overlay_cur_bufs[0] = NULL;
-    drm_dev.overlay_cur_bufs[1] = &drm_dev.overlay_bufs[0];
+    drm_dev.primary_cur_bufs[0] = &drm_dev.primary_bufs[0];
+    drm_dev.primary_cur_bufs[1] = &drm_dev.primary_bufs[1];
+    drm_dev.overlay_cur_bufs[0] = &drm_dev.overlay_bufs[0];
+    drm_dev.overlay_cur_bufs[1] = &drm_dev.overlay_bufs[1];
 
     return 0;
-}
-
-static void wait_flip(bool block) {
-    if (flip_pending) {
-        struct pollfd pfd[1];
-        pfd[0].fd     = drm_dev.fd;
-        pfd[0].events = POLLIN;
-
-        int timeout = 0;
-        if (block) {
-            timeout = -1;
-        }
-        int ret = poll(pfd, 1, timeout);
-
-        if (ret > 0 && (pfd[0].revents & POLLIN)) {
-            drmHandleEvent(drm_dev.fd, &drm_dev.drm_event_ctx);
-        }
-    }
 }
 
 static inline void buf_write(struct drm_buffer *fbuf, const lv_area_t *area, lv_color_t *color_p) {
@@ -830,70 +903,83 @@ static void damaged_apply(struct drm_buffer *fbuf, damaged_areas_t *dirty_queue,
     }
 }
 
-void drm_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
-    struct drm_buffer *fbuf = drm_dev.overlay_cur_bufs[1];
-    lv_coord_t         w    = (area->x2 - area->x1 + 1);
-    lv_coord_t         h    = (area->y2 - area->y1 + 1);
-    int                i, y;
+void drm_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p, int plane_id) {
+    struct drm_buffer **cur_bufs_ptrs;
+    struct drm_buffer  *bufs;
+    struct drm_buffer  *fbuf;
+
+    if (plane_id == PLANE_OVERLAY_ID) {
+        fbuf          = drm_dev.overlay_cur_bufs[1];
+        cur_bufs_ptrs = drm_dev.overlay_cur_bufs;
+        bufs          = drm_dev.overlay_bufs;
+    } else {
+        fbuf          = drm_dev.primary_cur_bufs[1];
+        cur_bufs_ptrs = drm_dev.primary_cur_bufs;
+        bufs          = drm_dev.primary_bufs;
+    }
+    lv_coord_t w = (area->x2 - area->x1 + 1);
+    lv_coord_t h = (area->y2 - area->y1 + 1);
 
     bool is_last = lv_disp_flush_is_last(disp_drv);
 
     dbg("x %d:%d y %d:%d w %d h %d", area->x1, area->x2, area->y1, area->y2, w, h);
 
     // Fast check
-    wait_flip(false);
-    bool    need_flip      = false;
-    uint8_t damaged_prev_i = (damaged_cur_i + 1) % 2;
+    wait_flip(plane_id, false);
+    uint8_t dam_cur_i  = damaged_cur_i[plane_id];
+    uint8_t dam_prev_i = (dam_cur_i + 1) % 2;
 
-    if (!flip_pending) {
+    if (!flip_pending[plane_id]) {
         // fbuf is available for writing
         // Drain queue from prev frame
-        damaged_apply(fbuf, &damaged_areas[damaged_prev_i], 1);
+        damaged_apply(fbuf, &damaged_areas[plane_id][dam_prev_i], 1);
         // Copy damaged areas for current frame
-        if (need_dump_cur_damaged) {
-            need_dump_cur_damaged = false;
-            damaged_apply(fbuf, &damaged_areas[damaged_cur_i], 0);
+        if (need_dump_cur_damaged[plane_id]) {
+            need_dump_cur_damaged[plane_id] = false;
+            damaged_apply(fbuf, &damaged_areas[plane_id][dam_cur_i], 0);
         }
         // Copy to buf
         buf_write(fbuf, area, color_p);
     }
 
     // Save damaged region for next frame
-    damaged_push(area, color_p, &damaged_areas[damaged_cur_i]);
+    damaged_push(area, color_p, &damaged_areas[plane_id][dam_cur_i]);
 
-    if (flip_pending && is_last) {
+    if (flip_pending[plane_id] && is_last) {
         // last chunks and flip still not happend - wait
-        wait_flip(true);
+        while (flip_pending[plane_id]) {
+            wait_flip(plane_id, true);
+        }
         // fbuf not awailable
         // Drain queue from prev frame
-        damaged_apply(fbuf, &damaged_areas[damaged_prev_i], 1);
-        damaged_apply(fbuf, &damaged_areas[damaged_cur_i], 0);
+        damaged_apply(fbuf, &damaged_areas[plane_id][dam_prev_i], 1);
+        damaged_apply(fbuf, &damaged_areas[plane_id][dam_cur_i], 0);
         buf_write(fbuf, area, color_p);
     }
 
     if (is_last) {
-        /* show fbuf plane */
-        if (drm_dmabuf_set_plane(drm_dev.overlay_plane_id, fbuf, drm_dev.overlay_plane_props,
-                                 drm_dev.count_overlay_plane_props, (void *)lvgl_disp_drv)) {
-            lv_disp_flush_ready(disp_drv);
-            err("Flush fail");
-            return;
-        } else {
-            flip_pending = 1;
-            dbg("Flush done");
-        }
-        need_dump_cur_damaged = true;
-        damaged_cur_i         = damaged_prev_i;
+        flip_needed[plane_id] = true;
 
-        if (!drm_dev.overlay_cur_bufs[0])
-            drm_dev.overlay_cur_bufs[1] = &drm_dev.overlay_bufs[1];
+        need_dump_cur_damaged[plane_id] = true;
+        damaged_cur_i[plane_id]         = dam_prev_i;
+
+        if (!cur_bufs_ptrs[0])
+            cur_bufs_ptrs[1] = &bufs[1];
         else
-            drm_dev.overlay_cur_bufs[1] = drm_dev.overlay_cur_bufs[0];
+            cur_bufs_ptrs[1] = cur_bufs_ptrs[0];
 
-        drm_dev.overlay_cur_bufs[0] = fbuf;
+        cur_bufs_ptrs[0] = fbuf;
     }
 
     lv_disp_flush_ready(disp_drv);
+}
+
+void drm_flush_primary(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
+    drm_flush(disp_drv, area, color_p, PLANE_PRIMARY_ID);
+}
+
+void drm_flush_overlay(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
+    drm_flush(disp_drv, area, color_p, PLANE_OVERLAY_ID);
 }
 
 void drm_get_sizes(lv_coord_t *width, lv_coord_t *height, uint32_t *dpi) {
@@ -907,7 +993,7 @@ void drm_get_sizes(lv_coord_t *width, lv_coord_t *height, uint32_t *dpi) {
         *dpi = DIV_ROUND_UP(drm_dev.width * 25400, drm_dev.mmWidth * 1000);
 }
 
-void drm_init(lv_disp_drv_t *disp_drv) {
+void drm_init(lv_disp_drv_t *disp_drv_primary, lv_disp_drv_t *disp_drv_overlay) {
     int ret;
 
     ret = drm_setup();
@@ -925,21 +1011,49 @@ void drm_init(lv_disp_drv_t *disp_drv) {
         return;
     }
 
-    lv_color_t *buf = calloc(sizeof(lv_color_t), drm_dev.width * drm_dev.height);
+    ret = drm_modeset();
+    if (ret) {
+        err("DRM modeset failed");
+        close(drm_dev.fd);
+        drm_dev.fd = -1;
+        return;
+    }
 
-    lv_disp_draw_buf_init(&disp_buf, buf, NULL, drm_dev.width * drm_dev.height);
-    lv_disp_drv_init(disp_drv);
+    uint8_t disp_id;
+    /* Init primary display (primary plane) */
+    disp_id                 = PLANE_PRIMARY_ID;
+    lv_color_t *buf_primary = calloc(sizeof(lv_color_t), drm_dev.width * drm_dev.height);
 
-    disp_drv->draw_buf = &disp_buf;
-    disp_drv->flush_cb = drm_flush;
-    disp_drv->hor_res  = drm_dev.width;
-    disp_drv->ver_res  = drm_dev.height;
+    lv_disp_draw_buf_init(&disp_buf[disp_id], buf_primary, NULL, drm_dev.width * drm_dev.height);
+    lv_disp_drv_init(disp_drv_primary);
 
-    // Store pointer for page flip handle
-    lvgl_disp_drv = disp_drv;
+    disp_drv_primary->draw_buf = &disp_buf[disp_id];
+    disp_drv_primary->flush_cb = drm_flush_primary;
+    disp_drv_primary->hor_res  = drm_dev.width;
+    disp_drv_primary->ver_res  = drm_dev.height;
 
-    dirty_queue.buf_size  = 0;
-    dirty_queue.rects_cnt = 0;
+    /* Init overlay display (primary plane) */
+    disp_id                 = PLANE_OVERLAY_ID;
+    lv_color_t *buf_overlay = calloc(sizeof(lv_color_t), drm_dev.width * drm_dev.height);
+
+    lv_disp_draw_buf_init(&disp_buf[disp_id], buf_overlay, NULL, drm_dev.width * drm_dev.height);
+    lv_disp_drv_init(disp_drv_overlay);
+
+    disp_drv_overlay->draw_buf = &disp_buf[disp_id];
+    disp_drv_overlay->flush_cb = drm_flush_overlay;
+    disp_drv_overlay->hor_res  = drm_dev.width;
+    disp_drv_overlay->ver_res  = drm_dev.height;
+
+    for (size_t i = 0; i < PLANE_LAST; i++) {
+        flip_pending[i]               = 0;
+        flip_needed[i]                = 0;
+        need_dump_cur_damaged[i]      = 0;
+        damaged_cur_i[i]              = 0;
+        damaged_areas[i][0].buf_size  = 0;
+        damaged_areas[i][1].buf_size  = 0;
+        damaged_areas[i][0].rects_cnt = 0;
+        damaged_areas[i][1].rects_cnt = 0;
+    }
 
     info("DRM subsystem and buffer mapped successfully");
 }

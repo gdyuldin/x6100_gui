@@ -16,3 +16,5 @@
 
 extern rotary_t     *vol;
 extern encoder_t    *mfk;
+extern lv_obj_t     *overlay_scr;
+extern lv_obj_t     *primary_scr;
