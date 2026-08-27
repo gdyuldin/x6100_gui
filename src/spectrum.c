@@ -21,8 +21,12 @@
 #include "styles.h"
 #include "util.h"
 
+#include "lv_drivers/display/drm.h"
+
+#include <math.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define DEFAULT_MIN S4
 #define DEFAULT_MAX S9_20
@@ -39,6 +43,7 @@ static float grid_min = DEFAULT_MIN;
 static float grid_max = DEFAULT_MAX;
 
 static lv_obj_t *obj;
+static lv_obj_t *overlay_obj;
 
 static int32_t width_hz     = 100000;
 static int16_t visor_height = 100;
@@ -66,8 +71,20 @@ static int32_t cur_base_lo_freq;
 static uint8_t prev_fft_dec = 1;
 static int16_t freq_mod;
 
+/* Direct-render state. At render time the actual physical geometry (x offset in columns, strip width) is derived from the spectrum object's logical coords:
+ *   s_spec_x  = obj->coords.y1          (logical y  → physical x)
+ *   s_spec_w  = lv_obj_get_height(obj)  (logical h  → physical width)
+ *   s_spec_h  = SPECTRUM_SIZE           (logical w  → physical height) */
+static int16_t   s_spec_x;
+static int16_t   s_spec_w;
 
-static pthread_mutex_t data_mux;
+static lv_color_t s_main_color;
+static lv_color_t s_peak_color;
+
+/* Cross-thread flags set by the DSP thread (spectrum_data) / config callbacks
+ * and consumed by spectrum_process() on the main thread. */
+static int s_data_ready = 0;
+static int s_cond_dirty = 1;
 
 static void on_zoom_changed(Subject *subj, void *user_data);
 static void update_filters(Subject *subj, void *user_data);
@@ -77,114 +94,37 @@ static void on_mode_lo_offset_change(Subject *subj, void *user_data);
 static void on_if_shift_change(Subject *subj, void *user_data);
 static void on_grid_min_change(Subject *subj, void *user_data);
 static void on_grid_max_change(Subject *subj, void *user_data);
-static void on_cur_base_lo_freq_change(Subject *subj, void *user_data);
+static void on_fg_freq_change(Subject *subj, void *user_data);
 static void on_rit_change(Subject *subj, void *user_data);
 static void shift_peaks(int32_t df);
 
-static void spectrum_draw_cb(lv_event_t *e) {
+static void spectrum_render_rotated(uint32_t *buf, int stride);
+static int32_t spectrum_compute_offset(void);
+static void spectrum_update_colors(void);
+static void spectrum_fill_run(uint32_t *buf, int stride, int row, int x_top, lv_color_t color);
+static void spectrum_draw_polyline(uint32_t *buf, int stride, float min, float max, int32_t offset, bool is_peak, lv_color_t color);
+static void spectrum_wu_line(uint32_t *buf, int stride, float x0, float y0, float x1, float y1, lv_color_t color);
+static void spectrum_blend_px(uint32_t *buf, int stride, int x, int y, float brightness, lv_color_t color);
+
+
+static lv_coord_t spectrum_markers_offset(void) {
+    return ((mode_lo_offset + if_shift) * zoom_factor * SPECTRUM_SIZE + width_hz / 2) / width_hz;
+}
+
+static void spectrum_overlay_draw_cb(lv_event_t *e) {
     lv_obj_t          *obj      = lv_event_get_target(e);
     lv_draw_ctx_t     *draw_ctx = lv_event_get_draw_ctx(e);
-    lv_draw_line_dsc_t main_line_dsc;
-    lv_draw_line_dsc_t peak_line_dsc;
-
-    if (!spectrum_buf) {
-        return;
-    }
-    float min, max;
-    if (spectrum_tx) {
-        min = DEFAULT_MIN;
-        max = DEFAULT_MAX;
-    } else {
-        min = grid_min;
-        max = grid_max;
-    }
-
-    /* Lines */
-
-    lv_draw_line_dsc_init(&main_line_dsc);
-
-    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
-        main_line_dsc.color = lv_color_hex(0xAAAAAA);
-    } else {
-        main_line_dsc.color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
-    }
-    main_line_dsc.width = 1;
-
-    lv_draw_line_dsc_init(&peak_line_dsc);
-
-    peak_line_dsc.color = lv_color_hex(0x555555);
-    peak_line_dsc.width = 1;
+    lv_draw_line_dsc_t line_dsc;
+    lv_draw_rect_dsc_t rect_dsc;
 
     lv_coord_t x1 = obj->coords.x1;
     lv_coord_t y1 = obj->coords.y1;
-
     lv_coord_t w = lv_obj_get_width(obj);
     lv_coord_t h = lv_obj_get_height(obj);
 
-    lv_coord_t spectrum_offset, markers_offset;
-    // spectrum_offset: shift for the spectrum data
-    // markers_offset: shift for filter data, notch, etc
-    markers_offset = ((mode_lo_offset + if_shift) * zoom_factor * w + width_hz / 2) / width_hz;
-    if (spectrum_tx) {
-        spectrum_offset = markers_offset;
-    } else {
-        lv_coord_t data_shift = 0;
-        if (cur_base_lo_freq) {
-            // Handle delay between sending new settings to base and new data flow
-            data_shift = cur_base_lo_freq - (fg_freq + mode_lo_offset - if_shift + rit);
-        }
-        spectrum_offset = ((mode_lo_offset + data_shift) * zoom_factor * w + width_hz / 2) / width_hz;
-    }
-
-    lv_point_t main_a, main_b;
-    lv_point_t peak_a, peak_b;
-
-    if (!params.spectrum_filled.x) {
-        main_b.x = x1;
-        main_b.y = y1 + h;
-    }
-
-    peak_b.x = x1;
-    peak_b.y = y1 + h;
-
-    for (uint16_t i = 0; i < SPECTRUM_SIZE; i++) {
-        float    v = (spectrum_buf[i] - min) / (max - min);
-        uint16_t x = i * w / SPECTRUM_SIZE;
-
-        /* Peak */
-
-        if (params.spectrum_peak.x && !spectrum_tx) {
-            float v_peak = (spectrum_peak[i].val - min) / (max - min);
-
-            peak_a.x = x1 + spectrum_offset + x;
-            peak_a.y = y1 + (1.0f - v_peak) * h;
-
-            lv_draw_line(draw_ctx, &peak_line_dsc, &peak_a, &peak_b);
-
-            peak_b = peak_a;
-        }
-
-        /* Main */
-
-        main_a.x = x1 + spectrum_offset + x;
-        main_a.y = y1 + (1.0f - v) * h;
-
-        if (params.spectrum_filled.x) {
-            main_b.x = main_a.x;
-            main_b.y = y1 + h;
-        }
-
-        lv_draw_line(draw_ctx, &main_line_dsc, &main_a, &main_b);
-
-        if (!params.spectrum_filled.x) {
-            main_b = main_a;
-        }
-    }
+    lv_coord_t markers_offset = spectrum_markers_offset();
 
     /* Filter */
-
-    lv_draw_rect_dsc_t rect_dsc;
-    lv_area_t          area;
 
     lv_draw_rect_dsc_init(&rect_dsc);
 
@@ -193,7 +133,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
     } else {
         rect_dsc.bg_color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
     }
-    rect_dsc.bg_opa   = LV_OPA_50;
+    rect_dsc.bg_opa = LV_OPA_50;
 
     int32_t w_hz = width_hz / zoom_factor;
 
@@ -203,7 +143,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
     int32_t f1 = (float)(w * filter_from) / w_hz + 1.0f;
     int32_t f2 = (float)(w * filter_to) / w_hz + 1.0f;
 
-
+    lv_area_t area;
     area.x1 = x1 + markers_offset + w / 2 + f1;
     area.y1 = y1;
     area.x2 = x1 + markers_offset + w / 2 + f2;
@@ -237,6 +177,17 @@ static void spectrum_draw_cb(lv_event_t *e) {
         lv_draw_rect(draw_ctx, &rect_dsc, &area);
     }
 
+    /* RTTY markers */
+
+    lv_draw_line_dsc_init(&line_dsc);
+
+    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
+        line_dsc.color = lv_color_hex(0xAAAAAA);
+    } else {
+        line_dsc.color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
+    }
+    line_dsc.width = 1;
+
     if (rtty_get_state() != RTTY_OFF) {
         int32_t from, to;
 
@@ -246,33 +197,37 @@ static void spectrum_draw_cb(lv_event_t *e) {
         f1 = (int64_t)(w * from) / w_hz;
         f2 = (int64_t)(w * to) / w_hz;
 
-        main_a.x = x1 + markers_offset + w / 2 + f1;
-        main_a.y = y1;
-        main_b.x = main_a.x;
-        main_b.y = y1 + h;
-        lv_draw_line(draw_ctx, &main_line_dsc, &main_a, &main_b);
+        lv_point_t a, b;
 
-        main_a.x = x1 + markers_offset + w / 2 + f2;
-        main_b.x = main_a.x;
-        lv_draw_line(draw_ctx, &main_line_dsc, &main_a, &main_b);
+        a.x = x1 + markers_offset + w / 2 + f1;
+        a.y = y1;
+        b.x = a.x;
+        b.y = y1 + h;
+        lv_draw_line(draw_ctx, &line_dsc, &a, &b);
+
+        a.x = x1 + markers_offset + w / 2 + f2;
+        b.x = a.x;
+        lv_draw_line(draw_ctx, &line_dsc, &a, &b);
     }
 
     /* Center */
 
-    main_line_dsc.width = 1;
+    line_dsc.width = 1;
 
-    main_a.x = x1 + markers_offset + w / 2;
-    main_a.y = y1;
-    main_b.x = main_a.x;
-    main_b.y = y1 + h;
+    lv_point_t c;
+
+    c.x = x1 + markers_offset + w / 2;
+    c.y = y1;
+    lv_point_t d;
+    d.x = c.x;
+    d.y = y1 + h;
 
     if (recorder_is_on()) {
-        main_line_dsc.color = lv_color_hex(0xFF0000);
+        line_dsc.color = lv_color_hex(0xFF0000);
     }
     if (center_line_show) {
-        lv_draw_line(draw_ctx, &main_line_dsc, &main_a, &main_b);
+        lv_draw_line(draw_ctx, &line_dsc, &c, &d);
     }
-
 }
 
 static void tx_cb(lv_event_t *e) {
@@ -283,12 +238,11 @@ static void rx_cb(lv_event_t *e) {
     visor_height = VISOR_HEIGHT_RX;
 }
 
-static void spectrum_refresh(void *data) {
-    lv_obj_invalidate(obj);
-}
+lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
+                        lv_coord_t y, lv_coord_t h) {
+    s_spec_x = y;
+    s_spec_w = h;
 
-lv_obj_t *spectrum_init(lv_obj_t *parent) {
-    pthread_mutex_init(&data_mux, NULL);
     spectrum_min_max_reset();
 
     for (size_t i = 0; i < SPECTRUM_SIZE; i++) {
@@ -296,12 +250,19 @@ lv_obj_t *spectrum_init(lv_obj_t *parent) {
         spectrum_buf[i] = S_MIN;
     }
 
-    obj = lv_obj_create(parent);
+    obj = lv_obj_create(primary_parent);
 
     lv_obj_add_style(obj, &spectrum_style, 0);
-    lv_obj_add_event_cb(obj, spectrum_draw_cb, LV_EVENT_DRAW_MAIN_END, NULL);
     lv_obj_add_event_cb(obj, tx_cb, EVENT_RADIO_TX, NULL);
     lv_obj_add_event_cb(obj, rx_cb, EVENT_RADIO_RX, NULL);
+
+    overlay_obj = lv_obj_create(overlay_parent);
+    lv_obj_remove_style_all(overlay_obj);
+    lv_obj_set_style_bg_opa(overlay_obj, LV_OPA_TRANSP, 0);
+    lv_obj_set_pos(overlay_obj, 0, y);
+    lv_obj_set_size(overlay_obj, SPECTRUM_SIZE, h);
+    lv_obj_add_event_cb(overlay_obj, spectrum_overlay_draw_cb,
+                        LV_EVENT_DRAW_MAIN_END, NULL);
 
     subject_subscribe_and_notify((Subject*)cfg_mode_zoom, on_zoom_changed, NULL);
 
@@ -324,8 +285,9 @@ lv_obj_t *spectrum_init(lv_obj_t *parent) {
     subject_subscribe((Subject*)cfg_dnf_center, update_dnf, NULL);
     subject_subscribe_and_notify((Subject*)cfg_dnf_width, update_dnf, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg_fg_freq, on_cur_base_lo_freq_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg_fg_freq, on_fg_freq_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg_rit, on_rit_change, NULL);
+
     return obj;
 }
 
@@ -338,7 +300,6 @@ void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_lo_fre
         shift_peaks(df);
     }
 
-    pthread_mutex_lock(&data_mux);
     spectrum_tx = tx;
     for (uint16_t i = 0; i < size; i++) {
         spectrum_buf[i] = data_buf[i];
@@ -359,8 +320,7 @@ void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_lo_fre
     }
     prev_fft_dec = fft_dec;
 
-    pthread_mutex_unlock(&data_mux);
-    scheduler_put_noargs(spectrum_refresh);
+    __atomic_store_n(&s_data_ready, 1, __ATOMIC_RELEASE);
 }
 
 void spectrum_min_max_reset() {
@@ -400,6 +360,8 @@ void spectrum_clear() {
 static void on_zoom_changed(Subject *subj, void *user_data) {
     zoom_factor = (uint8_t)subject_i_get((SubjectInt*)subj);
     spectrum_clear();
+    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
+    lv_obj_invalidate(overlay_obj);
 }
 
 static void update_filters(Subject *subj, void *user_data) {
@@ -425,21 +387,26 @@ static void update_filters(Subject *subj, void *user_data) {
         filter_to = high;
         break;
     }
+    lv_obj_invalidate(overlay_obj);
 }
 
 static void update_dnf(Subject *subj, void *user_data) {
     int32_t en = subject_i_get((SubjectInt*)cfg_dnf);
     if (!en) {
+        dnf_show = false;
         return;
     }
     int32_t auto_ = subject_i_get((SubjectInt*)cfg_dnf_auto);
     if (auto_) {
+        dnf_show = false;
         return;
     }
     x6100_mode_t mode = subject_i_get((SubjectInt*)cfg_cur_mode);
     if ((mode == x6100_mode_am) || (mode == x6100_mode_nfm)) {
+        dnf_show = false;
         return;
     }
+    dnf_show = true;
     dnf_width = subject_i_get((SubjectInt*)cfg_dnf_width);
     int32_t center = subject_i_get((SubjectInt*)cfg_dnf_auto);
     switch (mode)
@@ -454,20 +421,26 @@ static void update_dnf(Subject *subj, void *user_data) {
         dnf_center = center;
         break;
     }
+    lv_obj_invalidate(overlay_obj);
 }
 
 
 static void update_center_line(Subject *subj, void *user_data) {
-    x6100_mode_t mode = (x6100_mode_t)subject_i_get((SubjectInt*)subj);
+    x6100_mode_t mode = (x6100_mode_t)subject_i_get((SubjectInt*) subj);
     center_line_show = (mode != x6100_mode_cw && mode != x6100_mode_cwr);
+    lv_obj_invalidate(overlay_obj);
 }
 
 static void on_mode_lo_offset_change(Subject *subj, void *user_data) {
-    mode_lo_offset = subject_i_get((SubjectInt*)subj);
+    mode_lo_offset = subject_i_get((SubjectInt*) subj);
+    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
+    lv_obj_invalidate(overlay_obj);
 }
 
 static void on_if_shift_change(Subject *subj, void *user_data) {
-    if_shift = subject_i_get((SubjectInt*)subj);
+    if_shift = subject_i_get((SubjectInt*) subj);
+    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
+    lv_obj_invalidate(overlay_obj);
 }
 
 static void on_grid_min_change(Subject *subj, void *user_data) {
@@ -481,9 +454,9 @@ static void on_grid_max_change(Subject *subj, void *user_data) {
     }
 }
 
-static void on_cur_base_lo_freq_change(Subject *subj, void *user_data) {
+static void on_fg_freq_change(Subject *subj, void *user_data) {
     fg_freq = cparam_i_get(cfg_fg_freq);
-    scheduler_put_noargs(spectrum_refresh);
+    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
 }
 
 static void on_rit_change(Subject *subj, void *user_data) {
@@ -513,4 +486,239 @@ static void shift_peaks(int32_t df) {
             *to = spectrum_peak[src_id];
         }
     }
+}
+
+/***** Direct (rotated) rendering *****/
+
+static void spectrum_update_colors(void) {
+    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
+        s_main_color = lv_color_hex(0xAAAAAA);
+    } else {
+        s_main_color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
+    }
+    s_peak_color = lv_color_hex(0x555555);
+}
+
+/* Replicate the spectrum_offset calculation from spectrum_draw_cb(). */
+static int32_t spectrum_compute_offset(void) {
+    int32_t w = SPECTRUM_SIZE;
+
+    if (spectrum_tx) {
+        return ((mode_lo_offset + if_shift) * zoom_factor * w + width_hz / 2) / width_hz;
+    }
+
+    int32_t data_shift = 0;
+    if (cur_base_lo_freq) {
+        // Handle delay between sending new settings to base and new data flow
+        data_shift = cur_base_lo_freq - (fg_freq + mode_lo_offset - if_shift + rit);
+    }
+    return ((mode_lo_offset + data_shift) * zoom_factor * w + width_hz / 2) / width_hz;
+}
+
+/* Fill one physical row from column x_top to the bottom of the strip. */
+static void spectrum_fill_run(uint32_t *buf, int stride, int row, int x_top, lv_color_t color) {
+    if (x_top >= stride) {
+        return;
+    }
+    uint32_t *p = &buf[row * stride + x_top];
+    int       n = stride - x_top;
+    for (int i = 0; i < n; i++) {
+        p[i] = color.full;
+    }
+}
+
+static inline uint32_t spectrum_blend_xrgb(uint32_t dst, uint32_t src, uint8_t a) {
+    uint32_t rb = ((dst & 0x00FF00FFu) * (255u - a) + (src & 0x00FF00FFu) * a + 0x00800080u);
+    uint32_t g  = ((dst & 0x0000FF00u) * (255u - a) + (src & 0x0000FF00u) * a + 0x00008000u);
+    return ((rb >> 8) & 0x00FF00FFu) | ((g >> 8) & 0x0000FF00u);
+}
+
+static void spectrum_blend_px(uint32_t *buf, int stride, int x, int y, float brightness, lv_color_t color) {
+    if (x < 0 || x >= stride || y < 0 || y >= SPECTRUM_SIZE) {
+        return;
+    }
+    int a = (int)(brightness * 255.0f + 0.5f);
+    if (a <= 0) {
+        return;
+    }
+    if (a > 255) {
+        a = 255;
+    }
+    uint32_t *p = &buf[y * stride + x];
+    *p          = spectrum_blend_xrgb(*p, color.full, (uint8_t)a);
+}
+
+/* Wu's line algorithm (float).
+ *
+ * NOTE: do NOT reuse this routine elsewhere. It is specialized for drawing 1px
+ * amplitude polylines into the tightly packed, already-rotated spectrum buffer
+ * (XRGB8888, row = physical_y = bin, column = physical_x = amplitude). Between
+ * adjacent bins |dy| == 1 and the amplitude step varies, so segments are almost
+ * always "flat"; the steep/swap handling exists only for degenerate cases and is
+ * kept for completeness. */
+static void spectrum_wu_line(uint32_t *buf, int stride, float x0, float y0, float x1, float y1, lv_color_t color) {
+    bool steep = fabsf(y1 - y0) > fabsf(x1 - x0);
+
+    if (steep) {
+        float t = x0;
+        x0      = y0;
+        y0      = t;
+        t       = x1;
+        x1      = y1;
+        y1      = t;
+    }
+    if (x0 > x1) {
+        float t = x0;
+        x0      = x1;
+        x1      = t;
+        t       = y0;
+        y0      = y1;
+        y1      = t;
+    }
+
+    float dx       = x1 - x0;
+    float dy       = y1 - y0;
+    float gradient = (dx == 0.0f) ? 1.0f : dy / dx;
+
+    float xend  = roundf(x0);
+    float yend  = y0 + gradient * (xend - x0);
+    float xgap  = 1.0f - (x0 + 0.5f - floorf(x0 + 0.5f));
+    int   xpxl1 = (int)xend;
+    int   ypxl1 = (int)floorf(yend);
+
+    if (steep) {
+        spectrum_blend_px(buf, stride,ypxl1, xpxl1, (1.0f - (yend - floorf(yend))) * xgap, color);
+        spectrum_blend_px(buf, stride,ypxl1 + 1, xpxl1, (yend - floorf(yend)) * xgap, color);
+    } else {
+        spectrum_blend_px(buf, stride,xpxl1, ypxl1, (1.0f - (yend - floorf(yend))) * xgap, color);
+        spectrum_blend_px(buf, stride,xpxl1, ypxl1 + 1, (yend - floorf(yend)) * xgap, color);
+    }
+
+    float intery = yend + gradient;
+
+    float xend2  = roundf(x1);
+    float yend2  = y1 + gradient * (xend2 - x1);
+    float xgap2  = x1 + 0.5f - floorf(x1 + 0.5f);
+    int   xpxl2  = (int)xend2;
+    int   ypxl2  = (int)floorf(yend2);
+
+    if (steep) {
+        spectrum_blend_px(buf, stride,ypxl2, xpxl2, (1.0f - (yend2 - floorf(yend2))) * xgap2, color);
+        spectrum_blend_px(buf, stride,ypxl2 + 1, xpxl2, (yend2 - floorf(yend2)) * xgap2, color);
+    } else {
+        spectrum_blend_px(buf, stride,xpxl2, ypxl2, (1.0f - (yend2 - floorf(yend2))) * xgap2, color);
+        spectrum_blend_px(buf, stride,xpxl2, ypxl2 + 1, (yend2 - floorf(yend2)) * xgap2, color);
+    }
+
+    if (steep) {
+        for (int x = xpxl1 + 1; x < xpxl2; x++) {
+            spectrum_blend_px(buf, stride,(int)floorf(intery), x, 1.0f - (intery - floorf(intery)), color);
+            spectrum_blend_px(buf, stride,(int)floorf(intery) + 1, x, intery - floorf(intery), color);
+            intery += gradient;
+        }
+    } else {
+        for (int x = xpxl1 + 1; x < xpxl2; x++) {
+            spectrum_blend_px(buf, stride,x, (int)floorf(intery), 1.0f - (intery - floorf(intery)), color);
+            spectrum_blend_px(buf, stride,x, (int)floorf(intery) + 1, intery - floorf(intery), color);
+            intery += gradient;
+        }
+    }
+}
+
+/* Draw the main (or peak) spectrum as a polyline. The initial point is the
+ * bottom-left corner of the strip (logical (0, y1+h)), matching the first
+ * peak_b/main_b in spectrum_draw_cb(). */
+static void spectrum_draw_polyline(uint32_t *buf, int stride, float min, float max, int32_t offset, bool is_peak, lv_color_t color) {
+    float prev_x = (float)stride;
+    float prev_y = (float)(SPECTRUM_SIZE - 1);
+
+    for (int i = 0; i < SPECTRUM_SIZE; i++) {
+        float v = is_peak ? (spectrum_peak[i].val - min) / (max - min) : (spectrum_buf[i] - min) / (max - min);
+        if (v < 0.0f) {
+            v = 0.0f;
+        }
+        if (v > 1.0f) {
+            v = 1.0f;
+        }
+
+        float cur_x = (1.0f - v) * stride;
+        float cur_y = (float)(SPECTRUM_SIZE - 1 - offset - i);
+
+        spectrum_wu_line(buf, stride, prev_x, prev_y, cur_x, cur_y, color);
+
+        prev_x = cur_x;
+        prev_y = cur_y;
+    }
+}
+
+static void spectrum_render_rotated(uint32_t *buf, int stride) {
+    memset(buf, 0, (size_t)stride * SPECTRUM_SIZE * sizeof(uint32_t));
+
+    float min, max;
+    if (spectrum_tx) {
+        min = DEFAULT_MIN;
+        max = DEFAULT_MAX;
+    } else {
+        min = grid_min;
+        max = grid_max;
+    }
+    if (max <= min) {
+        max = min + 1.0f;
+    }
+
+    spectrum_update_colors();
+
+    int32_t offset = spectrum_compute_offset();
+
+    if (params.spectrum_peak.x && !spectrum_tx) {
+        spectrum_draw_polyline(buf, stride, min, max, offset, true, s_peak_color);
+    }
+
+    if (params.spectrum_filled.x) {
+        for (int i = 0; i < SPECTRUM_SIZE; i++) {
+            int row = SPECTRUM_SIZE - 1 - offset - i;
+            if (row < 0 || row >= SPECTRUM_SIZE) {
+                continue;
+            }
+            float v = (spectrum_buf[i] - min) / (max - min);
+            if (v < 0.0f) {
+                v = 0.0f;
+            }
+            if (v > 1.0f) {
+                v = 1.0f;
+            }
+            int x_top = (int)((1.0f - v) * stride);
+            if (x_top < 0) {
+                x_top = 0;
+            }
+            if (x_top >= stride) {
+                x_top = stride - 1;
+            }
+            spectrum_fill_run(buf, stride, row, x_top, s_main_color);
+        }
+    } else {
+        spectrum_draw_polyline(buf, stride, min, max, offset, false, s_main_color);
+    }
+}
+
+/* Called from the main loop (between lv_timer_handler() and drm_flip()) when the
+ * direct-render path is enabled. Returns true if a frame was produced. */
+bool spectrum_process(void) {
+    bool data = __atomic_exchange_n(&s_data_ready, 0, __ATOMIC_ACQUIRE);
+    bool cond = __atomic_exchange_n(&s_cond_dirty, 0, __ATOMIC_ACQUIRE);
+    if (!data && !cond) {
+        return false;
+    }
+
+    drm_direct_ctx_t ctx;
+    if (!drm_primary_begin_direct(&ctx, (uint32_t)s_spec_w * SPECTRUM_SIZE))
+        return false;
+
+    spectrum_render_rotated((uint32_t *)ctx.buf, s_spec_w);
+
+    lv_area_t area = { .x1 = s_spec_x, .y1 = 0,
+                       .x2 = s_spec_x + s_spec_w - 1,
+                       .y2 = SPECTRUM_SIZE - 1 };
+    drm_primary_end_direct(&area);
+    return true;
 }

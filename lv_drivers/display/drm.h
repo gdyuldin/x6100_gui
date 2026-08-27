@@ -37,6 +37,11 @@ extern "C" {
  *      TYPEDEFS
  **********************/
 
+typedef struct {
+    lv_color_t *buf;
+    uint32_t    max_pixels;
+} drm_direct_ctx_t;
+
 /**********************
  * GLOBAL PROTOTYPES
  **********************/
@@ -44,6 +49,9 @@ void drm_init(lv_disp_drv_t *disp_drv_primary, lv_disp_drv_t *disp_drv_overlay);
 void drm_get_sizes(lv_coord_t *width, lv_coord_t *height, uint32_t *dpi);
 void drm_flip(void);
 void drm_exit(void);
+
+bool drm_primary_begin_direct(drm_direct_ctx_t *ctx, uint32_t pixels_needed);
+void drm_primary_end_direct(const lv_area_t *area);
 
 
 /**********************

@@ -90,6 +90,7 @@ int main(void) {
     // Init screens
     lv_disp_set_default(disp_primary);
     primary_scr = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(primary_scr, lv_color_black(), 0);
     // lv_obj_remove_style_all(primary_scr);
     lv_obj_set_style_bg_opa(primary_scr, LV_OPA_COVER, LV_PART_MAIN);
     lv_disp_set_bg_opa(disp_primary, LV_OPA_COVER);
@@ -99,6 +100,7 @@ int main(void) {
         lv_disp_set_default(disp_overlay);
         overlay_scr = lv_obj_create(NULL);
         // lv_obj_remove_style_all(overlay_scr);
+        lv_obj_set_style_bg_color(overlay_scr, lv_color_black(), 0);
         lv_obj_set_style_bg_opa(overlay_scr, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_disp_set_bg_opa(disp_overlay, LV_OPA_TRANSP);
         lv_scr_load(overlay_scr);
@@ -171,13 +173,11 @@ int main(void) {
         event_obj_check();
         scheduler_work();
         next_loop_time = lv_timer_handler() + loop_start_time;
+        spectrum_process();
         drm_flip();
         sleep_time = next_loop_time - get_time();
         if (sleep_time > 0) {
             usleep(sleep_time * 1000);
-        } else {
-            /* Cap loop rate when LVGL reports no delay to reduce CPU. */
-            usleep(5000);
         }
     }
     return 0;

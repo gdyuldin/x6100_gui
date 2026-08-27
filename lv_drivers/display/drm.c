@@ -17,20 +17,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
 
 #include <drm_fourcc.h>
-#include <libyuv.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
 // Queue size
 #define MAX_DIRTY_RECTS 32
-#define MAX_DIRTY_BUF 800 * 480
+#define MAX_DIRTY_BUF 800 * 480 * 2
 
 #define DBG_TAG "drm"
 
@@ -59,8 +54,6 @@ typedef struct {
 
 static lv_disp_draw_buf_t disp_buf[PLANE_LAST];
 static volatile bool      flip_pending[PLANE_LAST];
-static volatile bool      flip_needed[PLANE_LAST];
-static volatile bool      need_dump_cur_damaged[PLANE_LAST];
 
 static damaged_areas_t damaged_areas[PLANE_LAST][2];
 static uint8_t         damaged_cur_i[PLANE_LAST];
@@ -373,30 +366,50 @@ static int drm_modeset(void) {
     return ret;
 }
 
-void drm_flip(void) {
-    bool any = false;
-    for (int p = 0; p < PLANE_LAST; p++) {
-        if (flip_needed[p]) {
-            any = true;
-            break;
-        }
-    }
-    if (!any)
-        return;
+static void damaged_apply(struct drm_buffer *fbuf, damaged_areas_t *dirty_queue, bool clear);
 
-    /* Wait for any in-flight commit before submitting a new one (avoids EBUSY). */
+void drm_flip(void) {
     for (int p = 0; p < PLANE_LAST; p++) {
         while (flip_pending[p])
             wait_flip(p, true);
     }
 
+    bool any = false;
+
+    for (int p = 0; p < PLANE_LAST; p++) {
+        uint8_t ci = damaged_cur_i[p];
+        uint8_t pi = (ci + 1) % 2;
+
+        bool has_dirty = (damaged_areas[p][ci].buf_size > 0 || damaged_areas[p][pi].buf_size > 0);
+        if (!has_dirty)
+            continue;
+
+        struct drm_buffer *fbuf = (p == PLANE_OVERLAY_ID) ? drm_dev.overlay_cur_bufs[1] : drm_dev.primary_cur_bufs[1];
+
+        damaged_apply(fbuf, &damaged_areas[p][pi], true);
+        damaged_apply(fbuf, &damaged_areas[p][ci], false);
+
+        damaged_cur_i[p] = pi;
+
+        struct drm_buffer **cur  = (p == PLANE_OVERLAY_ID) ? drm_dev.overlay_cur_bufs : drm_dev.primary_cur_bufs;
+        struct drm_buffer  *bufs = (p == PLANE_OVERLAY_ID) ? drm_dev.overlay_bufs : drm_dev.primary_bufs;
+        if (!cur[0])
+            cur[1] = &bufs[1];
+        else
+            cur[1] = cur[0];
+        cur[0] = fbuf;
+
+        any = true;
+    }
+
+    if (!any)
+        return;
+
     drmModeAtomicReqPtr req = drmModeAtomicAlloc();
     for (int p = 0; p < PLANE_LAST; p++) {
-        if (!flip_needed[p])
-            continue;
         if (drm_add_plane_fb(req, p) < 0) {
             drmModeAtomicFree(req);
-            return; /* keep flip_needed -> retry next frame */
+            return;
         }
     }
 
@@ -405,15 +418,11 @@ void drm_flip(void) {
     drmModeAtomicFree(req);
     if (ret) {
         err("drmModeAtomicCommit failed: %s", strerror(errno));
-        return; /* keep flip_needed -> retry next frame */
+        return;
     }
 
-    for (int p = 0; p < PLANE_LAST; p++) {
-        if (flip_needed[p]) {
-            flip_needed[p]  = false;
-            flip_pending[p] = 1;
-        }
-    }
+    for (int p = 0; p < PLANE_LAST; p++)
+        flip_pending[p] = 1;
 }
 
 static int find_plane_by_type(uint32_t fourcc, uint32_t type, uint32_t *plane_id, uint32_t crtc_id, uint32_t crtc_idx) {
@@ -903,83 +912,35 @@ static void damaged_apply(struct drm_buffer *fbuf, damaged_areas_t *dirty_queue,
     }
 }
 
-void drm_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p, int plane_id) {
-    struct drm_buffer **cur_bufs_ptrs;
-    struct drm_buffer  *bufs;
-    struct drm_buffer  *fbuf;
-
-    if (plane_id == PLANE_OVERLAY_ID) {
-        fbuf          = drm_dev.overlay_cur_bufs[1];
-        cur_bufs_ptrs = drm_dev.overlay_cur_bufs;
-        bufs          = drm_dev.overlay_bufs;
-    } else {
-        fbuf          = drm_dev.primary_cur_bufs[1];
-        cur_bufs_ptrs = drm_dev.primary_cur_bufs;
-        bufs          = drm_dev.primary_bufs;
-    }
-    lv_coord_t w = (area->x2 - area->x1 + 1);
-    lv_coord_t h = (area->y2 - area->y1 + 1);
-
-    bool is_last = lv_disp_flush_is_last(disp_drv);
-
-    dbg("x %d:%d y %d:%d w %d h %d", area->x1, area->x2, area->y1, area->y2, w, h);
-
-    // Fast check
-    wait_flip(plane_id, false);
-    uint8_t dam_cur_i  = damaged_cur_i[plane_id];
-    uint8_t dam_prev_i = (dam_cur_i + 1) % 2;
-
-    if (!flip_pending[plane_id]) {
-        // fbuf is available for writing
-        // Drain queue from prev frame
-        damaged_apply(fbuf, &damaged_areas[plane_id][dam_prev_i], 1);
-        // Copy damaged areas for current frame
-        if (need_dump_cur_damaged[plane_id]) {
-            need_dump_cur_damaged[plane_id] = false;
-            damaged_apply(fbuf, &damaged_areas[plane_id][dam_cur_i], 0);
-        }
-        // Copy to buf
-        buf_write(fbuf, area, color_p);
-    }
-
-    // Save damaged region for next frame
-    damaged_push(area, color_p, &damaged_areas[plane_id][dam_cur_i]);
-
-    if (flip_pending[plane_id] && is_last) {
-        // last chunks and flip still not happend - wait
-        while (flip_pending[plane_id]) {
-            wait_flip(plane_id, true);
-        }
-        // fbuf not awailable
-        // Drain queue from prev frame
-        damaged_apply(fbuf, &damaged_areas[plane_id][dam_prev_i], 1);
-        damaged_apply(fbuf, &damaged_areas[plane_id][dam_cur_i], 0);
-        buf_write(fbuf, area, color_p);
-    }
-
-    if (is_last) {
-        flip_needed[plane_id] = true;
-
-        need_dump_cur_damaged[plane_id] = true;
-        damaged_cur_i[plane_id]         = dam_prev_i;
-
-        if (!cur_bufs_ptrs[0])
-            cur_bufs_ptrs[1] = &bufs[1];
-        else
-            cur_bufs_ptrs[1] = cur_bufs_ptrs[0];
-
-        cur_bufs_ptrs[0] = fbuf;
-    }
-
+void drm_flush_primary(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
+    damaged_push(area, color_p, &damaged_areas[PLANE_PRIMARY_ID][damaged_cur_i[PLANE_PRIMARY_ID]]);
     lv_disp_flush_ready(disp_drv);
 }
 
-void drm_flush_primary(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
-    drm_flush(disp_drv, area, color_p, PLANE_PRIMARY_ID);
+void drm_flush_overlay(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
+    damaged_push(area, color_p, &damaged_areas[PLANE_OVERLAY_ID][damaged_cur_i[PLANE_OVERLAY_ID]]);
+    lv_disp_flush_ready(disp_drv);
 }
 
-void drm_flush_overlay(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
-    drm_flush(disp_drv, area, color_p, PLANE_OVERLAY_ID);
+bool drm_primary_begin_direct(drm_direct_ctx_t *ctx, uint32_t pixels_needed) {
+    damaged_areas_t *q = &damaged_areas[PLANE_PRIMARY_ID][damaged_cur_i[PLANE_PRIMARY_ID]];
+    if (q->buf_size + pixels_needed > MAX_DIRTY_BUF) {
+        return false;
+    }
+    ctx->buf        = q->buf + q->buf_size;
+    ctx->max_pixels = MAX_DIRTY_BUF - q->buf_size;
+    return true;
+}
+
+void drm_primary_end_direct(const lv_area_t *area) {
+    damaged_areas_t *q         = &damaged_areas[PLANE_PRIMARY_ID][damaged_cur_i[PLANE_PRIMARY_ID]];
+    uint32_t         area_size = lv_area_get_size(area);
+    if (q->buf_size + area_size > MAX_DIRTY_BUF) {
+        err("direct rendered area is too big, skip");
+        return;
+    }
+    q->rects[q->rects_cnt++] = *area;
+    q->buf_size += area_size;
 }
 
 void drm_get_sizes(lv_coord_t *width, lv_coord_t *height, uint32_t *dpi) {
@@ -1046,8 +1007,6 @@ void drm_init(lv_disp_drv_t *disp_drv_primary, lv_disp_drv_t *disp_drv_overlay) 
 
     for (size_t i = 0; i < PLANE_LAST; i++) {
         flip_pending[i]               = 0;
-        flip_needed[i]                = 0;
-        need_dump_cur_damaged[i]      = 0;
         damaged_cur_i[i]              = 0;
         damaged_areas[i][0].buf_size  = 0;
         damaged_areas[i][1].buf_size  = 0;

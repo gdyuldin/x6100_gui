@@ -1026,12 +1026,13 @@ void main_screen_set_freq(uint64_t freq) {
     event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
 }
 
-lv_obj_t * main_screen() {
+lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     uint16_t y = 0;
 
     freq_lock = subject_i_create(false);
 
-    obj = lv_obj_create(NULL);
+    // obj = lv_obj_create(NULL);
+    obj = overlay_scr;
 
     lv_obj_add_event_cb(obj, main_screen_rotary_cb, EVENT_ROTARY, NULL);
     lv_obj_add_event_cb(obj, main_screen_keypad_cb, EVENT_KEYPAD, NULL);
@@ -1043,16 +1044,13 @@ lv_obj_t * main_screen() {
     lv_obj_add_style(obj, &background_style, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
-    spectrum = spectrum_init(obj);
+    spectrum = spectrum_init(primary_scr, overlay_scr, 31, spectrum_height);
     main_screen_keys_enable(true);
 
     lv_obj_add_event_cb(spectrum, spectrum_key_cb, LV_EVENT_KEY, NULL);
     lv_obj_add_event_cb(spectrum, spectrum_pressed_cb, LV_EVENT_PRESSED, NULL);
 
     spectrum_min_max_reset();
-
-    lv_obj_set_y(spectrum, y);
-    lv_obj_set_height(spectrum, spectrum_height);
 
     y += spectrum_height;
 
@@ -1078,7 +1076,7 @@ lv_obj_t * main_screen() {
 
     y += freq_height;
 
-    waterfall = waterfall_init(obj);
+    waterfall = waterfall_init(primary_scr);
 
     waterfall_min_max_reset();
 
