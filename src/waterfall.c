@@ -25,6 +25,10 @@
 #include <math.h>
 #include <stdio.h>
 
+#if LV_DRAW_NEON && LV_COLOR_DEPTH == 32
+#include <arm_neon.h>
+#endif
+
 #define DEFAULT_MIN S4
 #define DEFAULT_MAX S9_20
 #define WIDTH 800
@@ -37,9 +41,6 @@ typedef struct {
 
 static lv_obj_t         *overlay_obj;
 static bool             ready = false;
-
-static lv_obj_t         *middle_line;
-static lv_point_t       middle_line_points[] = { {0, 0}, {0, 0} };
 
 static int32_t          width_hz = 100000;
 
@@ -74,8 +75,6 @@ static int16_t   s_wf_w;
 static int s_data_ready = 0;
 static int s_cond_dirty = 1;
 
-static void update_middle_line();
-static void middle_line_cb(lv_event_t * event);
 static void on_zoom_changed(Subject *subj, void *user_data);
 static void on_fg_freq_change(Subject *subj, void *user_data);
 static void on_mode_lo_offset_change(Subject *subj, void *user_data);
@@ -102,12 +101,6 @@ void waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h) {
     lv_obj_set_style_bg_color(overlay_obj, lv_color_black(), 0);
     lv_obj_set_pos(overlay_obj, 0, y);
     lv_obj_set_size(overlay_obj, WIDTH, h);
-
-    middle_line = lv_line_create(overlay_obj);
-    lv_obj_add_style(middle_line, &style_waterfall_middle_line, 0);
-    middle_line_points[1].y = h;
-    lv_line_set_points(middle_line, middle_line_points, 2);
-    lv_obj_add_event_cb(overlay_obj, middle_line_cb, LV_EVENT_DRAW_POST_END, NULL);
 
     band_info_init(overlay_obj);
 
@@ -307,6 +300,35 @@ static void lerp_row_to_col(const wf_data_row_t *row_data, uint32_t dst_center_f
     }
 }
 
+static inline uint32_t add_px(uint32_t bg, uint8_t fr, uint8_t fg, uint8_t fb) {
+    uint32_t r = ((bg >> 16) & 0xFF) + fr;
+    r = r > 255 ? 255 : r;
+    uint32_t g = ((bg >> 8) & 0xFF) + fg;
+    g = g > 255 ? 255 : g;
+    uint32_t b = ((bg >> 0) & 0xFF) + fb;
+    b = b > 255 ? 255 : b;
+    return 0xFF000000 | (r << 16) | (g << 8) | b;
+}
+
+static void draw_additive_row(uint32_t *line, uint32_t n, uint8_t fr, uint8_t fg, uint8_t fb) {
+#if LV_DRAW_NEON && LV_COLOR_DEPTH == 32
+    const uint8x16_t fg_v = {
+        fb, fg, fr, 0, fb, fg, fr, 0, fb, fg, fr, 0, fb, fg, fr, 0,
+    };
+    uint8_t *p = (uint8_t *)line;
+    uint8_t *end = p + (size_t)n * 4;
+    for (; p + 16 <= end; p += 16) {
+        uint8x16_t bg = vld1q_u8(p);
+        vst1q_u8(p, vqaddq_u8(bg, fg_v));
+    }
+    line = (uint32_t *)p;
+    n = (uint32_t)(end - p) / 4;
+#endif
+    for (uint32_t i = 0; i < n; i++) {
+        line[i] = add_px(line[i], fr, fg, fb);
+    }
+}
+
 static void waterfall_render_rotated(uint32_t *buf, int stride) {
     uint32_t bandwidth = width_hz;
 
@@ -318,6 +340,33 @@ static void waterfall_render_rotated(uint32_t *buf, int stride) {
     for (uint16_t src_y = 0; src_y < s_wf_w; src_y++) {
         int col = (int)(last_row_id - src_y + s_wf_w) % s_wf_w;
         lerp_row_to_col(&wf_rows[src_y], wf_center_freq, bandwidth, buf, stride, col);
+    }
+
+    lv_style_value_t style_val;
+    lv_style_get_prop(&style_waterfall_middle_line, LV_STYLE_LINE_COLOR, &style_val);
+    lv_color_t line_color = style_val.color;
+    lv_style_get_prop(&style_waterfall_middle_line, LV_STYLE_LINE_WIDTH, &style_val);
+    lv_coord_t style_width = style_val.num;
+    lv_style_get_prop(&style_waterfall_middle_line, LV_STYLE_LINE_OPA, &style_val);
+    lv_opa_t line_opa = (lv_opa_t)style_val.num;
+
+    bool line_visible = params.waterfall_center_line.x;
+    lv_coord_t line_width = LV_MAX(zoom / 2 + 2, style_width);
+
+    if (line_visible && line_opa > LV_OPA_MIN) {
+        int32_t center_f = if_shift * zoom * WIDTH / width_hz + (WIDTH + line_width) / 2;
+
+        /* Pre-scale foreground once (constant color + opacity). */
+        uint8_t fr = (uint8_t)((line_color.ch.red * line_opa + 255u) >> 8);
+        uint8_t fg = (uint8_t)((line_color.ch.green * line_opa + 255u) >> 8);
+        uint8_t fb = (uint8_t)((line_color.ch.blue * line_opa + 255u) >> 8);
+
+        for (lv_coord_t w = 0; w < line_width; w++) {
+            int32_t freq_col = (int32_t)center_f - w;
+            if (freq_col < 0 || freq_col >= WIDTH) continue;
+            int32_t row = WIDTH - 1 - freq_col;
+            draw_additive_row(&buf[row * stride], (uint32_t)s_wf_w, fr, fg, fb);
+        }
     }
 }
 
@@ -344,20 +393,9 @@ bool waterfall_process(void) {
     return true;
 }
 
-static void middle_line_cb(lv_event_t * event) {
-    if (params.waterfall_center_line.x && lv_obj_has_flag(middle_line, LV_OBJ_FLAG_HIDDEN)) {
-        lv_obj_clear_flag(middle_line, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-    if (!params.waterfall_center_line.x && !lv_obj_has_flag(middle_line, LV_OBJ_FLAG_HIDDEN)) {
-        lv_obj_add_flag(middle_line, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-}
 
 static void on_zoom_changed(Subject *subj, void *user_data) {
     zoom = subject_i_get((SubjectInt*)subj);
-    update_middle_line();
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
 }
 
@@ -365,7 +403,6 @@ static void on_if_shift_changed(Subject *subj, void *user_data) {
     delay = 2;
     if_shift = subject_i_get((SubjectInt*)subj);
     radio_center_freq = cparam_i_get(cfg_fg_freq) - if_shift;
-    update_middle_line();
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
 }
 
@@ -379,19 +416,6 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
 static void on_mode_lo_offset_change(Subject *subj, void *user_data) {
     mode_lo_offset = subject_i_get((SubjectInt*)subj);
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
-}
-
-static void update_middle_line() {
-    lv_coord_t width = zoom / 2 + 2;
-    lv_style_value_t width_default;
-    lv_style_get_prop(&style_waterfall_middle_line, LV_STYLE_LINE_WIDTH, &width_default);
-    width = LV_MAX(width, width_default.num);
-
-    lv_coord_t center = if_shift * zoom * WIDTH / width_hz + WIDTH / 2;
-    middle_line_points[0].x = center;
-    middle_line_points[1].x = center;
-    lv_line_set_points(middle_line, middle_line_points, 2);
-    lv_obj_set_style_line_width(middle_line, width, LV_PART_MAIN);
 }
 
 static void on_grid_min_change(Subject *subj, void *user_data) {
