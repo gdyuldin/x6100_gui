@@ -178,7 +178,7 @@ void styles_init(themes_t theme) {
 
     lv_style_init(&waterfall_style);
     lv_style_set_bg_color(&waterfall_style, lv_color_hex(0x000000));
-    lv_style_set_border_color(&waterfall_style, lv_color_hex(0xAAAAAA));
+    // lv_style_set_border_color(&waterfall_style, lv_color_hex(0xAAAAAA));
     lv_style_set_border_width(&waterfall_style, 0);
     lv_style_set_radius(&waterfall_style, 0);
     lv_style_set_clip_corner(&waterfall_style, true);
@@ -295,7 +295,8 @@ void styles_init(themes_t theme) {
     /* Waterfall elements */
     lv_style_init(&style_waterfall_middle_line);
     lv_style_set_line_opa(&style_waterfall_middle_line, LV_OPA_60);
-    lv_style_set_blend_mode(&style_waterfall_middle_line, LV_BLEND_MODE_ADDITIVE);
+    // DRM overlay can't blend in additive mode. Maybe will move it back to primary
+    // lv_style_set_blend_mode(&style_waterfall_middle_line, LV_BLEND_MODE_ADDITIVE);
     lv_style_set_pad_all(&style_waterfall_middle_line, 0);
     lv_style_set_line_width(&style_waterfall_middle_line, 2);
 

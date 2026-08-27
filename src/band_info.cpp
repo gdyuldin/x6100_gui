@@ -156,8 +156,8 @@ extern "C" lv_obj_t *band_info_init(lv_obj_t *parent) {
     bands = BandsTable::all_bands();
     obj   = lv_obj_create(parent);
 
-    lv_obj_set_size(obj, lv_obj_get_width(parent), band_info_height);
-    lv_obj_align(obj, LV_ALIGN_CENTER, 0, -lv_obj_get_height(parent) / 2 + 18);
+    lv_obj_set_size(obj, LV_PCT(100), band_info_height);
+    lv_obj_align(obj, LV_ALIGN_TOP_MID, 0, 6);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_set_style_radius(obj, 0, 0);

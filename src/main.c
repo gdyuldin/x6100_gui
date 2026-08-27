@@ -174,6 +174,7 @@ int main(void) {
         scheduler_work();
         next_loop_time = lv_timer_handler() + loop_start_time;
         spectrum_process();
+        waterfall_process();
         drm_flip();
         sleep_time = next_loop_time - get_time();
         if (sleep_time > 0) {

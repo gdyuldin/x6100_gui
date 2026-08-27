@@ -68,7 +68,6 @@ static bool         band_lock = false;
 
 static lv_obj_t     *spectrum;
 static lv_obj_t     *freq[3];
-static lv_obj_t     *waterfall;
 static lv_obj_t     *msg;
 static lv_obj_t     *msg_tiny;
 static lv_obj_t     *meter;
@@ -1031,7 +1030,6 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
     freq_lock = subject_i_create(false);
 
-    // obj = lv_obj_create(NULL);
     obj = overlay_scr;
 
     lv_obj_add_event_cb(obj, main_screen_rotary_cb, EVENT_ROTARY, NULL);
@@ -1076,12 +1074,7 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
     y += freq_height;
 
-    waterfall = waterfall_init(primary_scr);
-
-    waterfall_min_max_reset();
-
-    lv_obj_set_y(waterfall, y);
-    waterfall_set_height(480 - y);
+    waterfall_init(overlay_scr, y, 480 - y);
 
     knobs_init(obj);
 
