@@ -18,8 +18,6 @@
 lv_event_code_t        EVENT_ROTARY;
 lv_event_code_t        EVENT_KEYPAD;
 lv_event_code_t        EVENT_HKEY;
-lv_event_code_t        EVENT_RADIO_TX;
-lv_event_code_t        EVENT_RADIO_RX;
 lv_event_code_t        EVENT_SCREEN_UPDATE;
 lv_event_code_t        EVENT_MSG_UPDATE;
 lv_event_code_t        EVENT_GPS;
@@ -41,8 +39,6 @@ void event_init() {
     EVENT_ROTARY = lv_event_register_id();
     EVENT_KEYPAD = lv_event_register_id();
     EVENT_HKEY = lv_event_register_id();
-    EVENT_RADIO_TX = lv_event_register_id();
-    EVENT_RADIO_RX = lv_event_register_id();
     EVENT_SCREEN_UPDATE = lv_event_register_id();
     EVENT_MSG_UPDATE = lv_event_register_id();
     EVENT_GPS = lv_event_register_id();

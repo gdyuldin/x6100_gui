@@ -230,11 +230,11 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     }
 }
 
-static void tx_cb(lv_event_t *e) {
+static void tx_cb(void * s, lv_msg_t * msg) {
     visor_height = VISOR_HEIGHT_TX;
 }
 
-static void rx_cb(lv_event_t *e) {
+static void rx_cb(void * s, lv_msg_t * msg) {
     visor_height = VISOR_HEIGHT_RX;
 }
 
@@ -253,8 +253,8 @@ lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
     obj = lv_obj_create(primary_parent);
 
     lv_obj_add_style(obj, &spectrum_style, 0);
-    lv_obj_add_event_cb(obj, tx_cb, EVENT_RADIO_TX, NULL);
-    lv_obj_add_event_cb(obj, rx_cb, EVENT_RADIO_RX, NULL);
+    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
+    lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
 
     overlay_obj = lv_obj_create(overlay_parent);
     lv_obj_remove_style_all(overlay_obj);

@@ -784,14 +784,30 @@ static void main_screen_hkey_cb(lv_event_t * e) {
     }
 }
 
-static void main_screen_radio_cb(lv_event_t * e) {
-    lv_event_code_t code = lv_event_get_code(e);
+static void rx_cb(void * s, lv_msg_t * msg) {
+    indicators_left_show(true);
+    // lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+}
 
-    lv_event_send(meter, code, NULL);
-    lv_event_send(tx_info, code, NULL);
-    lv_event_send(spectrum, code, NULL);
+static void tx_cb(void * s, lv_msg_t * msg) {
+    indicators_left_show(false);
+    // lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+}
 
-    dialog_send(code, NULL);
+static void low_power_cb(void * s, lv_msg_t * msg) {
+    bool is_low = (bool)(uintptr_t)lv_msg_get_user_data(msg);
+    if (is_low) {
+        if (!low_power_timer) {
+            low_power_timer = lv_timer_create(low_power_timer_cb, 30000, NULL);
+            lv_timer_set_repeat_count(low_power_timer, 1);
+            msg_schedule_long_text_fmt("Low battery! Turning off in 30s.");
+        }
+    } else {
+        if (low_power_timer) {
+            lv_timer_del(low_power_timer);
+            low_power_timer = NULL;
+        }
+    }
 }
 
 static void main_screen_update_cb(lv_event_t * e) {
@@ -1035,9 +1051,11 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     lv_obj_add_event_cb(obj, main_screen_rotary_cb, EVENT_ROTARY, NULL);
     lv_obj_add_event_cb(obj, main_screen_keypad_cb, EVENT_KEYPAD, NULL);
     lv_obj_add_event_cb(obj, main_screen_hkey_cb, EVENT_HKEY, NULL);
-    lv_obj_add_event_cb(obj, main_screen_radio_cb, EVENT_RADIO_TX, NULL);
-    lv_obj_add_event_cb(obj, main_screen_radio_cb, EVENT_RADIO_RX, NULL);
     lv_obj_add_event_cb(obj, main_screen_update_cb, EVENT_SCREEN_UPDATE, NULL);
+
+    lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
+    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
+    lv_msg_subscribe(MSG_LOW_POWER, low_power_cb, NULL);
 
     lv_obj_add_style(obj, &background_style, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
@@ -1109,30 +1127,6 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     subject_subscribe_delayed((Subject*)cfg_mode_zoom, update_zoom_on_if_shift_change, NULL);
 
     return obj;
-}
-
-void main_screen_notify_rx_tx(bool tx) {
-    if (tx) {
-        event_send(obj, EVENT_RADIO_TX, NULL);
-
-    } else {
-        event_send(obj, EVENT_RADIO_RX, NULL);
-    }
-}
-
-void main_screen_notify_low_power(bool is_low) {
-    if (is_low) {
-        if (!low_power_timer) {
-            low_power_timer = lv_timer_create(low_power_timer_cb, 30000, NULL);
-            lv_timer_set_repeat_count(low_power_timer, 1);
-            msg_schedule_long_text_fmt("Low battery! Turning off in 30s.");
-        }
-    } else {
-        if (low_power_timer) {
-            lv_timer_del(low_power_timer);
-            low_power_timer = NULL;
-        }
-    }
 }
 
 static void on_fg_freq_change(Subject *subj, void *user_data) {

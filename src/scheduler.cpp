@@ -11,9 +11,7 @@
 #include <queue>
 #include <mutex>
 
-extern "C" {
-    #include "lvgl/lvgl.h"
-}
+#include "lvgl/lvgl.h"
 
 #define QUEUE_MAX_SIZE  64
 
@@ -22,8 +20,15 @@ struct item_t {
     void    *arg;
 };
 
+struct msg_data_t {
+    uint32_t id;
+    void    *user_data;
+};
+
 static std::queue<item_t> queue;
 static std::mutex m_mutex;
+
+static void msg_send_trampoline(void *arg);
 
 void scheduler_put(scheduler_fn_t fn, void * arg, size_t arg_size) {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -45,6 +50,11 @@ void scheduler_put_noargs(scheduler_fn_t fn) {
     return scheduler_put(fn, NULL, 0);
 }
 
+void scheduler_msg_send(msg_t id, void *user_data) {
+    msg_data_t data = msg_data_t{.id=id, user_data=user_data};
+    scheduler_put(msg_send_trampoline, &data, sizeof(data));
+}
+
 void scheduler_work() {
     item_t item;
     while (!queue.empty()) {
@@ -58,4 +68,13 @@ void scheduler_work() {
             free(item.arg);
         }
     }
+}
+
+static void msg_send_trampoline(void *arg) {
+    if (!arg) {
+        LV_LOG_ERROR("No data for scheduled msg send");
+        return;
+    }
+    msg_data_t *data = static_cast<msg_data_t*>(arg);
+    lv_msg_send(data->id, data->user_data);
 }

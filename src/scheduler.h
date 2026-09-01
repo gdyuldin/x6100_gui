@@ -9,6 +9,7 @@
 #pragma once
 
 #include <stddef.h>
+#include "pubsub_ids.h"
 
 typedef void (* scheduler_fn_t)(void *);
 
@@ -26,6 +27,11 @@ void scheduler_put(scheduler_fn_t fn, void *arg, size_t arg_size);
  * Schedule execution function without arguments in main thread
  */
 void scheduler_put_noargs(scheduler_fn_t fn);
+
+/**
+ * Schedule sending lv_msg in main thread
+ */
+void scheduler_msg_send(enum msg_t id, void *user_data);
 
 /**
  * Execute scheduled functions

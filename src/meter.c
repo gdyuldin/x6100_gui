@@ -63,11 +63,11 @@ static void update_db_label_cb(lv_timer_t *t) {
     lv_label_set_text_fmt(db_val_label, "%.1f", meter_db_raw);
 }
 
-static void tx_cb(lv_event_t * e) {
+static void tx_cb(void * s, lv_msg_t * msg) {
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void rx_cb(lv_event_t * e) {
+static void rx_cb(void * s, lv_msg_t * msg) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -95,8 +95,8 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
     lv_coord_t w = lv_obj_get_content_width(obj);
     lv_coord_t h = lv_obj_get_content_height(obj);
 
-    lv_obj_add_event_cb(obj, tx_cb, EVENT_RADIO_TX, NULL);
-    lv_obj_add_event_cb(obj, rx_cb, EVENT_RADIO_RX, NULL);
+    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
+    lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
 
     bar = lv_bar_indicator_create(obj);
     lv_obj_set_size(bar, w, h);

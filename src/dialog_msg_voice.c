@@ -383,7 +383,7 @@ static bool textarea_window_edit_ok_cb() {
     return true;
 }
 
-static void tx_cb(lv_event_t * e) {
+static void tx_cb(void * s, lv_msg_t * msg) {
     if (beacon == VOICE_BEACON_IDLE) {
         pthread_cancel(thread);
         pthread_join(thread, NULL);
@@ -402,7 +402,7 @@ static void construct_cb(lv_obj_t *parent) {
     page_msg_voice_2.items[0]->next = &page_msg_voice_1;
     page_msg_voice_2.items[0]->prev = &page_msg_voice_1;
 
-    lv_obj_add_event_cb(dialog.obj, tx_cb, EVENT_RADIO_TX, NULL);
+    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
 
     table = lv_table_create(dialog.obj);
 

@@ -144,8 +144,6 @@ int main(void) {
 
     cw_init();
     rtty_init();
-    radio_set_rx_tx_notify_fn(&main_screen_notify_rx_tx);
-    radio_set_low_power_cb(&main_screen_notify_low_power);
     wifi_power_setup();
     backlight_init();
     cat_init();

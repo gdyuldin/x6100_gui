@@ -21,9 +21,6 @@
 
 lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr);
 
-void main_screen_notify_rx_tx(bool tx);
-void main_screen_notify_low_power(bool is_low);
-
 void main_screen_keys_enable(bool value);
 void main_screen_start_app(press_action_t page_app);
 void main_screen_action(press_action_t action);

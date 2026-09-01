@@ -9,7 +9,10 @@
 #pragma once
 
 // Messages IDs for UI part messaging (publishing/subscribing)
-enum {
+enum msg_t {
     MSG_WIFI_STATE_CHANGED,
     MSG_USB_DEVICE_CHANGED,
+    MSG_RADIO_RX,
+    MSG_RADIO_TX,
+    MSG_LOW_POWER,
 };

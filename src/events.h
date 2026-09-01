@@ -123,8 +123,6 @@ typedef enum {
 extern lv_event_code_t EVENT_ROTARY;
 extern lv_event_code_t EVENT_KEYPAD;
 extern lv_event_code_t EVENT_HKEY;
-extern lv_event_code_t EVENT_RADIO_TX;
-extern lv_event_code_t EVENT_RADIO_RX;
 extern lv_event_code_t EVENT_SCREEN_UPDATE;
 extern lv_event_code_t EVENT_MSG_UPDATE;
 extern lv_event_code_t EVENT_GPS;

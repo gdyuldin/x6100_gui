@@ -30,6 +30,7 @@
 #include "dialog_swrscan.h"
 #include "cw.h"
 #include "pubsub_ids.h"
+#include "scheduler.h"
 
 /*********************
  *      DEFINES
@@ -106,9 +107,6 @@ static void * radio_thread(void *arg);
  *  STATIC VARIABLES
  **********************/
 
-static radio_rx_tx_change_t notify_rx_tx;
-static void(*low_power_cb)(bool) = NULL;
-
 static pthread_mutex_t  control_mux;
 
 static x6100_flow_t    *pack;
@@ -120,6 +118,7 @@ static uint64_t         now_time;
 static uint64_t         prev_time;
 static uint64_t         idle_time;
 static bool             mute = false;
+static bool             low_power = false;
 
 static cfloat           samples_buf[RADIO_SAMPLES*2];
 
@@ -281,14 +280,6 @@ void radio_start() {
 
     pthread_create(&thread, NULL, radio_thread, NULL);
     pthread_detach(thread);
-}
-
-void radio_set_rx_tx_notify_fn(radio_rx_tx_change_t cb) {
-    notify_rx_tx = cb;
-}
-
-void radio_set_low_power_cb(void (*cb)(bool)) {
-    low_power_cb = cb;
 }
 
 radio_state_t radio_get_state() {
@@ -707,8 +698,10 @@ static bool radio_tick() {
         if (delay++ > 10) {
             delay = 0;
             clock_update_power(pack->vext * 0.1f, pack->vbat*0.1f, pack->batcap, pack->flag.charging);
-            if (low_power_cb) {
-                low_power_cb(!pack->flag.vext && (pack->vbat <= 60));
+
+            if (low_power != (!pack->flag.vext && (pack->vbat <= 60))) {
+                low_power = !low_power;
+                scheduler_msg_send(MSG_LOW_POWER, (void*)(uintptr_t)low_power);
             }
         }
         flow_info_t flow_info = pack->flow_info;
@@ -771,18 +764,14 @@ static bool radio_tick() {
             case RADIO_RX:
                 if (pack->flag.tx) {
                     state = RADIO_TX;
-                    if (notify_rx_tx) {
-                        notify_rx_tx(true);
-                    }
+                    scheduler_msg_send(MSG_RADIO_TX, NULL);
                 }
                 break;
 
             case RADIO_TX:
                 if (!pack->flag.tx) {
                     state = RADIO_RX;
-                    if (notify_rx_tx) {
-                        notify_rx_tx(false);
-                    }
+                    scheduler_msg_send(MSG_RADIO_RX, NULL);
                 } else {
                     // printf("%d, %d\n", pack->tx_power, pack->alc_level);
                     tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
@@ -796,9 +785,7 @@ static bool radio_tick() {
 
             case RADIO_ATU_WAIT:
                 if (pack->flag.tx) {
-                    if (notify_rx_tx) {
-                        notify_rx_tx(true);
-                    }
+                    scheduler_msg_send(MSG_RADIO_TX, NULL);
                     state = RADIO_ATU_RUN;
                 }
                 break;
@@ -809,9 +796,7 @@ static bool radio_tick() {
                     WITH_RADIO_LOCK(x6100_control_atu_tune(false));
                     param_i_set(cfg_atu_enabled, true);
                     recover_processing_audio_inputs();
-                    if (notify_rx_tx) {
-                        notify_rx_tx(false);
-                    }
+                    scheduler_msg_send(MSG_RADIO_RX, NULL);
 
                     // TODO: change with observer on atu->loaded change
                     WITH_RADIO_LOCK(x6100_control_cmd(x6100_atu_network, pack->atu_params));

@@ -250,7 +250,7 @@ static bool textarea_window_edit_ok_cb() {
     return true;
 }
 
-static void tx_cb(lv_event_t * e) {
+static void tx_cb(void * s, lv_msg_t * msg) {
     if (play_state) {
         play_state = false;
 
@@ -265,7 +265,7 @@ static void construct_cb(lv_obj_t *parent) {
     buttons_unload_page();
     buttons_load_page(&btn_page);
 
-    lv_obj_add_event_cb(dialog.obj, tx_cb, EVENT_RADIO_TX, NULL);
+    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
 
     table = lv_table_create(dialog.obj);
 

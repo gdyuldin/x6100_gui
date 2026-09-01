@@ -67,7 +67,7 @@ static bar_tick_t vswr_ticks[] = {
 
 static void on_cur_mode_change(Subject *subj, void *user_data);
 
-static void tx_cb(lv_event_t *e) {
+static void tx_cb(void * s, lv_msg_t * msg) {
     pwr  = 0.0f;
     vswr = 0.0f;
     alc  = 0.0f;
@@ -75,7 +75,7 @@ static void tx_cb(lv_event_t *e) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void rx_cb(lv_event_t *e) {
+static void rx_cb(void * s, lv_msg_t * msg) {
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -127,8 +127,8 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     lv_coord_t pad = lv_obj_get_style_pad_top(obj, 0);
 
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(obj, tx_cb, EVENT_RADIO_TX, NULL);
-    lv_obj_add_event_cb(obj, rx_cb, EVENT_RADIO_RX, NULL);
+    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
+    lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
 
     grad.dir         = LV_GRAD_DIR_VER;
     grad.stops_count = 4;

@@ -24,6 +24,7 @@
 #include "msg.h"
 #include "buttons.h"
 #include "main_screen.h"
+#include "pubsub_ids.h"
 
 static uint32_t         *ids = NULL;
 
@@ -140,7 +141,7 @@ static void reset() {
     lv_table_set_row_cnt(table, 1);
 }
 
-static void tx_cb(lv_event_t * e) {
+static void tx_cb(void * s, lv_msg_t * msg) {
     if (cw_encoder_state() == CW_ENCODER_BEACON_IDLE) {
         cw_encoder_stop();
         buttons_unload_page();
@@ -156,7 +157,7 @@ static void construct_cb(lv_obj_t *parent) {
     buttons_page_msg_cw_2.items[0]->next = &buttons_page_msg_cw_1;
     buttons_page_msg_cw_2.items[0]->prev = &buttons_page_msg_cw_1;
 
-    lv_obj_add_event_cb(dialog.obj, tx_cb, EVENT_RADIO_TX, NULL);
+    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
 
     table = lv_table_create(dialog.obj);
 
