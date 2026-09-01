@@ -43,6 +43,9 @@ extern "C" {
 
 #define FULL_BW_HZ 100000
 
+// Forward declaration
+class ChunkedSpgram;
+
 static iirfilt_cccf dc_block;
 
 static pthread_mutex_t spectrum_mux = PTHREAD_MUTEX_INITIALIZER;
@@ -105,163 +108,175 @@ static void update_cur_mode(Subject *subj, void *user_data);
 static void on_cur_freq_change(Subject *subj, void *user_data);
 
 
-std::map<int32_t, cfloat*> ChunkedSpgram::w_cache;
+class ChunkedSpgram {
 
-ChunkedSpgram::ChunkedSpgram(size_t nfft) {
-    this->nfft = nfft;
-    this->buf_time = (cfloat *) calloc(sizeof(cfloat), nfft);
-    this->buf_freq = (cfloat *) calloc(sizeof(cfloat), nfft);
-    this->psd = (float *) calloc(sizeof(float), nfft);
-    this->fft = fft_create_plan(nfft, buf_time, buf_freq, LIQUID_FFT_FORWARD, 0);
-}
+    static inline std::map<int32_t, cfloat *> w_cache;
 
-ChunkedSpgram::~ChunkedSpgram() {
-    free(this->buf_time);
-    free(this->buf_freq);
-    free(this->psd);
+    size_t   nfft_;
+    size_t   chunk_size_  = 0;
+    size_t   window_size_ = 0;
+    size_t   buffer_size_ = 0;
+    windowcf buffer_      = NULL;
+    fftplan  fft_;
+    cfloat  *buf_time_;
+    cfloat  *buf_freq_;
+    cfloat  *w_ = NULL;
+    float   *psd_;
+    bool     accumulate_     = true;
+    float    alpha_          = 1.0f;
+    float    gamma_          = 1.0f;
+    size_t   num_transforms_ = 0;
 
-    if (buffer) {
-        windowcf_destroy(buffer);
-    }
-    fft_destroy_plan(fft);
-}
-
-void ChunkedSpgram::setup_buffer() {
-    if (buffer) {
-        windowcf_destroy(buffer);
-    }
-    buffer = windowcf_create(this->buffer_size);
-
-}
-
-void ChunkedSpgram::setup_window() {
-    w = get_cached_window(window_size);
-}
-
-cfloat *ChunkedSpgram::get_cached_window(size_t window_size) {
-    if (auto search = w_cache.find(window_size); search != w_cache.end()) {
-        return search->second;
-    } else {
-        cfloat *window = (cfloat *) calloc(sizeof(cfloat), window_size);
-        size_t i;
-        for (i = 0; i < window_size; i++) {
-            window[i] = liquid_kaiser(i, window_size, 10.0f);
-            // window[i] = liquid_hann(i, window_size);
+    void setup_buffer() {
+        if (buffer_) {
+            windowcf_destroy(buffer_);
         }
-        // scale by window magnitude
-        float g = 0.0f;
-        for (i=0; i<window_size; i++)
-            g += std::norm(window[i]);
-        g = 1.0f / sqrtf(g * nfft / window_size);
-        // printf("nfft: %d, window_size: %d, buffer_size: %d, scale: %f\n", nfft, window_size, buffer_size, g);
+        buffer_ = windowcf_create(buffer_size_);
+    };
 
-        // scale window and copy
-        for (i=0; i<window_size; i++)
-            window[i] *= g;
-        w_cache[window_size] = window;
-        return window;
-    }
-}
+    void setup_window() { w_ = get_cached_window(window_size_); };
 
-void ChunkedSpgram::set_alpha(float val) {
-    // validate input
-    if (val != -1 && (val < 0.0f || val > 1.0f)) {
-        printf("set_alpha(), alpha must be in {-1,[0,1]}");
-        return;
-    }
+    cfloat *get_cached_window(size_t window_size) {
+        if (auto search = w_cache.find(window_size); search != w_cache.end()) {
+            return search->second;
+        } else {
+            cfloat *window = (cfloat *)calloc(sizeof(cfloat), window_size);
+            size_t  i;
+            for (i = 0; i < window_size; i++) {
+                window[i] = liquid_kaiser(i, window_size, 10.0f);
+                // window[i] = liquid_hann(i, window_size);
+            }
+            // scale by window magnitude
+            float g = 0.0f;
+            for (i = 0; i < window_size; i++)
+                g += std::norm(window[i]);
+            g = 1.0f / sqrtf(g * nfft_ / window_size);
 
-    // set accumulation flag appropriately
-    accumulate = (val == -1.0f) ? true : false;
+            // scale window and copy
+            for (i = 0; i < window_size; i++)
+                window[i] *= g;
+            w_cache[window_size] = window;
+            return window;
+        }
+    };
 
-    if (accumulate) {
-        this->alpha = 1.0f;
-        this->gamma = 1.0f;
-    } else {
-        this->alpha = val;
-        this->gamma = 1.0f - val;
-    }
-}
+  public:
+    ChunkedSpgram(size_t nfft) : nfft_(nfft) {
+        buf_time_ = (cfloat *)calloc(sizeof(cfloat), nfft);
+        buf_freq_ = (cfloat *)calloc(sizeof(cfloat), nfft);
+        psd_      = (float *)calloc(sizeof(float), nfft);
+        fft_      = fft_create_plan(nfft, buf_time_, buf_freq_, LIQUID_FFT_FORWARD, 0);
+    };
 
-void ChunkedSpgram::clear() {
-    num_transforms = 0;
-    for (size_t i = 0; i < nfft; i++) {
-        psd[i] = 0.0f;
-        buf_time[i] = 0.0f;
-    }
-}
+    ~ChunkedSpgram() {
+        free(buf_time_);
+        free(buf_freq_);
+        free(psd_);
 
-void ChunkedSpgram::reset() {
-    clear();
-    if (buffer) {
-        windowcf_reset(buffer);
-    }
-}
+        if (buffer_) {
+            windowcf_destroy(buffer_);
+        }
+        fft_destroy_plan(fft_);
+    };
 
-bool ChunkedSpgram::ready() {
-    return num_transforms > 0;
-}
+    void set_alpha(float val) {
+        // validate input
+        if (val != -1 && (val < 0.0f || val > 1.0f)) {
+            printf("set_alpha(), alpha must be in {-1,[0,1]}");
+            return;
+        }
 
-void ChunkedSpgram::execute_block(cfloat *chunk, size_t n_samples) {
-    if (n_samples != chunk_size) {
-        chunk_size = n_samples;
-        window_size = LV_MIN(nfft, chunk_size);
-        buffer_size = nfft - nfft % window_size;
-        setup_window();
-        setup_buffer();
+        // set accumulation flag appropriately
+        accumulate_ = (val == -1.0f) ? true : false;
+
+        if (accumulate_) {
+            alpha_ = 1.0f;
+            gamma_ = 1.0f;
+        } else {
+            alpha_ = val;
+            gamma_ = 1.0f - val;
+        }
+    };
+
+    void clear() {
+        num_transforms_ = 0;
+        for (size_t i = 0; i < nfft_; i++) {
+            psd_[i]      = 0.0f;
+            buf_time_[i] = 0.0f;
+        }
+    };
+
+    void reset() {
         clear();
-    }
+        if (buffer_) {
+            windowcf_reset(buffer_);
+        }
+    };
 
-    cfloat val;
-    for (size_t i=0; i<window_size; i++) {
-        val = chunk[i] * w[i];
-        windowcf_push(buffer, val);
-    }
+    bool ready() { return num_transforms_ > 0; };
 
-    cfloat *rc;
-    if (windowcf_read(buffer, &rc) != LIQUID_OK) {
-        return;
-    }
-    memcpy(buf_time, rc, sizeof(cfloat) * buffer_size);
-    fft_execute(fft);
+    void execute_block(cfloat *chunk, size_t n_samples, float *last_mag=nullptr) {
+        if (n_samples != chunk_size_) {
+            chunk_size_  = n_samples;
+            window_size_ = LV_MIN(nfft_, chunk_size_);
+            buffer_size_ = nfft_ - nfft_ % window_size_;
+            setup_window();
+            setup_buffer();
+            clear();
+        }
 
-    // accumulate output
-    // TODO: vectorize this operation
-    for (size_t i=0; i<nfft; i++) {
-        float v = std::norm(buf_freq[i]);
-        if (num_transforms == 0)
-            psd[i] = v;
-        else
-            psd[i] = gamma*psd[i] + alpha*v;
-    }
-    num_transforms++;
-}
+        cfloat val;
+        for (size_t i = 0; i < window_size_; i++) {
+            val = chunk[i] * w_[i];
+            windowcf_push(buffer_, val);
+        }
 
-void ChunkedSpgram::get_psd_mag(float *psd) {
-    // compute magnitude (linear) and run FFT shift
-    unsigned int i;
-    unsigned int nfft_2 = nfft / 2;
-    float scale = accumulate ? 1.0f / LV_MAX((size_t)1, num_transforms) : 1.0f;
-    for (i=0; i<nfft; i++) {
-        unsigned int k = (i + nfft_2) % nfft;
-        psd[i] = LV_MAX((float)LIQUID_SPGRAM_PSD_MIN, this->psd[k]) * scale;
-    }
-    if (accumulate) {
-        clear();
-    }
-}
+        cfloat *rc;
+        if (windowcf_read(buffer_, &rc) != LIQUID_OK) {
+            return;
+        }
+        memcpy(buf_time_, rc, sizeof(cfloat) * buffer_size_);
+        fft_execute(fft_);
 
-void ChunkedSpgram::get_psd(float *psd, bool linear) {
-    // compute magnitude, linear
-    get_psd_mag(psd);
-    if (!linear) {
+        // accumulate output
+        // TODO: vectorize this operation
+        for (size_t i = 0; i < nfft_; i++) {
+            float v = std::norm(buf_freq_[i]);
+            if (last_mag) {
+                last_mag[i] = v;
+            }
+            if (num_transforms_ == 0)
+                psd_[i] = v;
+            else
+                psd_[i] = gamma_ * psd_[i] + alpha_ * v;
+        }
+        num_transforms_++;
+    };
+
+    void get_psd_mag(float *psd) {
+        // compute magnitude (linear) and run FFT shift
+        uint32_t nfft_2 = nfft_ / 2;
+        float    scale  = accumulate_ ? 1.0f / LV_MAX(1, num_transforms_) : 1.0f;
+        for (size_t i = 0; i < nfft_; i++) {
+            uint32_t k = (i + nfft_2) % nfft_;
+            psd[i]     = LV_MAX(LIQUID_SPGRAM_PSD_MIN, psd_[k]) * scale;
+        }
+        if (accumulate_) {
+            clear();
+        }
+    };
+
+    void get_psd(float *psd) {
+        // compute magnitude, linear
+        get_psd_mag(psd);
+
         // convert to dB
-        unsigned int i;
-        for (i=0; i<nfft; i++) {
+        for (size_t i = 0; i < nfft_; i++) {
             // 10.0 because psd is squared magnitude (power)
             psd[i] = 10.0f * log10f(psd[i]);
         }
-    }
-}
+    };
+};
 
 /* * */
 
@@ -409,7 +424,7 @@ static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_
  */
 static bool update_waterfall_psd(ChunkedSpgram *wf_sg, uint64_t now) {
     if ((now - waterfall_time > waterfall_fps_ms) && (!psd_delay) & wf_sg->ready()) {
-        wf_sg->get_psd(waterfall_psd_lin, true);
+        wf_sg->get_psd_mag(waterfall_psd_lin);
         for (size_t i = 0; i < WATERFALL_NFFT; i++) {
             waterfall_psd[i] = 10.0f * log10f(waterfall_psd_lin[i]);
         }
@@ -657,8 +672,6 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
             audio_samples_fn(nsamples_dec, audio);
         }
     }
-
-
 }
 
 static void dsp_update_min_max(float *psd_lin, uint16_t size) {
@@ -682,20 +695,16 @@ static void dsp_update_min_max(float *psd_lin, uint16_t size) {
 
     float power_sum[stop - start - window_size];
 
-    // Sum with window
-    for (size_t i = 0; i < stop - start - window_size; i++) {
-        power_sum[i] = 0.0f;
-        for (size_t j = 0; j < window_size; j++) {
-            power_sum[i] += psd_lin[i + j + start];
-        }
-    }
+    float running = 0.0f;
+    for (size_t j = 0; j < window_size; j++)
+        running += psd_lin[start + j];
+    power_sum[0] = running;
+    float min = running;
 
-    // Search minimum
-    float min = MAXFLOAT;
-    for (size_t i = 0; i < stop - start - window_size; i++) {
-        if (min > power_sum[i]) {
-            min = power_sum[i];
-        }
+    for (size_t i = 1; i < stop - start - window_size; i++) {
+        running += psd_lin[start + i + window_size - 1] - psd_lin[start + i - 1];
+        power_sum[i] = running;
+        if (running < min) min = running;
     }
 
     // Get Minimum Statistics offset for the noise level
