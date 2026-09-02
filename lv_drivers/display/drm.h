@@ -53,6 +53,8 @@ void drm_exit(void);
 bool drm_primary_begin_direct(drm_direct_ctx_t *ctx, uint32_t pixels_needed);
 void drm_primary_end_direct(const lv_area_t *area);
 
+void drm_take_screenshot(uint8_t *buf);
+
 
 /**********************
  *      MACROS

@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <arm_neon.h>
 
 #include <drm_fourcc.h>
 #include <xf86drm.h>
@@ -941,6 +942,65 @@ void drm_primary_end_direct(const lv_area_t *area) {
     }
     q->rects[q->rects_cnt++] = *area;
     q->buf_size += area_size;
+}
+
+static void neon_blend_argb8888(uint32_t *restrict dst, const uint32_t *restrict bottom, const uint32_t *restrict top, size_t num_pixels) {
+    size_t i = 0;
+
+    for (; i + 7 < num_pixels; i += 8) {
+        uint8x8x4_t top_channels = vld4_u8((const uint8_t*)&top[i]);
+        uint8x8x4_t bottom_channels = vld4_u8((const uint8_t*)&bottom[i]);
+
+        uint8x8_t alpha = top_channels.val[3];
+        uint8x8_t inv_alpha = vsub_u8(vdup_n_u8(255), alpha);
+        uint16x8_t round_const = vdupq_n_u16(128);
+
+        uint16x8_t r_blend = vmlal_u8(round_const, top_channels.val[2], alpha);
+        r_blend = vmlal_u8(r_blend, bottom_channels.val[2], inv_alpha);
+        uint8x8_t r_res = vshrn_n_u16(r_blend, 8);
+
+        uint16x8_t g_blend = vmlal_u8(round_const, top_channels.val[1], alpha);
+        g_blend = vmlal_u8(g_blend, bottom_channels.val[1], inv_alpha);
+        uint8x8_t g_res = vshrn_n_u16(g_blend, 8);
+
+        uint16x8_t b_blend = vmlal_u8(round_const, top_channels.val[0], alpha);
+        b_blend = vmlal_u8(b_blend, bottom_channels.val[0], inv_alpha);
+        uint8x8_t b_res = vshrn_n_u16(b_blend, 8);
+
+        uint8x8x4_t res_channels;
+        res_channels.val[0] = b_res;
+        res_channels.val[1] = g_res;
+        res_channels.val[2] = r_res;
+        res_channels.val[3] = vdup_n_u8(255);
+
+        vst4_u8((uint8_t*)&dst[i], res_channels);
+    }
+
+    for (; i < num_pixels; ++i) {
+        uint32_t top_px = top[i];
+        uint8_t alpha = (top_px >> 24) & 0xFF;
+
+        if (alpha == 255) {
+            dst[i] = top_px | 0xFF000000;
+        } else if (alpha > 0) {
+            uint32_t bottom_px = bottom[i];
+            uint8_t inv_alpha = 255 - alpha;
+
+            uint8_t r = (((top_px >> 16) & 0xFF) * alpha + ((bottom_px >> 16) & 0xFF) * inv_alpha + 128) >> 8;
+            uint8_t g = (((top_px >>  8) & 0xFF) * alpha + ((bottom_px >>  8) & 0xFF) * inv_alpha + 128) >> 8;
+            uint8_t b = (((top_px      ) & 0xFF) * alpha + ((bottom_px      ) & 0xFF) * inv_alpha + 128) >> 8;
+
+            dst[i] = (255 << 24) | (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
+void drm_take_screenshot(uint8_t *buf) {
+    neon_blend_argb8888(
+        (uint32_t *)buf,
+        drm_dev.primary_cur_bufs[0]->map,
+        drm_dev.overlay_cur_bufs[0]->map,
+        drm_dev.width * drm_dev.height);
 }
 
 void drm_get_sizes(lv_coord_t *width, lv_coord_t *height, uint32_t *dpi) {
