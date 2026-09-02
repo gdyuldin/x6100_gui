@@ -48,6 +48,9 @@ typedef struct {
 
 void wifi_power_setup();
 
+// Cleanup on app exit
+void wifi_cleanup();
+
 /**
  * Turn WiFi/BT chip on
  */
@@ -57,9 +60,6 @@ void wifi_power_on();
  * Turn WiFi/BT chip off
  */
 void wifi_power_off();
-
-// void wifi_set_change_ap_callbacks(wifi_ap_change_cb add_cb, wifi_ap_change_cb del_cb);
-// void wifi_clear_change_ap_callbacks();
 
 wifi_ap_arr_t wifi_get_available_access_points();
 

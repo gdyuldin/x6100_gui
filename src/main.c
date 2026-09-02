@@ -6,15 +6,18 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
-#include "lvgl/lvgl.h"
-#include "lv_drivers/display/fbdev.h"
-#include "lv_drivers/display/drm.h"
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
 #include <sys/time.h>
+#include "lvgl/lvgl.h"
+#include "lv_drivers/display/fbdev.h"
+#include "lv_drivers/display/drm.h"
 
+#include "globals.h"
+#include "cfg/settings_manager_api.h"
 #include "cfg/subject_api.h"
+#include "cfg/db.h"
 
 #include "main.h"
 #include "main_screen.h"
@@ -46,13 +49,26 @@ rotary_t  *vol;
 encoder_t *mfk;
 lv_obj_t  *overlay_scr;
 lv_obj_t  *primary_scr;
+volatile sig_atomic_t app_is_running = 1;
 
 static lv_disp_drv_t        disp_drv_primary;
 static lv_disp_drv_t        disp_drv_overlay;
 
 void * tick_thread (void *args);
 
+static void handle_sigint(int signum) {
+    app_is_running = 0;
+}
+
+
 int main(void) {
+
+    // Register signal handler
+    struct sigaction sa;
+    sa.sa_handler = handle_sigint;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
 
     bool drm = true;
     lv_init();
@@ -108,9 +124,6 @@ int main(void) {
         overlay_scr = primary_scr;
     }
 
-    // lv_disp_set_bg_color(lv_disp_get_default(), lv_color_black());
-    // lv_disp_set_bg_opa(lv_disp_get_default(), LV_OPA_COVER);
-
     keyboard_init();
 
     keypad_init("/dev/input/event0");
@@ -165,7 +178,7 @@ int main(void) {
 #endif
 
     int64_t next_loop_time, sleep_time, loop_start_time;
-    while (1) {
+    while (app_is_running) {
         loop_start_time = get_time();
         observer_delayed_drain();
         event_obj_check();
@@ -179,6 +192,11 @@ int main(void) {
             usleep(sleep_time * 1000);
         }
     }
+
+    // Cleanup
+    wifi_cleanup();
+    cfg_api_flush_all();
+    cfg_db_shutdown();
     return 0;
 }
 
