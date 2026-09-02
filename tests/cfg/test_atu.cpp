@@ -1,4 +1,4 @@
-// test_atu_cache.cpp
+// test_atu.cpp
 // Tests for the ATU migration to cfg: AtuTable (raw DB access on the
 // legacy `atu` table) and AtuNetworkCache (reactive nearest-network cache).
 // Runs against an in-memory SQLite connection with the same atu schema as
@@ -10,7 +10,7 @@
 
 #include <vector>
 
-#include "atu_cache.h"
+#include "atu.h"
 #include "db.h"
 
 namespace {
@@ -116,24 +116,24 @@ TEST_CASE("AtuNetworkCache finds the nearest network within the save step", "[at
     REQUIRE(AtuTable::Save(1, 20000, 22) == SUCCESS);
     REQUIRE(AtuTable::Save(1, 35000, 33) == SUCCESS);
 
-    AtuNetworkCache cache;
+    AtuNetworkCache atu;
 
-    cache.on_params_changed(1, 15000, true);
-    REQUIRE(cache.loaded.get() == true);
-    REQUIRE(cache.network.get() == 11);
+    atu.on_params_changed(1, 15000, true);
+    REQUIRE(atu.loaded.get() == true);
+    REQUIRE(atu.network.get() == 11);
 
-    cache.on_params_changed(1, 18000, true);
-    REQUIRE(cache.loaded.get() == true);
-    REQUIRE(cache.network.get() == 22);
+    atu.on_params_changed(1, 18000, true);
+    REQUIRE(atu.loaded.get() == true);
+    REQUIRE(atu.network.get() == 22);
 
-    cache.on_params_changed(1, 40000, true);
-    REQUIRE(cache.loaded.get() == true);
-    REQUIRE(cache.network.get() == 33);
+    atu.on_params_changed(1, 40000, true);
+    REQUIRE(atu.loaded.get() == true);
+    REQUIRE(atu.network.get() == 33);
 
     // 70000 is more than 25 kHz from the nearest entry (35000).
-    cache.on_params_changed(1, 70000, true);
-    REQUIRE(cache.loaded.get() == false);
-    REQUIRE(cache.network.get() == 0);
+    atu.on_params_changed(1, 70000, true);
+    REQUIRE(atu.loaded.get() == false);
+    REQUIRE(atu.network.get() == 0);
 }
 
 TEST_CASE("AtuNetworkCache with atu_enabled false clears subjects", "[atu]") {
@@ -141,16 +141,16 @@ TEST_CASE("AtuNetworkCache with atu_enabled false clears subjects", "[atu]") {
 
     REQUIRE(AtuTable::Save(1, 10000, 11) == SUCCESS);
 
-    AtuNetworkCache cache;
-    cache.on_params_changed(1, 10000, true);
-    REQUIRE(cache.loaded.get() == true);
-    REQUIRE(cache.network.get() == 11);
+    AtuNetworkCache atu;
+    atu.on_params_changed(1, 10000, true);
+    REQUIRE(atu.loaded.get() == true);
+    REQUIRE(atu.network.get() == 11);
 
     // Toggle off: the legacy code returned early and kept the last values;
     // the new cache intentionally clears them.
-    cache.on_params_changed(1, 10000, false);
-    REQUIRE(cache.loaded.get() == false);
-    REQUIRE(cache.network.get() == 0);
+    atu.on_params_changed(1, 10000, false);
+    REQUIRE(atu.loaded.get() == false);
+    REQUIRE(atu.network.get() == 0);
 }
 
 TEST_CASE("AtuNetworkCache save_network persists, prunes adjacent and publishes", "[atu]") {
@@ -159,11 +159,11 @@ TEST_CASE("AtuNetworkCache save_network persists, prunes adjacent and publishes"
     // Pre-existing adjacent entry that must be pruned by save_network.
     REQUIRE(AtuTable::Save(1, 10000, 5) == SUCCESS);
 
-    AtuNetworkCache cache;
-    REQUIRE(cache.save_network(1, 20000, 77) == SUCCESS);
+    AtuNetworkCache atu;
+    REQUIRE(atu.save_network(1, 20000, 77) == SUCCESS);
 
-    REQUIRE(cache.loaded.get() == true);
-    REQUIRE(cache.network.get() == 77);
+    REQUIRE(atu.loaded.get() == true);
+    REQUIRE(atu.network.get() == 77);
 
     std::vector<AtuTable::AtuEntry> out;
     REQUIRE(AtuTable::LoadAll(1, out) == SUCCESS);
@@ -177,12 +177,12 @@ TEST_CASE("AtuNetworkCache antenna isolation keeps caches separate", "[atu]") {
 
     REQUIRE(AtuTable::Save(1, 10000, 11) == SUCCESS);
 
-    AtuNetworkCache cache;
-    cache.on_params_changed(1, 12000, true);
-    REQUIRE(cache.loaded.get() == true);
+    AtuNetworkCache atu;
+    atu.on_params_changed(1, 12000, true);
+    REQUIRE(atu.loaded.get() == true);
 
-    // Switch to antenna 2, whose cache is empty.
-    cache.on_params_changed(2, 12000, true);
-    REQUIRE(cache.loaded.get() == false);
-    REQUIRE(cache.network.get() == 0);
+    // Switch to antenna 2, whose atu is empty.
+    atu.on_params_changed(2, 12000, true);
+    REQUIRE(atu.loaded.get() == false);
+    REQUIRE(atu.network.get() == 0);
 }

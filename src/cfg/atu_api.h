@@ -1,7 +1,7 @@
 #pragma once
 
 // C-compatible API for the ATU tuner-network cache (AtuNetworkCache in
-// atu_cache.h). The cache lives here as a C++ static, exposed to C code as
+// atu.h). The cache lives here as a C++ static, exposed to C code as
 // subscribe/read helpers; saving a freshly-tuned network wakes the cache.
 
 #include <stdbool.h>
@@ -13,7 +13,7 @@
 // Internal (C++ only): wires the cache's public subjects to the parameter
 // sources (p_ant_id, cp_fg_freq, p_atu_enabled) and does the initial load.
 // Called once from cfg_api_init(). Not part of the C API surface.
-void atu_cache_wire_subscriptions(void);
+void atu_wire_subscriptions(void);
 #endif
 
 #ifdef __cplusplus

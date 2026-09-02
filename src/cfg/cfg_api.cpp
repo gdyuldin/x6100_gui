@@ -1,6 +1,6 @@
 #include "cfg_api.h"
 
-#include "atu_cache_api.h"
+#include "atu_api.h"
 #include "settings_manager.h"
 
 // The opaque C handles are the concrete Parameter<T> / ComputedParameter<T>
@@ -242,5 +242,5 @@ void cfg_api_init(void (*on_db_error)(const char *)) {
     cfg_mode_lo_offset   = &cfg_sm.cp_mode_lo_offset;
 
     // Wire the ATU cache to the parameter sources and do the initial load.
-    atu_cache_wire_subscriptions();
+    atu_wire_subscriptions();
 }

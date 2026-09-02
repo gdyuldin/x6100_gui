@@ -9,7 +9,7 @@
 //   - subject_api.h            generic Subject/SubjectT/Observer helpers
 //   - parameter_api.h          Parameter<T> typed get/set
 //   - computed_api.h           ComputedParameter<T> set/get
-//   - atu_cache_api.h          ATU tuner-network cache
+//   - atu_api.h                ATU tuner-network cache
 //   - settings_manager_api.h   init, flush, band/VFO switching, freq helpers
 //
 // All accessors route through Parameter<T>::set / SubjectT<T>::get, so
@@ -25,7 +25,7 @@
 #include "computed_api.h"
 #include "subject_api.h"
 #include "parameter_api.h"
-#include "atu_cache_api.h"
+#include "atu_api.h"
 #include "settings_manager_api.h"
 
 #ifdef __cplusplus

@@ -53,3 +53,7 @@ class AtuNetworkCache {
     int  find_nearest(int32_t freq) const;         // returns index into cache_ or -1
     void publish(const AtuTable::AtuEntry *entry); // sets loaded/network
 };
+
+// The ATU network cache singleton, owned by C++ for the whole program; wired to
+// p_ant_id / cp_fg_freq / p_atu_enabled in atu_wire_subscriptions.
+extern AtuNetworkCache atu_network;

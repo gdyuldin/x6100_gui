@@ -1,8 +1,10 @@
-#include "atu_cache.h"
+#include "atu.h"
 
 #include <cstdlib>
 
 #include "../lvgl/lvgl.h"
+
+AtuNetworkCache atu_network;
 
 AtuNetworkCache::AtuNetworkCache() = default;
 
