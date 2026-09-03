@@ -52,6 +52,7 @@
 #include "cfg/cfg_api.h"
 #include "cfg/memory.h"
 #include "knobs.h"
+#include "lock_manager.h"
 
 #include <unistd.h>
 #include <stdint.h>
@@ -61,10 +62,6 @@
 static uint16_t     spectrum_height = (480 / 3);
 static uint16_t     freq_height = 36;
 static lv_obj_t     *obj;
-static SubjectInt   *freq_lock;
-static bool         mode_lock = false;
-static bool         ab_lock = false;
-static bool         band_lock = false;
 
 static lv_obj_t     *spectrum;
 static lv_obj_t     *freq[3];
@@ -86,7 +83,9 @@ static void toggle_atu_enabled();
 // Observers functions
 
 static void on_fg_freq_change(Subject *subj, void *user_data);
+static void on_fg_freq_change_lv_cb(void *s, lv_msg_t *m);
 static void update_freq_boundaries(Subject *subj, void *user_data);
+static void update_freq_boundaries_lv_cb(void *s, lv_msg_t *m);
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data);
 
 
@@ -399,7 +398,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
         case KEYPAD_BAND_UP:
             if (keypad->state == KEYPAD_RELEASE) {
-                if (!band_lock) {
+                if (!lm_get_band()) {
                     cfg_band_load_next(true);
                 }
                 dialog_send(EVENT_BAND_UP, NULL);
@@ -408,7 +407,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
         case KEYPAD_BAND_DOWN:
             if (keypad->state == KEYPAD_RELEASE) {
-                if (!band_lock) {
+                if (!lm_get_band()) {
                     cfg_band_load_next(false);
                 }
                 dialog_send(EVENT_BAND_DOWN, NULL);
@@ -418,7 +417,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
         case KEYPAD_MODE_AM:
         case KEYPAD_MODE_CW:
         case KEYPAD_MODE_SSB:
-            if (!mode_lock) {
+            if (!lm_get_mode()) {
                 change_mode(keypad->key, keypad->state);
             }
             break;
@@ -610,7 +609,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
             break;
 
         case KEYPAD_AB:
-            if (!ab_lock) {
+            if (!lm_get_ab()) {
                 if (keypad->state == KEYPAD_RELEASE) {
                     radio_toggle_vfo();
 
@@ -641,8 +640,8 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
         case KEYPAD_LOCK:
             if (keypad->state == KEYPAD_RELEASE) {
-                subject_i_set(freq_lock, !subject_i_get(freq_lock));
-                voice_say_text_fmt("Frequency %s", subject_i_get(freq_lock) ? "locked" : "unlocked");
+                lm_toggle_freq();
+                voice_say_text_fmt("Frequency %s", lm_get_freq() ? "locked" : "unlocked");
             } else if (keypad->state == KEYPAD_LONG) {
                 radio_bb_reset();
                 exit(1);
@@ -714,8 +713,8 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_SPCH:
             if (hkey->state == HKEY_RELEASE) {
-                subject_i_set(freq_lock, !subject_i_get(freq_lock));
-                voice_say_text_fmt("Frequency %s", subject_i_get(freq_lock) ? "locked" : "unlocked");
+                lm_toggle_freq();
+                voice_say_text_fmt("Frequency %s", lm_get_freq() ? "locked" : "unlocked");
             }
             break;
 
@@ -738,11 +737,11 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_UP:
             if (hkey->state == HKEY_RELEASE) {
-                if (!subject_i_get(freq_lock)) {
+                if (!lm_get_freq()) {
                     freq_shift(+1, 0);
                 }
             } else if (hkey->state == HKEY_LONG) {
-                if (!band_lock) {
+                if (!lm_get_band()) {
                     cfg_band_load_next(true);
                 }
                 dialog_send(EVENT_BAND_UP, NULL);
@@ -751,11 +750,11 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_DOWN:
             if (hkey->state == HKEY_RELEASE) {
-                if (!subject_i_get(freq_lock)) {
+                if (!lm_get_freq()) {
                     freq_shift(-1, 0);
                 }
             } else if (hkey->state == HKEY_LONG) {
-                if (!band_lock) {
+                if (!lm_get_band()) {
                     cfg_band_load_next(false);
                 }
                 dialog_send(EVENT_BAND_DOWN, NULL);
@@ -838,7 +837,7 @@ static uint16_t freq_accel(uint16_t dt) {
 }
 
 static void freq_shift(int16_t diff, uint16_t dt) {
-    if (subject_i_get(freq_lock)) {
+    if (lm_get_freq()) {
         return;
     }
 
@@ -864,13 +863,13 @@ static void spectrum_key_cb(lv_event_t * e) {
 
     switch (key) {
         case '-':
-            if (!subject_i_get(freq_lock)) {
+            if (!lm_get_freq()) {
                 freq_shift(-1, 0);
             }
             break;
 
         case '=':
-            if (!subject_i_get(freq_lock)) {
+            if (!lm_get_freq()) {
                 freq_shift(+1, 0);
             }
             break;
@@ -957,18 +956,18 @@ static void spectrum_key_cb(lv_event_t * e) {
             break;
 
         case KEYBOARD_SCRL_LOCK:
-            subject_i_set(freq_lock, !subject_i_get(freq_lock));
+            lm_toggle_freq();
             break;
 
         case KEYBOARD_PGUP:
-            if (!band_lock) {
+            if (!lm_get_band()) {
                 cfg_band_load_next(true);
             }
             dialog_send(EVENT_BAND_UP, NULL);
             break;
 
         case KEYBOARD_PGDN:
-            if (!band_lock) {
+            if (!lm_get_band()) {
                 cfg_band_load_next(false);
             }
             dialog_send(EVENT_BAND_DOWN, NULL);
@@ -976,7 +975,7 @@ static void spectrum_key_cb(lv_event_t * e) {
 
         case HKEY_FINP:
         case 'f':
-            if (!subject_i_get(freq_lock)) {
+            if (!lm_get_freq()) {
                 voice_say_text_fmt("Enter frequency");
                 dialog_construct(dialog_freq, obj);
             }
@@ -1019,23 +1018,6 @@ void main_screen_keys_enable(bool value) {
     }
 }
 
-void main_screen_lock_freq(bool lock) {
-    subject_i_set(freq_lock, lock);
-}
-
-void main_screen_lock_band(bool lock) {
-    band_lock = lock;
-}
-
-void main_screen_lock_mode(bool lock) {
-    mode_lock = lock;
-    info_lock_mode(lock);
-}
-
-void main_screen_lock_ab(bool lock) {
-    ab_lock = lock;
-}
-
 void main_screen_set_freq(uint64_t freq) {
     cparam_i_set(cfg_fg_freq, freq);
     event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
@@ -1043,8 +1025,6 @@ void main_screen_set_freq(uint64_t freq) {
 
 lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     uint16_t y = 0;
-
-    freq_lock = subject_i_create(false);
 
     obj = overlay_scr;
 
@@ -1113,11 +1093,11 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
     msg_schedule_text_fmt("X6100 de R1CBU es Others " VERSION);
 
-    subject_subscribe_delayed((Subject*)freq_lock, on_fg_freq_change, NULL);
+    lv_msg_subscribe(MSG_LOCK_FREQ, on_fg_freq_change_lv_cb, NULL);
     subject_subscribe_delayed((Subject*)cfg_band_split, on_fg_freq_change, NULL);
     subject_subscribe_delayed((Subject*)cfg_fg_freq, on_fg_freq_change, NULL);
 
-    subject_subscribe_delayed((Subject*)freq_lock, update_freq_boundaries, NULL);
+    lv_msg_subscribe(MSG_LOCK_FREQ, update_freq_boundaries_lv_cb, NULL);
     subject_subscribe_delayed((Subject*)cfg_fg_freq, update_freq_boundaries, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg_mode_zoom, update_freq_boundaries, NULL);
 
@@ -1131,7 +1111,7 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
 static void on_fg_freq_change(Subject *subj, void *user_data) {
     int32_t    f;
-    uint32_t    color = subject_i_get(freq_lock) ? 0xBBBBBB : 0xFFFFFF;
+    uint32_t    color = lm_get_freq() ? 0xBBBBBB : 0xFFFFFF;
 
     bool split = param_i_get(cfg_band_split);
     int32_t fg = cparam_i_get(cfg_fg_freq);
@@ -1181,7 +1161,7 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
 
     uint16_t    mhz, khz, hz;
     uint32_t    half_width = 50000;
-    uint32_t    color = subject_i_get(freq_lock) ? 0xBBBBBB : 0xFFFFFF;
+    uint32_t    color = lm_get_freq() ? 0xBBBBBB : 0xFFFFFF;
 
     int32_t zoom = param_i_get(cfg_mode_zoom);
 
@@ -1194,6 +1174,14 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
 
     split_freq(f + half_width, &mhz, &khz, &hz);
     lv_label_set_text_fmt(freq[2], "#%03X %i.%03i", color, mhz, khz);
+}
+
+static void on_fg_freq_change_lv_cb(void *s, lv_msg_t *m) {
+    on_fg_freq_change(NULL, NULL);
+}
+
+static void update_freq_boundaries_lv_cb(void *s, lv_msg_t *m) {
+    update_freq_boundaries(NULL, NULL);
 }
 
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data) {

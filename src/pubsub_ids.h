@@ -12,7 +12,14 @@
 enum msg_t {
     MSG_WIFI_STATE_CHANGED,
     MSG_USB_DEVICE_CHANGED,
+    // Radio messages
     MSG_RADIO_RX,
     MSG_RADIO_TX,
     MSG_LOW_POWER,
+
+    // UI locks messages
+    MSG_LOCK_AB,
+    MSG_LOCK_MODE,
+    MSG_LOCK_FREQ,
+    MSG_LOCK_BAND,
 };

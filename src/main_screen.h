@@ -25,11 +25,6 @@ void main_screen_keys_enable(bool value);
 void main_screen_start_app(press_action_t page_app);
 void main_screen_action(press_action_t action);
 
-void main_screen_lock_freq(bool lock);
-void main_screen_lock_band(bool lock);
-void main_screen_lock_mode(bool lock);
-void main_screen_lock_ab(bool lock);
-
 void main_screen_set_freq(uint64_t f);
 
 void mem_load(uint16_t id);

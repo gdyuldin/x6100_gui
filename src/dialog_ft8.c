@@ -24,6 +24,7 @@
 #include "events.h"
 #include "buttons.h"
 #include "main_screen.h"
+#include "lock_manager.h"
 #include "qth/qth.h"
 #include "msg.h"
 #include "util.h"
@@ -305,10 +306,10 @@ static void destruct_cb() {
 
     mem_load(MEM_BACKUP_ID);
 
-    main_screen_lock_mode(false);
-    main_screen_lock_ab(false);
-    main_screen_lock_freq(false);
-    main_screen_lock_band(false);
+    lm_set_mode(false);
+    lm_set_ab(false);
+    lm_set_freq(false);
+    lm_set_band(false);
 
     radio_set_pwr(param_f_get(cfg_pwr));
     adif_log_close(ft8_log);
@@ -515,10 +516,10 @@ static void construct_cb(lv_obj_t *parent) {
 
     qth_str_to_pos(params.qth.x, &cur_lat, &cur_lon);
 
-    main_screen_lock_ab(true);
-    main_screen_lock_mode(true);
-    main_screen_lock_freq(true);
-    main_screen_lock_band(true);
+    lm_set_ab(true);
+    lm_set_mode(true);
+    lm_set_freq(true);
+    lm_set_band(true);
 
     worker_init();
 
