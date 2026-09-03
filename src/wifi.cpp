@@ -52,6 +52,7 @@ static void fill_access_point_info(GBytes *active_ssid, NMAccessPoint *ap, wifi_
 static void set_status(wifi_status_t val);
 
 static void device_added_sig_cb(NMClient *client, GObject *device, gpointer user_data);
+static void device_removed_sig_cb(NMClient *client, GObject *device, gpointer user_data);
 static void device_state_changed_sig_cb(NMDevice *device, guint new_state, guint old_state, guint reason,
                                         gpointer user_data);
 static void active_con_state_changed_sig_cb(NMActiveConnection *active_connection, guint state, guint reason,
@@ -117,7 +118,6 @@ void wifi_power_on() {
 
 void wifi_power_off() {
     LV_LOG_USER("Power off wifi/bt");
-    set_status(WIFI_OFF);
     if (device) {
         device = NULL;
     }
@@ -128,6 +128,7 @@ void wifi_power_off() {
         scan_timer = NULL;
     }
     scanning = false;
+    set_status(WIFI_OFF);
 }
 
 wifi_status_t wifi_get_status() {
@@ -400,6 +401,7 @@ static void setup_nm_client() {
         g_error_free(error);
     }
     g_signal_connect(client, "device-added", G_CALLBACK(device_added_sig_cb), NULL);
+    g_signal_connect(client, "device-removed", G_CALLBACK(device_removed_sig_cb), NULL);
 }
 
 static void setup_wifi_device() {
@@ -426,6 +428,17 @@ static void device_added_sig_cb(NMClient *client, GObject *dev, gpointer user_da
     if (strcmp(nm_device_get_iface(nm_dev), WLAN_IFACE) == 0) {
         device = nm_dev;
         setup_wifi_device();
+    }
+}
+
+static void device_removed_sig_cb(NMClient *client, GObject *dev, gpointer user_data) {
+    NMDevice           *nm_dev;
+    NMActiveConnection *active_con;
+    nm_dev = NM_DEVICE(dev);
+    if (strcmp(nm_device_get_iface(nm_dev), nm_device_get_iface(device)) == 0) {
+        LV_LOG_USER("Removed %s device", nm_device_get_iface(device));
+        device = NULL;
+        set_status(WIFI_OFF);
     }
 }
 
