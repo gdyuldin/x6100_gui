@@ -8,6 +8,7 @@
 
 #include "spectrum.h"
 
+#include "globals.h"
 #include "dsp.h"
 #include "events.h"
 #include "meter.h"
@@ -32,7 +33,7 @@
 #define DEFAULT_MAX S9_20
 #define VISOR_HEIGHT_TX (100 - 61)
 #define VISOR_HEIGHT_RX 100
-#define SPECTRUM_SIZE 800
+#define SPECTRUM_SIZE SCREEN_WIDTH
 
 typedef struct {
     float    val;

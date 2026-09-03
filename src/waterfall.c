@@ -7,6 +7,7 @@
  */
 #include "waterfall.h"
 
+#include "globals.h"
 #include "styles.h"
 #include "radio.h"
 #include "events.h"
@@ -31,7 +32,7 @@
 
 #define DEFAULT_MIN S4
 #define DEFAULT_MAX S9_20
-#define WIDTH 800
+#define WIDTH SCREEN_WIDTH
 
 typedef struct {
     uint8_t values[WATERFALL_NFFT];

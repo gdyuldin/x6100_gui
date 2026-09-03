@@ -10,6 +10,7 @@
 
 #include <math.h>
 
+#include "globals.h"
 #include "styles.h"
 #include "spectrum.h"
 #include "waterfall.h"
@@ -59,7 +60,7 @@
 #include <stdlib.h>
 
 
-static uint16_t     spectrum_height = (480 / 3);
+static uint16_t     spectrum_height = (SCREEN_HEIGHT / 3);
 static uint16_t     freq_height = 36;
 static lv_obj_t     *obj;
 
@@ -1060,19 +1061,20 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
     f = lv_label_create(obj);
     lv_obj_add_style(f, &freq_main_style, 0);
-    lv_obj_set_pos(f, 800/2 - 500/2, y);
+    lv_obj_set_pos(f, SCREEN_WIDTH/2 - 500/2, y);
     lv_label_set_recolor(f, true);
     freq[1] = f;
 
     f = lv_label_create(obj);
     lv_obj_add_style(f, &freq_style, 0);
-    lv_obj_set_pos(f, 800 - 150, y);
+    lv_obj_set_pos(f, SCREEN_WIDTH - 150, y);
     lv_label_set_recolor(f, true);
     freq[2] = f;
 
     y += freq_height;
 
-    waterfall_init(overlay_scr, y, 480 - y);
+    /* Waterfall */
+    waterfall_init(overlay_scr, y, SCREEN_HEIGHT - y);
 
     knobs_init(obj);
 

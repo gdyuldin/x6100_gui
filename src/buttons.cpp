@@ -7,6 +7,7 @@
  */
 #include "buttons.h"
 
+#include "globals.h"
 #include "controls.h"
 #include "util.h"
 #include "cfg/settings_manager.h"
@@ -543,7 +544,7 @@ void buttons_init(lv_obj_t *parent) {
         binds[ctrl] = ENCODER_BIND_VOL;
     }
 
-    uint16_t y = 480 - BTN_HEIGHT;
+    uint16_t y = SCREEN_HEIGHT - BTN_HEIGHT;
     uint16_t x = 0;
 
     for (uint8_t i = 0; i < 5; i++) {

@@ -10,6 +10,7 @@
 
 #include "knobs.h"
 
+#include "globals.h"
 #include "buttons.h"
 #include "cfg/settings_manager.h"
 
@@ -237,7 +238,7 @@ static bool enabled;
 
 void knobs_init(lv_obj_t * parent) {
     // Basic positon calculation
-    uint16_t y = 480 - BTN_HEIGHT - 5;
+    uint16_t y = SCREEN_HEIGHT - BTN_HEIGHT - 5;
     uint16_t x_static = KNOBS_PADDING;
     uint16_t x_dynamic = x_static  + KNOBS_STATIC_WIDTH + KNOBS_PADDING;
 

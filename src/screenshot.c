@@ -14,6 +14,7 @@
 
 #include "lvgl/lvgl.h"
 
+#include "globals.h"
 #include "lv_drivers/display/drm.h"
 #include "util.h"
 #include "msg.h"
@@ -61,19 +62,19 @@ static void * screenshot_thread(void *arg) {
 
     png_set_IHDR(
         png_ptr, png_info,
-        800, 480,
+        SCREEN_WIDTH, SCREEN_HEIGHT,
         8, PNG_COLOR_TYPE_RGB,
         PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
         PNG_FILTER_TYPE_DEFAULT);
 
     png_write_info(png_ptr, png_info);
 
-    uint32_t src_stride = 480 * 4;
-    for (uint16_t y = 0; y < 480; y++) {
-        uint8_t row[800 * 3];
-        for (uint16_t x = 0; x < 800; x++) {
+    uint32_t src_stride = SCREEN_HEIGHT * 4;
+    for (uint16_t y = 0; y < SCREEN_HEIGHT; y++) {
+        uint8_t row[SCREEN_WIDTH * 3];
+        for (uint16_t x = 0; x < SCREEN_WIDTH; x++) {
             uint32_t    to = x * 3;
-            uint32_t    from = ((799 - x) * 480 + y) * 4 + 2;
+            uint32_t    from = ((799 - x) * SCREEN_HEIGHT + y) * 4 + 2;
 
             row[to++] = buf[from--];
             row[to++] = buf[from--];

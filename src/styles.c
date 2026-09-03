@@ -157,7 +157,7 @@ void styles_init(themes_t theme) {
     lv_style_set_border_color(&spectrum_style, lv_color_hex(0xAAAAAA));
     lv_style_set_border_width(&spectrum_style, 0);
     lv_style_set_radius(&spectrum_style, 0);
-    lv_style_set_width(&spectrum_style, 800);
+    lv_style_set_width(&spectrum_style, SCREEN_WIDTH);
     lv_style_set_x(&spectrum_style, 0);
 
     lv_style_init(&freq_style);
@@ -182,7 +182,7 @@ void styles_init(themes_t theme) {
     lv_style_set_border_width(&waterfall_style, 0);
     lv_style_set_radius(&waterfall_style, 0);
     lv_style_set_clip_corner(&waterfall_style, true);
-    lv_style_set_width(&waterfall_style, 800);
+    lv_style_set_width(&waterfall_style, SCREEN_WIDTH);
     lv_style_set_x(&waterfall_style, 0);
     lv_style_set_pad_all(&waterfall_style, 0);
 
@@ -227,7 +227,7 @@ void styles_init(themes_t theme) {
     lv_style_set_text_font(&msg_style, &sony_38);
     lv_style_set_width(&msg_style, 603);
     // lv_style_set_height(&msg_style, 66);
-    lv_style_set_x(&msg_style, 800 / 2 - (603 / 2));
+    lv_style_set_x(&msg_style, SCREEN_WIDTH / 2 - (603 / 2));
     lv_style_set_y(&msg_style, 270);
     lv_style_set_radius(&msg_style, 0);
     lv_style_set_bg_img_opa(&msg_style, LV_OPA_COVER);
@@ -238,7 +238,7 @@ void styles_init(themes_t theme) {
     lv_style_set_text_font(&msg_tiny_style, &sony_60);
     lv_style_set_width(&msg_tiny_style, 324);
     lv_style_set_height(&msg_tiny_style, 66);
-    lv_style_set_x(&msg_tiny_style, 800 / 2 - (324 / 2));
+    lv_style_set_x(&msg_tiny_style, SCREEN_WIDTH / 2 - (324 / 2));
     lv_style_set_y(&msg_tiny_style, 160 - 66/2 + 36/2);
     lv_style_set_radius(&msg_tiny_style, 0);
     lv_style_set_pad_ver(&msg_tiny_style, 12);
@@ -249,7 +249,7 @@ void styles_init(themes_t theme) {
     lv_style_set_text_font(&panel_style, &sony_38);
     lv_style_set_width(&panel_style, 795);
     lv_style_set_height(&panel_style, 182);
-    lv_style_set_x(&panel_style, 800 / 2 - (795 / 2));
+    lv_style_set_x(&panel_style, SCREEN_WIDTH / 2 - (795 / 2));
     lv_style_set_y(&panel_style, 230);
     lv_style_set_pad_ver(&panel_style, 10);
     lv_style_set_pad_hor(&panel_style, 10);
@@ -268,7 +268,7 @@ void styles_init(themes_t theme) {
     lv_style_set_text_font(&dialog_style, &sony_36);
     lv_style_set_width(&dialog_style, 796);
     lv_style_set_height(&dialog_style, 348);
-    lv_style_set_x(&dialog_style, 800 / 2 - (796 / 2));
+    lv_style_set_x(&dialog_style, SCREEN_WIDTH / 2 - (796 / 2));
     lv_style_set_y(&dialog_style, 66);
     lv_style_set_radius(&dialog_style, 0);
     lv_style_set_bg_img_opa(&dialog_style, LV_OPA_COVER);
