@@ -645,7 +645,8 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 voice_say_text_fmt("Frequency %s", lm_get_freq() ? "locked" : "unlocked");
             } else if (keypad->state == KEYPAD_LONG) {
                 radio_bb_reset();
-                exit(1);
+                // Stop app
+                app_is_running = false;
             }
             break;
 

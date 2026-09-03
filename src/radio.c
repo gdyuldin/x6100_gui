@@ -383,8 +383,6 @@ void radio_poweroff() {
     if (params.charger.x == RADIO_CHARGER_SHADOW) {
         WITH_RADIO_LOCK(x6100_control_charger_set(true));
     }
-    cfg_api_flush_all();
-    cfg_db_shutdown();
     state = RADIO_POWEROFF;
 }
 
