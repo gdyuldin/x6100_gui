@@ -132,7 +132,7 @@ class Subject {
     Observer *subscribe_and_notify(observer_cb fn, void *user_data = nullptr);
     // For C++ make sense to convert result to Subscription
     ObserverDelayed *subscribe_delayed(observer_cb fn, void *user_data = nullptr);
-    ObserverDelayed *subscribe_delayed_and_notify(observer_cb fn, void *user_data);
+    ObserverDelayed *subscribe_delayed_and_notify(observer_cb fn, void *user_data = nullptr);
 
     void unsubscribe(Observer *o);
 };
