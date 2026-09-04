@@ -10,6 +10,7 @@
 
 
 extern "C" {
+#include "radio.h"
 #include "msg.h"
 #include "rtty.h"
 }

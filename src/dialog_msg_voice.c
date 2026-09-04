@@ -19,6 +19,7 @@
 
 #include <aether_radio/x6100_control/control.h>
 
+#include "radio.h"
 #include "audio.h"
 #include "dialog.h"
 #include "dialog_msg_voice.h"

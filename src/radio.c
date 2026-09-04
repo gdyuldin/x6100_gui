@@ -313,8 +313,6 @@ void radio_start() {
 
     pthread_mutex_init(&control_mux, NULL);
 
-    init_display_freqs();
-
     pthread_t thread;
 
     pthread_create(&thread, NULL, radio_thread, NULL);

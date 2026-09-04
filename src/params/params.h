@@ -19,7 +19,6 @@ extern "C" {
 #endif
 
 #include <aether_radio/x6100_control/control.h>
-#include "../radio.h"
 #include "../clock.h"
 #include "common.h"
 #include "types.h"

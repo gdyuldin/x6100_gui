@@ -6,6 +6,13 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
+#include "dialog_callsign.h"
+
+#include <stdio.h>
+#include <ft8lib/encode.h>
+#include <ft8lib/decode.h>
+
+#include "radio.h"
 #include "textarea_window.h"
 #include "params/params.h"
 #include "main_screen.h"
@@ -13,10 +20,7 @@
 #include "events.h"
 #include "msg.h"
 
-#include <ft8lib/encode.h>
-#include <ft8lib/decode.h>
 
-#include <stdio.h>
 
 static void construct_cb(lv_obj_t *parent);
 static void destruct_cb();

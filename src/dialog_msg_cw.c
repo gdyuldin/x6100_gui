@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <math.h>
 
+#include "radio.h"
 #include "dialog.h"
 #include "dialog_msg_cw.h"
 #include "styles.h"
