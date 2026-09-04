@@ -65,7 +65,7 @@ static uint16_t     freq_height = 36;
 static lv_obj_t     *obj;
 
 static lv_obj_t     *spectrum;
-static lv_obj_t     *freq[3];
+static lv_obj_t     *freq_bounds[2];
 static lv_obj_t     *msg;
 static lv_obj_t     *msg_tiny;
 static lv_obj_t     *meter;
@@ -84,7 +84,6 @@ static void toggle_atu_enabled();
 // Observers functions
 
 static void on_fg_freq_change(Subject *subj, void *user_data);
-static void on_fg_freq_change_lv_cb(void *s, lv_msg_t *m);
 static void update_freq_boundaries(Subject *subj, void *user_data);
 static void update_freq_boundaries_lv_cb(void *s, lv_msg_t *m);
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data);
@@ -1052,27 +1051,20 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
     y += spectrum_height;
 
+    /* Freq boundary (left, right) */
     lv_obj_t *f;
 
     f = lv_label_create(obj);
-    lv_obj_add_style(f, &freq_style, 0);
-    lv_obj_set_pos(f, 0, y);
+    lv_obj_add_style(f, &freq_bounds_style, 0);
+    lv_obj_align(f, LV_ALIGN_TOP_LEFT, 10, y + 3);
     lv_label_set_recolor(f, true);
-    freq[0] = f;
+    freq_bounds[0] = f;
 
     f = lv_label_create(obj);
-    lv_obj_add_style(f, &freq_main_style, 0);
-    lv_obj_set_pos(f, SCREEN_WIDTH/2 - 500/2, y);
+    lv_obj_add_style(f, &freq_bounds_style, 0);
+    lv_obj_align(f, LV_ALIGN_TOP_RIGHT, -10, y + 3);
     lv_label_set_recolor(f, true);
-    freq[1] = f;
-
-    f = lv_label_create(obj);
-    lv_obj_add_style(f, &freq_style, 0);
-    lv_obj_set_pos(f, SCREEN_WIDTH - 150, y);
-    lv_label_set_recolor(f, true);
-    freq[2] = f;
-
-    y += freq_height;
+    freq_bounds[1] = f;
 
     /* Waterfall */
     waterfall_init(overlay_scr, y, SCREEN_HEIGHT - y);
@@ -1096,15 +1088,11 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
     msg_schedule_text_fmt("X6100 de R1CBU es Others " VERSION);
 
-    lv_msg_subscribe(MSG_LOCK_FREQ, on_fg_freq_change_lv_cb, NULL);
-    subject_subscribe_delayed((Subject*)cfg_band_split, on_fg_freq_change, NULL);
-    subject_subscribe_delayed((Subject*)cfg_fg_freq, on_fg_freq_change, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)radio_fg_freq_subj, on_fg_freq_change, NULL);
 
     lv_msg_subscribe(MSG_LOCK_FREQ, update_freq_boundaries_lv_cb, NULL);
-    subject_subscribe_delayed((Subject*)cfg_fg_freq, update_freq_boundaries, NULL);
+    subject_subscribe_delayed((Subject*)radio_fg_freq_subj, update_freq_boundaries, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg_mode_zoom, update_freq_boundaries, NULL);
-
-    subject_subscribe_delayed_and_notify((Subject*)cfg_bg_freq, on_fg_freq_change, NULL);
 
     subject_subscribe_delayed((Subject*)cfg_band_if_shift, update_zoom_on_if_shift_change, NULL);
     subject_subscribe_delayed((Subject*)cfg_mode_zoom, update_zoom_on_if_shift_change, NULL);
@@ -1113,58 +1101,27 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 }
 
 static void on_fg_freq_change(Subject *subj, void *user_data) {
-    int32_t    f;
-    uint32_t    color = lm_get_freq() ? 0xBBBBBB : 0xFFFFFF;
-
-    bool split = param_i_get(cfg_band_split);
-    int32_t fg = cparam_i_get(cfg_fg_freq);
-    int32_t bg = cparam_i_get(cfg_bg_freq);
-
-    if (split && radio_get_state() == RADIO_TX) {
-        f = bg;
-    } else {
-        f = fg;
-    }
-
-    uint16_t    mhz, khz, hz;
-
-    split_freq(f, &mhz, &khz, &hz);
-
     if (params.mag_freq.x) {
+        int32_t f = subject_i_get(radio_fg_freq_subj);
+
+        uint16_t mhz, khz, hz;
+
+        split_freq(f, &mhz, &khz, &hz);
+
         if (mhz < 100) {
             msg_tiny_set_text_fmt("%i.%03i.%03i", mhz, khz, hz);
         } else {
             msg_tiny_set_text_fmt("%i.%03i", mhz, khz);
         }
     }
-
-    if (split) {
-        uint16_t    mhz2, khz2, hz2;
-        int32_t    f2 = (fg == f) ? bg : fg;
-
-        split_freq(f2, &mhz2, &khz2, &hz2);
-
-        lv_label_set_text_fmt(freq[1], "#%03X %i.%03i.%03i / %i.%03i.%03i", color, mhz, khz, hz, mhz2, khz2, hz2);
-    } else {
-        lv_label_set_text_fmt(freq[1], "#%03X %i.%03i.%03i", color, mhz, khz, hz);
-    }
 }
 
 static void update_freq_boundaries(Subject *subj, void *user_data) {
-    bool split = param_i_get(cfg_band_split);
-    int32_t fg = cparam_i_get(cfg_fg_freq);
-    int32_t bg = cparam_i_get(cfg_bg_freq);
-    int32_t f;
+    int32_t f = subject_i_get(radio_fg_freq_subj);
 
-    if (split && radio_get_state() == RADIO_TX) {
-        f = bg;
-    } else {
-        f = fg;
-    }
-
-    uint16_t    mhz, khz, hz;
-    uint32_t    half_width = 50000;
-    uint32_t    color = lm_get_freq() ? 0xBBBBBB : 0xFFFFFF;
+    uint16_t mhz, khz, hz;
+    uint32_t half_width = 50000;
+    uint32_t color      = lm_get_freq() ? 0xBBBBBB : 0xFFFFFF;
 
     int32_t zoom = param_i_get(cfg_mode_zoom);
 
@@ -1173,14 +1130,10 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
     }
 
     split_freq(f - half_width, &mhz, &khz, &hz);
-    lv_label_set_text_fmt(freq[0], "#%03X %i.%03i", color, mhz, khz);
+    lv_label_set_text_fmt(freq_bounds[0], "#%03X %i.%03i", color, mhz, khz);
 
     split_freq(f + half_width, &mhz, &khz, &hz);
-    lv_label_set_text_fmt(freq[2], "#%03X %i.%03i", color, mhz, khz);
-}
-
-static void on_fg_freq_change_lv_cb(void *s, lv_msg_t *m) {
-    on_fg_freq_change(NULL, NULL);
+    lv_label_set_text_fmt(freq_bounds[1], "#%03X %i.%03i", color, mhz, khz);
 }
 
 static void update_freq_boundaries_lv_cb(void *s, lv_msg_t *m) {

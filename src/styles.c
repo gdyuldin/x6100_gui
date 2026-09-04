@@ -84,7 +84,7 @@ const uint32_t *wf_palette;
 
 lv_style_t  background_style;
 lv_style_t  spectrum_style;
-lv_style_t  freq_style;
+lv_style_t  freq_bounds_style;
 lv_style_t  freq_main_style;
 lv_style_t  waterfall_style;
 
@@ -160,13 +160,14 @@ void styles_init(themes_t theme) {
     lv_style_set_width(&spectrum_style, SCREEN_WIDTH);
     lv_style_set_x(&spectrum_style, 0);
 
-    lv_style_init(&freq_style);
-    lv_style_set_text_color(&freq_style, lv_color_white());
-    lv_style_set_text_font(&freq_style, &sony_30);
-    lv_style_set_pad_ver(&freq_style, 7);
-    lv_style_set_width(&freq_style, 150);
-    lv_style_set_height(&freq_style, 36);
-    lv_style_set_text_align(&freq_style, LV_TEXT_ALIGN_CENTER);
+    lv_style_init(&freq_bounds_style);
+    lv_style_set_text_color(&freq_bounds_style, lv_color_white());
+    lv_style_set_text_font(&freq_bounds_style, &mono_30);
+    lv_style_set_pad_all(&freq_bounds_style, 3);
+    lv_style_set_text_align(&freq_bounds_style, LV_TEXT_ALIGN_CENTER);
+    lv_style_set_bg_color(&freq_bounds_style, lv_color_black());
+    lv_style_set_bg_opa(&freq_bounds_style, LV_OPA_30);
+    lv_style_set_radius(&freq_bounds_style, 5);
 
     lv_style_init(&freq_main_style);
     lv_style_set_text_color(&freq_main_style, lv_color_white());

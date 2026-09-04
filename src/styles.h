@@ -104,7 +104,13 @@ extern lv_font_t    sony_38;
 extern lv_font_t    sony_40;
 extern lv_font_t    sony_42;
 extern lv_font_t    sony_44;
+extern lv_font_t    sony_48;
 extern lv_font_t    sony_60;
+
+extern lv_font_t    mono_22;
+extern lv_font_t    mono_28;
+extern lv_font_t    mono_30;
+extern lv_font_t    mono_48;
 
 void styles_init(themes_t theme);
 

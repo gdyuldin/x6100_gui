@@ -103,6 +103,9 @@ static void recover_processing_audio_inputs();
 static bool radio_tick();
 static void * radio_thread(void *arg);
 
+static void recompute_display_freqs(void);
+static void recompute_subj_cb(Subject *subj, void *user_data);
+
 /**********************
  *  STATIC VARIABLES
  **********************/
@@ -125,6 +128,9 @@ static cfloat           samples_buf[RADIO_SAMPLES*2];
 static uint32_t min_tx;
 static uint32_t max_tx;
 
+SubjectInt *radio_fg_freq_subj = NULL;
+SubjectInt *radio_bg_freq_subj = NULL;
+
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
@@ -133,6 +139,37 @@ void radio_bb_reset() {
     x6100_gpio_set(x6100_pin_bb_reset, 1);
     usleep(100000);
     x6100_gpio_set(x6100_pin_bb_reset, 0);
+}
+
+static void recompute_display_freqs(void) {
+    bool split   = param_i_get(cfg_band_split);
+    int32_t fg   = cparam_i_get(cfg_fg_freq);
+    int32_t bg   = cparam_i_get(cfg_bg_freq);
+    bool is_tx   = state == RADIO_TX;
+
+    if (split && is_tx) {
+        subject_i_set(radio_fg_freq_subj, bg);
+        subject_i_set(radio_bg_freq_subj, fg);
+    } else {
+        subject_i_set(radio_fg_freq_subj, fg);
+        subject_i_set(radio_bg_freq_subj, bg);
+    }
+}
+
+static void recompute_subj_cb(Subject *subj, void *user_data) {
+    (void)subj; (void)user_data;
+    recompute_display_freqs();
+}
+
+static void init_display_freqs(void) {
+    radio_fg_freq_subj = subject_i_create(14100000);
+    radio_bg_freq_subj = subject_i_create(14150000);
+
+    subject_subscribe((Subject*)cfg_fg_freq, recompute_subj_cb, NULL);
+    subject_subscribe((Subject*)cfg_bg_freq, recompute_subj_cb, NULL);
+    subject_subscribe((Subject*)cfg_band_split, recompute_subj_cb, NULL);
+
+    recompute_display_freqs();
 }
 
 void radio_init() {
@@ -275,6 +312,8 @@ void radio_start() {
     idle_time = prev_time;
 
     pthread_mutex_init(&control_mux, NULL);
+
+    init_display_freqs();
 
     pthread_t thread;
 
@@ -763,6 +802,7 @@ static bool radio_tick() {
                 if (pack->flag.tx) {
                     state = RADIO_TX;
                     scheduler_msg_send(MSG_RADIO_TX, NULL);
+                    recompute_display_freqs();
                 }
                 break;
 
@@ -770,6 +810,7 @@ static bool radio_tick() {
                 if (!pack->flag.tx) {
                     state = RADIO_RX;
                     scheduler_msg_send(MSG_RADIO_RX, NULL);
+                    recompute_display_freqs();
                 } else {
                     // printf("%d, %d\n", pack->tx_power, pack->alc_level);
                     tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
@@ -799,6 +840,7 @@ static bool radio_tick() {
                     // TODO: change with observer on atu->loaded change
                     WITH_RADIO_LOCK(x6100_control_cmd(x6100_atu_network, pack->atu_params));
                     state = RADIO_RX;
+                    recompute_display_freqs();
                 } else if (pack->flag.tx) {
                     tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
                 }

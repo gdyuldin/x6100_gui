@@ -12,6 +12,7 @@
 #include <aether_radio/x6100_control/control.h>
 
 #include "lvgl/lvgl.h"
+#include "cfg/subject_api.h"
 
 #define RADIO_SAMPLES   (512)
 
@@ -39,6 +40,9 @@ void radio_init();
 void radio_start();
 void radio_bb_reset();
 radio_state_t radio_get_state();
+
+extern SubjectInt *radio_fg_freq_subj; // FG freq according split and tx
+extern SubjectInt *radio_bg_freq_subj; // BG freq according split and tx
 
 /**
  * Set freq for radio without updating corresponding subject.
