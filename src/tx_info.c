@@ -172,23 +172,23 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
 
     // Small alc indicator
     alc_label = lv_label_create(obj);
+    lv_obj_add_style(alc_label, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_text_font(alc_label, &sony_20, 0);
     lv_obj_align(alc_label, LV_ALIGN_BOTTOM_RIGHT, 12, 16);
-    lv_obj_set_style_text_color(alc_label, lv_color_white(), 0);
     lv_label_set_text(alc_label, "");
 
     // pwr indicator
     pwr_label = lv_label_create(obj);
+    lv_obj_add_style(pwr_label, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_text_font(pwr_label, &sony_20, 0);
     lv_obj_align(pwr_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, -h / 2 - 2);
-    lv_obj_set_style_text_color(pwr_label, lv_color_white(), 0);
     lv_label_set_text(pwr_label, "");
 
     // swr indicator
     vswr_label = lv_label_create(obj);
+    lv_obj_add_style(vswr_label, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_text_font(vswr_label, &sony_20, 0);
     lv_obj_align(vswr_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, pad - 2);
-    lv_obj_set_style_text_color(vswr_label, lv_color_white(), 0);
     lv_label_set_text(vswr_label, "");
 
     subject_subscribe((Subject*)cfg_cur_mode, on_cur_mode_change, NULL);

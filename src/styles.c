@@ -15,16 +15,21 @@
 
 #define PATH "A:/dev/shm/"
 
-// Different themes values (Skip API part)
+/* Skin API */
 typedef struct {
-    lv_color_t text_color;
-} theme_t;
+    lv_color_t base_text_color;
+    struct {
+        lv_color_t fill_color;
+        lv_color_t line_color;
+    } spectrum;
+} skin_t;
 
 const uint32_t *wf_palette;
 
 static uint32_t rng_state=1;
 
 styles_t style;
+colors_t colors;
 
 /* Meter colors */
 lv_color_t meter_color_noise;
@@ -35,11 +40,6 @@ lv_color_t meter_color_peak;
 
 lv_color_t bg_color;
 
-lv_color_t spectrum_color_up;
-lv_color_t spectrum_color_down;
-lv_color_t spectrum_color_line;
-lv_color_t spectrum_color_peak;
-
 static lv_img_dsc_t clock_bg_dsc  = {0};
 static lv_img_dsc_t info_bg_dsc   = {0};
 static lv_img_dsc_t meter_bg_dsc  = {0};
@@ -47,12 +47,22 @@ static lv_img_dsc_t tx_info_bg_dsc = {0};
 static lv_img_dsc_t button_bg_dsc = {0};
 static lv_img_dsc_t dialog_bg_dsc = {0};
 
+static skin_t skin_default;
+
 static void setup_theme_legacy();
 static void setup_theme_simple();
 static void setup_theme_black();
 static void setup_theme_flat();
 
+static lv_color_t color_adjust_hsv_value(lv_color_t base, float scale);
+
+static void setup_skin_default(skin_t *skin);
+
+static void set_skin(skin_t *skin);
+
 void styles_init(themes_t theme) {
+
+    setup_skin_default(&skin_default);
     /* * */
     lv_style_t *s;
 
@@ -68,14 +78,14 @@ void styles_init(themes_t theme) {
     lv_style_set_width(&style.spectrum, SCREEN_WIDTH);
     lv_style_set_x(&style.spectrum, 0);
 
-    lv_style_init(&style.freq_bounds);
-    lv_style_set_text_color(&style.freq_bounds, lv_color_white());
-    lv_style_set_text_font(&style.freq_bounds, &mono_30);
-    lv_style_set_pad_all(&style.freq_bounds, 3);
-    lv_style_set_text_align(&style.freq_bounds, LV_TEXT_ALIGN_CENTER);
-    lv_style_set_bg_color(&style.freq_bounds, lv_color_black());
-    lv_style_set_bg_opa(&style.freq_bounds, LV_OPA_30);
-    lv_style_set_radius(&style.freq_bounds, 5);
+    lv_style_init(&style.freq_bounds.base);
+    lv_style_set_text_font(&style.freq_bounds.base, &mono_30);
+    lv_style_set_pad_all(&style.freq_bounds.base, 3);
+    lv_style_set_text_align(&style.freq_bounds.base, LV_TEXT_ALIGN_CENTER);
+    lv_style_set_bg_color(&style.freq_bounds.base, lv_color_black());
+    lv_style_set_bg_opa(&style.freq_bounds.base, LV_OPA_30);
+    lv_style_set_radius(&style.freq_bounds.base, 5);
+    lv_style_init(&style.freq_bounds.disabled);
 
     lv_style_init(&style.waterfall);
     lv_style_set_bg_color(&style.waterfall, lv_color_hex(0x000000));
@@ -90,7 +100,6 @@ void styles_init(themes_t theme) {
     /* Buttons */
     lv_style_init(&style.btn.base);
     lv_style_set_text_font(&style.btn.base, &sony_30);
-    lv_style_set_text_color(&style.btn.base, lv_color_white());
     lv_style_set_bg_img_opa(&style.btn.base, LV_OPA_COVER);
     lv_style_set_border_width(&style.btn.base, 0);
     lv_style_set_radius(&style.btn.base, 0);
@@ -126,7 +135,6 @@ void styles_init(themes_t theme) {
     /* Message style */
     lv_style_init(&style.msg);
     lv_style_set_pad_hor(&style.msg, 10);
-    lv_style_set_text_color(&style.msg, lv_color_white());
     lv_style_set_text_font(&style.msg, &sony_38);
     lv_style_set_width(&style.msg, 603);
     // lv_style_set_height(&style.msg, 66);
@@ -137,7 +145,6 @@ void styles_init(themes_t theme) {
     lv_style_set_pad_ver(&style.msg, 20);
 
     lv_style_init(&style.msg_tiny);
-    lv_style_set_text_color(&style.msg_tiny, lv_color_white());
     lv_style_set_text_font(&style.msg_tiny, &sony_60);
     lv_style_set_width(&style.msg_tiny, 324);
     lv_style_set_height(&style.msg_tiny, 66);
@@ -148,7 +155,6 @@ void styles_init(themes_t theme) {
 
     /* Panel */
     lv_style_init(&style.panels.base);
-    lv_style_set_text_color(&style.panels.base, lv_color_white());
     lv_style_set_text_font(&style.panels.base, &sony_38);
     lv_style_set_width(&style.panels.base, 795);
     lv_style_set_height(&style.panels.base, 182);
@@ -167,7 +173,6 @@ void styles_init(themes_t theme) {
     lv_style_set_blend_mode(&style.panels.info, LV_BLEND_MODE_ADDITIVE);
 
     lv_style_init(&style.dialog.base);
-    lv_style_set_text_color(&style.dialog.base, lv_color_white());
     lv_style_set_text_font(&style.dialog.base, &sony_36);
     lv_style_set_width(&style.dialog.base, DIALOG_WIDTH);
     lv_style_set_height(&style.dialog.base, DIALOG_HEIGHT);
@@ -180,7 +185,6 @@ void styles_init(themes_t theme) {
 
     lv_style_init(&style.dialog.item);
     lv_style_set_bg_opa(&style.dialog.item, LV_OPA_TRANSP);
-    lv_style_set_text_color(&style.dialog.item, lv_color_white());
 
     lv_style_init(&style.dialog.item_focus);
     lv_style_set_bg_opa(&style.dialog.item_focus, 128);
@@ -205,7 +209,6 @@ void styles_init(themes_t theme) {
 
     /* Clock */
     lv_style_init(&style.clock);
-    lv_style_set_text_color(&style.clock, lv_color_white());
     // lv_style_set_align(&style.clock, LV_ALIGN_CENTER);
     // lv_style_set_text_align(&style.clock, LV_TEXT_ALIGN_CENTER);
     lv_style_set_radius(&style.clock, 0);
@@ -215,7 +218,6 @@ void styles_init(themes_t theme) {
 
     /* Knobs */
     lv_style_init(&style.knobs);
-    lv_style_set_text_color(&style.knobs, lv_color_white());
     lv_style_set_text_font(&style.knobs, &sony_24);
     lv_style_set_radius(&style.knobs, 8);
     lv_style_set_bg_opa(&style.knobs, LV_OPA_60);
@@ -306,7 +308,6 @@ void styles_init(themes_t theme) {
     lv_style_set_pad_top(&style.rgb.slider_row, 5);
 
     lv_style_init(&style.rgb.letter);
-    lv_style_set_text_color(&style.rgb.letter, lv_color_white());
     lv_style_set_text_font(&style.rgb.letter, &sony_26);
     lv_style_set_pad_top(&style.rgb.letter, -2);
 
@@ -321,13 +322,25 @@ void styles_init(themes_t theme) {
     lv_style_set_border_color(&style.rgb.slider_focused, lv_palette_main(LV_PALETTE_BLUE));
 
     lv_style_init(&style.rgb.val_label);
-    lv_style_set_text_color(&style.rgb.val_label, lv_color_white());
     lv_style_set_text_font(&style.rgb.val_label, &sony_26);
     lv_style_set_pad_top(&style.rgb.val_label, -2);
 
     styles_set_theme(theme);
 
     styles_update_meter_colors();
+}
+
+void styles_set_spectrum_color(lv_color_t fill_color, lv_color_t *line_color) {
+    style.colors.spectrum.fill_up = color_adjust_hsv_value(fill_color, 1.4f);
+    style.colors.spectrum.fill_down = color_adjust_hsv_value(fill_color, 0.3f);
+    lv_color_t line_color_base;
+    if (line_color) {
+        line_color_base = *line_color;
+    } else {
+        line_color_base = fill_color;
+    }
+    style.colors.spectrum.line = line_color_base;
+    style.colors.spectrum.peak = color_adjust_hsv_value(line_color_base, 0.5f);
 }
 
 void styles_update_meter_colors(void)
@@ -350,17 +363,18 @@ void styles_update_meter_colors(void)
 
 void styles_set_theme(themes_t theme) {
     switch (theme) {
-        case THEME_LEGACY:
-            setup_theme_legacy();
-            break;
-        case THEME_BLACK:
-            setup_theme_black();
-            break;
-        case THEME_FLAT:
-            setup_theme_flat();
-            break;
+        // case THEME_LEGACY:
+        //     setup_theme_legacy();
+        //     break;
+        // case THEME_BLACK:
+        //     setup_theme_black();
+        //     break;
+        // case THEME_FLAT:
+        //     setup_theme_flat();
+        //     break;
         case THEME_SIMPLE:
         default:
+            set_skin(&skin_default);
             setup_theme_simple();
             break;
     }
@@ -583,11 +597,6 @@ static void setup_theme_simple() {
     // bg_color = lv_color_black();
     lv_style_set_bg_color(&style.background, bg_color);
 
-    spectrum_color_up = lv_color_hex(0xeafcff);
-    spectrum_color_down = lv_color_hex(0x032b33);
-    spectrum_color_line = lv_color_hex(0x6da0ac);
-    spectrum_color_peak = lv_color_hex(0x475d62);
-
     lv_color_t top_block_bg1_color     = lv_color_hex(0x5f7e97);
     lv_color_t top_block_bg2_color     = lv_color_hex(0x333333);
     lv_color_t top_block_border1_color = lv_color_hex(0xffffff);
@@ -595,7 +604,7 @@ static void setup_theme_simple() {
     uint8_t    top_block_opa           = LV_OPA_60;
 
     /* Text styles */
-    lv_style_set_text_color(&style.text_base_color, lv_color_white());
+    // lv_style_set_text_color(&style.text_base_color, lv_color_white());
 
     /* Top blocks */
     lv_coord_t border_width = 1;
@@ -715,4 +724,53 @@ static void setup_theme_simple() {
 
 
     lv_obj_invalidate(lv_scr_act());
+}
+
+static lv_color_t color_adjust_hsv_value(lv_color_t base, float scale) {
+    lv_color_hsv_t hsv = lv_color_to_hsv(base);
+    hsv.v = LV_CLAMP(0, hsv.v * scale, 255);
+    return lv_color_hsv_to_rgb(hsv.h, hsv.s, hsv.v);
+}
+
+static void setup_skin_default(skin_t *skin) {
+    skin->base_text_color = lv_color_white();
+    // skin->base_text_color = lv_color_hex(0x00ffaa);
+
+    skin->spectrum.fill_color = lv_color_hex(0x7db4be);
+    skin->spectrum.line_color = lv_color_hex(0x7db4be);
+}
+
+static void set_skin(skin_t *skin) {
+    lv_color_t muted_text_color;
+    if (lv_color_brightness(skin->base_text_color) > 64) {
+        // Bright color, muted should be darker
+        muted_text_color = lv_color_darken(skin->base_text_color, LV_OPA_30);
+    } else {
+        muted_text_color = lv_color_lighten(skin->base_text_color, LV_OPA_30);
+    }
+    colors.base_text_color = skin->base_text_color;
+
+    lv_style_set_text_color(&style.text_base_color, skin->base_text_color);
+    lv_style_set_text_color(&style.btn.base, skin->base_text_color);
+    lv_style_set_text_color(&style.freq_bounds.base, skin->base_text_color);
+    lv_style_set_text_color(&style.msg, skin->base_text_color);
+    lv_style_set_text_color(&style.msg_tiny, skin->base_text_color);
+    lv_style_set_text_color(&style.panels.base, skin->base_text_color);
+    lv_style_set_text_color(&style.dialog.base, skin->base_text_color);
+    lv_style_set_text_color(&style.dialog.item, skin->base_text_color);
+    lv_style_set_text_color(&style.clock, skin->base_text_color);
+    lv_style_set_text_color(&style.knobs, skin->base_text_color);
+    lv_style_set_text_color(&style.rgb.letter, skin->base_text_color);
+    lv_style_set_text_color(&style.rgb.val_label, skin->base_text_color);
+
+
+    lv_style_set_text_color(&style.freq_bounds.disabled, muted_text_color);
+
+    /* Spectrum */
+    // TODO: add spectrum custom color toggle
+    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
+        styles_set_spectrum_color(skin->spectrum.fill_color, &skin->spectrum.line_color);
+    } else {
+        styles_set_spectrum_color(lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x), NULL);
+    }
 }

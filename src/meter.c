@@ -116,9 +116,9 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
     subject_subscribe_delayed_and_notify((Subject*)cfg_cur_att, on_bool_value_change, &att);
 
     db_val_label = lv_label_create(obj);
+    lv_obj_add_style(db_val_label, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_text_font(db_val_label, &sony_20, 0);
     lv_obj_align(db_val_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, pad - 2);
-    lv_obj_set_style_text_color(db_val_label, lv_color_white(), 0);
     lv_label_set_text(db_val_label, "");
 
     lv_timer_create(update_db_label_cb, LV_DISP_DEF_REFR_PERIOD * 3, NULL);

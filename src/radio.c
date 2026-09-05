@@ -738,7 +738,7 @@ static bool radio_tick() {
 
             if (low_power != (!pack->flag.vext && (pack->vbat <= 60))) {
                 low_power = !low_power;
-                scheduler_msg_send(MSG_LOW_POWER, (void*)(uintptr_t)low_power);
+                scheduler_msg_send(MSG_LOW_POWER, (void*)low_power);
             }
         }
         flow_info_t flow_info = pack->flow_info;

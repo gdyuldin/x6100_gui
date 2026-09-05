@@ -417,7 +417,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_style_border_width(table, 0, LV_PART_ITEMS);
 
     lv_obj_set_style_bg_opa(table, LV_OPA_TRANSP, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(table, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_add_style(table, &style.text_base_color, LV_PART_ITEMS);
     lv_obj_set_style_pad_top(table, 5, LV_PART_ITEMS);
     lv_obj_set_style_pad_bottom(table, 5, LV_PART_ITEMS);
     lv_obj_set_style_pad_left(table, 0, LV_PART_ITEMS);

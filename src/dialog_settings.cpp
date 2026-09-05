@@ -231,6 +231,7 @@ static void rgb_color_update_cb(lv_event_t * e)
     params_uint8_set(&params.spectrum_r, r);
     params_uint8_set(&params.spectrum_g, g);
     params_uint8_set(&params.spectrum_b, b);
+    styles_set_spectrum_color(col, NULL);
 }
 
 /* Meter Color */
@@ -327,10 +328,10 @@ lv_obj_t *slider_with_text(lv_obj_t *cell, T val, T min, T max, T step, size_t w
 
     /*Create a label below the slider*/
     lv_obj_t *slider_label = lv_label_create(cell);
+    lv_obj_add_style(slider_label, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_user_data(slider_label, (void *)fmt);
     lv_label_set_text_fmt(slider_label, fmt, val);
     lv_obj_align(slider_label, LV_ALIGN_RIGHT_MID, 12, 0);
-    lv_obj_set_style_text_color(slider_label, lv_color_white(), 0);
 
     lv_obj_set_user_data(obj, slider_label);
 
@@ -2149,7 +2150,7 @@ static void grid_create() {
     grid = lv_obj_create(dialog.obj);
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
     lv_obj_set_size(grid, 780, 330);
-    lv_obj_set_style_text_color(grid, lv_color_white(), 0);
+    lv_obj_add_style(grid, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_column(grid, SMALL_PAD, 0);
@@ -2297,7 +2298,7 @@ static void make_info_page() {
     grid = lv_obj_create(dialog.obj);
     lv_obj_set_size(grid, lv_pct(100), lv_pct(100));
     lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
-    lv_obj_set_style_text_color(grid, lv_color_white(), 0);
+    lv_obj_add_style(grid, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_pad_hor(grid, 30, 0);
     lv_obj_set_style_pad_ver(grid, 40, 0);

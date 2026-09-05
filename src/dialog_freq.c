@@ -53,7 +53,7 @@ static void construct_cb(lv_obj_t *parent) {
 
     lv_obj_remove_style(text, NULL, LV_STATE_ANY | LV_PART_MAIN);
 
-    lv_obj_set_style_text_color(text, lv_color_white(), 0);
+    lv_obj_add_style(text, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_bg_color(text, lv_color_white(), LV_PART_CURSOR);
     lv_obj_set_style_bg_opa(text, 255, LV_PART_CURSOR);
 

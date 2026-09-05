@@ -100,7 +100,7 @@ void dialog_item(dialog_t *dialog, lv_obj_t *obj) {
     lv_obj_add_style(obj, &style.dialog.item_edited, LV_STATE_EDITED);
 
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_CURSOR);
-    lv_obj_set_style_text_color(obj, lv_color_white(), LV_PART_CURSOR);
+    lv_obj_add_style(obj, &style.text_base_color, LV_PART_CURSOR);
     lv_obj_set_style_text_color(obj, lv_color_black(), LV_PART_CURSOR | LV_STATE_FOCUSED);
     lv_obj_set_style_bg_opa(obj, 128, LV_PART_CURSOR | LV_STATE_EDITED);
 

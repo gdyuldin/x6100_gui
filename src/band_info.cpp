@@ -127,7 +127,7 @@ static void band_info_draw_cb(lv_event_t *e) {
         lv_draw_label_dsc_t dsc_label;
         lv_draw_label_dsc_init(&dsc_label);
 
-        dsc_label.color = lv_color_white();
+        dsc_label.color = colors.base_text_color;
         dsc_label.font  = &sony_22;
 
         lv_point_t label_size;

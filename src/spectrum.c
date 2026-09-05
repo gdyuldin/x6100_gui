@@ -489,17 +489,10 @@ static void shift_peaks(int32_t df) {
 /***** Direct (rotated) rendering *****/
 
 static void spectrum_update_colors(void) {
-    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
-        s_main_color = spectrum_color_line;
-        grad_dsc.stops[1].color = spectrum_color_up;
-        grad_dsc.stops[0].color = spectrum_color_down;
-        s_peak_color = spectrum_color_peak;
-    } else {
-        s_main_color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
-        grad_dsc.stops[1].color = s_main_color;
-        grad_dsc.stops[0].color = lv_color_darken(s_main_color, LV_OPA_50);
-        s_peak_color = lv_color_hex(0x555555);
-    }
+    grad_dsc.stops[1].color = style.colors.spectrum.fill_up;
+    grad_dsc.stops[0].color = style.colors.spectrum.fill_down;
+    s_main_color = style.colors.spectrum.line;
+    s_peak_color = style.colors.spectrum.peak;
 
 }
 

@@ -47,7 +47,6 @@ extern const uint32_t *wf_palette;
 typedef struct {
     lv_style_t background;
     lv_style_t spectrum;
-    lv_style_t freq_bounds;
     lv_style_t waterfall;
     lv_style_t waterfall_middle_line;
 
@@ -62,6 +61,11 @@ typedef struct {
     lv_style_t tx_info;
     lv_style_t cw_tune;
     lv_style_t text_base_color;
+
+    struct {
+        lv_style_t base;
+        lv_style_t disabled;
+    } freq_bounds;
 
     struct {
         lv_style_t base;
@@ -95,9 +99,25 @@ typedef struct {
         lv_style_t slider_focused;
         lv_style_t val_label;
     } rgb;
+
+    /* Actual colors */
+    struct {
+        struct {
+            lv_color_t fill_up;
+            lv_color_t fill_down;
+            lv_color_t line;
+            lv_color_t peak;
+        } spectrum;
+    } colors;
 } styles_t;
 
+
+typedef struct {
+    lv_color_t base_text_color;
+} colors_t;
+
 extern styles_t style;
+extern colors_t colors;
 
 /* Meter colors */
 extern lv_color_t meter_color_noise;
@@ -107,11 +127,6 @@ extern lv_color_t meter_color_over;
 extern lv_color_t meter_color_peak;
 
 extern lv_color_t bg_color;
-// Spectrum
-extern lv_color_t spectrum_color_up;
-extern lv_color_t spectrum_color_down;
-extern lv_color_t spectrum_color_line;
-extern lv_color_t spectrum_color_peak;
 
 /* Fonts */
 
@@ -143,4 +158,5 @@ void styles_init(themes_t theme);
 
 void styles_set_theme(themes_t theme);
 
+void styles_set_spectrum_color(lv_color_t fill_color, lv_color_t *line_color);
 void styles_update_meter_colors(void);

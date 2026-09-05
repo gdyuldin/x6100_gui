@@ -8,6 +8,12 @@
 
 #include "dialog_wifi.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include "lvgl/lvgl.h"
+
+#include "wifi.h"
+#include "styles.h"
 #include "buttons.h"
 #include "events.h"
 #include "keyboard.h"
@@ -16,14 +22,9 @@
 #include "pubsub_ids.h"
 #include "radio.h"
 #include "textarea_window.h"
-#include "wifi.h"
 
-#include "lvgl/lvgl.h"
-#include <stdio.h>
-#include <stdlib.h>
-
-#define DIALOG_WIDTH 775
-#define DIALOG_HEIGHT 320
+// #define DIALOG_WIDTH 775
+// #define DIALOG_HEIGHT 320
 #define PARAMS_WIDTH 300
 
 #define SIZE_OF_ARRAY(arr) (sizeof(arr) / sizeof(*arr))
@@ -192,7 +193,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_style_border_opa(ap_table, 128, LV_PART_MAIN);
 
     lv_obj_set_style_border_width(ap_table, 0, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(ap_table, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_add_style(ap_table, &style.text_base_color, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(ap_table, lv_color_white(), LV_PART_ITEMS | LV_STATE_EDITED);
     lv_obj_set_style_bg_opa(ap_table, LV_OPA_30, LV_PART_ITEMS | LV_STATE_EDITED);
     lv_obj_set_style_pad_top(ap_table, 3, LV_PART_ITEMS);

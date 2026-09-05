@@ -88,9 +88,9 @@ static void toggle_atu_enabled();
 
 static void on_fg_freq_change(Subject *subj, void *user_data);
 static void update_freq_boundaries(Subject *subj, void *user_data);
-static void update_freq_boundaries_lv_cb(void *s, lv_msg_t *m);
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data);
 
+static void lock_freq_cb(void * s, lv_msg_t * msg);
 
 void mem_load(uint16_t id) {
     if (!cfg_memory_load(id)) {
@@ -798,7 +798,7 @@ static void tx_cb(void * s, lv_msg_t * msg) {
 }
 
 static void low_power_cb(void * s, lv_msg_t * msg) {
-    bool is_low = (bool)(uintptr_t)lv_msg_get_user_data(msg);
+    bool is_low = *(bool*)lv_msg_get_payload(msg);
     if (is_low) {
         if (!low_power_timer) {
             low_power_timer = lv_timer_create(low_power_timer_cb, 30000, NULL);
@@ -810,6 +810,17 @@ static void low_power_cb(void * s, lv_msg_t * msg) {
             lv_timer_del(low_power_timer);
             low_power_timer = NULL;
         }
+    }
+}
+
+static void lock_freq_cb(void * s, lv_msg_t * msg) {
+    bool lock = *(bool*)lv_msg_get_payload(msg);
+    if (lock) {
+        lv_obj_add_state(freq_bounds[0], LV_STATE_DISABLED);
+        lv_obj_add_state(freq_bounds[1], LV_STATE_DISABLED);
+    } else {
+        lv_obj_clear_state(freq_bounds[0], LV_STATE_DISABLED);
+        lv_obj_clear_state(freq_bounds[1], LV_STATE_DISABLED);
     }
 }
 
@@ -1079,15 +1090,15 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     lv_obj_t *f;
 
     f = lv_label_create(obj);
-    lv_obj_add_style(f, &style.freq_bounds, 0);
+    lv_obj_add_style(f, &style.freq_bounds.base, LV_PART_MAIN);
+    lv_obj_add_style(f, &style.freq_bounds.disabled, LV_STATE_DISABLED);
     lv_obj_align(f, LV_ALIGN_TOP_LEFT, 10, y + 3);
-    lv_label_set_recolor(f, true);
     freq_bounds[0] = f;
 
     f = lv_label_create(obj);
-    lv_obj_add_style(f, &style.freq_bounds, 0);
+    lv_obj_add_style(f, &style.freq_bounds.base, LV_PART_MAIN);
+    lv_obj_add_style(f, &style.freq_bounds.disabled, LV_STATE_DISABLED);
     lv_obj_align(f, LV_ALIGN_TOP_RIGHT, -10, y + 3);
-    lv_label_set_recolor(f, true);
     freq_bounds[1] = f;
 
     /* Waterfall */
@@ -1141,7 +1152,7 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
     subject_subscribe_delayed_and_notify((Subject*)radio_fg_freq_subj, on_fg_freq_change, NULL);
 
-    lv_msg_subscribe(MSG_LOCK_FREQ, update_freq_boundaries_lv_cb, NULL);
+    lv_msg_subscribe(MSG_LOCK_FREQ, lock_freq_cb, NULL);
     subject_subscribe_delayed((Subject*)radio_fg_freq_subj, update_freq_boundaries, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg_mode_zoom, update_freq_boundaries, NULL);
 
@@ -1172,7 +1183,6 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
 
     uint16_t mhz, khz, hz;
     uint32_t half_width = 50000;
-    uint32_t color      = lm_get_freq() ? 0xBBBBBB : 0xFFFFFF;
 
     int32_t zoom = param_i_get(cfg_mode_zoom);
 
@@ -1181,14 +1191,10 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
     }
 
     split_freq(f - half_width, &mhz, &khz, &hz);
-    lv_label_set_text_fmt(freq_bounds[0], "#%03X %i.%03i", color, mhz, khz);
+    lv_label_set_text_fmt(freq_bounds[0], "%i.%03i", mhz, khz);
 
     split_freq(f + half_width, &mhz, &khz, &hz);
-    lv_label_set_text_fmt(freq_bounds[1], "#%03X %i.%03i", color, mhz, khz);
-}
-
-static void update_freq_boundaries_lv_cb(void *s, lv_msg_t *m) {
-    update_freq_boundaries(NULL, NULL);
+    lv_label_set_text_fmt(freq_bounds[1], "%i.%03i", mhz, khz);
 }
 
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data) {
