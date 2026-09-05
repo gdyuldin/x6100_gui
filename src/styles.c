@@ -18,10 +18,15 @@
 /* Skin API */
 typedef struct {
     lv_color_t base_text_color;
+
+    lv_color_t spectrum_color;
     struct {
-        lv_color_t fill_color;
-        lv_color_t line_color;
-    } spectrum;
+        lv_color_t noise;
+        lv_color_t low;
+        lv_color_t mid;
+        lv_color_t high;
+        lv_color_t peak;
+    } s_meter;
 } skin_t;
 
 const uint32_t *wf_palette;
@@ -30,13 +35,6 @@ static uint32_t rng_state=1;
 
 styles_t style;
 colors_t colors;
-
-/* Meter colors */
-lv_color_t meter_color_noise;
-lv_color_t meter_color_s9;
-lv_color_t meter_color_s9plus;
-lv_color_t meter_color_over;
-lv_color_t meter_color_peak;
 
 lv_color_t bg_color;
 
@@ -48,6 +46,8 @@ static lv_img_dsc_t button_bg_dsc = {0};
 static lv_img_dsc_t dialog_bg_dsc = {0};
 
 static skin_t skin_default;
+
+static skin_t *skin_current;
 
 static void setup_theme_legacy();
 static void setup_theme_simple();
@@ -326,38 +326,42 @@ void styles_init(themes_t theme) {
     lv_style_set_pad_top(&style.rgb.val_label, -2);
 
     styles_set_theme(theme);
-
-    styles_update_meter_colors();
 }
 
-void styles_set_spectrum_color(lv_color_t fill_color, lv_color_t *line_color) {
-    style.colors.spectrum.fill_up = color_adjust_hsv_value(fill_color, 1.4f);
-    style.colors.spectrum.fill_down = color_adjust_hsv_value(fill_color, 0.3f);
-    lv_color_t line_color_base;
-    if (line_color) {
-        line_color_base = *line_color;
-    } else {
-        line_color_base = fill_color;
-    }
-    style.colors.spectrum.line = line_color_base;
-    style.colors.spectrum.peak = color_adjust_hsv_value(line_color_base, 0.5f);
+void styles_set_spectrum_color(lv_color_t color) {
+    lv_color_hsv_t hsv = lv_color_to_hsv(color);
+    style.colors.spectrum.mid = color;
+
+    // Low darker and bit more saturated
+    style.colors.spectrum.low = lv_color_hsv_to_rgb(
+        hsv.h,
+        LV_CLAMP(0, hsv.s * 1.2f, 100),
+        hsv.v * 0.2f);
+    // High is bright and bit less saturates
+    style.colors.spectrum.high = lv_color_hsv_to_rgb(
+        hsv.h,
+        hsv.s * 0.4f,
+        100);
+
+    // style.colors.spectrum.line = color;
+    style.colors.spectrum.line = lv_color_hsv_to_rgb(hsv.h, 12, 85);
+    style.colors.spectrum.peak = lv_color_hsv_to_rgb(hsv.h, 12, 30);
 }
 
-void styles_update_meter_colors(void)
+void styles_update_meter_colors(meter_color_t mc)
 {
-    if (params.meter_color.x == METER_GRAY) {
-        meter_color_noise   = lv_color_hex(0x777777);
-        meter_color_s9      = lv_color_hex(0xAAAAAA);
-        meter_color_s9plus  = lv_color_hex(0xAAAA00);
-        meter_color_over    = lv_color_hex(0xAA0000);
-        meter_color_peak    = lv_color_hex(0xAAAAAA);
+    if (mc == METER_COLORED) {
+        style.colors.s_meter.noise = lv_color_hex(0x228B22);
+        style.colors.s_meter.low = lv_color_hex(0x00CC00);
+        style.colors.s_meter.mid = lv_color_hex(0xFFFF00);
+        style.colors.s_meter.high = lv_color_hex(0xAA0000);
+        style.colors.s_meter.peak = lv_color_hex(0xFFFF00);
     } else {
-        // Colored
-        meter_color_noise   = lv_color_hex(0x228B22);
-        meter_color_s9      = lv_color_hex(0x00CC00);
-        meter_color_s9plus  = lv_color_hex(0xFFFF00);
-        meter_color_over    = lv_color_hex(0xAA0000);
-        meter_color_peak    = lv_color_hex(0xFFFF00);
+        style.colors.s_meter.noise = skin_current->s_meter.noise;
+        style.colors.s_meter.low = skin_current->s_meter.low;
+        style.colors.s_meter.mid = skin_current->s_meter.mid;
+        style.colors.s_meter.high = skin_current->s_meter.high;
+        style.colors.s_meter.peak = skin_current->s_meter.peak;
     }
 }
 
@@ -374,6 +378,7 @@ void styles_set_theme(themes_t theme) {
         //     break;
         case THEME_SIMPLE:
         default:
+            skin_current = &skin_default;
             set_skin(&skin_default);
             setup_theme_simple();
             break;
@@ -736,8 +741,13 @@ static void setup_skin_default(skin_t *skin) {
     skin->base_text_color = lv_color_white();
     // skin->base_text_color = lv_color_hex(0x00ffaa);
 
-    skin->spectrum.fill_color = lv_color_hex(0x7db4be);
-    skin->spectrum.line_color = lv_color_hex(0x7db4be);
+    skin->spectrum_color = lv_color_hex(0xCEB86E);
+
+    skin->s_meter.noise = lv_color_hex(0x777777);
+    skin->s_meter.low   = lv_color_hex(0xAAAAAA);
+    skin->s_meter.mid   = lv_color_hex(0xAAAA00);
+    skin->s_meter.high  = lv_color_hex(0xAA0000);
+    skin->s_meter.peak  = lv_color_hex(0xAAAAAA);
 }
 
 static void set_skin(skin_t *skin) {
@@ -768,8 +778,11 @@ static void set_skin(skin_t *skin) {
     /* Spectrum */
     // TODO: add spectrum custom color toggle
     if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
-        styles_set_spectrum_color(skin->spectrum.fill_color, &skin->spectrum.line_color);
+        styles_set_spectrum_color(skin->spectrum_color);
     } else {
-        styles_set_spectrum_color(lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x), NULL);
+        styles_set_spectrum_color(lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x));
     }
+
+    // S-meter
+    styles_update_meter_colors(params.meter_color.x);
 }

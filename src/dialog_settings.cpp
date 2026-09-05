@@ -231,7 +231,7 @@ static void rgb_color_update_cb(lv_event_t * e)
     params_uint8_set(&params.spectrum_r, r);
     params_uint8_set(&params.spectrum_g, g);
     params_uint8_set(&params.spectrum_b, b);
-    styles_set_spectrum_color(col, NULL);
+    styles_set_spectrum_color(col);
 }
 
 /* Meter Color */
@@ -239,8 +239,9 @@ static void meter_color_update_cb(lv_event_t * e) {
     lv_obj_t        *obj = lv_event_get_target(e);
     params_uint8_t  *var = (params_uint8_t*)lv_event_get_user_data(e);
 
-    params_uint8_set(var, lv_dropdown_get_selected(obj));
-    styles_update_meter_colors();
+    meter_color_t val = (meter_color_t)lv_dropdown_get_selected(obj);
+    params_uint8_set(var, val);
+    styles_update_meter_colors(val);
 }
 
 /* SWR Color */

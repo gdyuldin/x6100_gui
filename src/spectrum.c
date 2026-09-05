@@ -258,9 +258,10 @@ lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
 
     // Setup spectrum gradient
     grad_dsc.dir           = LV_GRAD_DIR_HOR;
-    grad_dsc.stops_count   = 2;
+    grad_dsc.stops_count   = 3;
     grad_dsc.stops[0].frac = 0;
-    grad_dsc.stops[1].frac = 255;
+    grad_dsc.stops[1].frac = 128;
+    grad_dsc.stops[2].frac = 255;
 
     subject_subscribe_and_notify((Subject*)cfg_mode_zoom, on_zoom_changed, NULL);
 
@@ -489,8 +490,9 @@ static void shift_peaks(int32_t df) {
 /***** Direct (rotated) rendering *****/
 
 static void spectrum_update_colors(void) {
-    grad_dsc.stops[1].color = style.colors.spectrum.fill_up;
-    grad_dsc.stops[0].color = style.colors.spectrum.fill_down;
+    grad_dsc.stops[2].color = style.colors.spectrum.high;
+    grad_dsc.stops[1].color = style.colors.spectrum.mid;
+    grad_dsc.stops[0].color = style.colors.spectrum.low;
     s_main_color = style.colors.spectrum.line;
     s_peak_color = style.colors.spectrum.peak;
 

@@ -102,11 +102,19 @@ typedef struct {
     /* Actual colors */
     struct {
         struct {
-            lv_color_t fill_up;
-            lv_color_t fill_down;
+            lv_color_t low;
+            lv_color_t mid;
+            lv_color_t high;
             lv_color_t line;
             lv_color_t peak;
         } spectrum;
+        struct {
+            lv_color_t noise;
+            lv_color_t low;
+            lv_color_t mid;
+            lv_color_t high;
+            lv_color_t peak;
+        } s_meter;
     } colors;
 } styles_t;
 
@@ -117,13 +125,6 @@ typedef struct {
 
 extern styles_t style;
 extern colors_t colors;
-
-/* Meter colors */
-extern lv_color_t meter_color_noise;
-extern lv_color_t meter_color_s9;
-extern lv_color_t meter_color_s9plus;
-extern lv_color_t meter_color_over;
-extern lv_color_t meter_color_peak;
 
 extern lv_color_t bg_color;
 
@@ -157,5 +158,5 @@ void styles_init(themes_t theme);
 
 void styles_set_theme(themes_t theme);
 
-void styles_set_spectrum_color(lv_color_t fill_color, lv_color_t *line_color);
-void styles_update_meter_colors(void);
+void styles_set_spectrum_color(lv_color_t color);
+void styles_update_meter_colors(meter_color_t mc);

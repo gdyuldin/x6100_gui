@@ -73,13 +73,13 @@ static void rx_cb(void * s, lv_msg_t * msg) {
 
 static lv_color_t meter_color_cb(float val) {
     if (val <= noise_level) {
-        return meter_color_noise;
+        return style.colors.s_meter.noise;
     } else if (val <= S9) {
-        return meter_color_s9;
+        return style.colors.s_meter.low;
     } else if (val <= S9_20) {
-        return meter_color_s9plus;
+        return style.colors.s_meter.mid;
     }
-    return meter_color_over;
+    return style.colors.s_meter.high;
 }
 
 
@@ -106,11 +106,11 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
 
     lv_bar_indicator_set_ticks(bar, s_items, NUM_ITEMS);
     lv_bar_indicator_set_font(bar, &sony_22);
-    lv_bar_indicator_set_default_color(bar, meter_color_s9);
+    lv_bar_indicator_set_default_color(bar, style.colors.s_meter.low);
     lv_bar_indicator_set_color_cb(bar, meter_color_cb);
 
     lv_bar_indicator_set_peak_enable(bar, true);
-    lv_bar_indicator_set_peak_color(bar, meter_color_peak);
+    lv_bar_indicator_set_peak_color(bar, style.colors.s_meter.peak);
 
     subject_subscribe_delayed_and_notify((Subject*)cfg_cur_pre, on_bool_value_change, &pre);
     subject_subscribe_delayed_and_notify((Subject*)cfg_cur_att, on_bool_value_change, &att);
