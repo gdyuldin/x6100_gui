@@ -344,11 +344,11 @@ static void waterfall_render_rotated(uint32_t *buf, int stride) {
     }
 
     lv_style_value_t style_val;
-    lv_style_get_prop(&style_waterfall_middle_line, LV_STYLE_LINE_COLOR, &style_val);
+    lv_style_get_prop(&style.waterfall_middle_line, LV_STYLE_LINE_COLOR, &style_val);
     lv_color_t line_color = style_val.color;
-    lv_style_get_prop(&style_waterfall_middle_line, LV_STYLE_LINE_WIDTH, &style_val);
+    lv_style_get_prop(&style.waterfall_middle_line, LV_STYLE_LINE_WIDTH, &style_val);
     lv_coord_t style_width = style_val.num;
-    lv_style_get_prop(&style_waterfall_middle_line, LV_STYLE_LINE_OPA, &style_val);
+    lv_style_get_prop(&style.waterfall_middle_line, LV_STYLE_LINE_OPA, &style_val);
     lv_opa_t line_opa = (lv_opa_t)style_val.num;
 
     bool line_visible = params.waterfall_center_line.x;

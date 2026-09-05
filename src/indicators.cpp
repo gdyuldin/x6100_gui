@@ -1,0 +1,357 @@
+#include "indicators.h"
+
+#include "globals.h"
+#include "cfg/settings_manager.h"
+#include "cfg/atu.h"
+#include "pubsub_ids.h"
+#include "wifi.h"
+
+extern "C" {
+    #include "styles.h"
+}
+
+#define SEP_WIDTH 4
+#define ATU_STATE_OUT_OF_RANGE LV_STATE_USER_1
+
+static lv_obj_t * create_item(lv_obj_t *parent, const char *label);
+static lv_obj_t * create_spacer(lv_obj_t *parent);
+static lv_obj_t * create_sep(lv_obj_t *parent);
+
+static void wifi_state_change_cb(void *s, lv_msg_t *m);
+
+static void mark_non_zero(Subject *subj, void *user_data);
+static void on_agc_change(Subject *subj, void *user_data);
+static void atu_label_update(Subject *subj, void * user_data);
+
+
+static lv_obj_t     *cont_left;
+// static lv_obj_t     *cont_middle;
+static lv_obj_t     *cont_right;
+
+static lv_obj_t     *att_label;
+static lv_obj_t     *pre_label;
+
+static lv_obj_t     *nr_label;
+static lv_obj_t     *nb_label;
+static lv_obj_t     *dnf_label;
+
+static lv_obj_t     *sql_label;
+static lv_obj_t     *rit_label;
+static lv_obj_t     *xit_label;
+static lv_obj_t     *atu_label;
+static lv_obj_t     *spl_label;
+
+static lv_obj_t     *agc_label;
+static lv_obj_t     *wifi_label;
+
+static lv_style_t ind_style;
+static lv_style_t ind_style_active;
+static lv_style_t ind_style_disabled;
+static lv_style_t atu_style_out_of_range;
+static lv_style_t ind_sep_style;  // group separator style
+
+
+
+void indicators_init(lv_obj_t * parent, lv_coord_t h, lv_coord_t meter_w) {
+
+    // Styles
+    lv_style_init(&ind_style);
+    lv_style_set_text_font(&ind_style, &sony_22);
+    lv_style_set_text_color(&ind_style, lv_color_hex(0x8A8A8A));
+    lv_style_set_pad_hor(&ind_style, 5);
+    lv_style_set_align(&ind_style, LV_ALIGN_CENTER);
+
+    lv_style_init(&ind_style_active);
+    lv_style_set_text_color(&ind_style_active, lv_color_hex(0xFFFFFF));
+    lv_style_set_bg_color(&ind_style_active, lv_color_hex(0x12526F));
+    lv_style_set_bg_opa(&ind_style_active, LV_OPA_COVER);
+    lv_style_set_radius(&ind_style_active, 5);
+    lv_style_set_pad_ver(&ind_style_active, 3);
+
+    lv_style_init(&ind_style_disabled);
+    lv_style_set_text_color(&ind_style_disabled, lv_color_hex(0x606060));
+
+    lv_style_init(&atu_style_out_of_range);
+    lv_style_set_text_color(&atu_style_out_of_range, lv_color_hex(0xFF9F43));
+
+    lv_style_init(&ind_sep_style);
+    lv_style_set_bg_color(&ind_sep_style, lv_color_hex(0x282828));
+    lv_style_set_bg_opa(&ind_sep_style, LV_OPA_COVER);
+    lv_style_set_width(&ind_sep_style, SEP_WIDTH);
+    lv_style_set_height(&ind_sep_style, 26);
+
+    // End styles
+
+    cont_left = lv_obj_create(parent);
+    lv_obj_remove_style_all(cont_left);
+
+    lv_obj_set_size(cont_left, meter_w + SEP_WIDTH / 2, h);
+    lv_obj_set_flex_flow(cont_left, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(cont_left, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    // Spacing between items
+    // lv_obj_set_style_pad_column(cont_left, 0, LV_PART_MAIN);
+
+    create_spacer(cont_left);
+    sql_label = create_item(cont_left, "SQL");
+    create_spacer(cont_left);
+    create_sep(cont_left);
+    create_spacer(cont_left);
+    att_label = create_item(cont_left, "ATT");
+    create_spacer(cont_left);
+    pre_label = create_item(cont_left, "PRE");
+    create_spacer(cont_left);
+    create_sep(cont_left);
+    create_spacer(cont_left);
+    nr_label = create_item(cont_left, "NR");
+    create_spacer(cont_left);
+    nb_label = create_item(cont_left, "NB");
+    create_spacer(cont_left);
+    dnf_label = create_item(cont_left, "DNF");
+    create_spacer(cont_left);
+    create_sep(cont_left);
+    create_spacer(cont_left);
+    agc_label = create_item(cont_left, "AGC-A");
+    create_spacer(cont_left);
+    create_sep(cont_left);
+
+    cont_right = lv_obj_create(parent);
+    lv_obj_remove_style_all(cont_right);
+    lv_obj_set_size(cont_right, SCREEN_WIDTH - meter_w - 14, h);
+    lv_obj_set_x(cont_right, meter_w + SEP_WIDTH / 2 + 10);
+    // lv_obj_add_style(obj, &style.info, 0);
+    // lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(cont_right, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(cont_right, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    // Spacing between items
+    lv_obj_set_style_pad_column(cont_right, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    // mode = create_item(cont_middle, "CW");
+    spl_label = create_item(cont_right, "SPL");
+    atu_label = create_item(cont_right, "ATU1");
+    lv_obj_add_style(atu_label, &ind_style_disabled, LV_STATE_DISABLED);
+    lv_obj_add_style(atu_label, &atu_style_out_of_range, ATU_STATE_OUT_OF_RANGE);
+    create_sep(cont_right);
+    rit_label = create_item(cont_right, "RIT");
+    xit_label = create_item(cont_right, "XIT");
+
+    create_spacer(cont_right);
+
+    // cont_right = lv_obj_create(parent);
+    // lv_obj_remove_style_all(cont_right);
+    // lv_obj_set_size(cont_right, 200, h);
+    // lv_obj_align(cont_right, LV_ALIGN_TOP_RIGHT, -10, 0);
+    // // lv_obj_add_style(obj, &style.info, 0);
+    // // lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    // lv_obj_set_flex_flow(cont_right, LV_FLEX_FLOW_ROW);
+    // lv_obj_set_flex_align(cont_right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    // // Spacing between items
+    // lv_obj_set_style_pad_column(cont_right, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    wifi_label = create_item(cont_right, LV_SYMBOL_WIFI "");
+
+
+    // Subscriptions
+    cfg_sm.cp_cur_att.subscribe_delayed_and_notify(mark_non_zero, (void*)att_label);
+    cfg_sm.cp_cur_pre.subscribe_delayed_and_notify(mark_non_zero, (void*)pre_label);
+
+    cfg_sm.p_squelch.subscribe_delayed_and_notify(mark_non_zero, (void*)sql_label);
+
+    cfg_sm.cp_cur_agc.subscribe_delayed_and_notify(mark_non_zero, (void*)agc_label);
+    cfg_sm.cp_cur_agc.subscribe_delayed_and_notify(on_agc_change);
+
+    cfg_sm.p_nr.subscribe_delayed_and_notify(mark_non_zero, (void*)nr_label);
+    cfg_sm.p_nb.subscribe_delayed_and_notify(mark_non_zero, (void*)nb_label);
+    cfg_sm.p_dnf.subscribe_delayed_and_notify(mark_non_zero, (void*)dnf_label);
+
+    cfg_sm.p_band_split.subscribe_delayed_and_notify(mark_non_zero, (void*)spl_label);
+
+    cfg_sm.p_atu_enabled.subscribe_delayed(atu_label_update);
+    cfg_sm.p_ant_id.subscribe_delayed(atu_label_update);
+    atu_network.loaded.subscribe_delayed_and_notify(atu_label_update);
+
+    cfg_sm.p_rit.subscribe_delayed_and_notify(mark_non_zero, (void*)rit_label);
+    cfg_sm.p_xit.subscribe_delayed_and_notify(mark_non_zero, (void*)xit_label);
+
+    lv_msg_subscribe(MSG_WIFI_STATE_CHANGED, wifi_state_change_cb, NULL);
+
+
+    // lv_obj_t *row1 = lv_obj_create(obj);
+    // lv_obj_add_style(row1, &style.info_row, 0);
+    // lv_obj_set_size(row1, 190, 24);
+    // lv_obj_align(row1, LV_ALIGN_CENTER, 0, 0);
+    // lv_obj_clear_flag(row1, LV_OBJ_FLAG_SCROLLABLE);
+    // lv_obj_set_flex_flow(row1, LV_FLEX_FLOW_ROW);
+
+    // uint8_t i = 0;
+    // for (; i < 3; i++) {
+    //     lv_obj_t *item = lv_label_create(row1);
+    //     lv_obj_set_flex_grow(item, 1);
+    //     items[i] = item;
+    // }
+
+    // lv_obj_t *row2 = lv_obj_create(obj);
+    // lv_obj_add_style(row2, &style.info_row, 0);
+    // lv_obj_set_size(row2, 190, 24);
+    // lv_obj_align(row2, LV_ALIGN_CENTER, 0, 0);
+    // lv_obj_clear_flag(row2, LV_OBJ_FLAG_SCROLLABLE);
+    // lv_obj_set_flex_flow(row2, LV_FLEX_FLOW_ROW);
+
+    // for (; i < sizeof(items) / sizeof(*items); i++) {
+    //     lv_obj_t *item = lv_label_create(row2);
+    //     lv_obj_set_flex_grow(item, 3);
+    //     items[i] = item;
+    // }
+
+    // lv_obj_set_flex_grow(items[INFO_WIFI], 2);
+
+    // for (i = 0; i < sizeof(items) / sizeof(*items); i++)
+    // {
+    //     lv_obj_add_style(items[i], &style.info_item, 0);
+    //     lv_obj_set_style_text_align(items[i], LV_TEXT_ALIGN_CENTER, 0);
+    //     lv_obj_set_style_text_color(items[i], lv_color_white(), 0);
+    // }
+
+    // lv_label_set_text(items[INFO_PRE], "PRE");
+    // lv_label_set_text(items[INFO_ATT], "ATT");
+    // lv_label_set_text(items[INFO_WIFI], LV_SYMBOL_WIFI " ");
+    // lv_obj_set_style_text_color(items[INFO_WIFI], lv_color_hex(0x909090), 0);
+
+    // subject_subscribe_delayed((Subject*)cfg_band_current_vfo, vfo_label_update, NULL);
+    // subject_subscribe_delayed_and_notify((Subject*)cfg_band_split, vfo_label_update, NULL);
+
+    // subject_subscribe_delayed((Subject*)cfg_cur_mode, mode_label_update, NULL);
+    // subject_subscribe_delayed_and_notify((Subject*)mode_lock, mode_label_update, NULL);
+
+    // subject_subscribe_delayed((Subject*)cfg_ant_id, atu_label_update, NULL);
+    // subject_subscribe_delayed((Subject*)cfg_fg_freq, atu_label_update, NULL);
+    // cfg_atu_loaded_subscribe_delayed(atu_label_update, NULL);
+    // subject_subscribe_delayed_and_notify((Subject*)cfg_atu_enabled, atu_label_update, NULL);
+
+    // subject_subscribe_delayed_and_notify((Subject*)cfg_cur_agc, agc_label_update, NULL);
+
+    // subject_subscribe_delayed_and_notify((Subject*)cfg_cur_att, att_label_update, NULL);
+    // subject_subscribe_delayed_and_notify((Subject*)cfg_cur_pre, pre_label_update, NULL);
+
+    //
+
+    // return obj;
+}
+
+void indicators_left_show(bool v) {
+    if (!v) {
+        lv_obj_add_flag(cont_left, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(cont_left, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void indicators_show(bool v) {
+    if (!v) {
+        lv_obj_add_flag(cont_left, LV_OBJ_FLAG_HIDDEN);
+        // lv_obj_add_flag(cont_middle, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(cont_right, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(cont_left, LV_OBJ_FLAG_HIDDEN);
+        // lv_obj_clear_flag(cont_middle, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(cont_right, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+
+static lv_obj_t * create_item(lv_obj_t *parent, const char *label) {
+    lv_obj_t *item = lv_label_create(parent);
+    lv_obj_add_style(item, &ind_style, LV_STATE_DEFAULT);
+    lv_obj_add_style(item, &ind_style_active, LV_STATE_CHECKED);
+    lv_label_set_text(item, label);
+    return item;
+}
+
+static lv_obj_t * create_spacer(lv_obj_t *parent) {
+    lv_obj_t *spacer = lv_obj_create(parent);
+    lv_obj_remove_style_all(spacer);
+    lv_obj_set_height(spacer, 1);
+    lv_obj_set_flex_grow(spacer, 1);
+    return spacer;
+}
+
+static lv_obj_t * create_sep(lv_obj_t *parent) {
+    lv_obj_t *item = lv_obj_create(parent);
+    lv_obj_remove_style_all(item);
+    lv_obj_add_style(item, &ind_sep_style, LV_STATE_DEFAULT);
+    return item;
+}
+
+
+static const char * agc_to_label(x6100_agc_t agc) {
+    switch (agc) {
+        case x6100_agc_off:      return "AGC-0";
+        case x6100_agc_fast:     return "AGC-F";
+        case x6100_agc_slow:     return "AGC-S";
+        case x6100_agc_auto:     return "AGC-A";
+    }
+    return "AGC-?";
+}
+
+static void wifi_state_change_cb(void *s, lv_msg_t *m) {
+    wifi_status_t status = wifi_get_status();
+    if (status == WIFI_OFF) {
+        lv_obj_add_flag(wifi_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(wifi_label, LV_OBJ_FLAG_HIDDEN);
+        if (status == WIFI_CONNECTED) {
+            lv_obj_add_state(wifi_label, LV_STATE_CHECKED);
+        } else {
+            lv_obj_clear_state(wifi_label, LV_STATE_CHECKED);
+        }
+    }
+    lv_obj_update_layout(lv_obj_get_parent(wifi_label));
+}
+
+
+static void mark_non_zero(Subject *subj, void *user_data) {
+    lv_obj_t *item = (lv_obj_t *)user_data;
+    if (static_cast<SubjectT<int32_t>*>(subj)->get()) {
+        lv_obj_add_state(item, LV_STATE_CHECKED);
+    } else {
+        lv_obj_clear_state(item, LV_STATE_CHECKED);
+    }
+}
+
+static void on_agc_change(Subject *subj, void *user_data) {
+    x6100_agc_t agc_val = (x6100_agc_t)cfg_sm.cp_cur_agc.get();
+    lv_label_set_text(agc_label, agc_to_label(agc_val));
+}
+
+static void atu_label_update(Subject *subj, void * user_data) {
+    int32_t ant = cfg_sm.p_ant_id.get();
+    int32_t freq = cfg_sm.cp_fg_freq.get();
+    lv_label_set_text_fmt(atu_label, "ATU%i", ant);
+
+    lv_obj_clear_state(atu_label, ATU_STATE_OUT_OF_RANGE);
+    lv_obj_clear_state(atu_label, LV_STATE_DISABLED);
+    lv_obj_clear_state(atu_label, LV_STATE_CHECKED);
+
+    if (cfg_sm.transverter_shift_for(freq)) {
+        lv_obj_add_state(atu_label, LV_STATE_DISABLED);
+    } else if (cfg_sm.p_atu_enabled.get()) {
+        lv_obj_add_state(atu_label, LV_STATE_CHECKED);
+        if (!atu_network.loaded.get()) {
+            lv_obj_add_state(atu_label, ATU_STATE_OUT_OF_RANGE);
+        }
+    }
+
+    // if (!cfg_sm.p_atu_enabled.get()) {
+    //     lv_obj_clear_state(atu_label, LV_STATE_CHECKED);
+    //     lv_obj_clear_state(atu_label, LV_STATE_DISABLED);
+    // } else {
+    //     if (cfg_sm.transverter_shift_for(freq)) {
+    //         lv_obj_set_style_text_color(items[INFO_ATU], lv_color_hex(0xAAAAAA), 0);
+    //         lv_obj_set_style_bg_opa(items[INFO_ATU], LV_OPA_20, 0);
+    //     } else {
+    //         lv_obj_set_style_text_color(items[INFO_ATU], cfg_atu_is_loaded() ? lv_color_black() : lv_color_hex(0xFF0000), 0);
+    //         lv_obj_set_style_bg_opa(items[INFO_ATU], LV_OPA_50, 0);
+    //     }
+    //     lv_obj_set_style_bg_color(items[INFO_ATU], lv_color_white(), 0);
+    //     lv_obj_add_state(atu_label, LV_STATE_CHECKED);
+    // }
+}

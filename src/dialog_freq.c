@@ -44,7 +44,7 @@ static void construct_cb(lv_obj_t *parent) {
 
     lv_obj_remove_style_all(obj);
 
-    lv_obj_add_style(obj, &msg_tiny_style, 0);
+    lv_obj_add_style(obj, &style.msg_tiny, 0);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
     dialog.obj = obj;

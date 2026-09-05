@@ -13,8 +13,6 @@
 #include "cfg/cfg_api.h"
 
 #define BUTTONS 5
-#define BTN_HEIGHT 62
-#define BTN_WIDTH 160
 
 
 #ifdef __cplusplus

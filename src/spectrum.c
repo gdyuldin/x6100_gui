@@ -47,7 +47,6 @@ static lv_obj_t *obj;
 static lv_obj_t *overlay_obj;
 
 static int32_t width_hz     = 100000;
-static int16_t visor_height = 100;
 
 static float   spectrum_buf[SPECTRUM_SIZE];
 static peak_t  spectrum_peak[SPECTRUM_SIZE];
@@ -81,6 +80,7 @@ static int16_t   s_spec_w;
 
 static lv_color_t s_main_color;
 static lv_color_t s_peak_color;
+static lv_grad_dsc_t grad_dsc;
 
 /* Cross-thread flags set by the DSP thread (spectrum_data) / config callbacks
  * and consumed by spectrum_process() on the main thread. */
@@ -102,7 +102,7 @@ static void shift_peaks(int32_t df);
 static void spectrum_render_rotated(uint32_t *buf, int stride);
 static int32_t spectrum_compute_offset(void);
 static void spectrum_update_colors(void);
-static void spectrum_fill_run(uint32_t *buf, int stride, int row, int x_top, lv_color_t color);
+static void spectrum_fill_run(uint32_t *buf, int stride, int row, int x_top, lv_grad_t *grad);
 static void spectrum_draw_polyline(uint32_t *buf, int stride, float min, float max, int32_t offset, bool is_peak, lv_color_t color);
 static void spectrum_wu_line(uint32_t *buf, int stride, float x0, float y0, float x1, float y1, lv_color_t color);
 static void spectrum_blend_px(uint32_t *buf, int stride, int x, int y, float brightness, lv_color_t color);
@@ -119,9 +119,10 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     lv_draw_rect_dsc_t rect_dsc;
 
     lv_coord_t x1 = obj->coords.x1;
-    lv_coord_t y1 = obj->coords.y1;
+    // TODO: move offset to configuration
+    lv_coord_t y1 = obj->coords.y1 + 70;
     lv_coord_t w = lv_obj_get_width(obj);
-    lv_coord_t h = lv_obj_get_height(obj);
+    lv_coord_t h = obj->coords.y2 - y1;
 
     lv_coord_t markers_offset = spectrum_markers_offset();
 
@@ -231,14 +232,6 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     }
 }
 
-static void tx_cb(void * s, lv_msg_t * msg) {
-    visor_height = VISOR_HEIGHT_TX;
-}
-
-static void rx_cb(void * s, lv_msg_t * msg) {
-    visor_height = VISOR_HEIGHT_RX;
-}
-
 lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
                         lv_coord_t y, lv_coord_t h) {
     s_spec_x = y;
@@ -253,9 +246,7 @@ lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
 
     obj = lv_obj_create(primary_parent);
 
-    lv_obj_add_style(obj, &spectrum_style, 0);
-    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
-    lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
+    lv_obj_add_style(obj, &style.spectrum, 0);
 
     overlay_obj = lv_obj_create(overlay_parent);
     lv_obj_remove_style_all(overlay_obj);
@@ -264,6 +255,12 @@ lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
     lv_obj_set_size(overlay_obj, SPECTRUM_SIZE, h);
     lv_obj_add_event_cb(overlay_obj, spectrum_overlay_draw_cb,
                         LV_EVENT_DRAW_MAIN_END, NULL);
+
+    // Setup spectrum gradient
+    grad_dsc.dir           = LV_GRAD_DIR_HOR;
+    grad_dsc.stops_count   = 2;
+    grad_dsc.stops[0].frac = 0;
+    grad_dsc.stops[1].frac = 255;
 
     subject_subscribe_and_notify((Subject*)cfg_mode_zoom, on_zoom_changed, NULL);
 
@@ -493,11 +490,17 @@ static void shift_peaks(int32_t df) {
 
 static void spectrum_update_colors(void) {
     if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
-        s_main_color = lv_color_hex(0xAAAAAA);
+        s_main_color = spectrum_color_line;
+        grad_dsc.stops[1].color = spectrum_color_up;
+        grad_dsc.stops[0].color = spectrum_color_down;
+        s_peak_color = spectrum_color_peak;
     } else {
         s_main_color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
+        grad_dsc.stops[1].color = s_main_color;
+        grad_dsc.stops[0].color = lv_color_darken(s_main_color, LV_OPA_50);
+        s_peak_color = lv_color_hex(0x555555);
     }
-    s_peak_color = lv_color_hex(0x555555);
+
 }
 
 /* Replicate the spectrum_offset calculation from spectrum_draw_cb(). */
@@ -517,14 +520,14 @@ static int32_t spectrum_compute_offset(void) {
 }
 
 /* Fill one physical row from column x_top to the bottom of the strip. */
-static void spectrum_fill_run(uint32_t *buf, int stride, int row, int x_top, lv_color_t color) {
+static void spectrum_fill_run(uint32_t *buf, int stride, int row, int x_top, lv_grad_t *grad) {
     if (x_top >= stride) {
         return;
     }
     uint32_t *p = &buf[row * stride + x_top];
     int       n = stride - x_top;
     for (int i = 0; i < n; i++) {
-        p[i] = color.full;
+        p[i] = grad->map[n - i].full;
     }
 }
 
@@ -668,6 +671,16 @@ static void spectrum_render_rotated(uint32_t *buf, int stride) {
     }
 
     spectrum_update_colors();
+    // // Add vertical gradient
+    // lv_color_t colors[stride];
+    // float low = 0.2f;
+    // float high = 1.0f;
+    // for (size_t i = 0; i < stride; i++) {
+    //     float k = low + (high - low) * i / stride;
+    //     colors[i].ch.blue = roundf(k * s_main_color.ch.blue);
+    //     colors[i].ch.green = roundf(k * s_main_color.ch.green);
+    //     colors[i].ch.red = roundf(k * s_main_color.ch.red);
+    // }
 
     int32_t offset = spectrum_compute_offset();
 
@@ -676,6 +689,7 @@ static void spectrum_render_rotated(uint32_t *buf, int stride) {
     }
 
     if (params.spectrum_filled.x) {
+        lv_grad_t * cached_grad = lv_gradient_get(&grad_dsc, stride, 1);
         for (int i = 0; i < SPECTRUM_SIZE; i++) {
             int row = SPECTRUM_SIZE - 1 - offset - i;
             if (row < 0 || row >= SPECTRUM_SIZE) {
@@ -695,11 +709,10 @@ static void spectrum_render_rotated(uint32_t *buf, int stride) {
             if (x_top >= stride) {
                 x_top = stride - 1;
             }
-            spectrum_fill_run(buf, stride, row, x_top, s_main_color);
+            spectrum_fill_run(buf, stride, row, x_top, cached_grad);
         }
-    } else {
-        spectrum_draw_polyline(buf, stride, min, max, offset, false, s_main_color);
     }
+    spectrum_draw_polyline(buf, stride, min, max, offset, false, s_main_color);
 }
 
 /* Called from the main loop (between lv_timer_handler() and drm_flip()) when the

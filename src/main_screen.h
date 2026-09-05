@@ -27,5 +27,7 @@ void main_screen_action(press_action_t action);
 
 void main_screen_set_freq(uint64_t f);
 
+void main_screen_set_small_top(bool v);
+
 void mem_load(uint16_t id);
 void mem_save(uint16_t id);

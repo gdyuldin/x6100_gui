@@ -6,6 +6,9 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
+#include "dialog_qth.h"
+
+#include "radio.h"
 #include "textarea_window.h"
 #include "params/params.h"
 #include "main_screen.h"

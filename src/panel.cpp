@@ -92,7 +92,7 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
 
     lv_label_set_text_static(obj, buf);
 
-    lv_obj_add_style(obj, &panel_style, 0);
+    lv_obj_add_style(obj, &style.panels.base, 0);
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(obj, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
@@ -108,7 +108,7 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
     cfg_sm.cp_fg_freq.subscribe_delayed(on_freq_change, NULL);
 
     info = lv_label_create(obj);
-    lv_obj_add_style(info, &panel_info_style, 0);
+    lv_obj_add_style(info, &style.panels.info, 0);
     lv_label_set_text(info, "");
 
     return obj;

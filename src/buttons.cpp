@@ -553,10 +553,10 @@ void buttons_init(lv_obj_t *parent) {
         lv_obj_add_flag(f, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
         lv_obj_remove_style_all(f);
-        lv_obj_add_style(f, &btn_style, 0);
-        lv_obj_add_style(f, &btn_active_style, LV_STATE_CHECKED);
-        lv_obj_add_style(f, &btn_disabled_style, LV_STATE_DISABLED);
-        // lv_obj_add_style(f, &btn_mark_assigned_style, STATE_ASSIGNED);
+        lv_obj_add_style(f, &style.btn.base, 0);
+        lv_obj_add_style(f, &style.btn.active, LV_STATE_CHECKED);
+        lv_obj_add_style(f, &style.btn.disabled, LV_STATE_DISABLED);
+        // lv_obj_add_style(f, &style.btn.mark_assigned, STATE_ASSIGNED);
 
         lv_obj_set_pos(f, x, y);
         lv_obj_set_size(f, BTN_WIDTH, BTN_HEIGHT);
@@ -568,8 +568,8 @@ void buttons_init(lv_obj_t *parent) {
         enc_mark = lv_obj_create(f);
         lv_obj_set_pos(enc_mark, 5, 5);
         lv_obj_clear_flag(enc_mark, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_style(enc_mark, &btn_mark_style, 0);
-        lv_obj_add_style(enc_mark, &btn_mark_assigned_style, STATE_ASSIGNED);
+        lv_obj_add_style(enc_mark, &style.btn.mark, 0);
+        lv_obj_add_style(enc_mark, &style.btn.mark_assigned, STATE_ASSIGNED);
 
         disp_btns[i].vol_mark = enc_mark;
 
@@ -578,8 +578,8 @@ void buttons_init(lv_obj_t *parent) {
         lv_obj_set_pos(enc_mark, 5, BTN_HEIGHT - 5 - 24);
         lv_obj_clear_flag(enc_mark, LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_add_style(enc_mark, &btn_mark_style, 0);
-        lv_obj_add_style(enc_mark, &btn_mark_assigned_style, STATE_ASSIGNED);
+        lv_obj_add_style(enc_mark, &style.btn.mark, 0);
+        lv_obj_add_style(enc_mark, &style.btn.mark_assigned, STATE_ASSIGNED);
         disp_btns[i].mfk_mark = enc_mark;
 
         /* Label */

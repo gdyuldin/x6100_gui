@@ -9,6 +9,7 @@
 #pragma once
 
 #include "helpers.h"
+#include "globals.h"
 
 #ifdef __cplusplus
 
@@ -28,7 +29,7 @@ extern "C" {
 
 #define AUDIO_DECIM 4
 #define WATERFALL_NFFT (RADIO_SAMPLES * 2)
-#define SPECTRUM_NFFT 800
+#define SPECTRUM_NFFT SCREEN_WIDTH
 
 #ifdef __cplusplus
 extern "C" {

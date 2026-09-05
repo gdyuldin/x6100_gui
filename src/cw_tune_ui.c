@@ -25,8 +25,8 @@
 static lv_draw_rect_dsc_t rect_dsc;
 static lv_draw_rect_dsc_t rect_active_dsc;
 
-static lv_color_t color_ok;
 static lv_color_t color_good;
+static lv_color_t color_fair;
 static lv_color_t color_bad;
 
 static lv_obj_t     *obj;
@@ -38,8 +38,8 @@ static void update_visibility(Subject *subj, void *user_data);
 
 void cw_tune_init(lv_obj_t *parent)
 {
-    color_ok = lv_color_hex(COLOR_LIGHT_GREEN);
-    color_good = lv_color_hex(COLOR_LIGHT_YELLOW);
+    color_good = lv_color_hex(COLOR_LIGHT_GREEN);
+    color_fair = lv_color_hex(COLOR_LIGHT_YELLOW);
     color_bad = lv_color_hex(COLOR_LIGHT_RED);
 
     lv_draw_rect_dsc_init(&rect_dsc);
@@ -54,7 +54,7 @@ void cw_tune_init(lv_obj_t *parent)
     obj = lv_obj_create(parent);
     lv_obj_set_height(obj, HEIGHT);
     lv_obj_set_width(obj, WIDTH);
-    lv_obj_add_style(obj, &cw_tune_style, 0);
+    lv_obj_add_style(obj, &style.cw_tune, 0);
 
     lv_obj_add_event_cb(obj, update_cb, LV_EVENT_DRAW_MAIN, NULL);
     subject_subscribe_delayed((Subject*)cfg_cur_mode, update_visibility, NULL);
@@ -79,9 +79,9 @@ void cw_tune_set_freq(float hz) {
     if (new_id > N_BLOCKS - 1) new_id = N_BLOCKS - 1;
 
     if (LV_ABS(hz) <= 10) {
-        rect_active_dsc.bg_color = color_ok;
-    } else if (LV_ABS(hz) <= 20) {
         rect_active_dsc.bg_color = color_good;
+    } else if (LV_ABS(hz) <= 20) {
+        rect_active_dsc.bg_color = color_fair;
     } else {
         rect_active_dsc.bg_color = color_bad;
     }

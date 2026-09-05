@@ -51,12 +51,10 @@ static void set_state(clock_state_t new_state) {
     switch (state) {
         case CLOCK_TIME:
             lv_obj_set_style_text_font(obj, &sony_38, 0);
-            lv_obj_set_style_pad_ver(obj, 18, 0);
             break;
 
         case CLOCK_POWER:
             lv_obj_set_style_text_font(obj, &sony_30, 0);
-            lv_obj_set_style_pad_ver(obj, 5, 0);
             break;
     }
 }
@@ -143,10 +141,13 @@ static void show_time() {
 lv_obj_t * clock_init(lv_obj_t * parent) {
     pthread_mutex_init(&power_mux, NULL);
 
-    obj = lv_label_create(parent);
+    lv_obj_t * container = lv_obj_create(parent);
+    lv_obj_remove_style_all(container);
+    lv_obj_add_style(container, &style.clock, 0);
 
-    lv_obj_add_style(obj, &clock_style, 0);
-    lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
+    obj = lv_label_create(container);
+    lv_obj_remove_style_all(obj);
+    lv_obj_center(obj);
 
     set_state(CLOCK_TIME);
     timeout = get_time() + params.clock_time_timeout * 1000;

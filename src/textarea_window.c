@@ -101,7 +101,7 @@ lv_obj_t * textarea_window_open(textarea_window_cb_t ok, textarea_window_cb_t ca
 
     lv_obj_remove_style_all(window);
 
-    lv_obj_add_style(window, &msg_style, 0);
+    lv_obj_add_style(window, &style.msg, 0);
     lv_obj_clear_flag(window, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_y(window, 80);
 
@@ -153,7 +153,7 @@ lv_obj_t * textarea_window_open(textarea_window_cb_t ok, textarea_window_cb_t ca
         lv_obj_add_event_cb(keyboard, keyboard_cb, LV_EVENT_KEY, NULL);
 
         lv_obj_set_style_bg_color(keyboard, bg_color, LV_PART_MAIN);
-        lv_obj_add_style(keyboard, &dialog_item_focus_style, LV_STATE_FOCUSED | LV_PART_ITEMS);
+        lv_obj_add_style(keyboard, &style.dialog.item_focus, LV_STATE_FOCUSED | LV_PART_ITEMS);
 
         lv_group_add_obj(keyboard_group, keyboard);
     } else {

@@ -96,7 +96,7 @@ static void create_msg(const char * fmt, enum msg_type_t type, uint16_t dur, va_
 lv_obj_t * msg_init(lv_obj_t *parent) {
     obj = lv_label_create(parent);
 
-    lv_obj_add_style(obj, &msg_style, 0);
+    lv_obj_add_style(obj, &style.msg, 0);
     lv_label_set_long_mode(obj, LV_LABEL_LONG_SCROLL);
 
     lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);

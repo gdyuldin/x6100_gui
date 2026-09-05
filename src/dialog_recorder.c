@@ -7,6 +7,7 @@
  */
 #include "dialog_recorder.h"
 
+#include "radio.h"
 #include "audio.h"
 #include "recorder.h"
 #include "dialog.h"

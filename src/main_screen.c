@@ -53,6 +53,8 @@
 #include "cfg/cfg_api.h"
 #include "cfg/memory.h"
 #include "knobs.h"
+#include "indicators.h"
+#include "freq_info.h"
 #include "lock_manager.h"
 
 #include <unistd.h>
@@ -64,6 +66,7 @@ static uint16_t     spectrum_height = (SCREEN_HEIGHT / 3);
 static uint16_t     freq_height = 36;
 static lv_obj_t     *obj;
 
+static lv_obj_t     *top_container;
 static lv_obj_t     *spectrum;
 static lv_obj_t     *freq_bounds[2];
 static lv_obj_t     *msg;
@@ -1024,6 +1027,18 @@ void main_screen_set_freq(uint64_t freq) {
     event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
 }
 
+void main_screen_set_small_top(bool v) {
+    if (v) {
+        // Move meter/freq/clock to top
+        lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+        indicators_show(false);
+    } else {
+        // Restore align
+        lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        indicators_show(true);
+    }
+}
+
 lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     uint16_t y = 0;
 
@@ -1038,10 +1053,19 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
     lv_msg_subscribe(MSG_LOW_POWER, low_power_cb, NULL);
 
-    lv_obj_add_style(obj, &background_style, LV_PART_MAIN);
+    lv_obj_add_style(obj, &style.background, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
-    spectrum = spectrum_init(primary_scr, overlay_scr, 31, spectrum_height);
+    const lv_coord_t indicator_height = 31;
+    /* Indicators block */
+    // width from meter style for correct padding
+    lv_style_value_t meter_w;
+    lv_style_get_prop(&style.meter, LV_STYLE_WIDTH, &meter_w);
+    indicators_init(obj, indicator_height, meter_w.num);
+    y += indicator_height;
+
+    /* Spectrum */
+    spectrum = spectrum_init(primary_scr, overlay_scr, indicator_height, spectrum_height);
     main_screen_keys_enable(true);
 
     lv_obj_add_event_cb(spectrum, spectrum_key_cb, LV_EVENT_KEY, NULL);
@@ -1055,13 +1079,13 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     lv_obj_t *f;
 
     f = lv_label_create(obj);
-    lv_obj_add_style(f, &freq_bounds_style, 0);
+    lv_obj_add_style(f, &style.freq_bounds, 0);
     lv_obj_align(f, LV_ALIGN_TOP_LEFT, 10, y + 3);
     lv_label_set_recolor(f, true);
     freq_bounds[0] = f;
 
     f = lv_label_create(obj);
-    lv_obj_add_style(f, &freq_bounds_style, 0);
+    lv_obj_add_style(f, &style.freq_bounds, 0);
     lv_obj_align(f, LV_ALIGN_TOP_RIGHT, -10, y + 3);
     lv_label_set_recolor(f, true);
     freq_bounds[1] = f;
@@ -1069,21 +1093,48 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     /* Waterfall */
     waterfall_init(overlay_scr, y, SCREEN_HEIGHT - y);
 
+    /* Konbs */
     knobs_init(obj);
 
+    /* Buttons */
     buttons_init(obj);
     buttons_load_page(&buttons_page_vol_1);
 
+    /* Panel (CW/RTTY) */
     panel_init(obj);
     msg = msg_init(obj);
     msg_tiny = msg_tiny_init(obj);
 
-    clock_init(obj);
-    info_init(obj);
+    /* Top container (meter, clock, freq) */
+    top_container = lv_obj_create(obj);
+    lv_obj_remove_style_all(top_container);
+    lv_obj_clear_flag(top_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(top_container, 0, 0);
+    // height from tx_info style for correct padding
+    lv_style_value_t tx_info_h;
+    lv_style_get_prop(&style.tx_info, LV_STYLE_HEIGHT, &tx_info_h);
+    lv_obj_set_size(top_container, SCREEN_WIDTH, tx_info_h.num);
+    lv_obj_set_layout(top_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(top_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    meter = meter_init(obj);
-    tx_info = tx_info_init(obj);
+    // lv_obj_t *item = lv_obj_create(top_container);
+    // lv_obj_set_size(item, 200, 50);
 
+    // item = lv_obj_create(top_container);
+    // lv_obj_set_size(item, 50, 30);
+
+    // item = lv_obj_create(top_container);
+    // lv_obj_set_size(item, 100, 30);
+
+    meter = meter_init(top_container);
+    tx_info = tx_info_init(top_container);
+    // info_init(top_container);
+    freq_info_init(top_container);
+    clock_init(top_container);
+
+
+    /* CW tune */
     cw_tune_init(obj);
 
     msg_schedule_text_fmt("X6100 de R1CBU es Others " VERSION);

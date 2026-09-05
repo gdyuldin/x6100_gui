@@ -28,6 +28,7 @@ void dialog_construct(dialog_t *dialog, lv_obj_t *parent) {
         if (dialog->btn_page) {
             buttons_load_page(dialog->btn_page);
         }
+        main_screen_set_small_top(true);
         dialog->construct_cb(parent);
 
         dialog->run = true;
@@ -54,6 +55,7 @@ void dialog_destruct() {
             buttons_load_page(current_dialog->prev_page);
         }
         main_screen_keys_enable(true);
+        main_screen_set_small_top(false);
         current_dialog = NULL;
     }
 }
@@ -85,7 +87,7 @@ lv_obj_t * dialog_init(lv_obj_t *parent) {
     obj = lv_obj_create(parent);
 
     lv_obj_remove_style_all(obj);
-    lv_obj_add_style(obj, &dialog_style, 0);
+    lv_obj_add_style(obj, &style.dialog.base, 0);
 
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -93,9 +95,9 @@ lv_obj_t * dialog_init(lv_obj_t *parent) {
 }
 
 void dialog_item(dialog_t *dialog, lv_obj_t *obj) {
-    lv_obj_add_style(obj, &dialog_item_style, LV_STATE_DEFAULT);
-    lv_obj_add_style(obj, &dialog_item_focus_style, LV_STATE_FOCUSED);
-    lv_obj_add_style(obj, &dialog_item_edited_style, LV_STATE_EDITED);
+    lv_obj_add_style(obj, &style.dialog.item, LV_STATE_DEFAULT);
+    lv_obj_add_style(obj, &style.dialog.item_focus, LV_STATE_FOCUSED);
+    lv_obj_add_style(obj, &style.dialog.item_edited, LV_STATE_EDITED);
 
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_CURSOR);
     lv_obj_set_style_text_color(obj, lv_color_white(), LV_PART_CURSOR);

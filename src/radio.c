@@ -173,6 +173,8 @@ static void init_display_freqs(void) {
 }
 
 void radio_init() {
+    init_display_freqs();
+
     if (!x6100_gpio_init())
         return;
 
@@ -874,9 +876,7 @@ static void * radio_thread(void *arg) {
     while (true) {
         now_time = get_time();
 
-        if (radio_tick()) {
-            usleep(2000);
-        }
+        radio_tick();
 
         int32_t idle = now_time - idle_time;
 

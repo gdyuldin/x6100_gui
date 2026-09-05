@@ -302,7 +302,7 @@ static lv_obj_t * dropdown_uint8(lv_obj_t *parent, params_uint8_t *var, const ch
     lv_obj_add_event_cb(obj, cb, LV_EVENT_VALUE_CHANGED, var);
 
     lv_obj_t *list = lv_dropdown_get_list(obj);
-    lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
+    lv_obj_add_style(list, &style.dialog.dropdown, 0);
 
     lv_dropdown_set_options(obj, options);
     lv_dropdown_set_symbol(obj, NULL);
@@ -646,7 +646,7 @@ static uint8_t make_backlight(uint8_t row) {
     lv_obj_center(obj);
 
     lv_obj_t *list = lv_dropdown_get_list(obj);
-    lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
+    lv_obj_add_style(list, &style.dialog.dropdown, 0);
 
     lv_dropdown_set_options(obj, " Always Off \n Always On \n Temporarily On ");
     lv_dropdown_set_symbol(obj, NULL);
@@ -800,7 +800,7 @@ static uint8_t make_clock(uint8_t row) {
     lv_obj_center(obj);
 
     lv_obj_t *list = lv_dropdown_get_list(obj);
-    lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
+    lv_obj_add_style(list, &style.dialog.dropdown, 0);
 
     lv_dropdown_set_options(obj, " Always Time \n Time and Power \n Always Power");
     lv_dropdown_set_symbol(obj, NULL);
@@ -948,7 +948,7 @@ static uint8_t make_long_action(uint8_t row) {
         lv_obj_center(obj);
 
         lv_obj_t *list = lv_dropdown_get_list(obj);
-        lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
+        lv_obj_add_style(list, &style.dialog.dropdown, 0);
 
         lv_dropdown_set_symbol(obj, NULL);
 
@@ -1063,7 +1063,7 @@ static uint8_t make_hmic_action(uint8_t row) {
         lv_obj_center(obj);
 
         lv_obj_t *list = lv_dropdown_get_list(obj);
-        lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
+        lv_obj_add_style(list, &style.dialog.dropdown, 0);
 
         lv_dropdown_set_symbol(obj, NULL);
 
@@ -2030,19 +2030,19 @@ static uint8_t make_rgb_color_picker(uint8_t row)
     lv_obj_set_flex_flow(preview_cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(preview_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_size(preview_cont, SMALL_2, LV_SIZE_CONTENT);
-    lv_obj_add_style(preview_cont, &style_rgb_preview_cont, 0);
+    lv_obj_add_style(preview_cont, &style.rgb.preview_cont, 0);
     lv_obj_set_grid_cell(preview_cont, LV_GRID_ALIGN_CENTER, col, 2, LV_GRID_ALIGN_CENTER, row, 1);
     col += 2;
 
     // Rectangle Color Preview
     color_preview_rect = lv_obj_create(preview_cont);
     lv_obj_set_size(color_preview_rect, 80, 50);
-    lv_obj_add_style(color_preview_rect, &style_rgb_preview_rect, 0);
+    lv_obj_add_style(color_preview_rect, &style.rgb.preview_rect, 0);
 
     // Hex-Label
     color_preview_hex = lv_label_create(preview_cont);
     lv_label_set_text(color_preview_hex, "#AAAAAA");
-    lv_obj_add_style(color_preview_hex, &style_rgb_preview_hex, 0);
+    lv_obj_add_style(color_preview_hex, &style.rgb.preview_hex, 0);
 
     // Slider Panel
     lv_obj_t *slider_panel = lv_obj_create(grid);
@@ -2051,7 +2051,7 @@ static uint8_t make_rgb_color_picker(uint8_t row)
     lv_obj_set_flex_flow(slider_panel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(slider_panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_size(slider_panel, SMALL_4 + 60, LV_SIZE_CONTENT);
-    lv_obj_add_style(slider_panel, &style_rgb_slider_panel, 0);
+    lv_obj_add_style(slider_panel, &style.rgb.slider_panel, 0);
     lv_obj_set_grid_cell(slider_panel, LV_GRID_ALIGN_START, col, 4, LV_GRID_ALIGN_CENTER, row, 1);
 
     const char *labels[] = {"R", "G", "B"};
@@ -2069,13 +2069,13 @@ static uint8_t make_rgb_color_picker(uint8_t row)
         lv_obj_set_layout(slider_row, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(slider_row, LV_FLEX_FLOW_ROW);
         lv_obj_set_size(slider_row, LV_PCT(100), LV_SIZE_CONTENT);
-        lv_obj_add_style(slider_row, &style_rgb_slider_row, 0);
+        lv_obj_add_style(slider_row, &style.rgb.slider_row, 0);
 
         // Letter R / G / B
         lv_obj_t *letter_label = lv_label_create(slider_row);
         lv_label_set_text(letter_label, labels[i]);
         lv_obj_set_width(letter_label, 20);
-        lv_obj_add_style(letter_label, &style_rgb_letter, 0);
+        lv_obj_add_style(letter_label, &style.rgb.letter, 0);
 
         // Slider
         rgb_sliders[i] = slider_with_text<uint8_t>(slider_row, init_values[i], 0, 255, 1, SMALL_4 - 100, "%d",
@@ -2085,12 +2085,12 @@ static uint8_t make_rgb_color_picker(uint8_t row)
         lv_obj_set_style_bg_color(rgb_sliders[i], lv_palette_main(palettes[i]), LV_PART_INDICATOR | LV_PART_KNOB);
 
         // Static Styles
-        lv_obj_add_style(rgb_sliders[i], &style_rgb_slider, 0);
-        lv_obj_add_style(rgb_sliders[i], &style_rgb_slider_focused, LV_STATE_FOCUSED);
+        lv_obj_add_style(rgb_sliders[i], &style.rgb.slider, 0);
+        lv_obj_add_style(rgb_sliders[i], &style.rgb.slider_focused, LV_STATE_FOCUSED);
 
         // Value-Label
         lv_obj_t *val_label = (lv_obj_t *)lv_obj_get_user_data(rgb_sliders[i]);
-        lv_obj_add_style(val_label, &style_rgb_val_label, 0);
+        lv_obj_add_style(val_label, &style.rgb.val_label, 0);
     }
 
     lv_obj_update_layout(grid);

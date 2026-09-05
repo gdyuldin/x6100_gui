@@ -244,14 +244,14 @@ void knobs_init(lv_obj_t * parent) {
 
     // Init
     vol_info = lv_label_create(parent);
-    lv_obj_add_style(vol_info, &knobs_style, 0);
+    lv_obj_add_style(vol_info, &style.knobs, 0);
     lv_obj_set_pos(vol_info, x_static, y - KNOBS_HEIGHT * 2);
     lv_label_set_recolor(vol_info, true);
     lv_label_set_text(vol_info, "");
     vol_knob_info->set_edit_mode(true);
 
     mfk_info = lv_label_create(parent);
-    lv_obj_add_style(mfk_info, &knobs_style, 0);
+    lv_obj_add_style(mfk_info, &style.knobs, 0);
     lv_obj_set_pos(mfk_info, x_static, y - KNOBS_HEIGHT * 1);
     lv_label_set_recolor(mfk_info, true);
     lv_label_set_text(mfk_info, "");
