@@ -60,12 +60,11 @@ typedef struct {
     lv_style_t meter;
     lv_style_t tx_info;
     lv_style_t cw_tune;
-    lv_style_t text_base_color;
 
-    struct {
-        lv_style_t base;
-        lv_style_t disabled;
-    } freq_bounds;
+    lv_style_t text_base_color;
+    lv_style_t text_muted_color;
+
+    lv_style_t freq_bounds;
 
     struct {
         lv_style_t base;

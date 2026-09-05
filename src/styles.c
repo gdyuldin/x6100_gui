@@ -67,6 +67,7 @@ void styles_init(themes_t theme) {
     lv_style_t *s;
 
     lv_style_init(&style.text_base_color);
+    lv_style_init(&style.text_muted_color);
 
     lv_style_init(&style.background);
 
@@ -78,14 +79,13 @@ void styles_init(themes_t theme) {
     lv_style_set_width(&style.spectrum, SCREEN_WIDTH);
     lv_style_set_x(&style.spectrum, 0);
 
-    lv_style_init(&style.freq_bounds.base);
-    lv_style_set_text_font(&style.freq_bounds.base, &mono_30);
-    lv_style_set_pad_all(&style.freq_bounds.base, 3);
-    lv_style_set_text_align(&style.freq_bounds.base, LV_TEXT_ALIGN_CENTER);
-    lv_style_set_bg_color(&style.freq_bounds.base, lv_color_black());
-    lv_style_set_bg_opa(&style.freq_bounds.base, LV_OPA_30);
-    lv_style_set_radius(&style.freq_bounds.base, 5);
-    lv_style_init(&style.freq_bounds.disabled);
+    lv_style_init(&style.freq_bounds);
+    lv_style_set_text_font(&style.freq_bounds, &mono_30);
+    lv_style_set_pad_all(&style.freq_bounds, 3);
+    lv_style_set_text_align(&style.freq_bounds, LV_TEXT_ALIGN_CENTER);
+    lv_style_set_bg_color(&style.freq_bounds, lv_color_black());
+    lv_style_set_bg_opa(&style.freq_bounds, LV_OPA_30);
+    lv_style_set_radius(&style.freq_bounds, 5);
 
     lv_style_init(&style.waterfall);
     lv_style_set_bg_color(&style.waterfall, lv_color_hex(0x000000));
@@ -744,15 +744,15 @@ static void set_skin(skin_t *skin) {
     lv_color_t muted_text_color;
     if (lv_color_brightness(skin->base_text_color) > 64) {
         // Bright color, muted should be darker
-        muted_text_color = lv_color_darken(skin->base_text_color, LV_OPA_30);
+        muted_text_color = lv_color_darken(skin->base_text_color, LV_OPA_40);
     } else {
-        muted_text_color = lv_color_lighten(skin->base_text_color, LV_OPA_30);
+        muted_text_color = lv_color_lighten(skin->base_text_color, LV_OPA_40);
     }
     colors.base_text_color = skin->base_text_color;
 
     lv_style_set_text_color(&style.text_base_color, skin->base_text_color);
     lv_style_set_text_color(&style.btn.base, skin->base_text_color);
-    lv_style_set_text_color(&style.freq_bounds.base, skin->base_text_color);
+    lv_style_set_text_color(&style.freq_bounds, skin->base_text_color);
     lv_style_set_text_color(&style.msg, skin->base_text_color);
     lv_style_set_text_color(&style.msg_tiny, skin->base_text_color);
     lv_style_set_text_color(&style.panels.base, skin->base_text_color);
@@ -763,8 +763,7 @@ static void set_skin(skin_t *skin) {
     lv_style_set_text_color(&style.rgb.letter, skin->base_text_color);
     lv_style_set_text_color(&style.rgb.val_label, skin->base_text_color);
 
-
-    lv_style_set_text_color(&style.freq_bounds.disabled, muted_text_color);
+    lv_style_set_text_color(&style.text_muted_color, muted_text_color);
 
     /* Spectrum */
     // TODO: add spectrum custom color toggle

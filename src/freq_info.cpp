@@ -51,13 +51,11 @@ lv_obj_t * freq_info_init(lv_obj_t * parent) {
     lv_style_init(&fg_freq_big_style);
     lv_style_set_text_font(&fg_freq_big_style, fg_freq_big_font);
     lv_style_set_text_letter_space(&fg_freq_big_style, -1);
-    lv_style_set_text_color(&fg_freq_big_style, lv_color_white());
 
     lv_style_init(&fg_freq_small_style);
     lv_style_set_text_font(&fg_freq_small_style, fg_freq_small_font);
     lv_style_set_text_letter_space(&fg_freq_small_style, -1);
     lv_style_set_translate_y(&fg_freq_small_style, -small_offset);
-    lv_style_set_text_color(&fg_freq_small_style, lv_color_white());
 
     lv_style_init(&bg_freq_style);
     lv_style_set_text_font(&bg_freq_style, &mono_22);
@@ -95,15 +93,18 @@ lv_obj_t * freq_info_init(lv_obj_t * parent) {
 
     fg_mhz_label = lv_label_create(fg_freq_row);
     lv_obj_add_style(fg_mhz_label, &fg_freq_big_style, LV_PART_MAIN);
-    lv_obj_add_style(fg_mhz_label, &locked_freq_style, LV_STATE_DISABLED);
+    lv_obj_add_style(fg_mhz_label, &style.text_base_color, LV_PART_MAIN);
+    lv_obj_add_style(fg_mhz_label, &style.text_muted_color, LV_STATE_DISABLED);
 
     fg_khz_label = lv_label_create(fg_freq_row);
     lv_obj_add_style(fg_khz_label, &fg_freq_big_style, LV_PART_MAIN);
-    lv_obj_add_style(fg_khz_label, &locked_freq_style, LV_STATE_DISABLED);
+    lv_obj_add_style(fg_khz_label, &style.text_base_color, LV_PART_MAIN);
+    lv_obj_add_style(fg_khz_label, &style.text_muted_color, LV_STATE_DISABLED);
 
     fg_hz_label = lv_label_create(fg_freq_row);
     lv_obj_add_style(fg_hz_label, &fg_freq_small_style, LV_PART_MAIN);
-    lv_obj_add_style(fg_hz_label, &locked_freq_style, LV_STATE_DISABLED);
+    lv_obj_add_style(fg_hz_label, &style.text_base_color, LV_PART_MAIN);
+    lv_obj_add_style(fg_hz_label, &style.text_muted_color, LV_STATE_DISABLED);
 
     /* VFO */
 

@@ -1090,14 +1090,14 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     lv_obj_t *f;
 
     f = lv_label_create(obj);
-    lv_obj_add_style(f, &style.freq_bounds.base, LV_PART_MAIN);
-    lv_obj_add_style(f, &style.freq_bounds.disabled, LV_STATE_DISABLED);
+    lv_obj_add_style(f, &style.freq_bounds, LV_PART_MAIN);
+    lv_obj_add_style(f, &style.text_muted_color, LV_STATE_DISABLED);
     lv_obj_align(f, LV_ALIGN_TOP_LEFT, 10, y + 3);
     freq_bounds[0] = f;
 
     f = lv_label_create(obj);
-    lv_obj_add_style(f, &style.freq_bounds.base, LV_PART_MAIN);
-    lv_obj_add_style(f, &style.freq_bounds.disabled, LV_STATE_DISABLED);
+    lv_obj_add_style(f, &style.freq_bounds, LV_PART_MAIN);
+    lv_obj_add_style(f, &style.text_muted_color, LV_STATE_DISABLED);
     lv_obj_align(f, LV_ALIGN_TOP_RIGHT, -10, y + 3);
     freq_bounds[1] = f;
 
