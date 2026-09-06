@@ -44,7 +44,6 @@ static float grid_min = DEFAULT_MIN;
 static float grid_max = DEFAULT_MAX;
 
 static lv_obj_t *obj;
-static lv_obj_t *overlay_obj;
 
 static int32_t width_hz     = 100000;
 
@@ -131,7 +130,7 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     lv_draw_rect_dsc_init(&rect_dsc);
 
     if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
-        rect_dsc.bg_color = bg_color;
+        rect_dsc.bg_color = style.colors.mark;
     } else {
         rect_dsc.bg_color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
     }
@@ -232,8 +231,7 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     }
 }
 
-lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
-                        lv_coord_t y, lv_coord_t h) {
+lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     s_spec_x = y;
     s_spec_w = h;
 
@@ -241,20 +239,15 @@ lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
 
     for (size_t i = 0; i < SPECTRUM_SIZE; i++) {
         spectrum_peak[i].val = S_MIN;
-        spectrum_buf[i] = S_MIN;
+        spectrum_buf[i]      = S_MIN;
     }
 
-    obj = lv_obj_create(primary_parent);
-
-    lv_obj_add_style(obj, &style.spectrum, 0);
-
-    overlay_obj = lv_obj_create(overlay_parent);
-    lv_obj_remove_style_all(overlay_obj);
-    lv_obj_set_style_bg_opa(overlay_obj, LV_OPA_TRANSP, 0);
-    lv_obj_set_pos(overlay_obj, 0, y);
-    lv_obj_set_size(overlay_obj, SPECTRUM_SIZE, h);
-    lv_obj_add_event_cb(overlay_obj, spectrum_overlay_draw_cb,
-                        LV_EVENT_DRAW_MAIN_END, NULL);
+    obj = lv_obj_create(overlay_parent);
+    lv_obj_remove_style_all(obj);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, 0);
+    lv_obj_set_pos(obj, 0, y);
+    lv_obj_set_size(obj, SPECTRUM_SIZE, h);
+    lv_obj_add_event_cb(obj, spectrum_overlay_draw_cb, LV_EVENT_DRAW_MAIN_END, NULL);
 
     // Setup spectrum gradient
     grad_dsc.dir           = LV_GRAD_DIR_HOR;
@@ -263,29 +256,29 @@ lv_obj_t *spectrum_init(lv_obj_t *primary_parent, lv_obj_t *overlay_parent,
     grad_dsc.stops[1].frac = 128;
     grad_dsc.stops[2].frac = 255;
 
-    subject_subscribe_and_notify((Subject*)cfg_mode_zoom, on_zoom_changed, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_mode_zoom, on_zoom_changed, NULL);
 
-    subject_subscribe((Subject*)cfg_cur_filter_low, update_filters, NULL);
-    subject_subscribe((Subject*)cfg_cur_filter_high, update_filters, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_filters, NULL);
+    subject_subscribe((Subject *)cfg_cur_filter_low, update_filters, NULL);
+    subject_subscribe((Subject *)cfg_cur_filter_high, update_filters, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_cur_mode, update_filters, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_center_line, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_mode_lo_offset, on_mode_lo_offset_change, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_band_if_shift, on_if_shift_change, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_cur_mode, update_center_line, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_mode_lo_offset, on_mode_lo_offset_change, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_band_if_shift, on_if_shift_change, NULL);
 
-    subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_min_change, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_band_grid_min, on_grid_min_change, NULL);
-    subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_max_change, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_band_grid_max, on_grid_max_change, NULL);
+    subject_subscribe((Subject *)cfg_auto_level_enabled, on_grid_min_change, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_band_grid_min, on_grid_min_change, NULL);
+    subject_subscribe((Subject *)cfg_auto_level_enabled, on_grid_max_change, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_band_grid_max, on_grid_max_change, NULL);
 
-    subject_subscribe((Subject*)cfg_cur_mode, update_dnf, NULL);
-    subject_subscribe((Subject*)cfg_dnf, update_dnf, NULL);
-    subject_subscribe((Subject*)cfg_dnf_auto, update_dnf, NULL);
-    subject_subscribe((Subject*)cfg_dnf_center, update_dnf, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_dnf_width, update_dnf, NULL);
+    subject_subscribe((Subject *)cfg_cur_mode, update_dnf, NULL);
+    subject_subscribe((Subject *)cfg_dnf, update_dnf, NULL);
+    subject_subscribe((Subject *)cfg_dnf_auto, update_dnf, NULL);
+    subject_subscribe((Subject *)cfg_dnf_center, update_dnf, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_dnf_width, update_dnf, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg_fg_freq, on_fg_freq_change, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_rit, on_rit_change, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_fg_freq, on_fg_freq_change, NULL);
+    subject_subscribe_and_notify((Subject *)cfg_rit, on_rit_change, NULL);
 
     return obj;
 }
@@ -360,7 +353,7 @@ static void on_zoom_changed(Subject *subj, void *user_data) {
     zoom_factor = (uint8_t)subject_i_get((SubjectInt*)subj);
     spectrum_clear();
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
-    lv_obj_invalidate(overlay_obj);
+    lv_obj_invalidate(obj);
 }
 
 static void update_filters(Subject *subj, void *user_data) {
@@ -386,7 +379,7 @@ static void update_filters(Subject *subj, void *user_data) {
         filter_to = high;
         break;
     }
-    lv_obj_invalidate(overlay_obj);
+    lv_obj_invalidate(obj);
 }
 
 static void update_dnf(Subject *subj, void *user_data) {
@@ -420,26 +413,26 @@ static void update_dnf(Subject *subj, void *user_data) {
         dnf_center = center;
         break;
     }
-    lv_obj_invalidate(overlay_obj);
+    lv_obj_invalidate(obj);
 }
 
 
 static void update_center_line(Subject *subj, void *user_data) {
     x6100_mode_t mode = (x6100_mode_t)subject_i_get((SubjectInt*) subj);
     center_line_show = (mode != x6100_mode_cw && mode != x6100_mode_cwr);
-    lv_obj_invalidate(overlay_obj);
+    lv_obj_invalidate(obj);
 }
 
 static void on_mode_lo_offset_change(Subject *subj, void *user_data) {
     mode_lo_offset = subject_i_get((SubjectInt*) subj);
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
-    lv_obj_invalidate(overlay_obj);
+    lv_obj_invalidate(obj);
 }
 
 static void on_if_shift_change(Subject *subj, void *user_data) {
     if_shift = subject_i_get((SubjectInt*) subj);
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
-    lv_obj_invalidate(overlay_obj);
+    lv_obj_invalidate(obj);
 }
 
 static void on_grid_min_change(Subject *subj, void *user_data) {

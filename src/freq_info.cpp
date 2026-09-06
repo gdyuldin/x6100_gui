@@ -66,7 +66,7 @@ lv_obj_t * freq_info_init(lv_obj_t * parent) {
 
     obj = lv_obj_create(parent);
     lv_obj_remove_style_all(obj);
-    lv_obj_add_style(obj, &style.info, LV_PART_MAIN);
+    lv_obj_add_style(obj, &style.freq_info, LV_PART_MAIN);
     lv_obj_set_style_pad_right(obj, 8, LV_PART_MAIN);
     lv_obj_set_style_pad_top(obj, 6, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(obj, 2, LV_PART_MAIN);

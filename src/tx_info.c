@@ -44,7 +44,6 @@ static lv_obj_t     *vswr_label;
 static lv_obj_t     *alc_label;
 static lv_obj_t     *pwr_bar;
 static lv_obj_t     *swr_bar;
-static lv_grad_dsc_t grad;
 
 static swr_color_t last_swr_color = -1;
 
@@ -129,19 +128,6 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
     lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
-
-    grad.dir         = LV_GRAD_DIR_VER;
-    grad.stops_count = 4;
-
-    grad.stops[0].color = lv_color_lighten(bg_color, 200);
-    grad.stops[1].color = bg_color;
-    grad.stops[2].color = bg_color;
-    grad.stops[3].color = lv_color_darken(bg_color, 200);
-
-    grad.stops[0].frac = 0;
-    grad.stops[1].frac = 128 - 10;
-    grad.stops[2].frac = 128 + 10;
-    grad.stops[3].frac = 255;
 
     lv_obj_update_layout(obj);
     lv_coord_t w = lv_obj_get_content_width(obj);

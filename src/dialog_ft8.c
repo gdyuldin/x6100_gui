@@ -456,7 +456,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_add_style(waterfall, &style.waterfall, 0);
     lv_obj_clear_flag(waterfall, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_waterfall_set_palette(waterfall, (lv_color_t*)wf_palette, 256);
+    lv_waterfall_set_palette(waterfall, (lv_color_t*)style.wf_palette, 256);
     lv_waterfall_set_size(waterfall, WIDTH, 325);
     lv_waterfall_set_min(waterfall, -60);
 
@@ -476,7 +476,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_style_border_width(finder, 0, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(finder, LV_OPA_0, LV_PART_MAIN);
 
-    lv_obj_set_style_bg_color(finder, bg_color, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(finder, style.colors.mark, LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(finder, LV_OPA_50, LV_PART_INDICATOR);
 
     lv_obj_set_style_border_width(finder, 1, LV_PART_INDICATOR);

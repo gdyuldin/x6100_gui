@@ -86,7 +86,7 @@ static lv_color_t meter_color_cb(float val) {
 lv_obj_t * meter_init(lv_obj_t * parent) {
     obj = lv_obj_create(parent);
     lv_obj_remove_style_all(obj);
-    lv_obj_add_style(obj, &style.meter, 0);
+    lv_obj_add_style(obj, &style.s_meter, 0);
     lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
 
     // Use pad to align

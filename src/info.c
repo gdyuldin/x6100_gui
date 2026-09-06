@@ -44,9 +44,9 @@ lv_obj_t * info_init(lv_obj_t * parent) {
 
     obj = lv_obj_create(parent);
 
-    lv_obj_add_style(obj, &style.info, 0);
-    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_COLUMN);
+    // lv_obj_add_style(obj, &style.info, 0);
+    // lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    // lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_COLUMN);
 
     // lv_obj_t *row1 = lv_obj_create(obj);
     // lv_obj_add_style(row1, &style.info_row, 0);

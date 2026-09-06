@@ -21,7 +21,7 @@
 #define CLOCK_WIDTH 160
 #define FREQ_INFO_WIDTH 280
 #define METER_WIDTH (SCREEN_WIDTH - CLOCK_WIDTH - FREQ_INFO_WIDTH)
-#define BTN_HEIGHT 62
+#define BTN_HEIGHT 61
 #define BTN_WIDTH (SCREEN_WIDTH / 5)
 #define DIALOG_SPACING 2
 #define DIALOG_WIDTH (SCREEN_WIDTH - DIALOG_SPACING * 2)
@@ -40,24 +40,18 @@
 #define SYMBOL_NORTH_WEST_ARROW "\xE2\x86\x96"
 #define SYMBOL_SOUTH_WEST_ARROW "\xE2\x86\x99"
 
-// Palette
-
-extern const uint32_t *wf_palette;
-
 typedef struct {
-    lv_style_t background;
-    lv_style_t spectrum;
-    lv_style_t waterfall;
+    lv_style_t waterfall; // Used only on ft8
     lv_style_t waterfall_middle_line;
 
     lv_style_t msg;
     lv_style_t msg_tiny;
     lv_style_t clock;
     lv_style_t knobs;
-    lv_style_t info;
-    lv_style_t info_row;
-    lv_style_t info_item;
-    lv_style_t meter;
+    lv_style_t freq_info;
+    // lv_style_t info_row;
+    // lv_style_t info_item;
+    lv_style_t s_meter;
     lv_style_t tx_info;
     lv_style_t cw_tune;
 
@@ -108,6 +102,7 @@ typedef struct {
             lv_color_t line;
             lv_color_t peak;
         } spectrum;
+
         struct {
             lv_color_t noise;
             lv_color_t low;
@@ -115,7 +110,13 @@ typedef struct {
             lv_color_t high;
             lv_color_t peak;
         } s_meter;
+
+        lv_color_t mark;
+        lv_color_t wf_middle_line;
+
     } colors;
+
+    const uint32_t *wf_palette;
 } styles_t;
 
 
@@ -125,8 +126,6 @@ typedef struct {
 
 extern styles_t style;
 extern colors_t colors;
-
-extern lv_color_t bg_color;
 
 /* Fonts */
 

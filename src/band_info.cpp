@@ -108,7 +108,7 @@ static void band_info_draw_cb(lv_event_t *e) {
 
         lv_draw_rect_dsc_init(&rect_dsc);
 
-        rect_dsc.bg_color     = bg_color;
+        rect_dsc.bg_color     = style.colors.mark;
         rect_dsc.bg_opa       = LV_OPA_50;
         rect_dsc.border_width = 2;
         rect_dsc.border_color = lv_color_white();

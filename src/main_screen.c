@@ -1064,19 +1064,19 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
     lv_msg_subscribe(MSG_LOW_POWER, low_power_cb, NULL);
 
-    lv_obj_add_style(obj, &style.background, LV_PART_MAIN);
+    // lv_obj_add_style(obj, &style.background, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
     const lv_coord_t indicator_height = 31;
     /* Indicators block */
     // width from meter style for correct padding
     lv_style_value_t meter_w;
-    lv_style_get_prop(&style.meter, LV_STYLE_WIDTH, &meter_w);
+    lv_style_get_prop(&style.s_meter, LV_STYLE_WIDTH, &meter_w);
     indicators_init(obj, indicator_height, meter_w.num);
     y += indicator_height;
 
     /* Spectrum */
-    spectrum = spectrum_init(primary_scr, overlay_scr, indicator_height, spectrum_height);
+    spectrum = spectrum_init(overlay_scr, indicator_height, spectrum_height);
     main_screen_keys_enable(true);
 
     lv_obj_add_event_cb(spectrum, spectrum_key_cb, LV_EVENT_KEY, NULL);

@@ -40,7 +40,7 @@ typedef struct {
     uint32_t width;
 } wf_data_row_t;
 
-static lv_obj_t         *overlay_obj;
+static lv_obj_t         *obj;
 static bool             ready = false;
 
 static int32_t          width_hz = 100000;
@@ -96,14 +96,14 @@ void waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h) {
     }
     last_row_id = 0;
 
-    overlay_obj = lv_obj_create(overlay_parent);
-    lv_obj_remove_style_all(overlay_obj);
-    lv_obj_set_style_bg_opa(overlay_obj, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_color(overlay_obj, lv_color_black(), 0);
-    lv_obj_set_pos(overlay_obj, 0, y);
-    lv_obj_set_size(overlay_obj, WIDTH, h);
+    obj = lv_obj_create(overlay_parent);
+    lv_obj_remove_style_all(obj);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(obj, lv_color_black(), 0);
+    lv_obj_set_pos(obj, 0, y);
+    lv_obj_set_size(obj, WIDTH, h);
 
-    band_info_init(overlay_obj);
+    band_info_init(obj);
 
     ready = true;
 
@@ -288,7 +288,7 @@ static void lerp_row_to_col(const wf_data_row_t *row_data, uint32_t dst_center_f
             const int32_t  frac = src_pos - ((int32_t)idx << LERP_INTERP_M);
             const uint8_t  v    = (uint8_t)(v0 + (((v1 - v0) * frac) >> LERP_INTERP_M));
 
-            buf[(WIDTH - 1 - i) * stride + col] = wf_palette[v] | 0xFF000000;
+            buf[(WIDTH - 1 - i) * stride + col] = style.wf_palette[v] | 0xFF000000;
         }
 
         /* DDA step: additions and comparisons only, zero division */
