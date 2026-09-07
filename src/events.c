@@ -30,7 +30,7 @@ typedef struct {
     void            *param;
 } item_t;
 
-static item_t           *queue[QUEUE_SIZE];
+static item_t           queue[QUEUE_SIZE];
 static uint8_t          queue_write = 0;
 static uint8_t          queue_read = 0;
 static pthread_mutex_t  queue_mux;
@@ -45,9 +45,6 @@ void event_init() {
     EVENT_BAND_UP = lv_event_register_id();
     EVENT_BAND_DOWN = lv_event_register_id();
 
-    for (uint8_t i = 0; i < QUEUE_SIZE; i++)
-        queue[i] = NULL;
-
     pthread_mutex_init(&queue_mux, NULL);
 }
 
@@ -56,22 +53,18 @@ void event_obj_check() {
         pthread_mutex_lock(&queue_mux);
         queue_read = (queue_read + 1) % QUEUE_SIZE;
 
-        item_t *item = queue[queue_read];
-        queue[queue_read] = NULL;
+        item_t item = queue[queue_read];
         pthread_mutex_unlock(&queue_mux);
 
-        if (item) {
-            if (item->event_code == LV_EVENT_REFRESH) {
-                lv_obj_invalidate(item->obj);
-            } else {
-                lv_event_send(item->obj, item->event_code, item->param);
-            }
 
-            if (item->param != NULL) {
-                free(item->param);
-            }
+        if (item.event_code == LV_EVENT_REFRESH) {
+            lv_obj_invalidate(item.obj);
+        } else {
+            lv_event_send(item.obj, item.event_code, item.param);
+        }
 
-            free(item);
+        if (item.param != NULL) {
+            free(item.param);
         }
     }
 }
@@ -81,19 +74,18 @@ void event_send(lv_obj_t *obj, lv_event_code_t event_code, void *param) {
 
     uint8_t next = (queue_write + 1) % QUEUE_SIZE;
 
-    if (queue[next]) {
+    if (next == queue_read) {
         pthread_mutex_unlock(&queue_mux);
         LV_LOG_ERROR("Overflow");
         return;
     }
 
-    item_t *item = malloc(sizeof(item_t));
+    item_t *item = &queue[next];
 
     item->obj = obj;
     item->event_code = event_code;
     item->param = param;
 
-    queue[next] = item;
     queue_write = next;
 
     pthread_mutex_unlock(&queue_mux);

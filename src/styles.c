@@ -132,7 +132,7 @@ void styles_init(themes_t theme) {
     lv_style_set_pad_hor(&style.msg, 10);
     lv_style_set_text_font(&style.msg, &sony_38);
     lv_style_set_width(&style.msg, 603);
-    // lv_style_set_height(&style.msg, 66);
+    lv_style_set_height(&style.msg, 66);
     lv_style_set_x(&style.msg, SCREEN_WIDTH / 2 - (603 / 2));
     lv_style_set_y(&style.msg, 270);
     lv_style_set_radius(&style.msg, 0);
@@ -261,8 +261,9 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_color(&style.cw_tune, lv_color_black());
     lv_style_set_border_width(&style.cw_tune, 0);
     lv_style_set_opa(&style.cw_tune, LV_OPA_50);
-    lv_style_set_x(&style.cw_tune, 30);
-    lv_style_set_y(&style.cw_tune, 70);
+    lv_style_set_align(&style.cw_tune, LV_ALIGN_RIGHT_MID);
+    lv_style_set_translate_x(&style.cw_tune, -10);
+    lv_style_set_translate_y(&style.cw_tune, 10);
 
     /* RGB Picker Styles */
     lv_style_init(&style.rgb.preview_cont);

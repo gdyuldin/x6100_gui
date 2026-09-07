@@ -1146,7 +1146,7 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
 
     /* CW tune */
-    cw_tune_init(obj);
+    cw_tune_init(spectrum);
 
     msg_schedule_text_fmt("X6100 de R1CBU es Others " VERSION);
 

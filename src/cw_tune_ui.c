@@ -8,6 +8,7 @@
 
 #include "cw_tune_ui.h"
 
+#include "events.h"
 #include "styles.h"
 #include "params/params.h"
 #include "cfg/cfg_api.h"
@@ -43,7 +44,7 @@ void cw_tune_init(lv_obj_t *parent)
     color_bad = lv_color_hex(COLOR_LIGHT_RED);
 
     lv_draw_rect_dsc_init(&rect_dsc);
-    rect_dsc.bg_color = lv_color_hex(0x7f7f7f);
+    rect_dsc.bg_color = style.colors.mark;
     rect_dsc.radius = 5;
     rect_dsc.bg_opa = LV_OPA_50;
 
@@ -61,18 +62,6 @@ void cw_tune_init(lv_obj_t *parent)
     subject_subscribe_delayed_and_notify((Subject*)cfg_cw_tune, update_visibility, NULL);
 }
 
-// bool cw_tune_toggle(int16_t diff) {
-//     if (diff) {
-//         params_lock();
-//         params.cw_tune = !params.cw_tune;
-//         params_unlock(&params.dirty.cw_tune);
-//         lv_msg_send(MSG_PARAM_CHANGED, NULL);
-//     }
-//     // TODO: replace with observer
-//     update_visibility(NULL, NULL);
-//     return params.cw_tune;
-// }
-
 void cw_tune_set_freq(float hz) {
     int8_t new_id = N_BLOCKS / 2 - roundf(hz / BLOCK_HZ);
     if (new_id < 0) new_id = 0;
@@ -87,7 +76,7 @@ void cw_tune_set_freq(float hz) {
     }
     if (cur_freq != new_id){
         cur_freq = new_id;
-        lv_event_send(obj, LV_EVENT_REFRESH, NULL);
+        event_send(obj, LV_EVENT_REFRESH, NULL);
     }
 }
 

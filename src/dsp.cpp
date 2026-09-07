@@ -706,6 +706,7 @@ static void dsp_update_min_max(float *psd_lin, uint16_t size) {
         power_sum[i] = running;
         if (running < min) min = running;
     }
+    min = LV_MAX(1e-12f, min);
 
     // Get Minimum Statistics offset for the noise level
     float offset;
