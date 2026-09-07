@@ -182,9 +182,15 @@ void radio_init() {
 
     if (!x6100_flow_init())
         return;
-
+    uint8_t cnt = 0;
     while (!x6100_control_init()) {
-        usleep(100000);
+        usleep(100000 << cnt);
+        if (cnt < 8) cnt++;
+        if (cnt == 6) {
+            LV_LOG_ERROR("Reset BB");
+            radio_bb_reset();
+            usleep(1000000);
+        }
     }
 }
 
