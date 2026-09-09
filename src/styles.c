@@ -98,7 +98,6 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_img_opa(&style.btn.base, LV_OPA_COVER);
     lv_style_set_border_width(&style.btn.base, 0);
     lv_style_set_radius(&style.btn.base, 0);
-    // lv_style_set_bg_opa(&style.btn.base, LV_OPA_0);
     lv_style_set_width(&style.btn.base, BTN_WIDTH);
     lv_style_set_height(&style.btn.base, BTN_HEIGHT);
 
@@ -133,18 +132,18 @@ void styles_init(themes_t theme) {
     lv_style_set_text_font(&style.msg, &sony_38);
     lv_style_set_width(&style.msg, 603);
     lv_style_set_height(&style.msg, 66);
-    lv_style_set_x(&style.msg, SCREEN_WIDTH / 2 - (603 / 2));
-    lv_style_set_y(&style.msg, 270);
+    // lv_style_set_x(&style.msg, SCREEN_WIDTH / 2 - (603 / 2));
+    // lv_style_set_y(&style.msg, 270);
     lv_style_set_radius(&style.msg, 0);
     lv_style_set_bg_img_opa(&style.msg, LV_OPA_COVER);
-    lv_style_set_pad_ver(&style.msg, 20);
+    // lv_style_set_pad_ver(&style.msg, 20);
 
     lv_style_init(&style.msg_tiny);
     lv_style_set_text_font(&style.msg_tiny, &sony_60);
     lv_style_set_width(&style.msg_tiny, 324);
     lv_style_set_height(&style.msg_tiny, 66);
-    lv_style_set_x(&style.msg_tiny, SCREEN_WIDTH / 2 - (324 / 2));
-    lv_style_set_y(&style.msg_tiny, 160 - 66/2 + 36/2);
+    // lv_style_set_x(&style.msg_tiny, SCREEN_WIDTH / 2 - (324 / 2));
+    // lv_style_set_y(&style.msg_tiny, 160 - 66/2 + 36/2);
     lv_style_set_radius(&style.msg_tiny, 0);
     lv_style_set_pad_ver(&style.msg_tiny, 12);
 
@@ -486,10 +485,13 @@ static lv_color_t color_adjust_hsv_value(lv_color_t base, float scale) {
 static void setup_skin_default(skin_t *skin) {
     static lv_img_dsc_t btn_bg_dsc;
     static lv_img_dsc_t dialog_bg_dsc;
+    static lv_img_dsc_t panel_bg_dsc;
     static lv_img_dsc_t clock_bg_dsc;
     static lv_img_dsc_t freq_info_bg_dsc;
     static lv_img_dsc_t s_meter_bg_dsc;
     static lv_img_dsc_t tx_info_bg_dsc;
+    static lv_img_dsc_t msg_bg_dsc;
+    static lv_img_dsc_t msg_tiny_bg_dsc;
 
     skin->wf_palette = wf_palette_gauss;
 
@@ -546,40 +548,47 @@ static void setup_skin_default(skin_t *skin) {
 
     // Dialog
 
-    lv_color_t dialog_bg1_color     = lv_color_hex(0x4c6676);
-    lv_color_t dialog_bg2_color     = lv_color_hex(0x2e3b47);
-    lv_color_t dialog_border1_color = lv_color_hex(0x5f5f5f);
+    lv_color_t dialog_bg1_color     = lv_color_hex(0x334452);
+    lv_color_t dialog_bg2_color     = lv_color_hex(0x1c242b);
+    lv_color_t dialog_border1_color = lv_color_hex(0x363636);
     lv_color_t dialog_border2_color = lv_color_hex(0xffffff);
-    uint8_t    dialog_opa           = 255 * 95 / 100;
 
     lv_grad_dsc_t dialog_border_grad = {
         .dir         = LV_GRAD_DIR_VER,
-        .stops_count = 4,
+        .stops_count = 3,
         .stops       = {
                         [0] = {.color = dialog_border1_color, .frac = 0},
-                        [1] = {.color = dialog_border2_color, .frac = 40},
-                        [2] = {.color = dialog_border2_color, .frac = 215},
-                        [3] = {.color = dialog_border1_color, .frac = 255},
+                        [1] = {.color = dialog_border2_color, .frac = 100},
+                        [2] = {.color = dialog_border1_color, .frac = 255},
                         }
     };
 
     lv_grad_dsc_t dialog_bg_grad = {
         .dir         = LV_GRAD_DIR_VER,
-        .stops_count = 4,
+        .stops_count = 3,
         .stops       = {
                         [0] = {.color = dialog_bg2_color, .frac = 0},
-                        [1] = {.color = dialog_bg1_color, .frac = 40},
-                        [2] = {.color = dialog_bg1_color, .frac = 215},
-                        [3] = {.color = dialog_bg2_color, .frac = 255},
+                        [1] = {.color = dialog_bg1_color, .frac = 100},
+                        [2] = {.color = dialog_bg2_color, .frac = 255},
                         }
     };
     if (style_get_size(&style.dialog.base, &w, &h)) {
-        render_grad_bg_with_border(w, h, &dialog_bg_dsc, dialog_opa, border_width, radius, &dialog_bg_grad,
+        render_grad_bg_with_border(w, h, &dialog_bg_dsc, 255 * 95 / 100, border_width, radius, &dialog_bg_grad,
                                    &dialog_border_grad);
         skin->bg_img.dialog = &dialog_bg_dsc;
     } else {
         LV_LOG_ERROR("Unknown dialog style size");
         skin->bg_img.dialog = NULL;
+    }
+
+    // Panel
+    if (style_get_size(&style.panels.base, &w, &h)) {
+        render_grad_bg_with_border(w, h, &panel_bg_dsc, LV_OPA_80, border_width, radius, &dialog_bg_grad,
+                                   &dialog_border_grad);
+        skin->bg_img.panel = &panel_bg_dsc;
+    } else {
+        LV_LOG_ERROR("Unknown panel style size");
+        skin->bg_img.panel = NULL;
     }
 
     // Top panels
@@ -647,9 +656,46 @@ static void setup_skin_default(skin_t *skin) {
         skin->bg_img.tx_info = NULL;
     }
 
-    skin->bg_img.msg      = PATH "images/msg_dark.bin";
-    skin->bg_img.msg_tiny = PATH "images/msg_tiny_dark.bin";
-    skin->bg_img.panel    = PATH "images/panel_dark.bin";
+    // skin->bg_img.msg      = PATH "images/msg_dark.bin";
+    // skin->bg_img.msg_tiny = PATH "images/msg_tiny_dark.bin";
+    lv_color_t    msg_bg1_color     = lv_color_hex(0x486175);
+    lv_color_t    msg_bg2_color     = lv_color_hex(0x293e4f);
+    lv_color_t    msg_border1_color = lv_color_hex(0x5d5d5d);
+    lv_color_t    msg_border2_color = lv_color_hex(0xc4c4c4);
+    lv_grad_dsc_t msg_grad       = {
+        .dir         = LV_GRAD_DIR_VER,
+        .stops_count = 3,
+        .stops       = {
+                        [0] = {.color = msg_bg2_color, .frac = 0},
+                        [1] = {.color = msg_bg1_color, .frac = 100},
+                        [2] = {.color = msg_bg2_color, .frac = 255},
+                        }
+    };
+    lv_grad_dsc_t msg_border_grad = {
+        .dir         = LV_GRAD_DIR_VER,
+        .stops_count = 3,
+        .stops       = {
+                        [0] = {.color = msg_border1_color, .frac = 0},
+                        [1] = {.color = msg_border2_color, .frac = 100},
+                        [2] = {.color = msg_border1_color, .frac = 255},
+                        }
+    };
+    if (style_get_size(&style.msg, &w, &h)) {
+        render_grad_bg_with_border(w, h, &msg_bg_dsc, LV_OPA_90, border_width, radius, &msg_grad, &msg_border_grad);
+        skin->bg_img.msg = &msg_bg_dsc;
+    } else {
+        LV_LOG_ERROR("Unknown msg style size");
+        skin->bg_img.msg = NULL;
+    }
+
+    /* msg_tiny */
+    if (style_get_size(&style.msg_tiny, &w, &h)) {
+        render_grad_bg_with_border(w, h, &msg_tiny_bg_dsc, LV_OPA_COVER, border_width, radius, &msg_grad, &msg_border_grad);
+        skin->bg_img.msg_tiny = &msg_tiny_bg_dsc;
+    } else {
+        LV_LOG_ERROR("Unknown msg_tiny style size");
+        skin->bg_img.msg_tiny = NULL;
+    }
 }
 
 static void setup_skin_flat(skin_t *skin) {

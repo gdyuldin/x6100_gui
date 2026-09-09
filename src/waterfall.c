@@ -83,7 +83,7 @@ static void on_if_shift_changed(Subject *subj, void *user_data);
 static void on_grid_min_change(Subject *subj, void *user_data);
 static void on_grid_max_change(Subject *subj, void *user_data);
 
-void waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h) {
+lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h) {
     s_wf_x = y;
     s_wf_w = h;
 
@@ -115,6 +115,7 @@ void waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h) {
     subject_subscribe_and_notify((Subject*)cfg_band_grid_min, on_grid_min_change, NULL);
     subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_max_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg_band_grid_max, on_grid_max_change, NULL);
+    return obj;
 }
 
 static void scroll_down() {

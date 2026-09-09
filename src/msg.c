@@ -19,6 +19,7 @@
 #define DURATION 2000
 #define DURATION_LONG 4000
 
+static lv_obj_t     *container;
 static lv_obj_t     *obj;
 static lv_timer_t   *fade_out_timer=NULL;
 static lv_anim_t    fade;
@@ -94,18 +95,23 @@ static void create_msg(const char * fmt, enum msg_type_t type, uint16_t dur, va_
 }
 
 lv_obj_t * msg_init(lv_obj_t *parent) {
-    obj = lv_label_create(parent);
+    container = lv_obj_create(parent);
+    lv_obj_remove_style_all(container);
+    lv_obj_add_style(container, &style.msg, 0);
+    lv_obj_update_layout(container);
+    lv_obj_align(container, LV_ALIGN_CENTER, 0, -BTN_HEIGHT / 2);
 
-    lv_obj_add_style(obj, &style.msg, 0);
+    obj = lv_label_create(container);
+    lv_obj_set_width(obj, lv_obj_get_width(container) - 20);
+    lv_obj_set_height(obj, LV_SIZE_CONTENT);
+    lv_obj_center(obj);
+
     lv_label_set_long_mode(obj, LV_LABEL_LONG_SCROLL);
-
-    lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_opa(obj, LV_OPA_TRANSP, 0);
     lv_obj_add_event_cb(obj, msg_update_cb, EVENT_MSG_UPDATE, NULL);
     lv_label_set_recolor(obj, true);
 
     lv_anim_init(&fade);
-    lv_anim_set_var(&fade, obj);
+    lv_anim_set_var(&fade, container);
     lv_anim_set_time(&fade, FADE_TIME);
     lv_anim_set_exec_cb(&fade, fade_anim);
     lv_anim_set_ready_cb(&fade, fade_ready);

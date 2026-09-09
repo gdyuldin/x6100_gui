@@ -659,17 +659,6 @@ static void spectrum_render_rotated(uint32_t *buf, int stride) {
     }
 
     spectrum_update_colors();
-    // // Add vertical gradient
-    // lv_color_t colors[stride];
-    // float low = 0.2f;
-    // float high = 1.0f;
-    // for (size_t i = 0; i < stride; i++) {
-    //     float k = low + (high - low) * i / stride;
-    //     colors[i].ch.blue = roundf(k * s_main_color.ch.blue);
-    //     colors[i].ch.green = roundf(k * s_main_color.ch.green);
-    //     colors[i].ch.red = roundf(k * s_main_color.ch.red);
-    // }
-
     int32_t offset = spectrum_compute_offset();
 
     if (params.spectrum_peak.x && !spectrum_tx) {

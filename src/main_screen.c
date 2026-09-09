@@ -69,8 +69,6 @@ static lv_obj_t     *obj;
 static lv_obj_t     *top_container;
 static lv_obj_t     *spectrum;
 static lv_obj_t     *freq_bounds[2];
-static lv_obj_t     *msg;
-static lv_obj_t     *msg_tiny;
 static lv_obj_t     *meter;
 static lv_obj_t     *tx_info;
 static lv_obj_t     *knobs;
@@ -1050,7 +1048,7 @@ void main_screen_set_small_top(bool v) {
     }
 }
 
-lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
+lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     uint16_t y = 0;
 
     obj = overlay_scr;
@@ -1067,16 +1065,15 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     // lv_obj_add_style(obj, &style.background, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
-    const lv_coord_t indicator_height = 31;
     /* Indicators block */
     // width from meter style for correct padding
     lv_style_value_t meter_w;
     lv_style_get_prop(&style.s_meter, LV_STYLE_WIDTH, &meter_w);
-    indicators_init(obj, indicator_height, meter_w.num);
-    y += indicator_height;
+    indicators_init(obj, INDICATORS_HEIGHT, meter_w.num);
+    y += INDICATORS_HEIGHT;
 
     /* Spectrum */
-    spectrum = spectrum_init(overlay_scr, indicator_height, spectrum_height);
+    spectrum = spectrum_init(overlay_scr, INDICATORS_HEIGHT, spectrum_height);
     main_screen_keys_enable(true);
 
     lv_obj_add_event_cb(spectrum, spectrum_key_cb, LV_EVENT_KEY, NULL);
@@ -1102,7 +1099,7 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
     freq_bounds[1] = f;
 
     /* Waterfall */
-    waterfall_init(overlay_scr, y, SCREEN_HEIGHT - y);
+    lv_obj_t *waterfall = waterfall_init(overlay_scr, y, SCREEN_HEIGHT - y);
 
     /* Konbs */
     knobs_init(obj);
@@ -1113,8 +1110,8 @@ lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr) {
 
     /* Panel (CW/RTTY) */
     panel_init(obj);
-    msg = msg_init(obj);
-    msg_tiny = msg_tiny_init(obj);
+    msg_init(waterfall);
+    msg_tiny_init(spectrum);
 
     /* Top container (meter, clock, freq) */
     top_container = lv_obj_create(obj);

@@ -152,7 +152,7 @@ int main(void) {
     radio_init();
     audio_mixer_setup(x6100_control_get_base_ver());
     dsp_init();
-    main_screen(primary_scr, overlay_scr);
+    main_screen(overlay_scr);
 
     radio_start();
 

@@ -13,7 +13,7 @@
 
 #include "lvgl/lvgl.h"
 
-void waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h);
+lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h);
 void waterfall_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint32_t width_hz);
 void waterfall_min_max_reset();
 

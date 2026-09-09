@@ -19,7 +19,7 @@
 #define MEM_WSPR_ID     300
 #define MEM_SSTV_ID     400
 
-lv_obj_t * main_screen(lv_obj_t *primary_scr, lv_obj_t *overlay_scr);
+lv_obj_t * main_screen(lv_obj_t *overlay_scr);
 
 void main_screen_keys_enable(bool value);
 void main_screen_start_app(press_action_t page_app);
