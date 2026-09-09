@@ -434,6 +434,9 @@ static void device_added_sig_cb(NMClient *client, GObject *dev, gpointer user_da
 static void device_removed_sig_cb(NMClient *client, GObject *dev, gpointer user_data) {
     NMDevice           *nm_dev;
     NMActiveConnection *active_con;
+    if (!device) {
+        return;
+    }
     nm_dev = NM_DEVICE(dev);
     if (strcmp(nm_device_get_iface(nm_dev), nm_device_get_iface(device)) == 0) {
         LV_LOG_USER("Removed %s device", nm_device_get_iface(device));
