@@ -41,7 +41,6 @@ params_t params = {
     .spectrum_peak          = { .x = true,  .name = "spectrum_peak"},
     .spectrum_peak_hold     = { .x = 5,  .min=1, .max=10, .name = "spectrum_peak_hold"},
     .spectrum_peak_speed    = { .x = 5,  .min=1, .max=30, .name = "spectrum_peak_speed"},
-    .waterfall_smooth_scroll= { .x = false,  .name = "waterfall_smooth_scroll",  .voice = "Waterfall smooth scroll"},
     .waterfall_center_line  = { .x = true,  .name = "waterfall_center_line",    .voice = "Waterfall center line"},
     .waterfall_zoom         = { .x = true,  .name = "waterfall_zoom",           .voice = "Waterfall zoom"},
     .mag_freq               = { .x = true,  .name = "mag_freq",                 .voice = "Magnification of frequency" },
@@ -242,7 +241,6 @@ static bool params_load() {
         if (params_load_uint8(&params.spectrum_peak_speed, name, i)) continue;
         if (params_load_bool(&params.spectrum_filled, name, i)) continue;
         if (params_load_bool(&params.spectrum_peak, name, i)) continue;
-        if (params_load_bool(&params.waterfall_smooth_scroll, name, i)) continue;
         if (params_load_bool(&params.waterfall_center_line, name, i)) continue;
         if (params_load_bool(&params.waterfall_zoom, name, i)) continue;
         if (params_load_bool(&params.spmode, name, i)) continue;
@@ -364,7 +362,6 @@ static void params_save() {
     params_save_uint8(&params.spectrum_peak_speed);
     params_save_bool(&params.spectrum_filled);
     params_save_bool(&params.spectrum_peak);
-    params_save_bool(&params.waterfall_smooth_scroll);
     params_save_bool(&params.waterfall_center_line);
     params_save_bool(&params.waterfall_zoom);
     params_save_bool(&params.spmode);

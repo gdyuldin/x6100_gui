@@ -104,7 +104,6 @@ typedef struct {
     params_uint8_t      spectrum_peak_hold;
     params_uint8_t      spectrum_peak_speed;
     params_bool_t       spectrum_filled;
-    params_bool_t       waterfall_smooth_scroll;
     params_bool_t       waterfall_center_line;
     params_bool_t       waterfall_zoom;
     params_bool_t       mag_freq;

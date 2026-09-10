@@ -50,6 +50,14 @@ extern "C" {
 #define SMALL_6     (SMALL_1 * 6 + SMALL_PAD * 5)
 
 #define SMALL_WIDTH 57
+#define DEFAULT_HEIGHT 55
+
+typedef struct {
+    uint8_t    row;
+    lv_obj_t **items;
+    uint8_t    cnt;
+    lv_coord_t default_height = DEFAULT_HEIGHT;
+} row_items_t;
 
 static void make_general_page();
 static void make_ui_page();
@@ -80,13 +88,16 @@ static lv_obj_t     *hour;
 static lv_obj_t     *min;
 static lv_obj_t     *sec;
 
+/* Auto levels */
+static row_items_t row_level_manual_items;
+static lv_obj_t *auto_level_sw;
+
 /* RGB picker */
 static lv_obj_t *spectrum_color_sw;
 static lv_obj_t *color_preview_rect;
 static lv_obj_t *color_preview_hex;
 static lv_obj_t *rgb_sliders[3];
-static uint8_t   color_picker_row;
-static lv_obj_t *color_picker_objects[3];
+static row_items_t row_rgb_picker_items;
 
 static std::vector<Subscription> observers;
 
@@ -164,6 +175,22 @@ static void load_info_page(button_data_t *btn_data) {
         buttons_mark(btn, false);
     }
     buttons_mark(btn_data, true);
+}
+
+static void show_row(const row_items_t &row_items, bool show) {
+    if (show) {
+        row_dsc[row_items.row] = row_items.default_height;
+        for (size_t i = 0; i < row_items.cnt; i++) {
+            if (row_items.items[i]) lv_obj_clear_flag(row_items.items[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_set_style_grid_row_dsc_array(grid, row_dsc, 0);
+    } else {
+        row_dsc[row_items.row] = 0;
+        for (size_t i = 0; i < row_items.cnt; i++) {
+            if (row_items.items[i]) lv_obj_add_flag(row_items.items[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_set_style_grid_row_dsc_array(grid, row_dsc, 0);
+    }
 }
 
 /* Shared update */
@@ -1281,12 +1308,19 @@ static void auto_level_offset_update_cb(lv_event_t * e) {
     cfg_sm.p_auto_level_offset.set(val);
 }
 
+static void auto_level_on_off_cb(lv_event_t * e) {
+    lv_obj_t *obj = lv_event_get_target(e);
+    if (row_level_manual_items.cnt) {
+        show_row(row_level_manual_items, !lv_obj_has_state(obj, LV_STATE_CHECKED));
+    }
+}
+
 static uint8_t make_auto_offset(uint8_t row) {
     lv_obj_t *obj;
 
     obj = lv_label_create(grid);
 
-    lv_label_set_text(obj, "Spectrum auto, offset");
+    lv_label_set_text(obj, "Levels auto, offset");
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     /* On/off */
@@ -1296,8 +1330,9 @@ static uint8_t make_auto_offset(uint8_t row) {
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
-    obj = switch_bool(obj, cfg_sm.p_auto_level_enabled);
-    lv_obj_set_width(obj, SMALL_3 - 30);
+    auto_level_sw = switch_bool(obj, cfg_sm.p_auto_level_enabled);
+    lv_obj_add_event_cb(auto_level_sw, auto_level_on_off_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_set_width(auto_level_sw, SMALL_3 - 30);
 
     /* Offset */
     obj = lv_obj_create(grid);
@@ -1314,7 +1349,7 @@ static uint8_t make_auto_offset(uint8_t row) {
     return row + 1;
 }
 
-/* Spectrum  min, max (when no auto)*/
+/* Levels  min, max (when no auto)*/
 
 static void grid_min_max_update_cb(lv_event_t *e) {
     lv_obj_t *obj = lv_event_get_target(e);
@@ -1331,12 +1366,20 @@ uint8_t make_spectrum_min_max(uint8_t row) {
     lv_obj_t *obj;
     lv_obj_t *cell;
 
-    cell = lv_label_create(grid);
+    static lv_obj_t *items[3];
+    row_level_manual_items.cnt = 3;
+    row_level_manual_items.row = row;
+    row_level_manual_items.items = items;
+    lv_obj_t **items_ptr = items;
 
-    lv_label_set_text(cell, "Spectrum man min, max");
+    cell = lv_label_create(grid);
+    *items_ptr++ = cell;
+
+    lv_label_set_text(cell, "Levels min, max");
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     cell = lv_obj_create(grid);
+    *items_ptr++ = cell;
 
     lv_obj_set_size(cell, SMALL_3, 56);
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
@@ -1351,6 +1394,7 @@ uint8_t make_spectrum_min_max(uint8_t row) {
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
 
     cell = lv_obj_create(grid);
+    *items_ptr++ = cell;
 
     lv_obj_set_size(cell, SMALL_3, 56);
     lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 4, 3, LV_GRID_ALIGN_CENTER, row, 1);
@@ -1363,6 +1407,8 @@ uint8_t make_spectrum_min_max(uint8_t row) {
 
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
+
+    lv_event_send(auto_level_sw, LV_EVENT_VALUE_CHANGED, NULL);
 
     return row + 1;
 }
@@ -1486,30 +1532,6 @@ static uint8_t make_waterfall_line_zoom(uint8_t row) {
     lv_obj_center(obj);
 
     obj = switch_bool(obj, &params.waterfall_zoom);
-
-    lv_obj_set_width(obj, SMALL_3 - 30);
-
-    return row + 1;
-}
-
-static uint8_t make_waterfall_smooth_scroll(uint8_t row) {
-    lv_obj_t    *obj;
-    uint8_t     col = 0;
-
-    obj = lv_label_create(grid);
-
-    lv_label_set_text(obj, "Waterfall smooth scroll");
-    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
-
-    obj = lv_obj_create(grid);
-
-    lv_obj_set_size(obj, SMALL_3, 56);
-    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 4, 3, LV_GRID_ALIGN_CENTER, row, 1);
-    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_center(obj);
-
-    obj = switch_bool(obj, &params.waterfall_smooth_scroll);
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 
@@ -2043,18 +2065,8 @@ static void spectrum_custom_color_toggle_cb(lv_event_t *e) {
     bool on = lv_obj_has_state(obj, LV_STATE_CHECKED);
     cfg_sm.p_spectrum_use_custom_color.set(on);
 
-    if (on) {
-        row_dsc[color_picker_row] = 120;
-        for (size_t i = 0; i < ARRAY_SIZE(color_picker_objects); i++) {
-            if (color_picker_objects[i]) lv_obj_clear_flag(color_picker_objects[i], LV_OBJ_FLAG_HIDDEN);
-        }
-        lv_obj_set_style_grid_row_dsc_array(grid, row_dsc, 0);
-    } else {
-        row_dsc[color_picker_row] = 0;
-        for (size_t i = 0; i < ARRAY_SIZE(color_picker_objects); i++) {
-            if (color_picker_objects[i]) lv_obj_add_flag(color_picker_objects[i], LV_OBJ_FLAG_HIDDEN);
-        }
-        lv_obj_set_style_grid_row_dsc_array(grid, row_dsc, 0);
+    if (row_rgb_picker_items.cnt) {
+        show_row(row_rgb_picker_items, on);
     }
 }
 
@@ -2095,21 +2107,26 @@ static uint8_t make_spectrum_custom_color_toggle(uint8_t row) {
 /* RGB picker */
 static uint8_t make_rgb_color_picker(uint8_t row)
 {
-    color_picker_row = row;
-    lv_obj_t **objects = color_picker_objects;
+    static lv_obj_t *items[3];
+    row_rgb_picker_items.cnt = 3;
+    row_rgb_picker_items.row = row;
+    row_rgb_picker_items.items = items;
+    row_rgb_picker_items.default_height = 120;
+
+    lv_obj_t **items_ptr = items;
 
     lv_obj_t *obj;
     uint8_t col = 0;
 
     // Label
     obj = lv_label_create(grid);
-    *objects++ = obj;
+    *items_ptr++ = obj;
     lv_label_set_text(obj, "Spectrum Color");
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     // Preview Container
     lv_obj_t *preview_cont = lv_obj_create(grid);
-    *objects++ = preview_cont;
+    *items_ptr++ = preview_cont;
     lv_obj_remove_style_all(preview_cont);
     lv_obj_set_layout(preview_cont, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(preview_cont, LV_FLEX_FLOW_COLUMN);
@@ -2131,14 +2148,14 @@ static uint8_t make_rgb_color_picker(uint8_t row)
 
     // Slider Panel
     lv_obj_t *slider_panel = lv_obj_create(grid);
-    *objects++ = slider_panel;
+    *items_ptr++ = slider_panel;
     lv_obj_remove_style_all(slider_panel);
     lv_obj_set_layout(slider_panel, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(slider_panel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(slider_panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_size(slider_panel, SMALL_4 + 60, LV_SIZE_CONTENT);
+    lv_obj_set_size(slider_panel, SMALL_3 + 60, LV_SIZE_CONTENT);
     lv_obj_add_style(slider_panel, &style.rgb.slider_panel, 0);
-    lv_obj_set_grid_cell(slider_panel, LV_GRID_ALIGN_START, col, 4, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_grid_cell(slider_panel, LV_GRID_ALIGN_START, col, 3, LV_GRID_ALIGN_CENTER, row, 1);
 
     const char *labels[] = {"R", "G", "B"};
     lv_palette_t palettes[] = {LV_PALETTE_RED, LV_PALETTE_GREEN, LV_PALETTE_BLUE};
@@ -2234,7 +2251,7 @@ static uint8_t make_delimiter(uint8_t row) {
 }
 
 static void grid_create() {
-    std::fill_n(row_dsc, 64, 55);
+    std::fill_n(row_dsc, 64, DEFAULT_HEIGHT);
     grid = lv_obj_create(dialog.obj);
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
     lv_obj_set_size(grid, 780, 330);
@@ -2337,8 +2354,12 @@ static void make_ui_page() {
     row = make_delimiter(row);
 
     row = make_hmic_action(row);
-    row = make_mag(row);
     row = make_delimiter(row);
+
+    row = make_freq_accel(row);
+    row = make_delimiter(row);
+
+    row = make_mag(row);
 
     row = make_auto_offset(row);
     row = make_spectrum_min_max(row);
@@ -2346,23 +2367,21 @@ static void make_ui_page() {
 
     row = make_spectrum_fill_peak(row);
     row = make_spectrum_beta_peak_hold_speed(row);
-
-    row = make_waterfall_line_zoom(row);
-    row = make_waterfall_smooth_scroll(row);
-    row = make_knob_info(row);
     row = make_delimiter(row);
 
-    row = make_freq_accel(row);
+    row = make_waterfall_line_zoom(row);
+    row = make_knob_info(row);
     row = make_delimiter(row);
 
     row = make_display_invert(row);
     row = make_delimiter(row);
 
-    row = make_theme(row);
-
     /* RGB picker Meter SWR Color */
     row = make_spectrum_custom_color_toggle(row);
     row = make_rgb_color_picker(row);
+    row = make_delimiter(row);
+
+    row = make_theme(row);
     row = make_meter_color(row);
     row = make_swr_color(row);
 
