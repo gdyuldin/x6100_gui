@@ -10,6 +10,7 @@
 
 #include <stdlib.h>
 #include "globals.h"
+#include "cfg/cfg_api.h"
 
 #include "styles_wf_palette.c"
 
@@ -68,13 +69,14 @@ static skin_t skin_black;
 
 static skin_t *skin_current;
 
-static lv_color_t color_adjust_hsv_value(lv_color_t base, float scale);
 
 static void setup_skin_default(skin_t *skin);
 static void setup_skin_flat(skin_t *skin);
 static void setup_skin_black(skin_t *skin);
 
 static void set_skin(skin_t *skin);
+
+static void update_spectrum_color_cb(Subject *subj, void *user_data);
 
 void styles_init(themes_t theme) {
     /* * */
@@ -306,27 +308,9 @@ void styles_init(themes_t theme) {
     setup_skin_black(&skin_black);
 
     styles_set_theme(theme);
-}
 
-void styles_set_spectrum_color(lv_color_t color) {
-    lv_color_hsv_t hsv = lv_color_to_hsv(color);
-    style.colors.spectrum.mid = color;
-
-    // Low darker and bit more saturated
-    style.colors.spectrum.low = lv_color_hsv_to_rgb(
-        hsv.h,
-        LV_CLAMP(0, hsv.s * 1.2f, 100),
-        hsv.v * 0.3f);
-
-    // High is bright and bit less saturates
-    style.colors.spectrum.high = lv_color_hsv_to_rgb(
-        hsv.h,
-        hsv.s * 0.4f,
-        100);
-
-    // style.colors.spectrum.line = color;
-    style.colors.spectrum.line = lv_color_hsv_to_rgb(hsv.h, 12, 85);
-    style.colors.spectrum.peak = lv_color_hsv_to_rgb(hsv.h, 12, 30);
+    subject_subscribe_delayed((Subject *)cfg_spectrum_use_custom_color, update_spectrum_color_cb, NULL);
+    subject_subscribe_delayed((Subject *)cfg_spectrum_color, update_spectrum_color_cb, NULL);
 }
 
 void styles_update_meter_colors(meter_color_t mc)
@@ -360,6 +344,41 @@ void styles_set_theme(themes_t theme) {
             break;
         }
         set_skin(skin_current);
+}
+
+static void set_spectrum_color(lv_color_t color) {
+    lv_color_hsv_t hsv = lv_color_to_hsv(color);
+    style.colors.spectrum.mid = color;
+
+    // Low darker and bit more saturated
+    style.colors.spectrum.low = lv_color_hsv_to_rgb(
+        hsv.h,
+        LV_CLAMP(0, hsv.s * 1.2f, 100),
+        hsv.v * 0.3f);
+
+    // High is bright and bit less saturates
+    style.colors.spectrum.high = lv_color_hsv_to_rgb(
+        hsv.h,
+        hsv.s * 0.4f,
+        100);
+
+    // style.colors.spectrum.line = color;
+    style.colors.spectrum.line = lv_color_hsv_to_rgb(hsv.h, 12, 85);
+    style.colors.spectrum.peak = lv_color_hsv_to_rgb(hsv.h, 12, 30);
+}
+
+static void update_spectrum_color(skin_t *skin) {
+    if (param_i_get(cfg_spectrum_use_custom_color)) {
+        lv_color_t col;
+        col.full = param_i_get(cfg_spectrum_color);
+        set_spectrum_color(col);
+    } else {
+        set_spectrum_color(skin->spectrum_color);
+    }
+}
+
+static void update_spectrum_color_cb(Subject *subj, void *user_data) {
+    update_spectrum_color(skin_current);
 }
 
 static bool style_get_size(lv_style_t *style, lv_coord_t *w, lv_coord_t *h) {
@@ -468,12 +487,6 @@ static void render_grad_bg_with_border(lv_coord_t w, lv_coord_t h, lv_img_dsc_t 
         add_noise(&canvas_buffer[j + 2]);
         canvas_buffer[j + 3] = ((uint16_t)canvas_buffer[j + 3] * opa + 128) >> 8;
     }
-}
-
-static lv_color_t color_adjust_hsv_value(lv_color_t base, float scale) {
-    lv_color_hsv_t hsv = lv_color_to_hsv(base);
-    hsv.v = LV_CLAMP(0, hsv.v * scale, 255);
-    return lv_color_hsv_to_rgb(hsv.h, hsv.s, hsv.v);
 }
 
 static void setup_skin_default(skin_t *skin) {
@@ -890,12 +903,7 @@ static void set_skin(skin_t *skin) {
     lv_style_set_text_color(&style.text_muted_color, muted_text_color);
 
     /* Spectrum */
-    // TODO: add spectrum custom color toggle
-    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
-        styles_set_spectrum_color(skin->spectrum_color);
-    } else {
-        styles_set_spectrum_color(lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x));
-    }
+    update_spectrum_color(skin);
 
     /* S-meter */
     styles_update_meter_colors(params.meter_color.x);

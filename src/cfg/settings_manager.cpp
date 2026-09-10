@@ -4,10 +4,21 @@
 #include <chrono>
 #include <cstdio>
 
+#include <cstdint>
+
 extern "C" {
 #include <aether_radio/x6100_control/control.h>
 }
 
+int32_t SettingsManager::spectrum_color_validate(int32_t full) {
+    uint8_t r = (full >> 16) & 0xFF;
+    uint8_t g = (full >> 8)  & 0xFF;
+    uint8_t b =  full        & 0xFF;
+    // r = r < 160 ? 160 : r;
+    // g = g < 160 ? 160 : g;
+    // b = b < 160 ? 160 : b;
+    return 0xFF000000 | (r << 16) | (g << 8) | b;
+}
 
 // SettingsManager implementation.
 //

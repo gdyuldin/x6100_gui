@@ -108,6 +108,10 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
     Parameter<int32_t> p_knob_info{"knob_info", true, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_spectrum_use_custom_color{"spectrum_use_custom_color", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_spectrum_color{"spectrum_color", (int32_t)0xFFEAC345, spectrum_color_validate,
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
     // String mapping encoder (cfg_ctrl_t) positions to bind values
     // (ENCODER_BIND_VOL/ENCODER_BIND_MFK/ENCODER_BIND_NONE). GLOBAL: persisted in the flat `params` table under key
     // "encoder_bind", matching the legacy src/cfg key for DB compatibility.
@@ -460,6 +464,8 @@ class SettingsManager {
     void on_mode_filter_high_not_found();
     void on_mode_freq_step_not_found();
     void on_mode_zoom_not_found();
+
+    static int32_t spectrum_color_validate(int32_t full);
 
     // Shared band-switch core: flush, rebind context, switch-time loads and
     // recomputes. `implicit` selects whether the active VFO's freq+mode is kept.

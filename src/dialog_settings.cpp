@@ -8,10 +8,11 @@
 
 #include "dialog_settings.h"
 
+#include <vector>
 #include "voice.h"
 #include "dsp.h"
 #include "cfg/settings_manager.h"
-#include <vector>
+#include "util.h"
 
 extern "C" {
 
@@ -80,9 +81,12 @@ static lv_obj_t     *min;
 static lv_obj_t     *sec;
 
 /* RGB picker */
-static lv_obj_t * color_preview_rect;
-static lv_obj_t * color_preview_hex;
-static lv_obj_t * rgb_sliders[3];
+static lv_obj_t *spectrum_color_sw;
+static lv_obj_t *color_preview_rect;
+static lv_obj_t *color_preview_hex;
+static lv_obj_t *rgb_sliders[3];
+static uint8_t   color_picker_row;
+static lv_obj_t *color_picker_objects[3];
 
 static std::vector<Subscription> observers;
 
@@ -202,36 +206,6 @@ static void theme_update_cb(lv_event_t * e) {
 
     params_uint8_set(var, lv_dropdown_get_selected(obj));
     styles_set_theme((themes_t)var->x);
-}
-
-/* RGB picker */
-static void rgb_color_update_cb(lv_event_t * e)
-{
-    uint8_t r = lv_slider_get_value(rgb_sliders[0]);
-    uint8_t g = lv_slider_get_value(rgb_sliders[1]);
-    uint8_t b = lv_slider_get_value(rgb_sliders[2]);
-
-    lv_color_t col = lv_color_make(r, g, b);
-    lv_obj_set_style_bg_color(color_preview_rect, col, 0);
-    lv_obj_set_style_bg_opa(color_preview_rect, LV_OPA_COVER, 0);
-
-    char buf[10];
-    lv_snprintf(buf, sizeof(buf), "#%02X%02X%02X", r, g, b);
-    lv_label_set_text(color_preview_hex, buf);
-
-    for (int i = 0; i < 3; i++) {
-        lv_obj_t *slider = rgb_sliders[i];
-        lv_obj_t *label = (lv_obj_t *)lv_obj_get_user_data(slider);
-        if (label) {
-            char label_buf[16];
-            lv_snprintf(label_buf, sizeof(label_buf), "%d", lv_slider_get_value(slider));
-            lv_label_set_text(label, label_buf);
-        }
-    }
-    params_uint8_set(&params.spectrum_r, r);
-    params_uint8_set(&params.spectrum_g, g);
-    params_uint8_set(&params.spectrum_b, b);
-    styles_set_spectrum_color(col);
 }
 
 /* Meter Color */
@@ -2013,27 +1987,112 @@ static uint8_t make_theme(uint8_t row) {
 }
 
 /* RGB picker */
+static void rgb_color_update_cb(lv_event_t * e)
+{
+    uint8_t r = lv_slider_get_value(rgb_sliders[0]);
+    uint8_t g = lv_slider_get_value(rgb_sliders[1]);
+    uint8_t b = lv_slider_get_value(rgb_sliders[2]);
+
+    lv_color_t col = lv_color_make(r, g, b);
+    lv_obj_set_style_bg_color(color_preview_rect, col, 0);
+    lv_obj_set_style_bg_opa(color_preview_rect, LV_OPA_COVER, 0);
+
+    char buf[10];
+    lv_snprintf(buf, sizeof(buf), "#%02X%02X%02X", r, g, b);
+    lv_label_set_text(color_preview_hex, buf);
+
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t *slider = rgb_sliders[i];
+        lv_obj_t *label = (lv_obj_t *)lv_obj_get_user_data(slider);
+        if (label) {
+            char label_buf[16];
+            lv_snprintf(label_buf, sizeof(label_buf), "%d", lv_slider_get_value(slider));
+            lv_label_set_text(label, label_buf);
+        }
+    }
+    cfg_sm.p_spectrum_color.set(static_cast<int32_t>(col.full));
+}
+
+/* Spectrum custom color toggle */
+static void spectrum_custom_color_toggle_cb(lv_event_t *e) {
+    lv_obj_t *obj = lv_event_get_target(e);
+    bool on = lv_obj_has_state(obj, LV_STATE_CHECKED);
+    cfg_sm.p_spectrum_use_custom_color.set(on);
+
+    if (on) {
+        row_dsc[color_picker_row] = 120;
+        for (size_t i = 0; i < ARRAY_SIZE(color_picker_objects); i++) {
+            if (color_picker_objects[i]) lv_obj_clear_flag(color_picker_objects[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_set_style_grid_row_dsc_array(grid, row_dsc, 0);
+    } else {
+        row_dsc[color_picker_row] = 0;
+        for (size_t i = 0; i < ARRAY_SIZE(color_picker_objects); i++) {
+            if (color_picker_objects[i]) lv_obj_add_flag(color_picker_objects[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_set_style_grid_row_dsc_array(grid, row_dsc, 0);
+    }
+}
+
+static uint8_t make_spectrum_custom_color_toggle(uint8_t row) {
+    lv_obj_t *obj;
+    uint8_t col = 0;
+
+    obj = lv_label_create(grid);
+
+    lv_label_set_text(obj, "Custom spectrum color");
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    obj = lv_obj_create(grid);
+
+    lv_obj_set_size(obj, SMALL_3, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 4, 3, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(obj);
+
+    spectrum_color_sw = lv_switch_create(obj);
+    dialog_item(&dialog, spectrum_color_sw);
+    lv_obj_center(spectrum_color_sw);
+    lv_obj_set_width(spectrum_color_sw, SMALL_3 - 30);
+
+    if (cfg_sm.p_spectrum_use_custom_color.get()) {
+        lv_obj_add_state(spectrum_color_sw, LV_STATE_CHECKED);
+    }
+
+    lv_obj_add_event_cb(spectrum_color_sw, spectrum_custom_color_toggle_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_add_event_cb(spectrum_color_sw, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
+    lv_obj_add_event_cb(spectrum_color_sw, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
+
+    return row + 1;
+}
+
+/* RGB picker */
 static uint8_t make_rgb_color_picker(uint8_t row)
 {
-    row_dsc[row] = 120;
+    color_picker_row = row;
+    lv_obj_t **objects = color_picker_objects;
 
     lv_obj_t *obj;
     uint8_t col = 0;
 
     // Label
     obj = lv_label_create(grid);
+    *objects++ = obj;
     lv_label_set_text(obj, "Spectrum Color");
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     // Preview Container
     lv_obj_t *preview_cont = lv_obj_create(grid);
+    *objects++ = preview_cont;
     lv_obj_remove_style_all(preview_cont);
     lv_obj_set_layout(preview_cont, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(preview_cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(preview_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_size(preview_cont, SMALL_2, LV_SIZE_CONTENT);
     lv_obj_add_style(preview_cont, &style.rgb.preview_cont, 0);
-    lv_obj_set_grid_cell(preview_cont, LV_GRID_ALIGN_CENTER, col, 2, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_grid_cell(preview_cont, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);
     col += 2;
 
     // Rectangle Color Preview
@@ -2048,6 +2107,7 @@ static uint8_t make_rgb_color_picker(uint8_t row)
 
     // Slider Panel
     lv_obj_t *slider_panel = lv_obj_create(grid);
+    *objects++ = slider_panel;
     lv_obj_remove_style_all(slider_panel);
     lv_obj_set_layout(slider_panel, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(slider_panel, LV_FLEX_FLOW_COLUMN);
@@ -2059,10 +2119,11 @@ static uint8_t make_rgb_color_picker(uint8_t row)
     const char *labels[] = {"R", "G", "B"};
     lv_palette_t palettes[] = {LV_PALETTE_RED, LV_PALETTE_GREEN, LV_PALETTE_BLUE};
 
+    int32_t full = cfg_sm.p_spectrum_color.get();
     uint8_t init_values[] = {
-        params.spectrum_r.x,
-        params.spectrum_g.x,
-        params.spectrum_b.x
+        (uint8_t)((full >> 16) & 0xFF),
+        (uint8_t)((full >> 8)  & 0xFF),
+        (uint8_t)( full        & 0xFF)
     };
 
     for (int i = 0; i < 3; i++) {
@@ -2093,10 +2154,12 @@ static uint8_t make_rgb_color_picker(uint8_t row)
         // Value-Label
         lv_obj_t *val_label = (lv_obj_t *)lv_obj_get_user_data(rgb_sliders[i]);
         lv_obj_add_style(val_label, &style.rgb.val_label, 0);
+
+        lv_obj_add_event_cb(rgb_sliders[i], change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
+        lv_obj_add_event_cb(rgb_sliders[i], change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
     }
 
-    lv_obj_update_layout(grid);
-    lv_obj_invalidate(grid);
+    lv_event_send(spectrum_color_sw, LV_EVENT_VALUE_CHANGED, NULL);
     lv_event_send(rgb_sliders[0], LV_EVENT_VALUE_CHANGED, NULL);
 
     return row + 1;
@@ -2271,6 +2334,7 @@ static void make_ui_page() {
     row = make_theme(row);
 
     /* RGB picker Meter SWR Color */
+    row = make_spectrum_custom_color_toggle(row);
     row = make_rgb_color_picker(row);
     row = make_meter_color(row);
     row = make_swr_color(row);

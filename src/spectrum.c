@@ -129,12 +129,12 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
 
     lv_draw_rect_dsc_init(&rect_dsc);
 
-    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
-        rect_dsc.bg_color = style.colors.mark;
+    if (param_i_get(cfg_spectrum_use_custom_color)) {
+        rect_dsc.bg_color.full = param_i_get(cfg_spectrum_color);
     } else {
-        rect_dsc.bg_color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
+        rect_dsc.bg_color = style.colors.mark;
     }
-    rect_dsc.bg_opa = LV_OPA_50;
+    rect_dsc.bg_opa = LV_OPA_40;
 
     int32_t w_hz = width_hz / zoom_factor;
 
@@ -182,10 +182,10 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
 
     lv_draw_line_dsc_init(&line_dsc);
 
-    if (params.spectrum_r.x == 0 && params.spectrum_g.x == 0 && params.spectrum_b.x == 0) {
-        line_dsc.color = lv_color_hex(0xAAAAAA);
+    if (param_i_get(cfg_spectrum_use_custom_color)) {
+        line_dsc.color.full = param_i_get(cfg_spectrum_color);
     } else {
-        line_dsc.color = lv_color_make(params.spectrum_r.x, params.spectrum_g.x, params.spectrum_b.x);
+        line_dsc.color = lv_color_hex(0xAAAAAA);
     }
     line_dsc.width = 1;
 

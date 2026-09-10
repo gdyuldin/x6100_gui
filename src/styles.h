@@ -155,5 +155,4 @@ void styles_init(themes_t theme);
 
 void styles_set_theme(themes_t theme);
 
-void styles_set_spectrum_color(lv_color_t color);
 void styles_update_meter_colors(meter_color_t mc);
