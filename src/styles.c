@@ -146,8 +146,10 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_img_opa(&style.panels.base, LV_OPA_COVER);
 
     lv_style_init(&style.panels.info);
-    lv_style_set_align(&style.panels.info, LV_ALIGN_OUT_TOP_LEFT);
-    lv_style_set_y(&style.panels.info, -38);
+    // lv_style_set_align(&style.panels.info, LV_ALIGN_OUT_TOP_LEFT);
+    lv_style_set_align(&style.panels.info, LV_ALIGN_BOTTOM_RIGHT);
+    // lv_style_set_x(&style.panels.info, -38);
+    // lv_style_set_tr(&style.panels.info,  0);
     lv_style_set_text_font(&style.panels.info, &sony_30);
     lv_style_set_text_color(&style.panels.info, lv_color_hex(0x808080));
     lv_style_set_blend_mode(&style.panels.info, LV_BLEND_MODE_ADDITIVE);
@@ -337,9 +339,6 @@ void styles_update_meter_colors(meter_color_t mc)
 
 void styles_set_theme(themes_t theme) {
     switch (theme) {
-        // case THEME_LEGACY:
-        //     setup_theme_legacy();
-        //     break;
         case THEME_BLACK:
             skin_current = &skin_black;
             break;
