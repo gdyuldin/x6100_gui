@@ -43,7 +43,7 @@ params_t params = {
     .spectrum_peak_speed    = { .x = 5,  .min=1, .max=30, .name = "spectrum_peak_speed"},
     .waterfall_center_line  = { .x = true,  .name = "waterfall_center_line",    .voice = "Waterfall center line"},
     .waterfall_zoom         = { .x = true,  .name = "waterfall_zoom",           .voice = "Waterfall zoom"},
-    .mag_freq               = { .x = true,  .name = "mag_freq",                 .voice = "Magnification of frequency" },
+    .mag_freq               = { .x = false,  .name = "mag_freq",                 .voice = "Magnification of frequency" },
     .mag_info               = { .x = true,  .name = "mag_info",                 .voice = "Magnification of info" },
     .mag_alc                = { .x = true,  .name = "mag_alc",                  .voice = "Magnification of A L C" },
     .clock_view             = CLOCK_TIME_POWER,
@@ -101,10 +101,6 @@ params_t params = {
 
     .theme                  = { .x = THEME_SIMPLE, .name="theme"},
 
-
-    .spectrum_r             = { .x = 0, .min = 0, .max = 255, .name = "spectrum_r" },
-    .spectrum_g             = { .x = 0, .min = 0, .max = 255, .name = "spectrum_g" },
-    .spectrum_b             = { .x = 0, .min = 0, .max = 255, .name = "spectrum_b" },
     .meter_color            = { .x = METER_GRAY, .name="meter_color"},
     .swr_color              = { .x = SWR_GRAY,   .name="swr_color"},
 };
@@ -262,9 +258,6 @@ static bool params_load() {
         if (params_load_bool(&params.wifi_enabled, name, i)) continue;
         if (params_load_uint8(&params.theme, name, i)) continue;
 
-        if (params_load_uint8(&params.spectrum_r, name, i)) continue;
-        if (params_load_uint8(&params.spectrum_g, name, i)) continue;
-        if (params_load_uint8(&params.spectrum_b, name, i)) continue;
         if (params_load_uint8(&params.meter_color, name, i)) continue;
         if (params_load_uint8(&params.swr_color, name, i)) continue;
     }
@@ -373,9 +366,6 @@ static void params_save() {
     params_save_bool(&params.wifi_enabled);
     params_save_uint8(&params.theme);
 
-    params_save_uint8(&params.spectrum_r);
-    params_save_uint8(&params.spectrum_g);
-    params_save_uint8(&params.spectrum_b);
     params_save_uint8(&params.meter_color);
     params_save_uint8(&params.swr_color);
 
