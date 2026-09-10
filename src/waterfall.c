@@ -15,7 +15,7 @@
 #include "cfg/cfg_api.h"
 #include "band_info.h"
 #include "meter.h"
-#include "backlight.h"
+#include "display.h"
 #include "dsp.h"
 #include "util.h"
 #include "pubsub_ids.h"

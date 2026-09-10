@@ -12,7 +12,7 @@
 
 #include "hkey.h"
 #include "events.h"
-#include "backlight.h"
+#include "display.h"
 #include "keyboard.h"
 
 #define HKEY_LONG_TIME 1000
@@ -228,7 +228,7 @@ void hkey_put(uint32_t key) {
         case HKEY_RELEASE:
         case HKEY_LONG_RELEASE:
             event.state = HKEY_PRESS;
-            backlight_tick();
+            display_tick();
             
             if (event.key != HKEY_UNKNOWN) {
                 hkey_event();

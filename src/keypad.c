@@ -14,7 +14,7 @@
 
 #include "keypad.h"
 #include "main.h"
-#include "backlight.h"
+#include "display.h"
 #include "keyboard.h"
 
 #define KEYPAD_LONG_TIME 1000
@@ -34,7 +34,7 @@ static void keypad_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
 
     if (read(keypad->fd, &in, sizeof(struct input_event)) > 0) {
         if (in.type == EV_KEY) {
-            backlight_tick();
+            display_tick();
 
             switch (in.code) {
                 /* Rotary VOL */

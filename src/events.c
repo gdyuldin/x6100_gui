@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "events.h"
-#include "backlight.h"
+#include "display.h"
 #include "keyboard.h"
 #include <stdio.h>
 

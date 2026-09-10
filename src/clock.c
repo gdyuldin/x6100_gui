@@ -11,7 +11,7 @@
 #include "styles.h"
 #include "radio.h"
 #include "util.h"
-#include "backlight.h"
+#include "display.h"
 #include "voice.h"
 #include "msg.h"
 

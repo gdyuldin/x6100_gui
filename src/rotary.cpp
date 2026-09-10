@@ -6,6 +6,8 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
+#include "rotary.h"
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -13,11 +15,10 @@
 #include <threads.h>
 #include <sys/epoll.h>
 
-#include "backlight.h"
+#include "display.h"
 #include "util.h"
 
 extern "C" {
-    #include "rotary.h"
     #include "keyboard.h"
 }
 
@@ -117,7 +118,7 @@ static void rotary_main_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     // Read events from main_readings
     rotary_data_t diff;
     if (main_readings.get(&diff)) {
-        backlight_tick();
+        display_tick();
         rotary_data_t *diff_copy = (rotary_data_t *) malloc(sizeof(rotary_data_t));
         *diff_copy = diff;
         lv_event_send(lv_scr_act(), EVENT_ROTARY, (void *) diff_copy);
@@ -143,7 +144,7 @@ static void rotary_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
         }
 
         if (send) {
-            backlight_tick();
+            display_tick();
 
             data->continue_reading = 1;
             remain_diff = diff;

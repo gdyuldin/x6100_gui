@@ -13,13 +13,13 @@
 #include "dsp.h"
 #include "cfg/settings_manager.h"
 #include "util.h"
+#include "display.h"
 
 extern "C" {
 
     #include "dialog.h"
     #include "styles.h"
     #include "params/params.h"
-    #include "backlight.h"
     #include "radio.h"
     #include "events.h"
     #include "keyboard.h"
@@ -528,17 +528,17 @@ static uint8_t make_time(uint8_t row) {
 
 /* Backlight */
 
-static void backlight_timeout_update_cb(lv_event_t * e) {
+static void display_backlight_timeout_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
     params_lock();
     params.brightness_timeout = lv_spinbox_get_value(obj);
     params_unlock(&params.dirty.brightness_timeout);
 
-    backlight_tick();
+    display_tick();
 }
 
-static void backlight_brightness_update_cb(lv_event_t * e) {
+static void display_brightness_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
     params_lock();
@@ -549,16 +549,16 @@ static void backlight_brightness_update_cb(lv_event_t * e) {
     params.brightness_idle = lv_slider_get_left_value(obj);
     params_unlock(&params.dirty.brightness_idle);
 
-    backlight_set_brightness(params.brightness_normal);
+    display_set_brightness(params.brightness_normal);
 }
 
-static void backlight_buttons_update_cb(lv_event_t * e) {
+static void display_buttons_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
-    backlight_set_buttons((buttons_light_t)lv_dropdown_get_selected(obj));
+    display_set_buttons_backlight((buttons_light_t)lv_dropdown_get_selected(obj));
 }
 
-static uint8_t make_backlight(uint8_t row) {
+static uint8_t make_display(uint8_t row) {
     lv_obj_t    *obj;
     uint8_t     col = 0;
 
@@ -582,7 +582,7 @@ static uint8_t make_backlight(uint8_t row) {
     lv_obj_set_size(obj, SMALL_2, 56);
 
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
-    lv_obj_add_event_cb(obj, backlight_timeout_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, display_backlight_timeout_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* Brightness */
 
@@ -605,7 +605,7 @@ static uint8_t make_backlight(uint8_t row) {
     lv_obj_set_width(obj, SMALL_4 - 30);
     lv_obj_center(obj);
 
-    lv_obj_add_event_cb(obj, backlight_brightness_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, display_brightness_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     row++;
     obj = lv_label_create(grid);
@@ -627,7 +627,7 @@ static uint8_t make_backlight(uint8_t row) {
     lv_dropdown_set_options(obj, " Always Off \n Always On \n Temporarily On ");
     lv_dropdown_set_symbol(obj, NULL);
     lv_dropdown_set_selected(obj, params.brightness_buttons);
-    lv_obj_add_event_cb(obj, backlight_buttons_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, display_buttons_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     return row + 1;
 }
@@ -1540,6 +1540,30 @@ static uint8_t make_knob_info(uint8_t row) {
     return row + 1;
 }
 
+static uint8_t make_display_invert(uint8_t row) {
+    lv_obj_t    *obj;
+    uint8_t     col = 0;
+
+    obj = lv_label_create(grid);
+
+    lv_label_set_text(obj, "Display invert");
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    obj = lv_obj_create(grid);
+
+    lv_obj_set_size(obj, SMALL_3, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 4, 3, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(obj);
+
+    obj = switch_bool(obj, cfg_sm.p_display_invert);
+
+    lv_obj_set_width(obj, SMALL_3 - 30);
+
+    return row + 1;
+}
+
 static void sp_mode_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
@@ -2248,7 +2272,7 @@ static void make_general_page() {
     row = make_time(row);
     row = make_delimiter(row);
 
-    row = make_backlight(row);
+    row = make_display(row);
     row = make_delimiter(row);
 
     row = make_line_gain(row);
@@ -2329,6 +2353,9 @@ static void make_ui_page() {
     row = make_delimiter(row);
 
     row = make_freq_accel(row);
+    row = make_delimiter(row);
+
+    row = make_display_invert(row);
     row = make_delimiter(row);
 
     row = make_theme(row);

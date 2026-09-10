@@ -17,14 +17,16 @@
 extern "C" {
 #endif
 
-void backlight_init();
-void backlight_tick();
+void display_init();
+void display_tick();
 
-void backlight_set_brightness(int16_t value);
-void backlight_set_buttons(buttons_light_t value);
+void display_set_brightness(int16_t value);
+void display_set_buttons_backlight(buttons_light_t value);
 
-void backlight_switch();
-bool backlight_is_on();
+void display_power_toggle();
+bool display_is_on();
+
+void display_invert(bool on);
 
 #ifdef __cplusplus
 }

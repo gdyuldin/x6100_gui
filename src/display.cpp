@@ -6,17 +6,26 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
+#include "display.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <aether_radio/x6100_control/low/gpio.h>
-
 #include "lvgl/lvgl.h"
-#include "backlight.h"
 #include "util.h"
 #include "voice.h"
+#include "cfg/settings_manager.h"
+
+extern "C" {
+    #include <aether_radio/x6100_control/low/gpio.h>
+}
+
+
+#define SYSFS_PATH "/sys/bus/spi/devices/spi0.0/immed_msg"
+#define INVERT_ON_CMD "21\n"
+#define INVERT_OFF_CMD "20\n"
 
 static int          power;
 static int          brightness;
@@ -24,8 +33,14 @@ static bool         on = true;
 
 static lv_timer_t   *timer = NULL;
 
-static void backlight_timer(lv_timer_t *t) {
-    backlight_set_brightness(params.brightness_idle);
+static Subscription display_invert_obs_;
+
+static void on_display_invert_change(Subject * /*subj*/, void * /*user_data*/) {
+    display_invert(cfg_sm.p_display_invert.get() != 0);
+}
+
+static void display_timer(lv_timer_t *t) {
+    display_set_brightness(params.brightness_idle);
     x6100_gpio_set(x6100_pin_light, params.brightness_buttons == BUTTONS_LIGHT ? 1 : 0);
     timer = NULL;
 }
@@ -48,28 +63,31 @@ static void set_power(bool value) {
     }
 }
 
-void backlight_init() {
+void display_init() {
     power = open("/sys/class/backlight/backlight/bl_power", O_WRONLY);
     brightness = open("/sys/class/backlight/backlight/brightness", O_WRONLY);
     on = true;
 
-    backlight_tick();
+    display_tick();
+
+    display_invert(cfg_sm.p_display_invert.get() != 0);
+    display_invert_obs_ = Subscription(cfg_sm.p_display_invert.subscribe(on_display_invert_change, nullptr));
 }
 
-void backlight_tick() {
+void display_tick() {
     if (timer) {
         lv_timer_set_period(timer, params.brightness_timeout * 1000);
         lv_timer_reset(timer);
     } else {
-        timer = lv_timer_create(backlight_timer, params.brightness_timeout * 1000, NULL);
+        timer = lv_timer_create(display_timer, params.brightness_timeout * 1000, NULL);
         lv_timer_set_repeat_count(timer, 1);
 
-        backlight_set_brightness(params.brightness_normal);
+        display_set_brightness(params.brightness_normal);
         x6100_gpio_set(x6100_pin_light, params.brightness_buttons == BUTTONS_DARK ? 0 : 1);
     }
 }
 
-void backlight_set_brightness(int16_t value) {
+void display_set_brightness(int16_t value) {
     if (on) {
         if (value < 0) {
             set_power(false);
@@ -83,7 +101,7 @@ void backlight_set_brightness(int16_t value) {
     }
 }
 
-void backlight_set_buttons(buttons_light_t value) {
+void display_set_buttons_backlight(buttons_light_t value) {
     params_lock();
     params.brightness_buttons = value;
     params_unlock(&params.dirty.brightness_buttons);
@@ -91,7 +109,7 @@ void backlight_set_buttons(buttons_light_t value) {
     x6100_gpio_set(x6100_pin_light, value == BUTTONS_DARK ? 0 : 1);
 }
 
-void backlight_switch() {
+void display_power_toggle() {
     if (on) {
         set_power(false);
         set_brightness(9);
@@ -111,6 +129,22 @@ void backlight_switch() {
     }
 }
 
-bool backlight_is_on() {
+bool display_is_on() {
     return on;
+}
+
+void display_invert(bool on) {
+    FILE *fp = fopen(SYSFS_PATH, "w");
+    if (fp != NULL) {
+        const char *cmd;
+        if (on) {
+            cmd = INVERT_ON_CMD;
+        } else {
+            cmd = INVERT_OFF_CMD;
+        }
+        fprintf(fp, cmd);
+        fclose(fp);
+    } else {
+        LV_LOG_ERROR("%s not found", SYSFS_PATH);
+    }
 }

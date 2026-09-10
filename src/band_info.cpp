@@ -8,8 +8,9 @@
 
 #include "band_info.h"
 
+#include "display.h"
+
 extern "C" {
-    #include "backlight.h"
     #include "events.h"
     #include "pubsub_ids.h"
     #include "styles.h"

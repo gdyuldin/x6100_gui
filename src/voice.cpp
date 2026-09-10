@@ -9,6 +9,7 @@
 #include "voice.h"
 
 #include "util.h"
+#include "display.h"
 
 extern "C" {
 #include <unistd.h>
@@ -17,7 +18,6 @@ extern "C" {
 
 #include "audio.h"
 #include "params/params.h"
-#include "backlight.h"
 #include "recorder.h"
 #include "msg.h"
 }
@@ -185,7 +185,7 @@ bool voice_enable() {
             return true;
 
         case VOICE_LCD:
-            return !backlight_is_on();
+            return !display_is_on();
     }
 
     return false;

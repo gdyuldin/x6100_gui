@@ -35,7 +35,7 @@
 #include "panel.h"
 #include "cat.h"
 #include "rtty.h"
-#include "backlight.h"
+#include "display.h"
 #include "events.h"
 #include "gps.h"
 #include "mfk.h"
@@ -160,7 +160,7 @@ int main(void) {
     cw_init();
     rtty_init();
     wifi_power_setup();
-    backlight_init();
+    display_init();
     cat_init();
     gps_init();
     if (!qso_log_init()) {
@@ -196,6 +196,7 @@ int main(void) {
     }
 
     // Cleanup
+    display_invert(false);
     wifi_cleanup();
     cfg_api_flush_all();
     cfg_db_shutdown();

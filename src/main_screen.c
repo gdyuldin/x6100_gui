@@ -44,7 +44,7 @@
 #include "dialog_recorder.h"
 #include "dialog_callsign.h"
 #include "dialog_wifi.h"
-#include "backlight.h"
+#include "display.h"
 #include "buttons.h"
 #include "recorder.h"
 #include "voice.h"
@@ -637,7 +637,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
         case KEYPAD_POWER:
             if (keypad->state == KEYPAD_RELEASE) {
-                backlight_switch();
+                display_power_toggle();
             } else if (keypad->state == KEYPAD_LONG) {
                 voice_say_text_fmt("Power off");
                 msg_update_text_fmt("Power off");

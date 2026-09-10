@@ -14,7 +14,7 @@
 
 #include "encoder.h"
 #include "keyboard.h"
-#include "backlight.h"
+#include "display.h"
 
 static void encoder_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     struct input_event  in;
@@ -30,7 +30,7 @@ static void encoder_input_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
     }
 
     if (send) {
-        backlight_tick();
+        display_tick();
     }
 
     data->enc_diff = -diff;
