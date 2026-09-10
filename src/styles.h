@@ -42,7 +42,6 @@
 #define SYMBOL_SOUTH_WEST_ARROW "\xE2\x86\x99"
 
 typedef struct {
-    lv_style_t waterfall; // Used only on ft8
     lv_style_t waterfall_middle_line;
 
     lv_style_t msg;
@@ -50,8 +49,6 @@ typedef struct {
     lv_style_t clock;
     lv_style_t knobs;
     lv_style_t freq_info;
-    // lv_style_t info_row;
-    // lv_style_t info_item;
     lv_style_t s_meter;
     lv_style_t tx_info;
     lv_style_t cw_tune;

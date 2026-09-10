@@ -22,7 +22,6 @@
 #include "dsp.h"
 #include "clock.h"
 #include "cw_tune_ui.h"
-#include "info.h"
 #include "meter.h"
 #include "band_info.h"
 #include "tx_info.h"
@@ -426,33 +425,36 @@ static void main_screen_keypad_cb(lv_event_t * e) {
         case KEYPAD_AGC:
             if (keypad->state == KEYPAD_RELEASE) {
                 x6100_agc_t agc = cparam_i_get(cfg_cur_agc);
+                const char *msg_text;
                 switch (agc) {
                     case x6100_agc_off:
                         agc = x6100_agc_slow;
                         voice_say_text_fmt("Auto gain slow mode");
+                        msg_text = "AGC: Slow";
                         break;
 
-                    case x6100_agc_slow:
+                        case x6100_agc_slow:
                         agc = x6100_agc_fast;
                         voice_say_text_fmt("Auto gain fast mode");
+                        msg_text = "AGC: Fast";
                         break;
 
-                    case x6100_agc_fast:
+                        case x6100_agc_fast:
                         agc = x6100_agc_auto;
                         voice_say_text_fmt("Auto gain auto mode");
+                        msg_text = "AGC: Auto";
                         break;
 
-                    case x6100_agc_auto:
+                        case x6100_agc_auto:
                         agc = x6100_agc_off;
                         voice_say_text_fmt("Auto gain off");
+                        msg_text = "AGC: Off";
                         break;
                 }
                 cparam_i_set(cfg_cur_agc, agc);
-                // radio_change_agc();
-                //
 
                 if (params.mag_info.x) {
-                    msg_tiny_set_text_fmt("AGC: %s", info_params_agc());
+                    msg_tiny_set_text_fmt(msg_text);
                 }
             } else if (keypad->state == KEYPAD_LONG) {
                 bool new_split = !param_i_get(cfg_band_split);
@@ -462,7 +464,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 spectrum_clear();
 
                 if (params.mag_info.x) {
-                    msg_tiny_set_text_fmt("%s", info_params_vfo_label_get());
+                    msg_tiny_set_text_fmt("Split: %s", new_split ? "On" : "Off");
                 }
             }
             break;
@@ -612,12 +614,14 @@ static void main_screen_keypad_cb(lv_event_t * e) {
         case KEYPAD_AB:
             if (!lm_get_ab()) {
                 if (keypad->state == KEYPAD_RELEASE) {
-                    radio_toggle_vfo();
+                    x6100_vfo_t new_vfo = radio_toggle_vfo();
 
                     spectrum_clear();
 
                     if (params.mag_info.x) {
-                        msg_tiny_set_text_fmt("%s", info_params_vfo_label_get());
+                        const char *prefix = param_i_get(cfg_band_split) ? "SPL" : "VFO";
+                        const char *vfo_id_str = new_vfo == X6100_VFO_A ? "A": "B";
+                        msg_tiny_set_text_fmt("%s: %s", prefix, vfo_id_str);
                     }
                 } else if (keypad->state == KEYPAD_LONG) {
                     x6100_vfo_t cur_vfo = param_i_get(cfg_band_current_vfo);
@@ -1110,7 +1114,7 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
 
     /* Panel (CW/RTTY) */
     panel_init(obj);
-    msg_init(waterfall);
+    msg_init(obj, spectrum_height);
     msg_tiny_init(spectrum);
 
     /* Top container (meter, clock, freq) */

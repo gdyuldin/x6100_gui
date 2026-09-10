@@ -13,7 +13,7 @@
 
 #include "lvgl/lvgl.h"
 
-lv_obj_t * msg_init(lv_obj_t *parent);
+lv_obj_t * msg_init(lv_obj_t *parent, lv_coord_t spectrum_h);
 
 /// @brief Show or update message text
 /// @param fmt

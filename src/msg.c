@@ -94,12 +94,12 @@ static void create_msg(const char * fmt, enum msg_type_t type, uint16_t dur, va_
     event_send(obj, EVENT_MSG_UPDATE, (void*)msg);
 }
 
-lv_obj_t * msg_init(lv_obj_t *parent) {
+lv_obj_t * msg_init(lv_obj_t *parent, lv_coord_t spectrum_h) {
     container = lv_obj_create(parent);
     lv_obj_remove_style_all(container);
     lv_obj_add_style(container, &style.msg, 0);
     lv_obj_update_layout(container);
-    lv_obj_align(container, LV_ALIGN_CENTER, 0, -BTN_HEIGHT / 2);
+    lv_obj_align(container, LV_ALIGN_CENTER, 0, (INDICATORS_HEIGHT + spectrum_h - BTN_HEIGHT) / 2);
 
     obj = lv_label_create(container);
     lv_obj_set_width(obj, lv_obj_get_width(container) - 20);

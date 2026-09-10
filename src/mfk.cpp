@@ -23,7 +23,6 @@ extern "C" {
     #include "waterfall.h"
     #include "msg.h"
     #include "radio.h"
-    #include "info.h"
     #include "backlight.h"
     #include "cw_tune_ui.h"
     #include "band_info.h"

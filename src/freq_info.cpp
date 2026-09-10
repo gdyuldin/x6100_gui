@@ -142,43 +142,6 @@ lv_obj_t * freq_info_init(lv_obj_t * parent) {
 
     lv_msg_subscribe(MSG_LOCK_FREQ, lock_freq_change_cb, NULL);
 
-
-
-    // lv_style_set_text_color(&span->style, lv_palette_main(LV_PALETTE_RED));
-    // lv_style_set_text_decor(&span->style, LV_TEXT_DECOR_STRIKETHROUGH | LV_TEXT_DECOR_UNDERLINE);
-    // lv_style_set_text_opa(&span->style, LV_OPA_50);
-
-    // lv_obj_add_style(obj, &style.info, 0);
-    // lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-    // lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_ROW);
-    // lv_obj_set_flex_align(obj, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_START);
-
-    // // styles
-    // lv_style_init(&khz_label_style);
-    // // lv_style_set_pad_all(&khz_label_style, 0);
-    // lv_style_set_text_color(&khz_label_style, lv_color_white());
-    // lv_style_set_text_font(&khz_label_style, &sony_40);
-    // lv_style_set_pad_bottom(&khz_label_style, 5);
-    // lv_style_set_pad_top(&khz_label_style, 5);
-
-    // lv_style_init(&hz_label_style);
-    // // lv_style_set_pad_all(&hz_label_style, 0);
-    // lv_style_set_text_color(&hz_label_style, lv_color_white());
-    // lv_style_set_text_font(&hz_label_style, &sony_28);
-    // lv_style_set_pad_bottom(&hz_label_style, 5);
-    // lv_style_set_pad_top(&hz_label_style, 5);
-
-
-    // khz_label = lv_label_create(obj);
-    // lv_obj_remove_style_all(khz_label);
-    // lv_obj_add_style(khz_label, &khz_label_style, LV_PART_MAIN);
-    // lv_label_set_text(khz_label, "14.150.");
-
-    // hz_label = lv_label_create(obj);
-    // lv_obj_remove_style_all(hz_label);
-    // lv_obj_add_style(hz_label, &hz_label_style, LV_PART_MAIN);
-    // lv_label_set_text(hz_label, "500");
-
     return NULL;
 }
 
@@ -199,7 +162,6 @@ const char *mode_to_str(x6100_mode_t mode) {
 static void update_fg_freq(void) {
     uint16_t mhz, khz, hz;
     int32_t freq = cfg_sm.cp_fg_freq.get();
-    printf("fg freq: %i\n", freq);
 
     split_freq(freq, &mhz, &khz, &hz);
     if (mhz) {

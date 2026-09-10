@@ -25,7 +25,6 @@ static void atu_label_update(Subject *subj, void * user_data);
 
 
 static lv_obj_t     *cont_left;
-// static lv_obj_t     *cont_middle;
 static lv_obj_t     *cont_right;
 
 static lv_obj_t     *att_label;
@@ -35,7 +34,6 @@ static lv_obj_t     *nr_label;
 static lv_obj_t     *nb_label;
 static lv_obj_t     *dnf_label;
 
-static lv_obj_t     *sql_label;
 static lv_obj_t     *rit_label;
 static lv_obj_t     *xit_label;
 static lv_obj_t     *atu_label;
@@ -92,10 +90,6 @@ void indicators_init(lv_obj_t * parent, lv_coord_t h, lv_coord_t meter_w) {
     // lv_obj_set_style_pad_column(cont_left, 0, LV_PART_MAIN);
 
     create_spacer(cont_left);
-    sql_label = create_item(cont_left, "SQL");
-    create_spacer(cont_left);
-    create_sep(cont_left);
-    create_spacer(cont_left);
     att_label = create_item(cont_left, "ATT");
     create_spacer(cont_left);
     pre_label = create_item(cont_left, "PRE");
@@ -118,14 +112,12 @@ void indicators_init(lv_obj_t * parent, lv_coord_t h, lv_coord_t meter_w) {
     lv_obj_remove_style_all(cont_right);
     lv_obj_set_size(cont_right, SCREEN_WIDTH - meter_w - 14, h);
     lv_obj_set_x(cont_right, meter_w + SEP_WIDTH / 2 + 10);
-    // lv_obj_add_style(obj, &style.info, 0);
-    // lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+
     lv_obj_set_flex_flow(cont_right, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(cont_right, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     // Spacing between items
     lv_obj_set_style_pad_column(cont_right, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    // mode = create_item(cont_middle, "CW");
     spl_label = create_item(cont_right, "SPL");
     atu_label = create_item(cont_right, "ATU1");
     lv_obj_add_style(atu_label, &ind_style_disabled, LV_STATE_DISABLED);
@@ -136,25 +128,12 @@ void indicators_init(lv_obj_t * parent, lv_coord_t h, lv_coord_t meter_w) {
 
     create_spacer(cont_right);
 
-    // cont_right = lv_obj_create(parent);
-    // lv_obj_remove_style_all(cont_right);
-    // lv_obj_set_size(cont_right, 200, h);
-    // lv_obj_align(cont_right, LV_ALIGN_TOP_RIGHT, -10, 0);
-    // // lv_obj_add_style(obj, &style.info, 0);
-    // // lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-    // lv_obj_set_flex_flow(cont_right, LV_FLEX_FLOW_ROW);
-    // lv_obj_set_flex_align(cont_right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    // // Spacing between items
-    // lv_obj_set_style_pad_column(cont_right, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
-
     wifi_label = create_item(cont_right, LV_SYMBOL_WIFI "");
 
 
     // Subscriptions
     cfg_sm.cp_cur_att.subscribe_delayed_and_notify(mark_non_zero, (void*)att_label);
     cfg_sm.cp_cur_pre.subscribe_delayed_and_notify(mark_non_zero, (void*)pre_label);
-
-    cfg_sm.p_squelch.subscribe_delayed_and_notify(mark_non_zero, (void*)sql_label);
 
     cfg_sm.cp_cur_agc.subscribe_delayed_and_notify(mark_non_zero, (void*)agc_label);
     cfg_sm.cp_cur_agc.subscribe_delayed_and_notify(on_agc_change);
@@ -173,68 +152,6 @@ void indicators_init(lv_obj_t * parent, lv_coord_t h, lv_coord_t meter_w) {
     cfg_sm.p_xit.subscribe_delayed_and_notify(mark_non_zero, (void*)xit_label);
 
     lv_msg_subscribe(MSG_WIFI_STATE_CHANGED, wifi_state_change_cb, NULL);
-
-
-    // lv_obj_t *row1 = lv_obj_create(obj);
-    // lv_obj_add_style(row1, &style.info_row, 0);
-    // lv_obj_set_size(row1, 190, 24);
-    // lv_obj_align(row1, LV_ALIGN_CENTER, 0, 0);
-    // lv_obj_clear_flag(row1, LV_OBJ_FLAG_SCROLLABLE);
-    // lv_obj_set_flex_flow(row1, LV_FLEX_FLOW_ROW);
-
-    // uint8_t i = 0;
-    // for (; i < 3; i++) {
-    //     lv_obj_t *item = lv_label_create(row1);
-    //     lv_obj_set_flex_grow(item, 1);
-    //     items[i] = item;
-    // }
-
-    // lv_obj_t *row2 = lv_obj_create(obj);
-    // lv_obj_add_style(row2, &style.info_row, 0);
-    // lv_obj_set_size(row2, 190, 24);
-    // lv_obj_align(row2, LV_ALIGN_CENTER, 0, 0);
-    // lv_obj_clear_flag(row2, LV_OBJ_FLAG_SCROLLABLE);
-    // lv_obj_set_flex_flow(row2, LV_FLEX_FLOW_ROW);
-
-    // for (; i < sizeof(items) / sizeof(*items); i++) {
-    //     lv_obj_t *item = lv_label_create(row2);
-    //     lv_obj_set_flex_grow(item, 3);
-    //     items[i] = item;
-    // }
-
-    // lv_obj_set_flex_grow(items[INFO_WIFI], 2);
-
-    // for (i = 0; i < sizeof(items) / sizeof(*items); i++)
-    // {
-    //     lv_obj_add_style(items[i], &style.info_item, 0);
-    //     lv_obj_set_style_text_align(items[i], LV_TEXT_ALIGN_CENTER, 0);
-    //     lv_obj_set_style_text_color(items[i], lv_color_white(), 0);
-    // }
-
-    // lv_label_set_text(items[INFO_PRE], "PRE");
-    // lv_label_set_text(items[INFO_ATT], "ATT");
-    // lv_label_set_text(items[INFO_WIFI], LV_SYMBOL_WIFI " ");
-    // lv_obj_set_style_text_color(items[INFO_WIFI], lv_color_hex(0x909090), 0);
-
-    // subject_subscribe_delayed((Subject*)cfg_band_current_vfo, vfo_label_update, NULL);
-    // subject_subscribe_delayed_and_notify((Subject*)cfg_band_split, vfo_label_update, NULL);
-
-    // subject_subscribe_delayed((Subject*)cfg_cur_mode, mode_label_update, NULL);
-    // subject_subscribe_delayed_and_notify((Subject*)mode_lock, mode_label_update, NULL);
-
-    // subject_subscribe_delayed((Subject*)cfg_ant_id, atu_label_update, NULL);
-    // subject_subscribe_delayed((Subject*)cfg_fg_freq, atu_label_update, NULL);
-    // cfg_atu_loaded_subscribe_delayed(atu_label_update, NULL);
-    // subject_subscribe_delayed_and_notify((Subject*)cfg_atu_enabled, atu_label_update, NULL);
-
-    // subject_subscribe_delayed_and_notify((Subject*)cfg_cur_agc, agc_label_update, NULL);
-
-    // subject_subscribe_delayed_and_notify((Subject*)cfg_cur_att, att_label_update, NULL);
-    // subject_subscribe_delayed_and_notify((Subject*)cfg_cur_pre, pre_label_update, NULL);
-
-    //
-
-    // return obj;
 }
 
 void indicators_left_show(bool v) {
@@ -248,11 +165,9 @@ void indicators_left_show(bool v) {
 void indicators_show(bool v) {
     if (!v) {
         lv_obj_add_flag(cont_left, LV_OBJ_FLAG_HIDDEN);
-        // lv_obj_add_flag(cont_middle, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(cont_right, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_clear_flag(cont_left, LV_OBJ_FLAG_HIDDEN);
-        // lv_obj_clear_flag(cont_middle, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(cont_right, LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -339,19 +254,4 @@ static void atu_label_update(Subject *subj, void * user_data) {
             lv_obj_add_state(atu_label, ATU_STATE_OUT_OF_RANGE);
         }
     }
-
-    // if (!cfg_sm.p_atu_enabled.get()) {
-    //     lv_obj_clear_state(atu_label, LV_STATE_CHECKED);
-    //     lv_obj_clear_state(atu_label, LV_STATE_DISABLED);
-    // } else {
-    //     if (cfg_sm.transverter_shift_for(freq)) {
-    //         lv_obj_set_style_text_color(items[INFO_ATU], lv_color_hex(0xAAAAAA), 0);
-    //         lv_obj_set_style_bg_opa(items[INFO_ATU], LV_OPA_20, 0);
-    //     } else {
-    //         lv_obj_set_style_text_color(items[INFO_ATU], cfg_atu_is_loaded() ? lv_color_black() : lv_color_hex(0xFF0000), 0);
-    //         lv_obj_set_style_bg_opa(items[INFO_ATU], LV_OPA_50, 0);
-    //     }
-    //     lv_obj_set_style_bg_color(items[INFO_ATU], lv_color_white(), 0);
-    //     lv_obj_add_state(atu_label, LV_STATE_CHECKED);
-    // }
 }

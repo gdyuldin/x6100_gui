@@ -59,6 +59,9 @@ void lv_waterfall_set_palette(lv_obj_t * obj, lv_color_t * palette, uint16_t cnt
     waterfall->palette_cnt = cnt;
 
     memcpy(waterfall->palette, palette, cnt * sizeof(waterfall->palette[0]));
+    for (size_t i = 0; i < cnt; i++) {
+        waterfall->palette[i].ch.alpha = 0xff;
+    }
 }
 
 void lv_waterfall_set_size(lv_obj_t * obj, lv_coord_t w, lv_coord_t h) {
@@ -69,7 +72,10 @@ void lv_waterfall_set_size(lv_obj_t * obj, lv_coord_t w, lv_coord_t h) {
     lv_waterfall_t * waterfall = (lv_waterfall_t *)obj;
 
     waterfall->dsc = lv_img_buf_alloc(w, h, LV_IMG_CF_TRUE_COLOR);
-    memset((void*)waterfall->dsc->data, 0, waterfall->dsc->data_size);
+    lv_color_t *pixels = (lv_color_t*)waterfall->dsc->data;
+    for (size_t i = 0; i < waterfall->dsc->data_size / sizeof(lv_color_t); i++) {
+        pixels[i].ch.alpha = 0xFF;
+    }
 
     waterfall->line_len = waterfall->dsc->data_size / waterfall->dsc->header.h;
     waterfall->line_buf = lv_mem_realloc(waterfall->line_buf, waterfall->line_len);

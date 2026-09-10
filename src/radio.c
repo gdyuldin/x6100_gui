@@ -26,7 +26,6 @@
 #include "params/params.h"
 #include "hkey.h"
 #include "tx_info.h"
-#include "info.h"
 #include "dialog_swrscan.h"
 #include "cw.h"
 #include "pubsub_ids.h"

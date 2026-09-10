@@ -82,16 +82,6 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_opa(&style.freq_bounds, LV_OPA_30);
     lv_style_set_radius(&style.freq_bounds, 5);
 
-    lv_style_init(&style.waterfall);
-    lv_style_set_bg_color(&style.waterfall, lv_color_hex(0x000000));
-    // lv_style_set_border_color(&style.waterfall, lv_color_hex(0xAAAAAA));
-    lv_style_set_border_width(&style.waterfall, 0);
-    lv_style_set_radius(&style.waterfall, 0);
-    lv_style_set_clip_corner(&style.waterfall, true);
-    lv_style_set_width(&style.waterfall, SCREEN_WIDTH);
-    lv_style_set_x(&style.waterfall, 0);
-    lv_style_set_pad_all(&style.waterfall, 0);
-
     /* Buttons */
     lv_style_init(&style.btn.base);
     lv_style_set_text_font(&style.btn.base, &sony_30);
@@ -132,18 +122,14 @@ void styles_init(themes_t theme) {
     lv_style_set_text_font(&style.msg, &sony_38);
     lv_style_set_width(&style.msg, 603);
     lv_style_set_height(&style.msg, 66);
-    // lv_style_set_x(&style.msg, SCREEN_WIDTH / 2 - (603 / 2));
-    // lv_style_set_y(&style.msg, 270);
+    lv_style_set_text_align(&style.msg, LV_TEXT_ALIGN_CENTER);
     lv_style_set_radius(&style.msg, 0);
     lv_style_set_bg_img_opa(&style.msg, LV_OPA_COVER);
-    // lv_style_set_pad_ver(&style.msg, 20);
 
     lv_style_init(&style.msg_tiny);
     lv_style_set_text_font(&style.msg_tiny, &sony_60);
     lv_style_set_width(&style.msg_tiny, 324);
     lv_style_set_height(&style.msg_tiny, 66);
-    // lv_style_set_x(&style.msg_tiny, SCREEN_WIDTH / 2 - (324 / 2));
-    // lv_style_set_y(&style.msg_tiny, 160 - 66/2 + 36/2);
     lv_style_set_radius(&style.msg_tiny, 0);
     lv_style_set_pad_ver(&style.msg_tiny, 12);
 
