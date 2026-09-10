@@ -19,8 +19,6 @@ void waterfall_min_max_reset();
 
 void waterfall_update_max(float db);
 void waterfall_update_min(float db);
-void waterfall_refresh_reset();
-void waterfall_refresh_period_set(uint8_t k);
 
 /* Direct-render entry point. Call from the main loop between lv_timer_handler()
  * and drm_flip(). Renders the waterfall into the DRM primary back-buffer when new

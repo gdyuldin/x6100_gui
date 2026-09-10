@@ -82,6 +82,8 @@ static void on_mode_lo_offset_change(Subject *subj, void *user_data);
 static void on_if_shift_changed(Subject *subj, void *user_data);
 static void on_grid_min_change(Subject *subj, void *user_data);
 static void on_grid_max_change(Subject *subj, void *user_data);
+static void on_dialog_start_cb(void *s, lv_msg_t *m);
+static void on_dialog_stop_cb(void *s, lv_msg_t *m);
 
 lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h) {
     s_wf_x = y;
@@ -115,6 +117,9 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
     subject_subscribe_and_notify((Subject*)cfg_band_grid_min, on_grid_min_change, NULL);
     subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_max_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg_band_grid_max, on_grid_max_change, NULL);
+
+    lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start_cb, NULL);
+    lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop_cb, NULL);
     return obj;
 }
 
@@ -195,17 +200,6 @@ void waterfall_update_min(float db) {
     if (param_i_get(cfg_auto_level_enabled)) {
         grid_min = db - param_f_get(cfg_auto_level_offset);
     }
-}
-
-void waterfall_refresh_reset() {
-    refresh_period = 1;
-}
-
-void waterfall_refresh_period_set(uint8_t k) {
-    if (k == 0) {
-        return;
-    }
-    refresh_period = k;
 }
 
 
@@ -429,4 +423,12 @@ static void on_grid_max_change(Subject *subj, void *user_data) {
     if (!param_i_get(cfg_auto_level_enabled)) {
         grid_max = param_i_get(cfg_band_grid_max);
     }
+}
+
+static void on_dialog_start_cb(void *s, lv_msg_t *m) {
+    refresh_period = 2;
+}
+
+static void on_dialog_stop_cb(void *s, lv_msg_t *m) {
+    refresh_period = 1;
 }

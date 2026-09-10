@@ -8,7 +8,6 @@
 #include <cstring>
 
 #include "panel.h"
-#include "knobs.h"
 #include "util.h"
 #include "cfg/settings_manager.h"
 #include "scheduler.h"
@@ -100,7 +99,7 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
 
     lv_obj_add_style(obj, &style.panels.base, 0);
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    panel_hide();
 
     update_line_count();
 
@@ -132,7 +131,7 @@ void panel_set_info(const char *text) {
 
 void panel_hide() {
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    knobs_display(true);
+    scheduler_msg_send(MSG_PANEL_HIDE, NULL);
 }
 
 void panel_clear() {
@@ -164,11 +163,11 @@ void panel_update_visibility(bool clear) {
     if (on) {
         if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
             lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
-            knobs_display(false);
+            scheduler_msg_send(MSG_PANEL_SHOW, NULL);
         }
     } else {
         lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-        knobs_display(true);
+        scheduler_msg_send(MSG_PANEL_HIDE, NULL);
     }
     if (clear) {
         panel_clear();

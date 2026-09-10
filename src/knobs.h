@@ -23,7 +23,6 @@ extern "C" {
 void knobs_init(lv_obj_t * parent);
 void knobs_set_vol_state(bool edit);
 void knobs_set_mfk_state(bool edit);
-void knobs_display(bool on);
 bool knobs_visible();
 
 #ifdef __cplusplus

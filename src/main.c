@@ -73,6 +73,7 @@ int main(void) {
 
     bool drm = true;
     lv_init();
+    scheduler_init();
 
     if (drm) {
         drm_init(&disp_drv_primary, &disp_drv_overlay);

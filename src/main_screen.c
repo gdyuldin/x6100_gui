@@ -88,6 +88,8 @@ static void update_freq_boundaries(Subject *subj, void *user_data);
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data);
 
 static void lock_freq_cb(void * s, lv_msg_t * msg);
+static void on_dialog_start_cb(void *s, lv_msg_t *m);
+static void on_dialog_stop_cb(void *s, lv_msg_t *m);
 
 void mem_load(uint16_t id) {
     if (!cfg_memory_load(id)) {
@@ -1040,18 +1042,6 @@ void main_screen_set_freq(uint64_t freq) {
     event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
 }
 
-void main_screen_set_small_top(bool v) {
-    if (v) {
-        // Move meter/freq/clock to top
-        lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-        indicators_show(false);
-    } else {
-        // Restore align
-        lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        indicators_show(true);
-    }
-}
-
 lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     uint16_t y = 0;
 
@@ -1154,6 +1144,8 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     subject_subscribe_delayed_and_notify((Subject*)radio_fg_freq_subj, on_fg_freq_change, NULL);
 
     lv_msg_subscribe(MSG_LOCK_FREQ, lock_freq_cb, NULL);
+    lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start_cb, NULL);
+    lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop_cb, NULL);
     subject_subscribe_delayed((Subject*)radio_fg_freq_subj, update_freq_boundaries, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg_mode_zoom, update_freq_boundaries, NULL);
 
@@ -1210,4 +1202,19 @@ static void update_zoom_on_if_shift_change(Subject *subj, void *user_data) {
     if (new_zoom != zoom) {
         param_i_set(cfg_mode_zoom, new_zoom);
     }
+}
+
+
+static void on_dialog_start_cb(void *s, lv_msg_t *m) {
+    // Move meter/freq/clock to top
+    lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    indicators_show(false);
+    main_screen_keys_enable(false);
+}
+
+static void on_dialog_stop_cb(void *s, lv_msg_t *m) {
+    // Restore align
+    lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    indicators_show(true);
+    main_screen_keys_enable(true);
 }

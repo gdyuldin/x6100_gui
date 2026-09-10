@@ -22,4 +22,11 @@ enum msg_t {
     MSG_LOCK_MODE,
     MSG_LOCK_FREQ,
     MSG_LOCK_BAND,
+
+    // Other UI messages
+    MSG_DIALOG_START,
+    MSG_DIALOG_STOP,
+
+    MSG_PANEL_SHOW,
+    MSG_PANEL_HIDE,
 };

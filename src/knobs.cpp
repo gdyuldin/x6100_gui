@@ -10,14 +10,15 @@
 
 #include "knobs.h"
 
-#include "globals.h"
-#include "buttons.h"
-#include "cfg/settings_manager.h"
-
 #include <string>
 #include <vector>
 #include <stdexcept>
 #include <map>
+
+#include "globals.h"
+#include "buttons.h"
+#include "cfg/settings_manager.h"
+#include "pubsub_ids.h"
 
 extern "C" {
     #include "styles.h"
@@ -39,6 +40,12 @@ enum modes_t {
     MODE_EDIT,
     MODE_SELECT,
 };
+
+static struct {
+    bool panel;
+    bool dialog;
+    bool enabled;
+} visibility_state;
 
 /* Knob items classes - for each of possible knob action */
 
@@ -165,6 +172,7 @@ class KnobInfo {
 };
 
 static void on_knob_info_enabled_change(Subject *subj, void *user_data);
+static void update_visibility();
 
 
 static std::map<int, Control*> controls = {
@@ -233,8 +241,6 @@ static lv_obj_t *mfk_info;
 static KnobInfo *vol_knob_info = new KnobInfo(&vol_info, LV_SYMBOL_UP);
 static KnobInfo *mfk_knob_info = new KnobInfo(&mfk_info, LV_SYMBOL_DOWN);
 
-static bool enabled;
-
 
 void knobs_init(lv_obj_t * parent) {
     // Basic positon calculation
@@ -258,16 +264,24 @@ void knobs_init(lv_obj_t * parent) {
     mfk_knob_info->set_edit_mode(true);
 
     cfg_sm.p_knob_info.subscribe_delayed_and_notify(on_knob_info_enabled_change, nullptr);
-}
 
-void knobs_display(bool on) {
-    if (on && enabled) {
-        lv_obj_clear_flag(vol_info, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(mfk_info, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(vol_info, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(mfk_info, LV_OBJ_FLAG_HIDDEN);
-    }
+    lv_msg_subscribe(MSG_DIALOG_START, [](void*, lv_msg_t*){
+        visibility_state.dialog = true;
+        update_visibility();
+    }, NULL);
+    lv_msg_subscribe(MSG_DIALOG_STOP, [](void*, lv_msg_t*){
+        visibility_state.dialog = false;
+        update_visibility();
+    }, NULL);
+
+    lv_msg_subscribe(MSG_PANEL_SHOW, [](void*, lv_msg_t*){
+        visibility_state.panel = true;
+        update_visibility();
+    }, NULL);
+    lv_msg_subscribe(MSG_PANEL_HIDE, [](void*, lv_msg_t*){
+        visibility_state.panel = false;
+        update_visibility();
+    }, NULL);
 }
 
 bool knobs_visible() {
@@ -310,5 +324,16 @@ void knobs_set_mfk_param(cfg_ctrl_t control) {
 
 
 static void on_knob_info_enabled_change(Subject *subj, void *user_data) {
-    enabled = cfg_sm.p_knob_info.get();
+    visibility_state.enabled = cfg_sm.p_knob_info.get();
+    update_visibility();
+}
+
+static void update_visibility() {
+    if (visibility_state.enabled && !visibility_state.dialog && !visibility_state.panel) {
+        lv_obj_clear_flag(vol_info, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(mfk_info, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(vol_info, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(mfk_info, LV_OBJ_FLAG_HIDDEN);
+    }
 }

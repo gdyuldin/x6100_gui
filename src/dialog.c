@@ -13,22 +13,19 @@
 #include "keyboard.h"
 #include "events.h"
 #include "waterfall.h"
-#include "knobs.h"
+#include "scheduler.h"
 
 static lv_obj_t     *obj;
 static dialog_t     *current_dialog = NULL;
 
 void dialog_construct(dialog_t *dialog, lv_obj_t *parent) {
     if (dialog && !dialog->run) {
-        knobs_display(false);
-        waterfall_refresh_period_set(2);
-        main_screen_keys_enable(false);
+        scheduler_msg_send(MSG_DIALOG_START, NULL);
         dialog->prev_page = buttons_get_cur_page();
         buttons_unload_page();
         if (dialog->btn_page) {
             buttons_load_page(dialog->btn_page);
         }
-        main_screen_set_small_top(true);
         dialog->construct_cb(parent);
 
         dialog->run = true;
@@ -39,8 +36,6 @@ void dialog_construct(dialog_t *dialog, lv_obj_t *parent) {
 
 void dialog_destruct() {
     if (current_dialog && current_dialog->run) {
-        knobs_display(true);
-        waterfall_refresh_reset();
         current_dialog->run = false;
 
         if (current_dialog->destruct_cb) {
@@ -54,9 +49,8 @@ void dialog_destruct() {
         if (current_dialog->prev_page) {
             buttons_load_page(current_dialog->prev_page);
         }
-        main_screen_keys_enable(true);
-        main_screen_set_small_top(false);
         current_dialog = NULL;
+        scheduler_msg_send(MSG_DIALOG_STOP, NULL);
     }
 }
 

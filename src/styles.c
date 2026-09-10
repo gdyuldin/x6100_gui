@@ -33,7 +33,7 @@ typedef struct {
         lv_color_t peak;
     } s_meter;
 
-    // Background images. Can be *char or *lv_img_dsc_t
+    // Background images. Can be *char or *lv_img_dsc_t or NULL
     struct {
         void *btn;
         void *msg;
@@ -45,6 +45,15 @@ typedef struct {
         void *panel;
         void *dialog;
     } bg_img;
+
+    // Background colors (RGBA)
+    struct {
+        lv_color_t btn;
+        lv_color_t s_meter;
+        lv_color_t tx_info;
+        lv_color_t freq_info;
+        lv_color_t clock;
+    } bg_color;
 } skin_t;
 
 
@@ -495,6 +504,15 @@ static void setup_skin_default(skin_t *skin) {
     skin->s_meter.high  = lv_color_hex(0xAA0000);
     skin->s_meter.peak  = lv_color_hex(0xAAAAAA);
 
+    /* Setup background colors (transparent by default) */
+    lv_color_t bg_fill_color  = {.full = 0};
+
+    skin->bg_color.btn = bg_fill_color;
+    skin->bg_color.clock = bg_fill_color;
+    skin->bg_color.freq_info = bg_fill_color;
+    skin->bg_color.s_meter = bg_fill_color;
+    skin->bg_color.tx_info = bg_fill_color;
+
     /* Setup background images */
 
     lv_coord_t border_width = 1;
@@ -641,8 +659,6 @@ static void setup_skin_default(skin_t *skin) {
         skin->bg_img.tx_info = NULL;
     }
 
-    // skin->bg_img.msg      = PATH "images/msg_dark.bin";
-    // skin->bg_img.msg_tiny = PATH "images/msg_tiny_dark.bin";
     lv_color_t    msg_bg1_color     = lv_color_hex(0x486175);
     lv_color_t    msg_bg2_color     = lv_color_hex(0x293e4f);
     lv_color_t    msg_border1_color = lv_color_hex(0x5d5d5d);
@@ -684,11 +700,31 @@ static void setup_skin_default(skin_t *skin) {
 }
 
 static void setup_skin_flat(skin_t *skin) {
+    static lv_img_dsc_t btn_bg_dsc;
+
     // Copy default and override
     *skin = skin_default;
 
     skin->wf_middle_line_color = lv_color_hex(0xFF0000);
     skin->mark_color = lv_color_hex(0x36454F);
+
+    lv_color_t color = lv_color_hex(0x374a58);
+    color.ch.alpha = LV_OPA_90;
+
+    skin->bg_img.btn = NULL;
+    skin->bg_color.btn = color;
+
+    skin->bg_img.s_meter = NULL;
+    skin->bg_color.s_meter = color;
+
+    skin->bg_img.tx_info = NULL;
+    skin->bg_color.tx_info = color;
+
+    skin->bg_img.freq_info = NULL;
+    skin->bg_color.freq_info = color;
+
+    skin->bg_img.clock = NULL;
+    skin->bg_color.clock = color;
 
     // ? same images like on default
     // skin->bg_img.btn = PATH "images/dialog_dark.bin";
@@ -868,7 +904,7 @@ static void set_skin(skin_t *skin) {
     lv_style_set_line_color(&style.waterfall_middle_line, skin->wf_middle_line_color);
     lv_style_set_line_width(&style.waterfall_middle_line, skin->wf_middle_line_min_width);
 
-    /* Backgrounds */
+    /* Background images */
     lv_style_set_bg_img_src(&style.btn.base, skin->bg_img.btn);
     lv_style_set_bg_img_src(&style.s_meter, skin->bg_img.s_meter);
     lv_style_set_bg_img_src(&style.tx_info, skin->bg_img.tx_info);
@@ -878,5 +914,18 @@ static void set_skin(skin_t *skin) {
     lv_style_set_bg_img_src(&style.msg, skin->bg_img.msg);
     lv_style_set_bg_img_src(&style.msg_tiny, skin->bg_img.msg_tiny);
     lv_style_set_bg_img_src(&style.dialog.base, skin->bg_img.dialog);
+
+    /* Background colors */
+    lv_style_set_bg_opa(&style.btn.base, skin->bg_color.btn.ch.alpha);
+    lv_style_set_bg_color(&style.btn.base, skin->bg_color.btn);
+    lv_style_set_bg_opa(&style.s_meter, skin->bg_color.s_meter.ch.alpha);
+    lv_style_set_bg_color(&style.s_meter, skin->bg_color.s_meter);
+    lv_style_set_bg_opa(&style.tx_info, skin->bg_color.tx_info.ch.alpha);
+    lv_style_set_bg_color(&style.tx_info, skin->bg_color.tx_info);
+    lv_style_set_bg_opa(&style.freq_info, skin->bg_color.freq_info.ch.alpha);
+    lv_style_set_bg_color(&style.freq_info, skin->bg_color.freq_info);
+    lv_style_set_bg_opa(&style.clock, skin->bg_color.clock.ch.alpha);
+    lv_style_set_bg_color(&style.clock, skin->bg_color.clock);
+
     lv_obj_invalidate(lv_scr_act());
 }

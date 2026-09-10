@@ -21,13 +21,10 @@
 
 lv_obj_t * main_screen(lv_obj_t *overlay_scr);
 
-void main_screen_keys_enable(bool value);
 void main_screen_start_app(press_action_t page_app);
 void main_screen_action(press_action_t action);
 
 void main_screen_set_freq(uint64_t f);
-
-void main_screen_set_small_top(bool v);
 
 void mem_load(uint16_t id);
 void mem_save(uint16_t id);

@@ -17,6 +17,8 @@ typedef void (* scheduler_fn_t)(void *);
 extern "C" {
 #endif
 
+void scheduler_init();
+
 /**
  * Schedule execution function in main thread
  */
