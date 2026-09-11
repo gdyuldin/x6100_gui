@@ -1,61 +1,36 @@
 /*
- *  SPDX-License-Identifier: LGPL-2.1-or-later
+ * X6100 CI-V command handlers and frame logic (Mfg 3087).
  *
- *  Xiegu X6100 LVGL GUI
- *
- *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
- */
-
-/*
- * X6100 protocol implementation (Mfg 3087)
+ * Kept free of any I/O: feeds on a SettingsManager provided via
+ * cat_frame_set_sm() (defaults to the production global cfg_sm) and touches
+ * the outside world only through tx_info_refresh / meter_get_raw_db /
+ * radio_get_state / radio_set_ptt, which host tests stub out.
  */
 
 #include "cat.h"
+#include "cat_internal.h"
 
-#include <mutex>
-#include <thread>
-#include <vector>
+#include <algorithm>
 #include <cmath>
-#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <string>
-#include <poll.h>
-#include <sys/eventfd.h>
-#include <sys/socket.h>
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/rfcomm.h>
+#include <vector>
 
 #include "cfg/settings_manager.h"
-#include "common/queue.h"
 
 extern "C" {
-    #include "events.h"
     #include "meter.h"
     #include "radio.h"
-    #include "scheduler.h"
-    #include "spectrum.h"
-    #include "waterfall.h"
     #include "tx_info.h"
-
-    #include "lvgl/lvgl.h"
-    #include <aether_radio/x6100_control/low/gpio.h>
-    #include <fcntl.h>
-    #include <stdio.h>
-    #include <stdlib.h>
-    #include <string.h>
-    #include <sys/poll.h>
-    #include <termios.h>
-    #include <unistd.h>
 }
 
-#define FRAME_PRE 0xFE
-#define FRAME_END 0xFD
+#include "lvgl/lvgl.h"
 
 #define CODE_OK 0xFB
 #define CODE_NG 0xFA
 
-#define LOCAL_ADDRESS 0xA4
-
-#define C_SND_FREQ 0x00      /* Send frequency data  transceive mode does not ack*/
 #define C_SND_MODE 0x01      /* Send mode data, Sc  for transceive mode does not ack */
 #define C_RD_BAND 0x02       /* Read band edge frequencies */
 #define C_RD_FREQ 0x03       /* Read display frequency */
@@ -123,72 +98,20 @@ extern "C" {
 #define MEM_LOCK 0x05   /* LOCK status */
 #define MEM_DM_FG 0x06  /* Get data mode switch and filter group */
 
-#define FRAME_ADD_LEN 5 /* Header and end len */
+// SettingsManager backing the handlers. Production uses the global cfg_sm;
+// host tests redirect it via cat_frame_set_sm().
+static SettingsManager *cat_sm = &cfg_sm;
 
-static int fd_wire = -1;
-static int fd_bt = -1;
-static int fd_queue_event = -1;
+static void init_cmd_handlers();
 
-static TSQueue<std::vector<char>> send_queue;
-static std::thread* thread = nullptr;
-static std::atomic<bool> keep_running(false);
-
-// static void send_waterfall_data();
-
-static void on_fg_freq_change(Subject *s, void *user_data);
-
-struct Impl {
-    uint8_t dst_addr;
-    uint8_t src_addr;
-    uint8_t command;
-    std::vector<uint8_t> data;
-
-    Impl(uint8_t dst, uint8_t src, uint8_t command): dst_addr(dst), src_addr(src), command(command) {};
-
-    Impl(const char *data, const size_t len): data(len - FRAME_ADD_LEN - 1) {
-        dst_addr = data[2];
-        src_addr = data[3];
-        command = data[4];
-        std::copy(&data[5], &data[len - 1], this->data.begin());
-    };
-
-    
-
-    void write(std::initializer_list<uint8_t> bytes) {
-        data.assign(bytes.begin(), bytes.end());
-    }
-
-    void append(const uint8_t *buf, size_t len) {
-        data.insert(data.end(), buf, buf + len);
-    }
-
-    void set_code(uint8_t code) {
-        data.clear();
-        command = code;
-    }
-
-    
-
-    size_t get_len() const {
-        return data.size() + 1 + FRAME_ADD_LEN;
-    }
-
-    std::vector<char> dump() const {
-        std::vector<char> buf(data.size() + 1 + FRAME_ADD_LEN);
-        buf[0] = FRAME_PRE;
-        buf[1] = FRAME_PRE;
-        buf[2] = dst_addr;
-        buf[3] = src_addr;
-        buf[4] = command;
-        std::copy(data.begin(), data.end(), buf.begin() + 5);
-        buf.back() = FRAME_END;
-        return buf;
-    }
-};
-
-Frame::Frame() : pimpl_(std::make_unique<Impl>(0, 0, 0)) {}
+void cat_frame_set_sm(SettingsManager *sm) {
+    init_cmd_handlers();
+    cat_sm = sm ? sm : &cfg_sm;
+}
 
 Frame::Frame(const char *data, const size_t len): pimpl_(std::make_unique<Impl>(data, len)) {};
+
+Frame::Frame() : pimpl_(std::make_unique<Impl>(0, 0, 0)) {}
 
 Frame::~Frame() = default;
 
@@ -233,92 +156,6 @@ static void set_unsupported(const Impl &req, Impl &resp) {
     resp.set_code(CODE_NG);
 }
 
-struct FeedResult {
-    int status;
-    std::optional<Frame> frame;
-};
-
-
-class Connection {
-    int        *fd;
-    char       buf[1024];
-    const char header[2] = {FRAME_PRE, FRAME_PRE};
-    size_t     start=0;
-    size_t     end=0;
-
-  protected:
-    bool write_buf(const char *buf, size_t len) {
-        ssize_t l;
-        while (len) {
-            l = write(*fd, buf, len);
-            if (l < 0) {
-                perror("Error during writing message");
-                return false;
-            }
-            len -= l;
-        }
-        return true;
-    }
-
-  public:
-    Connection(int *fd) : fd(fd) {};
-
-    FeedResult feed() {
-        int res = read(*fd, buf + end, sizeof(buf) - end);
-        if (res < 0) {
-            return {res, std::nullopt};
-        }
-        end += res;
-        char *frame_start = (char *)memmem(buf, end, header, sizeof(header));
-        if (frame_start == NULL) {
-            // Move last byte to begin
-            buf[0] = buf[end - 1];
-            end    = 1;
-            return {0, std::nullopt};
-        }
-        if (frame_start != buf) {
-            end = end + buf - frame_start;
-            memmove(buf, frame_start, end);
-            start = 0;
-        }
-        if (end >= FRAME_ADD_LEN) {
-            char *end_pos = (char *)memchr(buf + FRAME_ADD_LEN, FRAME_END, end - FRAME_ADD_LEN);
-            if (end_pos) {
-                size_t frame_len = end_pos - buf + 1;
-                start            = frame_len;
-                end              = start;
-                return {res, Frame{buf, frame_len}};
-            }
-        }
-        return {0, std::nullopt};
-    }
-
-    bool send(const char * data, size_t len) {
-        return write_buf(data, len);
-    }
-    bool send(const Frame &frame) {
-        auto data = frame.dump();
-        return write_buf(data.data(), data.size());
-    }
-};
-
-// typedef struct {
-//     uint8_t start[2];
-//     uint8_t dst_addr;
-//     uint8_t src_addr;
-//     uint8_t command;
-//     uint8_t subcommand;
-//     uint8_t args[1500];
-// } frame_t;
-
-static void set_vfo(void *arg) {
-    if (!arg) {
-        LV_LOG_ERROR("arg is NULL");
-    }
-    x6100_vfo_t vfo = *(x6100_vfo_t *)arg;
-    cfg_sm.p_band_current_vfo.set(vfo);
-}
-
 // Resolve the frequency parameter for a CI-V main/sub VFO selector. vfo_id is
 // the CI-V selector (X6100_VFO_A = main/selected VFO, X6100_VFO_B = sub/inactive
 // VFO); cur_vfo identifies which hardware VFO (A or B) is currently active.
@@ -326,11 +163,11 @@ static Parameter<int32_t>& vfo_freq(int vfo_id, int cur_vfo)
 {
     if (vfo_id == X6100_VFO_A)
     {
-        return cur_vfo == X6100_VFO_A ? cfg_sm.p_band_vfoa_freq : cfg_sm.p_band_vfob_freq;
+        return cur_vfo == X6100_VFO_A ? cat_sm->p_band_vfoa_freq : cat_sm->p_band_vfob_freq;
     }
     else
     {
-        return cur_vfo == X6100_VFO_A ? cfg_sm.p_band_vfob_freq : cfg_sm.p_band_vfoa_freq;
+        return cur_vfo == X6100_VFO_A ? cat_sm->p_band_vfob_freq : cat_sm->p_band_vfoa_freq;
     }
 }
 
@@ -338,11 +175,11 @@ static Parameter<int32_t>& vfo_mode(int vfo_id, int cur_vfo)
 {
     if (vfo_id == X6100_VFO_A)
     {
-        return cur_vfo == X6100_VFO_A ? cfg_sm.p_band_vfoa_mode : cfg_sm.p_band_vfob_mode;
+        return cur_vfo == X6100_VFO_A ? cat_sm->p_band_vfoa_mode : cat_sm->p_band_vfob_mode;
     }
     else
     {
-        return cur_vfo == X6100_VFO_A ? cfg_sm.p_band_vfob_mode : cfg_sm.p_band_vfoa_mode;
+        return cur_vfo == X6100_VFO_A ? cat_sm->p_band_vfob_mode : cat_sm->p_band_vfoa_mode;
     }
 }
 
@@ -479,8 +316,8 @@ static uint8_t x_mode_2_ci_mode(x6100_mode_t mode, bool *data_mode=nullptr) {
 }
 
 static uint8_t get_if_bandwidth() {
-    uint32_t bw = cfg_sm.cp_cur_filter_bw.get();
-    switch (cfg_sm.cp_cur_mode.get()) {
+    uint32_t bw = cat_sm->cp_cur_filter_bw.get();
+    switch (cat_sm->cp_cur_mode.get()) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
         case x6100_mode_lsb:
@@ -557,8 +394,14 @@ static void handle_send_sel_mode(const Impl &req, Impl &resp);
 static void handle_ctl_scp(const Impl &req, Impl &resp);
 
 static cmd_handler_t cmd_handlers[256] = {};
+static bool cmd_handlers_ready = false;
 
 static void init_cmd_handlers() {
+    if (cmd_handlers_ready) {
+        return;
+    }
+    cmd_handlers_ready = true;
+
     cmd_handlers[C_SND_FREQ]      = handle_snd_freq;
     cmd_handlers[C_RD_FREQ]       = handle_rd_freq;
     cmd_handlers[C_RD_MODE]       = handle_rd_mode;
@@ -586,6 +429,8 @@ Frame Frame::process() const {
     resp.pimpl_->command  = pimpl_->command;
     resp.pimpl_->data     = pimpl_->data;
 
+    init_cmd_handlers();
+
     cmd_handler_t handler = cmd_handlers[pimpl_->command];
     if (handler) {
         handler(*pimpl_, *resp.pimpl_);
@@ -599,7 +444,7 @@ Frame Frame::process() const {
 static void handle_snd_freq(const Impl &req, Impl &resp) {
     size_t data_size = req.data.size();
     if (data_size == 5) {
-        cfg_sm.cp_fg_freq.set(from_bcd(req.data.data(), 10));
+        cat_sm->cp_fg_freq.set(from_bcd(req.data.data(), 10));
         resp.set_code(CODE_OK);
     } else {
         set_unsupported(req, resp);
@@ -608,19 +453,19 @@ static void handle_snd_freq(const Impl &req, Impl &resp) {
 
 static void handle_rd_freq(const Impl &req, Impl &resp) {
     uint8_t bcd[5];
-    to_bcd(bcd, cfg_sm.cp_fg_freq.get(), 10);
+    to_bcd(bcd, cat_sm->cp_fg_freq.get(), 10);
     resp.append(bcd, 5);
 }
 
 static void handle_rd_mode(const Impl &req, Impl &resp) {
-    uint8_t v = x_mode_2_ci_mode((x6100_mode_t)cfg_sm.cp_cur_mode.get());
+    uint8_t v = x_mode_2_ci_mode((x6100_mode_t)cat_sm->cp_cur_mode.get());
     resp.write({v, v});
 }
 
 static void handle_set_freq(const Impl &req, Impl &resp) {
     size_t data_size = req.data.size();
     if (data_size == 5) {
-        cfg_sm.cp_fg_freq.set(from_bcd(req.data.data(), 10));
+        cat_sm->cp_fg_freq.set(from_bcd(req.data.data(), 10));
         resp.set_code(CODE_OK);
     } else {
         set_unsupported(req, resp);
@@ -630,7 +475,7 @@ static void handle_set_freq(const Impl &req, Impl &resp) {
 static void handle_set_mode(const Impl &req, Impl &resp) {
     size_t data_size = req.data.size();
     if ((data_size >= 1) && (data_size <= 2)) {
-        cfg_sm.cp_cur_mode.set(ci_mode_2_x_mode(req.data[0]));
+        cat_sm->cp_cur_mode.set(ci_mode_2_x_mode(req.data[0]));
         resp.set_code(CODE_OK);
     } else {
         set_unsupported(req, resp);
@@ -639,32 +484,32 @@ static void handle_set_mode(const Impl &req, Impl &resp) {
 
 static void handle_set_vfo(const Impl &req, Impl &resp) {
     size_t data_size = req.data.size();
-    x6100_vfo_t cur_vfo = (x6100_vfo_t)cfg_sm.p_band_current_vfo.get();
+    x6100_vfo_t cur_vfo = (x6100_vfo_t)cat_sm->p_band_current_vfo.get();
 
     if (data_size == 1) {
         switch (req.data[0]) {
             case S_VFOA:
                 if (cur_vfo != X6100_VFO_A) {
-                    cfg_sm.p_band_current_vfo.set(X6100_VFO_A);
+                    cat_sm->p_band_current_vfo.set(X6100_VFO_A);
                 }
                 resp.set_code(CODE_OK);
                 break;
 
             case S_VFOB:
                 if (cur_vfo != X6100_VFO_B) {
-                    cfg_sm.p_band_current_vfo.set(X6100_VFO_B);
+                    cat_sm->p_band_current_vfo.set(X6100_VFO_B);
                 }
                 resp.set_code(CODE_OK);
                 break;
 
             case S_XCHNG:
-                cfg_sm.p_band_current_vfo.set(
+                cat_sm->p_band_current_vfo.set(
                     cur_vfo == X6100_VFO_A ? X6100_VFO_B : X6100_VFO_A);
                 resp.set_code(CODE_OK);
                 break;
 
             case S_BTOA:
-                cfg_sm.cfg_band_vfo_copy();
+                cat_sm->cfg_band_vfo_copy();
                 resp.set_code(CODE_OK);
                 break;
 
@@ -682,9 +527,9 @@ static void handle_set_vfo(const Impl &req, Impl &resp) {
 static void handle_ctl_splt(const Impl &req, Impl &resp) {
     size_t data_size = req.data.size();
     if (data_size == 0) {
-        resp.write({static_cast<uint8_t>(cfg_sm.p_band_split.get())});
+        resp.write({static_cast<uint8_t>(cat_sm->p_band_split.get())});
     } else if (data_size == 1) {
-        cfg_sm.p_band_split.set(req.data[0]);
+        cat_sm->p_band_split.set(req.data[0]);
         resp.set_code(CODE_OK);
     } else {
         set_unsupported(req, resp);
@@ -694,9 +539,9 @@ static void handle_ctl_splt(const Impl &req, Impl &resp) {
 static void handle_set_ts(const Impl &req, Impl &resp) {
     size_t data_size = req.data.size();
     if (data_size == 0) {
-        resp.write({freq_step_to_ci(cfg_sm.p_mode_freq_step.get())});
+        resp.write({freq_step_to_ci(cat_sm->p_mode_freq_step.get())});
     } else if (data_size == 1) {
-        cfg_sm.p_mode_freq_step.set(freq_step_from_ci(req.data[0]));
+        cat_sm->p_mode_freq_step.set(freq_step_from_ci(req.data[0]));
         resp.set_code(CODE_OK);
     } else {
         set_unsupported(req, resp);
@@ -706,9 +551,9 @@ static void handle_set_ts(const Impl &req, Impl &resp) {
 static void handle_ctl_att(const Impl &req, Impl &resp) {
     size_t data_size = req.data.size();
     if (data_size == 0) {
-        resp.write({static_cast<uint8_t>(cfg_sm.cp_cur_att.get() * 0x20)});
+        resp.write({static_cast<uint8_t>(cat_sm->cp_cur_att.get() * 0x20)});
     } else if (data_size == 1) {
-        cfg_sm.cp_cur_att.set(req.data[0]);
+        cat_sm->cp_cur_att.set(req.data[0]);
         resp.set_code(CODE_OK);
     } else {
         set_unsupported(req, resp);
@@ -722,40 +567,40 @@ static void handle_ctl_lvl(const Impl &req, Impl &resp) {
         switch (req.data[0]) {
             case 0x01:
                 if (data_size == 1) {
-                    to_bcd_be(&bcd[1], cfg_sm.p_volume.get() * 255 / 55, 3);
+                    to_bcd_be(&bcd[1], cat_sm->p_volume.get() * 255 / 55, 3);
                     resp.write({req.data[0], bcd[1], bcd[2]});
                 } else if (data_size == 3) {
-                    cfg_sm.p_volume.set(from_bcd_be(&req.data[1], 3) * 55 / 255);
+                    cat_sm->p_volume.set(from_bcd_be(&req.data[1], 3) * 55 / 255);
                 }
                 break;
             case 0x02:
                 if (data_size == 1) {
-                    to_bcd_be(&bcd[1], cfg_sm.p_rfgain.get() * 255 / 100, 3);
+                    to_bcd_be(&bcd[1], cat_sm->p_rfgain.get() * 255 / 100, 3);
                     resp.write({req.data[0], bcd[1], bcd[2]});
                 } else if (data_size == 3) {
-                    cfg_sm.p_rfgain.set(from_bcd_be(&req.data[1], 3) * 100 / 255);
+                    cat_sm->p_rfgain.set(from_bcd_be(&req.data[1], 3) * 100 / 255);
                 }
                 break;
             case 0x03:
                 if (data_size == 1) {
-                    to_bcd_be(&bcd[1], cfg_sm.p_squelch.get() * 255 / 100, 3);
+                    to_bcd_be(&bcd[1], cat_sm->p_squelch.get() * 255 / 100, 3);
                     resp.write({req.data[0], bcd[1], bcd[2]});
                 } else if (data_size == 3) {
-                    cfg_sm.p_squelch.set(from_bcd_be(&req.data[1], 3) * 100 / 255);
+                    cat_sm->p_squelch.set(from_bcd_be(&req.data[1], 3) * 100 / 255);
                 }
                 break;
             case 0x0a:
                 if (data_size == 1) {
-                    to_bcd_be(&bcd[1], std::round(cfg_sm.p_pwr.get() * 255 / 10), 3);
+                    to_bcd_be(&bcd[1], std::round(cat_sm->p_pwr.get() * 255 / 10), 3);
                     resp.write({req.data[0], bcd[1], bcd[2]});
                 } else if (data_size == 3) {
                     float pwr = from_bcd_be(&req.data[1], 3) * 10.0f / 255.0f;
                     pwr = LV_MIN(pwr, 10.0f);
-                    cfg_sm.p_pwr.set(pwr);
+                    cat_sm->p_pwr.set(pwr);
                 }
                 break;
             case 0x15:
-                to_bcd_be(&bcd[1], cfg_sm.p_moni.get() * 255 / 100, 3);
+                to_bcd_be(&bcd[1], cat_sm->p_moni.get() * 255 / 100, 3);
                 resp.write({req.data[0], bcd[1], bcd[2]});
                 break;
             default:
@@ -813,25 +658,25 @@ static void handle_ctl_func(const Impl &req, Impl &resp) {
         switch (req.data[0]) {
             case 0x02:
                 if (data_size == 1) {
-                    resp.write({req.data[0], static_cast<uint8_t>(cfg_sm.cp_cur_pre.get())});
+                    resp.write({req.data[0], static_cast<uint8_t>(cat_sm->cp_cur_pre.get())});
                 } else {
-                    cfg_sm.cp_cur_pre.set(req.data[1] > 0);
+                    cat_sm->cp_cur_pre.set(req.data[1] > 0);
                     resp.set_code(CODE_OK);
                 }
                 break;
             case 0x22:
                 if (data_size == 1) {
-                    resp.write({req.data[0], static_cast<uint8_t>(cfg_sm.p_nb.get())});
+                    resp.write({req.data[0], static_cast<uint8_t>(cat_sm->p_nb.get())});
                 } else {
-                    cfg_sm.p_nb.set(req.data[1]);
+                    cat_sm->p_nb.set(req.data[1]);
                     resp.set_code(CODE_OK);
                 }
                 break;
             case 0x40:
                 if (data_size == 1) {
-                    resp.write({req.data[0], static_cast<uint8_t>(cfg_sm.p_nr.get())});
+                    resp.write({req.data[0], static_cast<uint8_t>(cat_sm->p_nr.get())});
                 } else {
-                    cfg_sm.p_nr.set(req.data[1]);
+                    cat_sm->p_nr.set(req.data[1]);
                     resp.set_code(CODE_OK);
                 }
                 break;
@@ -871,7 +716,7 @@ static void handle_rd_trxid(const Impl &req, Impl &resp) {
 
 static void handle_ctl_mem(const Impl &req, Impl &resp) {
     size_t data_size = req.data.size();
-    x6100_mode_t cur_mode = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
+    x6100_mode_t cur_mode = (x6100_mode_t)cat_sm->cp_cur_mode.get();
 
     if (data_size == 1) {
         switch (req.data[0]) {
@@ -896,7 +741,7 @@ static void handle_ctl_mem(const Impl &req, Impl &resp) {
                 break;
             case MEM_DM_FG: {
                 x6100_mode_t new_mode = ci_mode_2_x_mode(req.data[1], req.data[2]);
-                cfg_sm.cp_cur_mode.set(new_mode);
+                cat_sm->cp_cur_mode.set(new_mode);
                 resp.set_code(CODE_OK);
                 break;
             }
@@ -931,9 +776,9 @@ static void handle_send_sel_freq(const Impl &req, Impl &resp) {
     ComputedParameter<int32_t> *freq;
 
     if (req.data[0] == 0) {
-        freq = &cfg_sm.cp_fg_freq;
+        freq = &cat_sm->cp_fg_freq;
     } else {
-        freq = &cfg_sm.cp_bg_freq;
+        freq = &cat_sm->cp_bg_freq;
     }
 
     if (data_size == 1) {
@@ -953,13 +798,13 @@ static void handle_send_sel_mode(const Impl &req, Impl &resp) {
     Parameter<int32_t> *mode_par;
 
     if (req.data[0] == 0) {
-        mode_par = cfg_sm.p_band_current_vfo.get() == X6100_VFO_A
-            ? &cfg_sm.p_band_vfoa_mode
-            : &cfg_sm.p_band_vfob_mode;
+        mode_par = cat_sm->p_band_current_vfo.get() == X6100_VFO_A
+            ? &cat_sm->p_band_vfoa_mode
+            : &cat_sm->p_band_vfob_mode;
     } else {
-        mode_par = cfg_sm.p_band_current_vfo.get() == X6100_VFO_B
-            ? &cfg_sm.p_band_vfoa_mode
-            : &cfg_sm.p_band_vfob_mode;
+        mode_par = cat_sm->p_band_current_vfo.get() == X6100_VFO_B
+            ? &cat_sm->p_band_vfoa_mode
+            : &cat_sm->p_band_vfob_mode;
     }
 
     switch (data_size) {
@@ -1041,228 +886,5 @@ static void handle_ctl_scp(const Impl &req, Impl &resp) {
         }
     } else {
         set_unsupported(req, resp);
-    }
-}
-
-// static uint8_t counter = 0;
-
-// static void send_waterfall_data() {
-//     frame_t frame;
-//     counter++;
-//     if (counter < 10) {
-//         return;
-//     }
-//     counter          = 0;
-//     uint8_t *data    = (uint8_t *)malloc(1024);
-//     frame.dst_addr   = 0x00;
-//     frame.src_addr   = LOCAL_ADDRESS;
-//     frame.command    = C_CTL_SCP;
-//     frame.subcommand = 0;
-//     uint8_t i        = 0;
-//     // main
-//     frame.args[i++] = 0;
-//     // SequenceNumber[01-11]
-//     frame.args[i++] = 1;
-//     // TotalSeqneuceSize[01=LAN, 11=USB]
-//     frame.args[i++] = 1;
-//     // Center/Fixed (for lan radio)  [00=cent, 01=fixed]
-//     frame.args[i++] = 0;
-//     // Center freq
-//     // to_bcd(frame.args + i, cfg_sm.cp_fg_freq.get(), 10);
-//     i += 5;
-//     // Span
-//     to_bcd(frame.args + i, 50000, 10);
-//     i += 5;
-//     // Range information 00 = In range, 01 = Out of range
-//     frame.args[i++] = 0;
-//     // FFT data
-//     // printf("%u\n", i);
-//     size_t c;
-//     for (c = 0; c < 300; c++) {
-//         frame.args[i + c] = c % 160;
-//     }
-//     // printf("%u, %u\n", i, c);
-//     send_frame(&frame, i + c + 3);
-//     // printf("len: %u\n", i+c);
-//     free(data);
-// }
-
-static void cat_thread() {
-    Connection conn_wire{&fd_wire};
-    Connection conn_bt{&fd_bt};
-
-    Connection *conn = &conn_wire;
-
-    // Setup BT socket
-    int fd_bt_sock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
-
-    struct sockaddr_rc addr = { 0 };
-    addr.rc_family = AF_BLUETOOTH;
-    addr.rc_channel = 1;
-    // mask 00:00:00:00:00:00
-    for(int i=0; i<6; i++) addr.rc_bdaddr.b[i] = 0;
-
-    bind(fd_bt_sock, (struct sockaddr *)&addr, sizeof(addr));
-    listen(fd_bt_sock, 1);
-    fcntl(fd_bt_sock, F_SETFL, O_NONBLOCK);
-
-    struct pollfd fds[4];
-
-    while (keep_running) {
-        // Setup polls
-        fds[0].fd = fd_wire;
-        fds[0].events = POLLIN;
-        fds[0].revents = 0;
-
-        fds[1].fd = fd_bt;
-        fds[1].events = POLLIN;
-        fds[1].revents = 0;
-
-        fds[2].fd = fd_queue_event;
-        fds[2].events = POLLIN;
-        fds[2].revents = 0;
-
-        fds[3].fd = fd_bt_sock;
-        fds[3].events = POLLIN;
-        fds[3].revents = 0;
-
-        int ret = poll(fds, 4, -1);
-        if (ret < 0) {
-            perror("poll error");
-            break;
-        }
-
-        // New BT connection
-        if (fds[3].revents & POLLIN) {
-            struct sockaddr_rc rem_addr = { 0 };
-            socklen_t opt = sizeof(rem_addr);
-
-            int new_fd = accept(fd_bt_sock, (struct sockaddr *)&rem_addr, &opt);
-            if (new_fd >= 0) {
-                if (fd_bt >= 0) close(fd_bt);
-                fd_bt = new_fd;
-                fcntl(fd_bt, F_SETFL, O_NONBLOCK);
-                char bt_addr[18] = {0};
-                ba2str(&rem_addr.rc_bdaddr, bt_addr);
-                LV_LOG_USER("New Bluetooth connection %s", bt_addr);
-                conn = &conn_bt;
-            }
-        }
-
-        // Wire data
-        if (fds[0].revents & POLLIN) {
-            auto res = conn_wire.feed();
-            if (res.frame) {
-                conn_wire.send(res.frame->process());
-                conn = &conn_wire;
-            }
-        }
-
-        // BT data
-        if (fd_bt >= 0 && (fds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
-            auto res = conn_bt.feed();
-            if (res.frame) {
-                conn_bt.send(res.frame->process());
-                conn = &conn_bt;
-            }
-            else if (res.status <= 0) {
-                LV_LOG_USER("Bluetooth disconnected");
-                close(fd_bt);
-                fd_bt = -1;
-                conn = &conn_wire;
-            }
-        }
-
-        // Queue
-        if (fds[2].revents & POLLIN) {
-            uint64_t u;
-            ssize_t ret;
-            ret = read(fd_queue_event, &u, sizeof(uint64_t)); // Reset trigger
-
-            auto data = send_queue.pop();
-            bool ok = conn->send(data.data(), data.size());
-            if (!ok && conn == &conn_bt) {
-                LV_LOG_ERROR("Bluetooth write error, switch to wire");
-                conn = &conn_wire;
-                conn->send(data.data(), data.size());
-            }
-        }
-    }
-}
-
-void cat_init() {
-    /* UART */
-    x6100_gpio_set(x6100_pin_usb, 1); /* USB -> CAT */
-
-    fd_wire = open("/dev/ttyS2", O_RDWR | O_NONBLOCK | O_NOCTTY);
-
-    fd_bt = -1;
-
-    fd_queue_event = eventfd(0, EFD_NONBLOCK);
-
-    if (fd_wire > 0) {
-        struct termios attr;
-
-        tcgetattr(fd_wire, &attr);
-
-        cfsetispeed(&attr, B19200);
-        cfsetospeed(&attr, B19200);
-        // cfsetispeed(&attr, B115200);
-        // cfsetospeed(&attr, B115200);
-        cfmakeraw(&attr);
-
-        if (tcsetattr(fd_wire, 0, &attr) < 0) {
-            close(fd_wire);
-            LV_LOG_ERROR("UART set speed");
-            return;
-        }
-    } else {
-        LV_LOG_ERROR("UART open");
-        return;
-    }
-
-    cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change, &cfg_sm.cp_fg_freq);
-
-    init_cmd_handlers();
-
-    /* * */
-    if (!thread) {
-        keep_running = true;
-        thread = new std::thread(cat_thread);
-    }
-    // thread.detach();
-}
-
-void cat_destruct() {
-    keep_running = false;
-    thread->join();
-    close(fd_wire);
-    close(fd_queue_event);
-    if (fd_bt >= 0) close(fd_bt);
-}
-
-static void on_fg_freq_change(Subject *s, void *user_data) {
-    auto *p = static_cast<ComputedParameter<int32_t>*>(user_data);
-    int32_t new_freq = p->get();
-
-    uint8_t bcd[5];
-    to_bcd(bcd, new_freq, 10);
-
-    std::vector<char> buf(5 + 1 + FRAME_ADD_LEN);
-    buf[0] = FRAME_PRE;
-    buf[1] = FRAME_PRE;
-    buf[2] = 0;
-    buf[3] = LOCAL_ADDRESS;
-    buf[4] = C_SND_FREQ;
-    std::copy(bcd, bcd + 5, buf.begin() + 5);
-    *--buf.end() = FRAME_END;
-
-    send_queue.push(std::move(buf));
-
-    // Notify thread
-    if (fd_queue_event >= 0) {
-        uint64_t u = 1;
-        ssize_t ret;
-        ret = write(fd_queue_event, &u, sizeof(uint64_t));
     }
 }

@@ -33,7 +33,7 @@
 #include "audio.h"
 #include "cw.h"
 #include "panel.h"
-#include "cat.h"
+#include "cat/cat.h"
 #include "rtty.h"
 #include "display.h"
 #include "events.h"

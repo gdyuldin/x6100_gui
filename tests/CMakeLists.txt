@@ -19,3 +19,9 @@ add_test(NAME test_ft8_qso COMMAND $<TARGET_FILE:test_ft8_qso> --colour-mode=ans
 
 
 add_subdirectory(cfg)
+
+add_subdirectory(../src/cat ${CMAKE_BINARY_DIR}/src/cat)
+add_executable(test_cat_frame test_cat_frame.cpp)
+target_include_directories(test_cat_frame PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(test_cat_frame PRIVATE cat Catch2::Catch2WithMain)
+add_test(NAME test_cat_frame COMMAND $<TARGET_FILE:test_cat_frame> --colour-mode=ansi)

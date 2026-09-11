@@ -8,7 +8,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     hkey.c clock.c
     meter.c band_info.cpp tx_info.c
     audio.c mfk.cpp cw.cpp cw_decoder.c panel.cpp
-    rtty.c screenshot.c display.cpp gps.c cat.cpp
+    rtty.c screenshot.c display.cpp gps.c cat/cat.cpp
     dialog.c dialog_settings.cpp dialog_swrscan.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
     dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
@@ -24,6 +24,7 @@ add_subdirectory(widgets)
 add_subdirectory(params)
 add_subdirectory(qth)
 add_subdirectory(cfg)
+add_subdirectory(cat)
 
 include_directories(utf8)
 include_directories(${CMAKE_SYSROOT}/usr/include/RHVoice/)
@@ -42,6 +43,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 PkgConfig::deps
 FT8 QTH
 cfg
+cat
 Threads::Threads
 lvgl lvgl::drivers
 aether_x6100_control
