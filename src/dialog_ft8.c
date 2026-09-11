@@ -55,8 +55,6 @@
 #include <errno.h>
 #include <ctype.h>
 
-#define SAMPLE_RATE     (AUDIO_CAPTURE_RATE / AUDIO_DECIM)
-
 #define WIDTH           771
 
 #define UNKNOWN_SNR     99
@@ -246,7 +244,7 @@ static void worker_init() {
         .ctx         = NULL,
     };
     audio_worker = audio_worker_create(
-        SAMPLE_RATE,
+        DIALOG_CAPTURE_RATE,
         param_i_get(cfg_ft8_protocol),
         filter_low, filter_high,
         &cb);
@@ -313,6 +311,8 @@ static void destruct_cb() {
 
     radio_set_pwr(param_f_get(cfg_pwr));
     adif_log_close(ft8_log);
+
+    tx_worker_destruct();
 }
 
 static void load_band(int8_t dir) {
@@ -538,6 +538,9 @@ static void construct_cb(lv_obj_t *parent) {
     } else {
         base_gain_offset = -16.4f + log10f(target_pwr) * 10.0f;
     }
+
+    // setup tx_worker (with lower sample rate)
+    tx_worker_construct(AUDIO_PLAY_RATE / 8);
 }
 
 /* Buttons */
@@ -957,8 +960,8 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
     (void)ctx;
     if (!psd || !nfft) return;
 
-    uint32_t low_bin  = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_low  / SAMPLE_RATE;
-    uint32_t high_bin = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_high / SAMPLE_RATE;
+    uint32_t low_bin  = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_low  / DIALOG_CAPTURE_RATE;
+    uint32_t high_bin = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_high / DIALOG_CAPTURE_RATE;
     if (high_bin > nfft) high_bin = nfft;
     if (low_bin >= high_bin) return;
 
@@ -988,7 +991,7 @@ static void on_tick_cb(const slot_info_t *info, bool new_slot,
         if ((tx_time_slot == info->odd) && subject_i_get(tx_enabled)) {
             state = TX_PROCESS;
             add_tx_text(tx_msg.msg);
-            tx_worker_run(tx_msg.msg, AUDIO_PLAY_RATE, base_gain_offset,
+            tx_worker_run(tx_msg.msg, base_gain_offset,
                           tx_should_abort_cb, NULL);
             state = RX_PROCESS;
             if (tx_msg.repeats > 0) {

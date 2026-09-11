@@ -28,6 +28,10 @@
 #define GAIN_MIN_DB     (-30.0f)
 #define GAIN_MAX_DB      0.0f
 
+static audio_player_t *player;
+static uint32_t sample_rate;
+
+
 /* ALC-driven gain correction (legacy formula from dialog_ft8.c). */
 static float get_correction(void) {
     static uint8_t msg_id = 0;
@@ -46,16 +50,22 @@ static float get_correction(void) {
     return correction;
 }
 
-bool tx_worker_run(const char    *tx_text,
-                   int32_t        audio_sample_rate,
-                   float          base_gain_offset,
-                   tx_abort_fn_t  abort_check,
-                   void          *abort_check_ctx) {
+void tx_worker_construct(uint32_t rate) {
+    sample_rate = rate;
+    player = audio_get_player(rate, 1);
+}
+
+void tx_worker_destruct() {
+    audio_player_release(player);
+}
+
+bool tx_worker_run(const char *tx_text, float base_gain_offset, tx_abort_fn_t abort_check,
+                   void *abort_check_ctx) {
     int16_t *samples   = NULL;
     uint32_t n_samples = 0;
 
     if (!ftx_worker_generate_tx_samples(tx_text, SIGNAL_FREQ_HZ,
-                                        (uint32_t)audio_sample_rate,
+                                        sample_rate,
                                         &samples, &n_samples)) {
         return true; /* nothing to send; not an abort */
     }
@@ -103,7 +113,7 @@ bool tx_worker_run(const char    *tx_text,
             audio_gain_db_transition(ptr, part, prev_gain_offset, gain_offset, ptr);
             prev_gain_offset = gain_offset;
         }
-        audio_play(ptr, part);
+        audio_player_send(player, ptr, part);
         n_samples -= part;
         ptr       += part;
         counter++;
@@ -111,7 +121,7 @@ bool tx_worker_run(const char    *tx_text,
 
     params_float_set(&params.ft8_output_gain_offset,
                      gain_offset - base_gain_offset + play_gain_offset);
-    audio_play_wait();
+    audio_player_wait(player);
     radio_set_modem(false);
     radio_set_freq((int32_t)radio_freq);
     free(samples);

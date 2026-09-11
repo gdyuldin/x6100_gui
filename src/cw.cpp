@@ -63,7 +63,7 @@ void cw_init() {
     cfg_sm.p_cw_decoder.subscribe_and_notify(on_val_bool_change, (void*)&cw_decoder);
     cfg_sm.p_cw_tune.subscribe_and_notify(on_val_bool_change, (void*)&cw_tune);
 
-    cw_detector = new CWDetector((float)SAMPLE_RATE, 0.01f, 0.8f);
+    cw_detector = new CWDetector((float)CW_CAPTURE_RATE, 0.01f, 0.8f);
     cw_detector->set_f0(cfg_sm.p_key_tone.get());
 
     cfg_sm.cp_cur_filter_low.subscribe_and_notify(on_low_filter_change);
@@ -131,7 +131,7 @@ void cw_put_audio_samples(unsigned int n, float *samples) {
                     peak_on = true;
                 }
             }
-            cw_decoder_signal(peak_on, samples_counter * 1000.0f / SAMPLE_RATE);
+            cw_decoder_signal(peak_on, samples_counter * 1000.0f / CW_CAPTURE_RATE);
             samples_counter = 0;
         }
         samples_counter++;

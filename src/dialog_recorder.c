@@ -193,18 +193,21 @@ static void play_item() {
 
     play_state = true;
 
+    audio_player_t *player = audio_get_player(sfinfo.samplerate, sfinfo.channels);
+
     while (play_state) {
         int res = sf_read_short(file, samples_buf, BUF_SIZE);
 
         if (res > 0) {
-            audio_play(samples_buf, res);
+            audio_player_send(player, samples_buf, res);
         } else {
             play_state = false;
         }
     }
 
     sf_close(file);
-    audio_play_wait();
+    audio_player_wait(player);
+    audio_player_release(player);
 }
 
 static void * play_thread(void *arg) {

@@ -27,7 +27,7 @@
 #define RTTY_SYMBOL_CODE (0b11011)
 #define RTTY_LETTER_CODE (0b11111)
 
-#define CAPTURE_RATE_F ((float)AUDIO_CAPTURE_RATE / AUDIO_DECIM)
+#define CAPTURE_RATE_F ((float)DIALOG_CAPTURE_RATE)
 
 typedef enum {
     RX_STATE_IDLE,

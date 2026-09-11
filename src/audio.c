@@ -14,7 +14,6 @@
 #include <string.h>
 #include <math.h>
 
-#include <pulse/pulseaudio.h>
 #include <alsa/asoundlib.h>
 #include <alsa/mixer.h>
 
@@ -31,8 +30,13 @@ static pa_threaded_mainloop *mloop;
 static pa_mainloop_api      *mlapi;
 static pa_context           *ctx;
 
-static pa_stream            *play_stm;
-static char                 *play_device = "alsa_output.platform-sound.stereo-fallback";
+struct audio_player_s {
+    pa_stream *stream;
+    int is_paused;
+};
+
+static char      *default_play_device = "alsa_output.platform-sound.stereo-fallback";
+static audio_player_t default_player;
 
 static pa_stream            *capture_stm;
 static char                 *capture_device = "alsa_input.platform-sound.stereo-fallback";
@@ -41,6 +45,7 @@ static pa_stream            *monitor_stm = NULL;
 
 static float                peak_db = -60.0f;
 
+static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name);
 static void record_monitor_setup();
 
 static void on_state_change(pa_context *c, void *userdata) {
@@ -76,6 +81,17 @@ void audio_init() {
 
     LV_LOG_USER("Conected");
 
+    /* Default player */
+    default_player.stream = player_stream_create(AUDIO_PLAY_RATE, 1, "X6100 GUI default player");
+    if (!default_player.stream) {
+        LV_LOG_ERROR("pa_stream_connect_playback() failed: %s", pa_strerror(pa_context_errno(ctx)));
+    } else {
+        // Pause
+        pa_stream_cork(default_player.stream, 1, NULL, NULL);
+        default_player.is_paused = true;
+    }
+
+
     pa_buffer_attr  attr;
 
     pa_sample_spec  spec = {
@@ -85,21 +101,6 @@ void audio_init() {
 
     memset(&attr, 0xff, sizeof(attr));
     int res;
-
-    /* Play */
-
-    spec.rate = AUDIO_PLAY_RATE,
-    attr.fragsize = pa_usec_to_bytes(AUDIO_RATE_MS * PA_USEC_PER_MSEC, &spec);
-    attr.tlength = attr.fragsize * 8;
-
-    play_stm = pa_stream_new(ctx, "X6100 GUI Play", &spec, NULL);
-
-    pa_threaded_mainloop_lock(mloop);
-    res = pa_stream_connect_playback(play_stm, play_device, &attr, PA_STREAM_ADJUST_LATENCY, NULL, NULL);
-    if (res < 0) {
-        LV_LOG_ERROR("pa_stream_connect_playback() failed: %s", pa_strerror(pa_context_errno(ctx)));
-    }
-    pa_threaded_mainloop_unlock(mloop);
 
     /* Capture */
 
@@ -144,52 +145,145 @@ void audio_mixer_setup(x6100_base_ver_t base_ver) {
 }
 
 int audio_play(int16_t *samples_buf, size_t samples) {
-    while (true) {
-        size_t size;
-
-        pa_threaded_mainloop_lock(mloop);
-        size = pa_stream_writable_size(play_stm);
-        pa_threaded_mainloop_unlock(mloop);
-
-        if (size >= (samples * 2)) {
-            break;
-        }
-
-        usleep(1000);
-    }
-
-    pa_threaded_mainloop_lock(mloop);
-    int res = pa_stream_write(play_stm, samples_buf, samples * 2, NULL, 0, PA_SEEK_RELATIVE);
-    pa_threaded_mainloop_unlock(mloop);
-
-    if (res < 0) {
-        LV_LOG_ERROR("pa_stream_write() failed: %s", pa_strerror(pa_context_errno(ctx)));
-    }
-
-    return res;
+    audio_player_send(&default_player, samples_buf, samples);
 }
 
 void audio_play_wait() {
-    pa_operation *op;
-    int r;
+    audio_player_wait(&default_player);
+}
+
+static void stream_write_callback(pa_stream *stream, size_t length, void *userdata) {
+    pa_threaded_mainloop_signal(mloop, 0);
+}
+
+static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name) {
+    pa_buffer_attr  attr;
+
+    pa_sample_spec  spec = {
+        .format = PA_SAMPLE_S16NE,
+        .channels = ch
+    };
+
+    memset(&attr, 0xff, sizeof(attr));
+    int res;
+
+    spec.rate = sample_rate,
+    attr.fragsize = pa_usec_to_bytes(AUDIO_RATE_MS * PA_USEC_PER_MSEC, &spec);
+    attr.tlength = attr.fragsize * 8;
+
+    pa_stream *stream = pa_stream_new(ctx, name, &spec, NULL);
 
     pa_threaded_mainloop_lock(mloop);
-    op = pa_stream_drain(play_stm, NULL, NULL);
+    res = pa_stream_connect_playback(stream, default_play_device, &attr, PA_STREAM_ADJUST_LATENCY, NULL, NULL);
+    if (res < 0) {
+        return NULL;
+    }
+    pa_stream_set_write_callback(stream, stream_write_callback, NULL);
     pa_threaded_mainloop_unlock(mloop);
+    return stream;
+}
 
-    while (true) {
+audio_player_t *audio_create_player(uint32_t sample_rate, uint32_t ch) {
+    audio_player_t *player = malloc(sizeof(audio_player_t));
+    if (!player) return NULL;
+    player->stream = player_stream_create(sample_rate, ch, "X6100 GUI player");
+    if (!player->stream) {
+        LV_LOG_ERROR("pa_stream_connect_playback() failed: %s", pa_strerror(pa_context_errno(ctx)));
+        return NULL;
+    }
+
+    // Pause
+    pa_threaded_mainloop_lock(mloop);
+    pa_stream_cork(player->stream, 1, NULL, NULL);
+    pa_threaded_mainloop_unlock(mloop);
+    player->is_paused = true;
+    return player;
+}
+
+audio_player_t *audio_get_player(uint32_t sample_rate, uint32_t ch) {
+    if ((sample_rate == AUDIO_PLAY_RATE) && (ch == 1)) return &default_player;
+    return audio_create_player(sample_rate, ch);
+}
+
+int audio_player_send(audio_player_t *player, int16_t *samples_buf, size_t samples) {
+    if (!player) return -1;
+
+    if (player->is_paused) {
         pa_threaded_mainloop_lock(mloop);
-        r = pa_operation_get_state(op);
+        pa_stream_cork(player->stream, 0, NULL, NULL);
+        pa_threaded_mainloop_unlock(mloop);
+        player->is_paused = false;
+    }
+
+    uint8_t *src_ptr = (uint8_t *)samples_buf;
+    size_t bytes_left = samples * 2;
+
+    int res = 0;
+    while (bytes_left > 0) {
+        pa_threaded_mainloop_lock(mloop);
+        size_t writable_size = pa_stream_writable_size(player->stream);
+
+        if (writable_size == 0) {
+            // Wait for buffer
+            pa_threaded_mainloop_wait(mloop);
+            pa_threaded_mainloop_unlock(mloop);
+            continue;
+        }
+        size_t chunk_size = (bytes_left < writable_size) ? bytes_left : writable_size;
+
+        res = pa_stream_write(player->stream, src_ptr, chunk_size, NULL, 0, PA_SEEK_RELATIVE);
         pa_threaded_mainloop_unlock(mloop);
 
-        if (r == PA_OPERATION_DONE || r == PA_OPERATION_CANCELLED) {
+        if (res < 0) {
+            LV_LOG_ERROR("pa_stream_write() failed: %s", pa_strerror(pa_context_errno(ctx)));
             break;
         }
 
-        usleep(1000);
+        src_ptr += chunk_size;
+        bytes_left -= chunk_size;
+    }
+    return res;
+}
+
+static void stream_drain_callback(pa_stream *s, int success, void *userdata) {
+    pa_threaded_mainloop_signal(mloop, 0);
+}
+
+void audio_player_wait(audio_player_t *player) {
+    if (!player) return;
+    pa_operation *op;
+    int r;
+    pa_threaded_mainloop_lock(mloop);
+    op = pa_stream_drain(player->stream, stream_drain_callback, NULL);
+
+    if (op) {
+        while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+            pa_threaded_mainloop_wait(mloop);
+        }
+        pa_operation_unref(op);
+    }
+    if (!player->is_paused) {
+        pa_stream_cork(player->stream, 1, NULL, NULL);
+        player->is_paused = true;
     }
 
-    pa_operation_unref(op);
+    pa_threaded_mainloop_unlock(mloop);
+}
+
+void audio_player_release(audio_player_t *player) {
+    if (!player) return;
+
+    if (player == &default_player) return;
+
+    pa_stream_disconnect(player->stream);
+
+    pa_stream_set_write_callback(player->stream, NULL, NULL);
+    pa_stream_set_read_callback(player->stream, NULL, NULL);
+    pa_stream_set_state_callback(player->stream, NULL, NULL);
+
+    pa_stream_unref(player->stream);
+
+    free(player);
 }
 
 void audio_gain_db(int16_t *buf, size_t samples, float gain, int16_t *out) {

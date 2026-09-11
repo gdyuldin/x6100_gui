@@ -89,7 +89,6 @@ static uint32_t cur_freq;
 static uint8_t  psd_delay;
 static uint8_t  min_max_delay;
 
-static firdecim_rrrf audio_decim;
 static iirfilt_rrrf audio_dc_blocker;
 static float  *audio;
 
@@ -278,6 +277,43 @@ class ChunkedSpgram {
     };
 };
 
+class Resampler {
+    const size_t             N;
+    size_t                   i = 0;
+    std::unique_ptr<float[]> buf;
+    firdecim_rrrf            des;
+
+  public:
+    Resampler(size_t N) : N(N), buf(std::make_unique<float[]>(N)) {
+        des = firdecim_rrrf_create_kaiser(N, 7, 60.0f);
+        firdecim_rrrf_set_scale(des, 1.0f / static_cast<float>(N));
+    }
+    ~Resampler() { firdecim_rrrf_destroy(des); }
+
+    Resampler(const Resampler&)            = delete;
+    Resampler& operator=(const Resampler&) = delete;
+    Resampler(Resampler&&)                 = delete;
+    Resampler& operator=(Resampler&&)      = delete;
+
+
+    bool feed(float f) {
+        if (i < N) {
+            buf[i++] = f;
+        }
+        return i == N;
+    }
+
+    float execute() {
+        float res;
+        firdecim_rrrf_execute(des, buf.get(), &res);
+        i = 0;
+        return res;
+    }
+};
+
+static Resampler resampler_dialog{DIALOG_DECIM};
+static Resampler resampler_cw{CW_DECIM};
+
 /* * */
 
 void dsp_init() {
@@ -315,9 +351,7 @@ void dsp_init() {
     }
 
     audio            = (float *)malloc(AUDIO_CAPTURE_RATE * sizeof(float));
-    audio_decim      = firdecim_rrrf_create_kaiser(AUDIO_DECIM, 7, 60.0f);
-    firdecim_rrrf_set_scale(audio_decim, 1.0f / AUDIO_DECIM);
-    audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 50.0f * AUDIO_DECIM / AUDIO_CAPTURE_RATE);
+    audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 50.0f * AUDIO_CAPTURE_RATE);
 
     cfg_sm.p_mode_zoom.subscribe_and_notify(on_zoom_change);
 
@@ -628,12 +662,6 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
         return;
     }
 
-    static float decim_buf[AUDIO_DECIM];
-    static uint8_t decim_i;
-
-    static float hilb_buf[2];
-    static uint8_t hilb_i;
-
     if (dialog_msg_voice_get_state() == MSG_VOICE_RECORD) {
         dialog_msg_voice_put_audio_samples(nsamples, samples);
         return;
@@ -644,33 +672,31 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
     }
 
     void (*audio_samples_fn)(unsigned int, float *) = NULL;
+    Resampler * resampler;
 
     if (rtty_get_state() == RTTY_RX) {
         audio_samples_fn = rtty_put_audio_samples;
+        resampler = &resampler_dialog;
     } else if (cur_mode == x6100_mode_cw || cur_mode == x6100_mode_cwr) {
         audio_samples_fn = cw_put_audio_samples;
+        resampler = &resampler_cw;
     } else if (dialog_need_audio()) {
         audio_samples_fn = dialog_audio_samples;
+        resampler = &resampler_dialog;
     }
 
     if (audio_samples_fn != NULL) {
         float k = 1.0f / (1 << 15);
-        size_t nsamples_dec = 0;
+        size_t resampled_n = 0;
         for (uint16_t i = 0; i < nsamples; i++) {
             float sample = samples[i] * k;
-            decim_buf[decim_i++] = sample;
-            if (decim_i >= AUDIO_DECIM) {
-                decim_i = 0;
-                float val;
-                // decimate
-                firdecim_rrrf_execute(audio_decim, decim_buf, &val);
-                // dc blocker
-                iirfilt_rrrf_execute(audio_dc_blocker, val, &audio[nsamples_dec++]);
+            // dc blocker
+            iirfilt_rrrf_execute(audio_dc_blocker, sample, &audio[i]);
+            if (resampler->feed(sample)) {
+                audio[resampled_n++] = resampler->execute();
             }
         }
-        if (nsamples_dec) {
-            audio_samples_fn(nsamples_dec, audio);
-        }
+        audio_samples_fn(resampled_n, audio);
     }
 }
 

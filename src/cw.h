@@ -11,8 +11,6 @@
 #include "helpers.h"
 #include "dsp.h"
 
-#define SAMPLE_RATE (AUDIO_CAPTURE_RATE / AUDIO_DECIM)
-
 #ifdef __cplusplus
 
 #include <array>
@@ -72,10 +70,10 @@ class CWDetector {
 
     // Average instances
     // freq averaging with 72 ms window
-    ChunkedAverage<72 * SAMPLE_RATE / 1000 > avg_freq;
+    ChunkedAverage<72 * CW_CAPTURE_RATE / 1000 > avg_freq;
     // signal averaging with 6ms window
-    ChunkedAverage<6 * SAMPLE_RATE / 1000> avg_signal;
-    ChunkedAverage<6 * SAMPLE_RATE / 1000> avg_noise;
+    ChunkedAverage<6 * CW_CAPTURE_RATE / 1000> avg_signal;
+    ChunkedAverage<6 * CW_CAPTURE_RATE / 1000> avg_noise;
 
 public:
     CWDetector(float fs, float mu, float r);

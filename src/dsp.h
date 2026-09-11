@@ -27,9 +27,14 @@ extern "C" {
 }
 #endif
 
-#define AUDIO_DECIM 4
 #define WATERFALL_NFFT (RADIO_SAMPLES * 2)
 #define SPECTRUM_NFFT SCREEN_WIDTH
+
+#define DIALOG_DECIM 3
+#define DIALOG_CAPTURE_RATE (AUDIO_CAPTURE_RATE / DIALOG_DECIM)
+
+#define CW_DECIM 6
+#define CW_CAPTURE_RATE (AUDIO_CAPTURE_RATE / CW_DECIM)
 
 #ifdef __cplusplus
 extern "C" {

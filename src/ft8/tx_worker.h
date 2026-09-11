@@ -26,6 +26,9 @@
 extern "C" {
 #endif
 
+void tx_worker_construct(uint32_t sample_rate);
+void tx_worker_destruct();
+
 /* Abort-check callback. Return true to stop TX after the current block. */
 typedef bool (*tx_abort_fn_t)(void *ctx);
 
@@ -33,7 +36,6 @@ typedef bool (*tx_abort_fn_t)(void *ctx);
  * sample generation fails); returns false if the abort callback fired
  * mid-transmit. */
 bool tx_worker_run(const char    *tx_text,
-                   int32_t        audio_sample_rate,
                    float          base_gain_offset,
                    tx_abort_fn_t  abort_check,
                    void          *abort_check_ctx);

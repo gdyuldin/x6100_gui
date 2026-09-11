@@ -275,20 +275,22 @@ static void play_item() {
     if (!file) {
         return;
     }
+    audio_player_t *player = audio_get_player(sfinfo.samplerate, sfinfo.channels);
 
     state = MSG_VOICE_PLAY;
     while (state == MSG_VOICE_PLAY) {
         int res = sf_read_short(file, samples_buf, BUF_SIZE);
 
         if (res > 0) {
-            audio_play(samples_buf, res);
+            audio_player_send(player, samples_buf, res);
         } else {
             state = MSG_VOICE_OFF;
         }
     }
 
     sf_close(file);
-    audio_play_wait();
+    audio_player_wait(player);
+    audio_player_release(player);
 }
 
 static void * play_thread(void *arg) {
