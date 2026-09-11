@@ -79,7 +79,8 @@ jobs:
     - name: Build
       run: |
         cd AetherX6100Buildroot/build
-        make lame mpg123
+        make lame
+        make mpg123
         make libsndfile-dirclean
         make
 
