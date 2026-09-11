@@ -17,6 +17,7 @@
 #include <vector>
 #include <cmath>
 #include <chrono>
+#include <string>
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
@@ -132,68 +133,41 @@ static TSQueue<std::vector<char>> send_queue;
 static std::thread* thread = nullptr;
 static std::atomic<bool> keep_running(false);
 
-static void send_waterfall_data();
+// static void send_waterfall_data();
 
 static void on_fg_freq_change(Subject *s, void *user_data);
 
-struct Frame {
+struct Impl {
     uint8_t dst_addr;
     uint8_t src_addr;
     uint8_t command;
     std::vector<uint8_t> data;
 
-    Frame(uint8_t dst, uint8_t src, uint8_t command): dst_addr(dst), src_addr(src), command(command) {};
+    Impl(uint8_t dst, uint8_t src, uint8_t command): dst_addr(dst), src_addr(src), command(command) {};
 
-    Frame(const char * data, const size_t len): data(len - FRAME_ADD_LEN - 1) {
+    Impl(const char *data, const size_t len): data(len - FRAME_ADD_LEN - 1) {
         dst_addr = data[2];
         src_addr = data[3];
         command = data[4];
         std::copy(&data[5], &data[len - 1], this->data.begin());
     };
 
-    Frame(const Frame *req) {
-        // Swap address
-        dst_addr = req->src_addr;
-        src_addr = LOCAL_ADDRESS;
-        command  = req->command;
-        data = req->data;
+    
+
+    void write(std::initializer_list<uint8_t> bytes) {
+        data.assign(bytes.begin(), bytes.end());
     }
 
-    void log(const char *prefix=nullptr) const {
-        char buf[512];
-        char *buf_ptr = buf;
-        buf_ptr += sprintf(buf_ptr, "[%02X:%02X:", FRAME_PRE, FRAME_PRE);
-        buf_ptr += sprintf(buf_ptr, "%02X:", dst_addr);
-        buf_ptr += sprintf(buf_ptr, "%02X]-", src_addr);
-        buf_ptr += sprintf(buf_ptr, "[%02X:", command);
-        size_t remain_len = data.size();
-        size_t i = 0;
-        while (remain_len) {
-            buf_ptr += sprintf(buf_ptr, "%02X:", data[i++]);
-            remain_len--;
-        }
-        buf_ptr += sprintf(buf_ptr - 1, "]-[%02X]", FRAME_END);
-        *(buf_ptr - 1) = '\0';
-        if (prefix) {
-            LV_LOG_USER("%s\t: %s\t(Len %i)", prefix, buf, data.size() + FRAME_ADD_LEN + 1);
-        } else {
-            LV_LOG_USER("%s\t(Len %i)", buf, data.size() + FRAME_ADD_LEN + 1);
-        }
+    void append(const uint8_t *buf, size_t len) {
+        data.insert(data.end(), buf, buf + len);
     }
 
     void set_code(uint8_t code) {
-        set_payload_len(1);
+        data.clear();
         command = code;
     }
 
-    void set_payload_len(size_t len) {
-        data.resize(len - 1);
-    }
-
-    void set_unsupported(const Frame req) {
-        req.log("unsupported");
-        set_code(CODE_NG);
-    }
+    
 
     size_t get_len() const {
         return data.size() + 1 + FRAME_ADD_LEN;
@@ -207,10 +181,57 @@ struct Frame {
         buf[3] = src_addr;
         buf[4] = command;
         std::copy(data.begin(), data.end(), buf.begin() + 5);
-        *--buf.end() = FRAME_END;
+        buf.back() = FRAME_END;
         return buf;
     }
 };
+
+Frame::Frame() : pimpl_(std::make_unique<Impl>(0, 0, 0)) {}
+
+Frame::Frame(const char *data, const size_t len): pimpl_(std::make_unique<Impl>(data, len)) {};
+
+Frame::~Frame() = default;
+
+std::vector<char> Frame::dump() const {
+    return pimpl_->dump();
+}
+
+static std::string frame_to_string(const Impl &f) {
+    std::string s;
+    s.reserve(f.data.size() * 3 + 32);
+    char tmp[32];
+
+    snprintf(tmp, sizeof(tmp), "[%02X:%02X:%02X:%02X]-[%02X:",
+             FRAME_PRE, FRAME_PRE, f.dst_addr, f.src_addr, f.command);
+    s += tmp;
+    for (uint8_t b : f.data) {
+        snprintf(tmp, sizeof(tmp), "%02X:", b);
+        s += tmp;
+    }
+    if (!f.data.empty()) {
+        s.pop_back();
+    }
+    snprintf(tmp, sizeof(tmp), "]-[%02X]", FRAME_END);
+    s += tmp;
+
+    return s;
+}
+
+static void log_frame(const Impl &f, const char *prefix = nullptr) {
+    std::string s = frame_to_string(f);
+    if (prefix) {
+        LV_LOG_USER("%s\t: %s\t(Len %i)", prefix, s.c_str(),
+                    f.data.size() + FRAME_ADD_LEN + 1);
+    } else {
+        LV_LOG_USER("%s\t(Len %i)", s.c_str(),
+                    f.data.size() + FRAME_ADD_LEN + 1);
+    }
+}
+
+static void set_unsupported(const Impl &req, Impl &resp) {
+    log_frame(req, "unsupported");
+    resp.set_code(CODE_NG);
+}
 
 struct FeedResult {
     int status;
@@ -275,9 +296,9 @@ class Connection {
     bool send(const char * data, size_t len) {
         return write_buf(data, len);
     }
-    bool send(const Frame frame) {
+    bool send(const Frame &frame) {
         auto data = frame.dump();
-        return write_buf(data.data(), frame.get_len());
+        return write_buf(data.data(), data.size());
     }
 };
 
@@ -514,536 +535,516 @@ static uint8_t freq_step_to_ci(int32_t val) {
     return 0x02;
 }
 
-void process_req(Connection &conn, Frame &req) {
-    // Echo
-    conn.send(req);
+using cmd_handler_t = void(*)(const Impl &req, Impl &resp);
 
-    Frame resp{req};
+static void handle_snd_freq(const Impl &req, Impl &resp);
+static void handle_rd_freq(const Impl &req, Impl &resp);
+static void handle_rd_mode(const Impl &req, Impl &resp);
+static void handle_set_freq(const Impl &req, Impl &resp);
+static void handle_set_mode(const Impl &req, Impl &resp);
+static void handle_set_vfo(const Impl &req, Impl &resp);
+static void handle_ctl_splt(const Impl &req, Impl &resp);
+static void handle_set_ts(const Impl &req, Impl &resp);
+static void handle_ctl_att(const Impl &req, Impl &resp);
+static void handle_ctl_lvl(const Impl &req, Impl &resp);
+static void handle_rd_sqsm(const Impl &req, Impl &resp);
+static void handle_ctl_func(const Impl &req, Impl &resp);
+static void handle_rd_trxid(const Impl &req, Impl &resp);
+static void handle_ctl_mem(const Impl &req, Impl &resp);
+static void handle_ctl_ptt(const Impl &req, Impl &resp);
+static void handle_send_sel_freq(const Impl &req, Impl &resp);
+static void handle_send_sel_mode(const Impl &req, Impl &resp);
+static void handle_ctl_scp(const Impl &req, Impl &resp);
 
-    int32_t        new_freq;
-    x6100_vfo_t    cur_vfo    = (x6100_vfo_t)cfg_sm.p_band_current_vfo.get();
-    int32_t        cur_freq   = cfg_sm.cp_fg_freq.get();
-    x6100_mode_t   cur_mode   = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
-    x6100_vfo_t    target_vfo = cur_vfo;
-    uint8_t        vfo_id;
+static cmd_handler_t cmd_handlers[256] = {};
 
-    size_t data_size = req.data.size();
-
-#if 0
-    req.log("req");
-#endif
-
-    switch (req.command) {
-        case C_SND_FREQ:
-            if (data_size == 5) {
-                cfg_sm.cp_fg_freq.set(from_bcd(req.data.data(), 10));
-                resp.set_code(CODE_OK);
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_RD_FREQ:
-            resp.set_payload_len(6);
-            // bcd len - 5 bytes
-            to_bcd(resp.data.data(), cur_freq, 10);
-            break;
-
-        case C_RD_MODE:
-            {
-                uint8_t v = x_mode_2_ci_mode(cur_mode);
-                resp.set_payload_len(3);
-                resp.data[0] = v;
-                resp.data[1] = v;
-            }
-            break;
-
-        case C_SET_FREQ:
-            if (data_size == 5) {
-                cfg_sm.cp_fg_freq.set(from_bcd(req.data.data(), 10));
-                resp.set_code(CODE_OK);
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_SET_MODE:
-            if ((data_size >= 1) && (data_size <= 2)) {
-                cfg_sm.cp_cur_mode.set(ci_mode_2_x_mode(req.data[0]));
-                if (data_size == 2) {
-                    // filter selector -> req.data[1]
-                }
-                resp.set_code(CODE_OK);
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_SET_VFO:
-            if (data_size == 1) {
-                x6100_vfo_t new_vfo;
-                switch (req.data[0]) {
-                    case S_VFOA:
-                        if (cur_vfo != X6100_VFO_A) {
-                            new_vfo = X6100_VFO_A;
-                            cfg_sm.p_band_current_vfo.set(new_vfo);
-                        }
-
-                        resp.set_code(CODE_OK);
-                        break;
-
-                    case S_VFOB:
-                        if (cur_vfo != X6100_VFO_B) {
-                            new_vfo = X6100_VFO_B;
-                            cfg_sm.p_band_current_vfo.set(new_vfo);
-                        }
-                        resp.set_code(CODE_OK);
-                        break;
-
-                    case S_XCHNG:
-                        if (cur_vfo == X6100_VFO_A) {
-                            new_vfo = X6100_VFO_B;
-                        } else {
-                            new_vfo = X6100_VFO_A;
-                        }
-                        cfg_sm.p_band_current_vfo.set(new_vfo);
-                        resp.set_code(CODE_OK);
-                        break;
-
-                    case S_BTOA:
-                        cfg_sm.cfg_band_vfo_copy();
-                        resp.set_code(CODE_OK);
-                        break;
-
-                    default:
-                        resp.set_unsupported(req);
-                        break;
-                }
-            } else if (data_size == 0) {
-                resp.set_payload_len(2);
-                resp.data[0] = cur_vfo == X6100_VFO_A ? S_VFOA : S_VFOB;
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_CTL_SPLT:
-            if (data_size == 0) {
-                resp.set_payload_len(2);
-                resp.data[0] = cfg_sm.p_band_split.get();
-            } else if (data_size == 1) {
-                cfg_sm.p_band_split.set(req.data[0]);
-                resp.set_code(CODE_OK);
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_SET_TS:
-            if (data_size == 0) {
-                resp.set_payload_len(2);
-                resp.data[0] = freq_step_to_ci(cfg_sm.p_mode_freq_step.get());
-            } else if (data_size == 1) {
-                cfg_sm.p_mode_freq_step.set(freq_step_from_ci(resp.data[0]));
-                resp.set_code(CODE_OK);
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_CTL_ATT:
-            if (data_size == 0) {
-                resp.set_payload_len(2);
-                resp.data[0] = cfg_sm.cp_cur_att.get() * 0x20;
-            } else if (data_size == 1) {
-                cfg_sm.cp_cur_att.set(req.data[0]);
-                resp.set_code(CODE_OK);
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_CTL_LVL:
-            if (data_size >= 1) {
-                switch(req.data[0]) {
-                    case 0x01:
-                        // VOL
-                        if (data_size == 1) {
-                            resp.set_payload_len(4);
-                            to_bcd_be(&resp.data[1], cfg_sm.p_volume.get() * 255 / 55, 3);
-                        } else if (data_size == 3) {
-                            cfg_sm.p_volume.set(from_bcd_be(&req.data[1], 3) * 55 / 255);
-                        }
-                        break;
-                    case 0x02:
-                        // RFG
-                        if (data_size == 1) {
-                            resp.set_payload_len(4);
-                            to_bcd_be(&resp.data[1], cfg_sm.p_rfgain.get() * 255 / 100, 3);
-                        } else if (data_size == 3) {
-                            cfg_sm.p_rfgain.set(from_bcd_be(&req.data[1], 3) * 100 / 255);
-                        }
-                        break;
-                    case 0x03:
-                        // Squelch
-                        if (data_size == 1) {
-                            resp.set_payload_len(4);
-                            to_bcd_be(&resp.data[1], cfg_sm.p_squelch.get() * 255 / 100, 3);
-                        } else if (data_size == 3) {
-                            cfg_sm.p_squelch.set(from_bcd_be(&req.data[1], 3) * 100 / 255);
-                        }
-                        break;
-                    case 0x0a:
-                        // PWR
-                        if (data_size == 1) {
-                            resp.set_payload_len(4);
-                            to_bcd_be(&resp.data[1], std::round(cfg_sm.p_pwr.get() * 255 / 10), 3);
-                        } else if (data_size == 3) {
-                            float pwr = from_bcd_be(&req.data[1], 3) * 10.0f / 255.0f;
-                            pwr = LV_MIN(pwr, 10.0f);
-                            cfg_sm.p_pwr.set(pwr);
-                        }
-                        break;
-                    case 0x15:
-                        // Monitor level
-                        resp.set_payload_len(4);
-                        to_bcd_be(&resp.data[1], cfg_sm.p_moni.get() * 255 / 100, 3);
-                        break;
-                    default:
-                        resp.set_unsupported(req);
-                        break;
-                }
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_RD_SQSM:
-            if (data_size == 1) {
-                static float alc, pwr, swr;
-                static uint8_t msg_id;
-                tx_info_refresh(&msg_id, &alc, &pwr, &swr);
-                uint8_t val;
-                switch (req.data[0]) {
-                    case 0x02: // S-meter
-                        {
-                            // Flrig
-                            // 41 - S9
-                            // 14 - S3
-                            int16_t db = meter_get_raw_db();
-                            val = db * 0.75f + 96;
-                            // Wfview:
-                            // val = 14;
-                            // if (db < S9) {
-                            //     val = (db - S9) * 2.1f + 120;
-                            // } else {
-                            //     val = (db - S9) * 2 + 120;
-                            // }
-                            resp.set_payload_len(4);
-                            to_bcd_be(&resp.data[1], val, 3);
-                        }
-                        break;
-                    case 0x11:  // Power
-                        val = -pwr * pwr + 35 * pwr;
-                        resp.set_payload_len(4);
-                        to_bcd_be(&resp.data[1], val, 3);
-                        break;
-                    case 0x12:  // SWR
-                        val = -21 * swr * swr + 134 * swr - 122;
-                        resp.set_payload_len(4);
-                        to_bcd_be(&resp.data[1], val, 3);
-                        break;
-                    case 0x13:  // ALC
-                        val = alc * 120 / 10;
-                        resp.set_payload_len(4);
-                        to_bcd_be(&resp.data[1], val, 3);
-                        break;
-                    default:
-                        resp.set_code(CODE_NG);
-                        break;
-                }
-            } else {
-                resp.set_code(CODE_NG);
-            }
-            break;
-
-        case C_CTL_FUNC:
-            if ((data_size == 1) || (data_size == 2)) {
-                switch (req.data[0]) {
-                    case 0x02:
-                        // PRE
-                        if (data_size == 1) {
-                            resp.set_payload_len(3);
-                            resp.data[1] = cfg_sm.cp_cur_pre.get();
-                        } else {
-                            cfg_sm.cp_cur_pre.set(req.data[1] > 0);
-                            resp.set_code(CODE_OK);
-                        }
-                        break;
-                    case 0x22:
-                        // NB
-                        if (data_size == 1) {
-                            resp.set_payload_len(3);
-                            resp.data[1] = cfg_sm.p_nb.get();
-                        } else {
-                            cfg_sm.p_nb.set(req.data[1]);
-                            resp.set_code(CODE_OK);
-                        }
-                        break;
-                    case 0x40:
-                        // NR
-                        if (data_size == 1) {
-                            resp.set_payload_len(3);
-                            resp.data[1] = cfg_sm.p_nr.get();
-                        } else {
-                            cfg_sm.p_nr.set(req.data[1]);
-                            resp.set_code(CODE_OK);
-                        }
-                        break;
-                    case 0x44:
-                        // COMP
-                        if (data_size == 1) {
-                            resp.set_payload_len(3);
-                            resp.data[1] = 0x00;
-                        } else {
-                            // COMP set is not suported yet
-                            resp.set_code(CODE_OK);
-                        }
-                        break;
-                    case 0x45:
-                        // Monitor [MONI] On/off
-                        resp.set_code(CODE_NG);
-                        break;
-                    case 0x46:
-                        // VOX
-                        if (data_size == 1) {
-                            resp.set_payload_len(3);
-                            resp.data[1] = 0x00;
-                        } else {
-                            // VOX set is not suported yet
-                            resp.set_code(CODE_OK);
-                        }
-                        break;
-                    case 0x5D:
-                        // Tone squelch function
-                        resp.set_code(CODE_NG);
-                        break;
-                    default:
-                        resp.set_unsupported(req);
-                }
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        case C_RD_TRXID:
-            if ((data_size == 1) && (req.data[0] == 0)) {
-                resp.set_payload_len(3);
-                resp.data[1] = 0xA4;
-            }
-            break;
-
-        case C_CTL_MEM:
-            // TODO: Implement another options
-            if (data_size == 1) {
-                switch (req.data[0]) {
-                    case MEM_IF_FW:
-                        resp.set_payload_len(3);
-                        resp.data[1] = get_if_bandwidth();
-                        break;
-
-                    case MEM_DM_FG:
-                        resp.set_payload_len(5);
-                        resp.data[1] = x_mode_2_ci_mode(cur_mode);
-                        // data mode
-                        resp.data[2] = (cur_mode == x6100_mode_lsb_dig) || (cur_mode == x6100_mode_usb_dig);
-                        // filter group
-                        resp.data[3] = 0;
-                        break;
-
-                    default:
-                        resp.set_unsupported(req);
-                        break;
-                }
-            } else {
-                switch (req.data[0]) {
-                    case MEM_LOCK:  // Various controls for icom, unsupported
-                        resp.set_code(CODE_NG);
-                        break;
-                    case MEM_DM_FG:
-                        {
-                            x6100_mode_t new_mode  = ci_mode_2_x_mode(req.data[1], req.data[2]);
-                            cfg_sm.cp_cur_mode.set(new_mode);
-                            resp.set_code(CODE_OK);
-                        }
-                        break;
-                    default:
-                        resp.set_unsupported(req);
-                        break;
-                }
-            }
-            break;
-
-        case C_CTL_PTT:
-            if ((data_size >= 1) && (req.data[0] == 0x00)) {
-                if (data_size == 1) {
-                    resp.set_payload_len(3);
-                    resp.data[1] = (radio_get_state() == RADIO_RX) ? 0 : 1;
-                } else {
-                    switch (req.data[1]) {
-                        case 0:
-                            radio_set_ptt(false);
-                            break;
-
-                        case 1:
-                            radio_set_ptt(true);
-                            break;
-                    }
-                    resp.set_payload_len(3);
-                    resp.data[1] = CODE_OK;
-                }
-            }
-            break;
-
-        case C_SEND_SEL_FREQ:
-            {
-                ComputedParameter<int32_t> *freq;
-                if (req.data[0] == 0) {
-                    // fg freq
-                    freq = &cfg_sm.cp_fg_freq;
-                } else {
-                    // bg freq
-                    freq = &cfg_sm.cp_bg_freq;
-                }
-                if (data_size == 1) {
-                    resp.set_payload_len(7);
-                    to_bcd(&resp.data[1], freq->get(), 10);
-                } else if (data_size == 6) {
-                    freq->set(from_bcd(&req.data[1], 10));
-                    resp.set_code(CODE_OK);
-                } else {
-                    resp.set_unsupported(req);
-                }
-            }
-            break;
-
-        case C_SEND_SEL_MODE:
-            {
-                uint8_t v;
-                x6100_mode_t new_mode;
-                bool data_mode = false;
-                Parameter<int32_t> *mode_par;
-
-                if (req.data[0] == 0) {
-                    // fg
-                    mode_par = cfg_sm.p_band_current_vfo.get() == X6100_VFO_A ? &cfg_sm.p_band_vfoa_mode :&cfg_sm.p_band_vfob_mode;
-                } else {
-                    // bg
-                    mode_par = cfg_sm.p_band_current_vfo.get() == X6100_VFO_B ? &cfg_sm.p_band_vfoa_mode :&cfg_sm.p_band_vfob_mode;
-                }
-                switch (data_size) {
-                    case 1:
-                        // Read command
-                        v = x_mode_2_ci_mode((x6100_mode_t)mode_par->get(), &data_mode);
-                        resp.set_payload_len(5);
-                        resp.data[1] = v;
-                        resp.data[2] = data_mode;
-                        // filter
-                        resp.data[3] = 1;
-                        break;
-
-                    case 4:
-                        // Write command with filter byte
-                    case 3:
-                        // Write command with data byte
-                        data_mode = req.data[2];
-                    case 2:
-                        // Write command
-                        new_mode = ci_mode_2_x_mode(req.data[1], data_mode);
-                        mode_par->set(new_mode);
-                        resp.set_code(CODE_OK);
-                        break;
-                    default:
-                        resp.set_unsupported(req);
-                        break;
-                }
-
-            }
-            break;
-
-        case C_CTL_SCP:
-            if (data_size >= 1) {
-                switch (req.data[0]) {
-                    case 0x10:  // Send/read the Scope ON/OFF status
-                        if (data_size == 1) {
-                            resp.set_payload_len(3);
-                            resp.data[1] = 1;
-                        } else {
-                            resp.set_payload_len(2);
-                        }
-                        break;
-                    case 0x11:  // Send/read the Scope wave data output*4
-                        if (data_size == 1) {
-                            resp.set_payload_len(3);
-                            resp.data[1] = 1;
-                        } else {
-                            resp.set_payload_len(2);
-                        }
-                        break;
-                    case 0x13:  // Single/Dual scope setting
-                        resp.set_code(CODE_NG);
-                        break;
-                    case 0x14:  // Send/read the Scope Center mode or Fixed mode setting
-                        if (data_size == 1) {
-                            // Report center mode
-                            resp.set_payload_len(4);
-                            resp.data[1] = 0;
-                            resp.data[2] = 0;
-                        } else {
-                            resp.set_payload_len(2);
-                        }
-                        break;
-                    case 0x15:  // Scope span settings
-                        if (req.data[2] == FRAME_END) {
-                            // Span +- 50kHz
-                            resp.set_payload_len(8);
-                            to_bcd(&resp.data[1] + 1, 50000, 10);
-                        } else {
-                            resp.set_payload_len(2);
-                        }
-                        break;
-                    case 0x17:  // Scope hold function
-                        resp.set_code(CODE_NG);
-                        break;
-                    case 0x19:
-                        resp.set_payload_len(6);
-                        resp.data[1] = 0;
-                        resp.data[2] = 0;
-                        resp.data[3] = 0;
-                        resp.data[4] = 0;
-                        break;
-                    case 0x1A:
-                        // Sweep speed setting
-                        resp.set_code(CODE_NG);
-                        break;
-                    default:
-                        resp.set_unsupported(req);
-                        break;
-                }
-            } else {
-                resp.set_unsupported(req);
-            }
-            break;
-
-        default:
-            resp.set_unsupported(req);
-            break;
-    }
-    // send_waterfall_data();
-    conn.send(resp);
+static void init_cmd_handlers() {
+    cmd_handlers[C_SND_FREQ]      = handle_snd_freq;
+    cmd_handlers[C_RD_FREQ]       = handle_rd_freq;
+    cmd_handlers[C_RD_MODE]       = handle_rd_mode;
+    cmd_handlers[C_SET_FREQ]      = handle_set_freq;
+    cmd_handlers[C_SET_MODE]      = handle_set_mode;
+    cmd_handlers[C_SET_VFO]       = handle_set_vfo;
+    cmd_handlers[C_CTL_SPLT]      = handle_ctl_splt;
+    cmd_handlers[C_SET_TS]        = handle_set_ts;
+    cmd_handlers[C_CTL_ATT]       = handle_ctl_att;
+    cmd_handlers[C_CTL_LVL]       = handle_ctl_lvl;
+    cmd_handlers[C_RD_SQSM]       = handle_rd_sqsm;
+    cmd_handlers[C_CTL_FUNC]      = handle_ctl_func;
+    cmd_handlers[C_RD_TRXID]      = handle_rd_trxid;
+    cmd_handlers[C_CTL_MEM]       = handle_ctl_mem;
+    cmd_handlers[C_CTL_PTT]       = handle_ctl_ptt;
+    cmd_handlers[C_SEND_SEL_FREQ] = handle_send_sel_freq;
+    cmd_handlers[C_SEND_SEL_MODE] = handle_send_sel_mode;
+    cmd_handlers[C_CTL_SCP]       = handle_ctl_scp;
 }
 
-static uint8_t counter = 0;
+Frame Frame::process() const {
+    Frame resp;
+    resp.pimpl_->dst_addr = pimpl_->src_addr;
+    resp.pimpl_->src_addr = LOCAL_ADDRESS;
+    resp.pimpl_->command  = pimpl_->command;
+    resp.pimpl_->data     = pimpl_->data;
+
+    cmd_handler_t handler = cmd_handlers[pimpl_->command];
+    if (handler) {
+        handler(*pimpl_, *resp.pimpl_);
+    } else {
+        set_unsupported(*pimpl_, *resp.pimpl_);
+    }
+
+    return resp;
+}
+
+static void handle_snd_freq(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if (data_size == 5) {
+        cfg_sm.cp_fg_freq.set(from_bcd(req.data.data(), 10));
+        resp.set_code(CODE_OK);
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_rd_freq(const Impl &req, Impl &resp) {
+    uint8_t bcd[5];
+    to_bcd(bcd, cfg_sm.cp_fg_freq.get(), 10);
+    resp.append(bcd, 5);
+}
+
+static void handle_rd_mode(const Impl &req, Impl &resp) {
+    uint8_t v = x_mode_2_ci_mode((x6100_mode_t)cfg_sm.cp_cur_mode.get());
+    resp.write({v, v});
+}
+
+static void handle_set_freq(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if (data_size == 5) {
+        cfg_sm.cp_fg_freq.set(from_bcd(req.data.data(), 10));
+        resp.set_code(CODE_OK);
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_set_mode(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if ((data_size >= 1) && (data_size <= 2)) {
+        cfg_sm.cp_cur_mode.set(ci_mode_2_x_mode(req.data[0]));
+        resp.set_code(CODE_OK);
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_set_vfo(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    x6100_vfo_t cur_vfo = (x6100_vfo_t)cfg_sm.p_band_current_vfo.get();
+
+    if (data_size == 1) {
+        switch (req.data[0]) {
+            case S_VFOA:
+                if (cur_vfo != X6100_VFO_A) {
+                    cfg_sm.p_band_current_vfo.set(X6100_VFO_A);
+                }
+                resp.set_code(CODE_OK);
+                break;
+
+            case S_VFOB:
+                if (cur_vfo != X6100_VFO_B) {
+                    cfg_sm.p_band_current_vfo.set(X6100_VFO_B);
+                }
+                resp.set_code(CODE_OK);
+                break;
+
+            case S_XCHNG:
+                cfg_sm.p_band_current_vfo.set(
+                    cur_vfo == X6100_VFO_A ? X6100_VFO_B : X6100_VFO_A);
+                resp.set_code(CODE_OK);
+                break;
+
+            case S_BTOA:
+                cfg_sm.cfg_band_vfo_copy();
+                resp.set_code(CODE_OK);
+                break;
+
+            default:
+                set_unsupported(req, resp);
+                break;
+        }
+    } else if (data_size == 0) {
+        resp.write({static_cast<uint8_t>(cur_vfo == X6100_VFO_A ? S_VFOA : S_VFOB)});
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_ctl_splt(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if (data_size == 0) {
+        resp.write({static_cast<uint8_t>(cfg_sm.p_band_split.get())});
+    } else if (data_size == 1) {
+        cfg_sm.p_band_split.set(req.data[0]);
+        resp.set_code(CODE_OK);
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_set_ts(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if (data_size == 0) {
+        resp.write({freq_step_to_ci(cfg_sm.p_mode_freq_step.get())});
+    } else if (data_size == 1) {
+        cfg_sm.p_mode_freq_step.set(freq_step_from_ci(req.data[0]));
+        resp.set_code(CODE_OK);
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_ctl_att(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if (data_size == 0) {
+        resp.write({static_cast<uint8_t>(cfg_sm.cp_cur_att.get() * 0x20)});
+    } else if (data_size == 1) {
+        cfg_sm.cp_cur_att.set(req.data[0]);
+        resp.set_code(CODE_OK);
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_ctl_lvl(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    uint8_t bcd[3] = {0, 0, 0};
+    if (data_size >= 1) {
+        switch (req.data[0]) {
+            case 0x01:
+                if (data_size == 1) {
+                    to_bcd_be(&bcd[1], cfg_sm.p_volume.get() * 255 / 55, 3);
+                    resp.write({req.data[0], bcd[1], bcd[2]});
+                } else if (data_size == 3) {
+                    cfg_sm.p_volume.set(from_bcd_be(&req.data[1], 3) * 55 / 255);
+                }
+                break;
+            case 0x02:
+                if (data_size == 1) {
+                    to_bcd_be(&bcd[1], cfg_sm.p_rfgain.get() * 255 / 100, 3);
+                    resp.write({req.data[0], bcd[1], bcd[2]});
+                } else if (data_size == 3) {
+                    cfg_sm.p_rfgain.set(from_bcd_be(&req.data[1], 3) * 100 / 255);
+                }
+                break;
+            case 0x03:
+                if (data_size == 1) {
+                    to_bcd_be(&bcd[1], cfg_sm.p_squelch.get() * 255 / 100, 3);
+                    resp.write({req.data[0], bcd[1], bcd[2]});
+                } else if (data_size == 3) {
+                    cfg_sm.p_squelch.set(from_bcd_be(&req.data[1], 3) * 100 / 255);
+                }
+                break;
+            case 0x0a:
+                if (data_size == 1) {
+                    to_bcd_be(&bcd[1], std::round(cfg_sm.p_pwr.get() * 255 / 10), 3);
+                    resp.write({req.data[0], bcd[1], bcd[2]});
+                } else if (data_size == 3) {
+                    float pwr = from_bcd_be(&req.data[1], 3) * 10.0f / 255.0f;
+                    pwr = LV_MIN(pwr, 10.0f);
+                    cfg_sm.p_pwr.set(pwr);
+                }
+                break;
+            case 0x15:
+                to_bcd_be(&bcd[1], cfg_sm.p_moni.get() * 255 / 100, 3);
+                resp.write({req.data[0], bcd[1], bcd[2]});
+                break;
+            default:
+                set_unsupported(req, resp);
+                break;
+        }
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_rd_sqsm(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if (data_size == 1) {
+        static float alc, pwr, swr;
+        static uint8_t msg_id;
+        tx_info_refresh(&msg_id, &alc, &pwr, &swr);
+        uint8_t val;
+        uint8_t bcd[3] = {0, 0, 0};
+        switch (req.data[0]) {
+            case 0x02: {
+                int16_t db = meter_get_raw_db();
+                val = db * 0.75f + 96;
+                to_bcd_be(&bcd[1], val, 3);
+                resp.write({req.data[0], bcd[1], bcd[2]});
+                break;
+            }
+            case 0x11:
+                val = -pwr * pwr + 35 * pwr;
+                to_bcd_be(&bcd[1], val, 3);
+                resp.write({req.data[0], bcd[1], bcd[2]});
+                break;
+            case 0x12:
+                val = -21 * swr * swr + 134 * swr - 122;
+                to_bcd_be(&bcd[1], val, 3);
+                resp.write({req.data[0], bcd[1], bcd[2]});
+                break;
+            case 0x13:
+                val = alc * 120 / 10;
+                to_bcd_be(&bcd[1], val, 3);
+                resp.write({req.data[0], bcd[1], bcd[2]});
+                break;
+            default:
+                resp.set_code(CODE_NG);
+                break;
+        }
+    } else {
+        resp.set_code(CODE_NG);
+    }
+}
+
+static void handle_ctl_func(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if ((data_size == 1) || (data_size == 2)) {
+        switch (req.data[0]) {
+            case 0x02:
+                if (data_size == 1) {
+                    resp.write({req.data[0], static_cast<uint8_t>(cfg_sm.cp_cur_pre.get())});
+                } else {
+                    cfg_sm.cp_cur_pre.set(req.data[1] > 0);
+                    resp.set_code(CODE_OK);
+                }
+                break;
+            case 0x22:
+                if (data_size == 1) {
+                    resp.write({req.data[0], static_cast<uint8_t>(cfg_sm.p_nb.get())});
+                } else {
+                    cfg_sm.p_nb.set(req.data[1]);
+                    resp.set_code(CODE_OK);
+                }
+                break;
+            case 0x40:
+                if (data_size == 1) {
+                    resp.write({req.data[0], static_cast<uint8_t>(cfg_sm.p_nr.get())});
+                } else {
+                    cfg_sm.p_nr.set(req.data[1]);
+                    resp.set_code(CODE_OK);
+                }
+                break;
+            case 0x44:
+                if (data_size == 1) {
+                    resp.write({req.data[0], 0x00});
+                } else {
+                    resp.set_code(CODE_OK);
+                }
+                break;
+            case 0x45:
+                resp.set_code(CODE_NG);
+                break;
+            case 0x46:
+                if (data_size == 1) {
+                    resp.write({req.data[0], 0x00});
+                } else {
+                    resp.set_code(CODE_OK);
+                }
+                break;
+            case 0x5D:
+                resp.set_code(CODE_NG);
+                break;
+            default:
+                set_unsupported(req, resp);
+        }
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_rd_trxid(const Impl &req, Impl &resp) {
+    if ((req.data.size() == 1) && (req.data[0] == 0)) {
+        resp.write({0x00, 0xA4});
+    }
+}
+
+static void handle_ctl_mem(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    x6100_mode_t cur_mode = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
+
+    if (data_size == 1) {
+        switch (req.data[0]) {
+            case MEM_IF_FW:
+                resp.write({req.data[0], get_if_bandwidth()});
+                break;
+
+            case MEM_DM_FG:
+                resp.write({req.data[0], x_mode_2_ci_mode(cur_mode),
+                            static_cast<uint8_t>((cur_mode == x6100_mode_lsb_dig) || (cur_mode == x6100_mode_usb_dig)),
+                            0x00});
+                break;
+
+            default:
+                set_unsupported(req, resp);
+                break;
+        }
+    } else {
+        switch (req.data[0]) {
+            case MEM_LOCK:
+                resp.set_code(CODE_NG);
+                break;
+            case MEM_DM_FG: {
+                x6100_mode_t new_mode = ci_mode_2_x_mode(req.data[1], req.data[2]);
+                cfg_sm.cp_cur_mode.set(new_mode);
+                resp.set_code(CODE_OK);
+                break;
+            }
+            default:
+                set_unsupported(req, resp);
+                break;
+        }
+    }
+}
+
+static void handle_ctl_ptt(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if ((data_size >= 1) && (req.data[0] == 0x00)) {
+        if (data_size == 1) {
+            resp.write({0x00, static_cast<uint8_t>((radio_get_state() == RADIO_RX) ? 0 : 1)});
+        } else {
+            switch (req.data[1]) {
+                case 0:
+                    radio_set_ptt(false);
+                    break;
+                case 1:
+                    radio_set_ptt(true);
+                    break;
+            }
+            resp.write({0x00, CODE_OK});
+        }
+    }
+}
+
+static void handle_send_sel_freq(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    ComputedParameter<int32_t> *freq;
+
+    if (req.data[0] == 0) {
+        freq = &cfg_sm.cp_fg_freq;
+    } else {
+        freq = &cfg_sm.cp_bg_freq;
+    }
+
+    if (data_size == 1) {
+        uint8_t bcd[6] = {req.data[0], 0, 0, 0, 0, 0};
+        to_bcd(&bcd[1], freq->get(), 10);
+        resp.append(bcd, sizeof(bcd));
+    } else if (data_size == 6) {
+        freq->set(from_bcd(&req.data[1], 10));
+        resp.set_code(CODE_OK);
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+static void handle_send_sel_mode(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    Parameter<int32_t> *mode_par;
+
+    if (req.data[0] == 0) {
+        mode_par = cfg_sm.p_band_current_vfo.get() == X6100_VFO_A
+            ? &cfg_sm.p_band_vfoa_mode
+            : &cfg_sm.p_band_vfob_mode;
+    } else {
+        mode_par = cfg_sm.p_band_current_vfo.get() == X6100_VFO_B
+            ? &cfg_sm.p_band_vfoa_mode
+            : &cfg_sm.p_band_vfob_mode;
+    }
+
+    switch (data_size) {
+        case 1: {
+            bool data_mode = false;
+            uint8_t v = x_mode_2_ci_mode((x6100_mode_t)mode_par->get(), &data_mode);
+            resp.write({req.data[0], v, static_cast<uint8_t>(data_mode), 0x01});
+            break;
+        }
+        case 4:
+        case 3: {
+            bool data_mode = req.data[2];
+            x6100_mode_t new_mode = ci_mode_2_x_mode(req.data[1], data_mode);
+            mode_par->set(new_mode);
+            resp.set_code(CODE_OK);
+            break;
+        }
+        case 2: {
+            x6100_mode_t new_mode = ci_mode_2_x_mode(req.data[1], false);
+            mode_par->set(new_mode);
+            resp.set_code(CODE_OK);
+            break;
+        }
+        default:
+            set_unsupported(req, resp);
+            break;
+    }
+}
+
+static void handle_ctl_scp(const Impl &req, Impl &resp) {
+    size_t data_size = req.data.size();
+    if (data_size >= 1) {
+        switch (req.data[0]) {
+            case 0x10:
+                if (data_size == 1) {
+                    resp.write({req.data[0], 0x01});
+                } else {
+                    resp.write({req.data[0]});
+                }
+                break;
+            case 0x11:
+                if (data_size == 1) {
+                    resp.write({req.data[0], 0x01});
+                } else {
+                    resp.write({req.data[0]});
+                }
+                break;
+            case 0x13:
+                resp.set_code(CODE_NG);
+                break;
+            case 0x14:
+                if (data_size == 1) {
+                    resp.write({req.data[0], 0x00, 0x00});
+                } else {
+                    resp.write({req.data[0]});
+                }
+                break;
+            case 0x15:
+                if (req.data[2] == FRAME_END) {
+                    uint8_t bcd[7] = {req.data[0], 0, 0, 0, 0, 0, 0};
+                    to_bcd(&bcd[2], 50000, 10);
+                    resp.append(bcd, sizeof(bcd));
+                } else {
+                    resp.write({req.data[0]});
+                }
+                break;
+            case 0x17:
+                resp.set_code(CODE_NG);
+                break;
+            case 0x19:
+                resp.write({req.data[0], 0x00, 0x00, 0x00, 0x00});
+                break;
+            case 0x1A:
+                resp.set_code(CODE_NG);
+                break;
+            default:
+                set_unsupported(req, resp);
+                break;
+        }
+    } else {
+        set_unsupported(req, resp);
+    }
+}
+
+// static uint8_t counter = 0;
 
 // static void send_waterfall_data() {
 //     frame_t frame;
@@ -1067,7 +1068,7 @@ static uint8_t counter = 0;
 //     // Center/Fixed (for lan radio)  [00=cent, 01=fixed]
 //     frame.args[i++] = 0;
 //     // Center freq
-    // to_bcd(frame.args + i, cfg_sm.cp_fg_freq.get(), 10);
+//     // to_bcd(frame.args + i, cfg_sm.cp_fg_freq.get(), 10);
 //     i += 5;
 //     // Span
 //     to_bcd(frame.args + i, 50000, 10);
@@ -1152,7 +1153,7 @@ static void cat_thread() {
         if (fds[0].revents & POLLIN) {
             auto res = conn_wire.feed();
             if (res.frame) {
-                process_req(conn_wire, res.frame.value());
+                conn_wire.send(res.frame->process());
                 conn = &conn_wire;
             }
         }
@@ -1161,7 +1162,7 @@ static void cat_thread() {
         if (fd_bt >= 0 && (fds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
             auto res = conn_bt.feed();
             if (res.frame) {
-                process_req(conn_bt, res.frame.value());
+                conn_bt.send(res.frame->process());
                 conn = &conn_bt;
             }
             else if (res.status <= 0) {
@@ -1222,6 +1223,8 @@ void cat_init() {
 
     cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change, &cfg_sm.cp_fg_freq);
 
+    init_cmd_handlers();
+
     /* * */
     if (!thread) {
         keep_running = true;
@@ -1241,11 +1244,20 @@ void cat_destruct() {
 static void on_fg_freq_change(Subject *s, void *user_data) {
     auto *p = static_cast<ComputedParameter<int32_t>*>(user_data);
     int32_t new_freq = p->get();
-    Frame frame{0, LOCAL_ADDRESS, C_SND_FREQ};
-    // bcd len - 5 bytes
-    frame.set_payload_len(6);
-    to_bcd(frame.data.data(), new_freq, 10);
-    send_queue.push(frame.dump());
+
+    uint8_t bcd[5];
+    to_bcd(bcd, new_freq, 10);
+
+    std::vector<char> buf(5 + 1 + FRAME_ADD_LEN);
+    buf[0] = FRAME_PRE;
+    buf[1] = FRAME_PRE;
+    buf[2] = 0;
+    buf[3] = LOCAL_ADDRESS;
+    buf[4] = C_SND_FREQ;
+    std::copy(bcd, bcd + 5, buf.begin() + 5);
+    *--buf.end() = FRAME_END;
+
+    send_queue.push(std::move(buf));
 
     // Notify thread
     if (fd_queue_event >= 0) {
