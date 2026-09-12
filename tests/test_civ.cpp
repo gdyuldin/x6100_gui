@@ -1,0 +1,678 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include <sqlite3.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
+#include "cat/civ_processor.h"
+#include "cat/civ_protocol.h"
+#include "cfg/db.h"
+#include "cfg/settings_manager.h"
+#include "cfg/storage_policy.h"
+
+// Stubs for external C functions that cat handler code calls.
+extern "C" {
+#include "meter.h"
+#include "radio.h"
+#include "tx_info.h"
+}
+
+extern "C" bool tx_info_refresh(uint8_t *, float *alc, float *pwr, float *vswr) {
+    *alc = 0.0f;
+    *pwr = 2.0f;
+    *vswr = 1.0f;
+    return false;
+}
+
+extern "C" int16_t meter_get_raw_db() { return 0; }
+extern "C" radio_state_t radio_get_state() { return RADIO_RX; }
+extern "C" void radio_set_ptt(bool) {}
+
+// ---- protocol constants (CI-V / X6100) --------------------------------------
+
+#define CODE_OK 0xFB
+#define CODE_NG 0xFA
+
+#define C_RD_FREQ 0x03
+#define C_RD_MODE 0x04
+#define C_SET_FREQ 0x05
+#define C_SET_MODE 0x06
+#define C_SET_VFO 0x07
+#define C_CTL_SPLT 0x0f
+#define C_SET_TS 0x10
+#define C_CTL_ATT 0x11
+#define C_CTL_LVL 0x14
+#define C_RD_SQSM 0x15
+#define C_CTL_FUNC 0x16
+#define C_RD_TRXID 0x19
+#define C_CTL_MEM 0x1a
+#define C_CTL_PTT 0x1c
+#define C_SEND_SEL_FREQ 0x25
+#define C_SEND_SEL_MODE 0x26
+#define C_CTL_SCP 0x27
+
+#define S_VFOA 0x00
+#define S_VFOB 0x01
+#define S_XCHNG 0xb0
+
+#define M_USB 0x01
+
+#define MEM_DM_FG 0x06
+
+// ---- helpers ---------------------------------------------------------------
+
+static std::vector<uint8_t> to_bytes(std::string_view sv) {
+    return std::vector<uint8_t>(sv.begin(), sv.end());
+}
+
+static constexpr int32_t kHz = 1000;
+
+// Build a raw CI-V frame vector from a command byte and payload
+static std::vector<uint8_t> ci_v_frame(uint8_t cmd, const std::vector<uint8_t> &payload = {}) {
+    std::vector<uint8_t> raw(payload.size() + 6);
+    raw[0] = FRAME_PRE;
+    raw[1] = FRAME_PRE;
+    raw[2] = 0xE0;
+    raw[3] = LOCAL_ADDRESS;
+    raw[4] = cmd;
+    std::copy(payload.begin(), payload.end(), raw.begin() + 5);
+    raw.back() = FRAME_END;
+    return raw;
+}
+
+// ---- TestDbGuard ------------------------------------------------------------
+namespace {
+
+struct TestDbGuard {
+    sqlite3 *db = nullptr;
+
+    TestDbGuard() {
+        REQUIRE(sqlite3_open(":memory:", &db) == SQLITE_OK);
+        char *err = nullptr;
+        int   rc  = sqlite3_exec(db,
+                                 "CREATE TABLE IF NOT EXISTS params ("
+                                     "  name TEXT PRIMARY KEY,"
+                                     "  val  INTEGER"
+                                     ");"
+                                     "CREATE TABLE IF NOT EXISTS band_params("
+                                     "  bands_id INTEGER,"
+                                     "  name     TEXT,"
+                                     "  val      INTEGER,"
+                                     "  UNIQUE (bands_id, name) ON CONFLICT REPLACE"
+                                     ");"
+                                     "CREATE TABLE IF NOT EXISTS mode_params("
+                                     "  mode INTEGER,"
+                                     "  name TEXT,"
+                                     "  val  INTEGER,"
+                                     "  UNIQUE (mode, name) ON CONFLICT REPLACE"
+                                     ");"
+                                     "CREATE TABLE IF NOT EXISTS bands("
+                                     "  id         INTEGER PRIMARY KEY,"
+                                     "  name       TEXT,"
+                                     "  start_freq INTEGER,"
+                                     "  stop_freq  INTEGER,"
+                                     "  type       INTEGER"
+                                     ");"
+                                     "CREATE TABLE IF NOT EXISTS transverter("
+                                     "  id   INTEGER,"
+                                     "  name TEXT,"
+                                     "  val  INTEGER,"
+                                     "  UNIQUE(id, name) ON CONFLICT REPLACE"
+                                     ");",
+                                 nullptr, nullptr, &err);
+        REQUIRE(rc == SQLITE_OK);
+        if (err)
+            sqlite3_free(err);
+        ParamsTable::Init(db);
+        BandParamsTable::Init(db);
+        ModeParamsTable::Init(db);
+        BandsTable::Init(db);
+        TransverterTable::Init(db);
+    }
+
+    ~TestDbGuard() {
+        TransverterTable::Shutdown();
+        BandsTable::Shutdown();
+        ParamsTable::Shutdown();
+        BandParamsTable::Shutdown();
+        ModeParamsTable::Shutdown();
+        if (db) {
+            sqlite3_close(db);
+        }
+    }
+};
+
+} // namespace
+
+// ---- helpers ---------------------------------------------------------------
+
+// Pre-populate band 5 with basic VFO settings.
+static void set_band_5(TestDbGuard &db) {
+    StoragePolicy &b = storage_policy_for(StorageType::BAND);
+    REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(b.save_int(5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+    REQUIRE(b.save_int(5, "vfob_freq", 7'150 * kHz) == SUCCESS);
+    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_nfm) == SUCCESS);
+}
+
+static void init_band_5(TestDbGuard &db, SettingsManager &mgr) {
+    set_band_5(db);
+    mgr.p_band_id.set_quiet(5);
+    mgr.init_load();
+}
+
+// ---- unknown command -------------------------------------------------------
+
+TEST_CASE("Frame::process returns CODE_NG for unknown command", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(0xFF);
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_NG, 0xFD
+    }));
+}
+
+// ---- C_RD_FREQ (0x03) ------------------------------------------------------
+
+TEST_CASE("C_RD_FREQ reads current frequency as 5-byte BCD", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    REQUIRE(mgr.cp_fg_freq.get() == 7'100'000);
+
+    auto raw = ci_v_frame(C_RD_FREQ);
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_RD_FREQ,
+        0x00, 0x00, 0x10, 0x07, 0x00,
+        0xFD
+    }));
+}
+
+// ---- C_SET_FREQ (0x05) ------------------------------------------------------
+
+TEST_CASE("C_SET_FREQ sets frequency from 5-byte BCD", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    // 14.2 MHz in little-endian BCD
+    std::vector<uint8_t> payload = {0x00, 0x00, 0x20, 0x14, 0x00};
+
+    auto raw = ci_v_frame(C_SET_FREQ, payload);
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+    }));
+    REQUIRE(mgr.cp_fg_freq.get() == 14'200'000);
+}
+
+// ---- C_RD_MODE (0x04) ------------------------------------------------------
+
+TEST_CASE("C_RD_MODE reads current mode as 2 bytes", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(C_RD_MODE);
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_RD_MODE, M_USB, M_USB, 0xFD
+    }));
+}
+
+// ---- C_SET_MODE (0x06) ------------------------------------------------------
+
+TEST_CASE("C_SET_MODE sets mode", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(C_SET_MODE, {0x03});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+    }));
+    REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_cw);
+}
+
+// ---- C_SET_VFO (0x07) ------------------------------------------------------
+
+TEST_CASE("C_SET_VFO switches VFO", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    // Read current VFO (empty payload)
+    {
+        auto raw = ci_v_frame(C_SET_VFO, {});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_SET_VFO, S_VFOA, 0xFD
+        }));
+    }
+
+    // Switch to B
+    {
+        auto raw = ci_v_frame(C_SET_VFO, {S_VFOB});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+        }));
+        REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_B);
+    }
+
+    // Switch back to A
+    {
+        auto raw = ci_v_frame(C_SET_VFO, {S_VFOA});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+        }));
+        REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_A);
+    }
+}
+
+TEST_CASE("C_SET_VFO S_XCHNG swaps VFO", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_A);
+
+    auto raw = ci_v_frame(C_SET_VFO, {S_XCHNG});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+    }));
+    REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_B);
+}
+
+// ---- C_CTL_SPLT (0x0F) ------------------------------------------------------
+
+TEST_CASE("C_CTL_SPLT read split status", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    mgr.p_band_split.set(0);
+    {
+        auto raw = ci_v_frame(C_CTL_SPLT, {});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_SPLT, 0x00, 0xFD
+        }));
+    }
+
+    mgr.p_band_split.set(1);
+    {
+        auto raw = ci_v_frame(C_CTL_SPLT, {});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_SPLT, 0x01, 0xFD
+        }));
+    }
+}
+
+// ---- C_SET_TS (0x10) -------------------------------------------------------
+
+TEST_CASE("C_SET_TS read/write tuning step", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    // Read default (500 Hz -> 0x02)
+    {
+        auto raw = ci_v_frame(C_SET_TS, {});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_SET_TS, 0x02, 0xFD
+        }));
+    }
+
+    // Write 100 Hz (0x01)
+    {
+        auto raw = ci_v_frame(C_SET_TS, {0x01});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+        }));
+        REQUIRE(mgr.p_mode_freq_step.get() == 100);
+    }
+}
+
+// ---- C_CTL_ATT (0x11) ------------------------------------------------------
+
+TEST_CASE("C_CTL_ATT read/write attenuator", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    // Read default
+    {
+        auto raw = ci_v_frame(C_CTL_ATT, {});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_ATT, 0x00, 0xFD
+        }));
+    }
+
+    // Read when enabled: att=1 -> 0x20
+    {
+        mgr.cp_cur_att.set(1);
+        auto raw = ci_v_frame(C_CTL_ATT, {});
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        auto sv = process_civ_message(req, packer);
+
+        REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+            0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_ATT, 0x20, 0xFD
+        }));
+    }
+}
+
+// ---- C_CTL_LVL (0x14) ------------------------------------------------------
+
+TEST_CASE("C_CTL_LVL volume read", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    mgr.p_volume.set(30);
+
+    auto raw = ci_v_frame(C_CTL_LVL, {0x01});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    // 30 * 255 / 55 = 139 -> BE BCD 0x01 0x39
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_LVL, 0x01, 0x01, 0x39, 0xFD
+    }));
+}
+
+TEST_CASE("C_CTL_LVL RF gain read", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    mgr.p_rfgain.set(50);
+
+    auto raw = ci_v_frame(C_CTL_LVL, {0x02});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    // 50 * 255 / 100 = 127 -> BE BCD 0x01 0x27
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_LVL, 0x02, 0x01, 0x27, 0xFD
+    }));
+}
+
+TEST_CASE("C_CTL_LVL squelch read", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    mgr.p_squelch.set(10);
+
+    auto raw = ci_v_frame(C_CTL_LVL, {0x03});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    // 10 * 255 / 100 = 25 -> BE BCD 0x00 0x25
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_LVL, 0x03, 0x00, 0x25, 0xFD
+    }));
+}
+
+// ---- C_RD_SQSM (0x15) ------------------------------------------------------
+
+TEST_CASE("C_RD_SQSM s-meter returns 3 bytes with stub meter == 0", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(C_RD_SQSM, {0x02});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    // meter stub returns 0 -> val = 0*0.75 + 96 = 96 -> BE BCD 0x00 0x96
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_RD_SQSM, 0x02, 0x00, 0x96, 0xFD
+    }));
+}
+
+// ---- C_CTL_FUNC (0x16) -----------------------------------------------------
+
+TEST_CASE("C_CTL_FUNC preamp read", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    mgr.cp_cur_pre.set(1);
+
+    auto raw = ci_v_frame(C_CTL_FUNC, {0x02});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_FUNC, 0x02, 0x01, 0xFD
+    }));
+}
+
+// ---- C_RD_TRXID (0x19) -----------------------------------------------------
+
+TEST_CASE("C_RD_TRXID returns transceiver ID", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(C_RD_TRXID, {0x00});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_RD_TRXID, 0x00, LOCAL_ADDRESS, 0xFD
+    }));
+}
+
+// ---- C_CTL_MEM (0x1A) ------------------------------------------------------
+
+TEST_CASE("C_CTL_MEM MEM_DM_FG read returns data mode info", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(C_CTL_MEM, {MEM_DM_FG});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_MEM,
+        MEM_DM_FG, M_USB, 0x00, 0x00, 0xFD
+    }));
+}
+
+// ---- C_CTL_PTT (0x1C) ------------------------------------------------------
+
+TEST_CASE("C_CTL_PTT read returns RX state from stub", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(C_CTL_PTT, {0x00});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_PTT, 0x00, 0x00, 0xFD
+    }));
+}
+
+// ---- C_SEND_SEL_FREQ (0x25) ------------------------------------------------
+
+TEST_CASE("C_SEND_SEL_FREQ main/sub freq read", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    // Main VFO (sub 0) -> cp_fg_freq = vfoa_freq = 7.1 MHz
+    REQUIRE(mgr.cp_fg_freq.get() == 7'100'000);
+
+    auto raw = ci_v_frame(C_SEND_SEL_FREQ, {0x00});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_SEND_SEL_FREQ, 0x00,
+        0x00, 0x00, 0x10, 0x07, 0x00,
+        0xFD
+    }));
+}
+
+// ---- C_SEND_SEL_MODE (0x26) ------------------------------------------------
+
+TEST_CASE("C_SEND_SEL_MODE main/sub mode read", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(C_SEND_SEL_MODE, {0x00});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_SEND_SEL_MODE,
+        0x00, M_USB, 0x00, 0x01, 0xFD
+    }));
+}
+
+// ---- C_CTL_SCP (0x27) ------------------------------------------------------
+
+TEST_CASE("C_CTL_SCP sub 0x10 returns scope available", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    civ_set_sm(&mgr);
+
+    auto raw = ci_v_frame(C_CTL_SCP, {0x10});
+    CivPacketView req(raw.data(), raw.size());
+    uint8_t txBuf[256];
+    CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+    auto sv = process_civ_message(req, packer);
+
+    REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_SCP, 0x10, 0x01, 0xFD
+    }));
+}
+
+// ---- cleanup ---------------------------------------------------------------
+
+TEST_CASE("civ_set_sm(nullptr) restores production global", "[cat]") {
+    civ_set_sm(nullptr);
+    SUCCEED();
+}

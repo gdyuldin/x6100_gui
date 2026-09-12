@@ -7,7 +7,8 @@
  */
 
 #include "cat.h"
-#include "cat_internal.h"
+#include "civ_processor.h"
+#include "civ_protocol.h"
 
 #include <mutex>
 #include <thread>
@@ -57,15 +58,14 @@ static void on_fg_freq_change(Subject *s, void *user_data);
 
 struct FeedResult {
     int status;
-    std::optional<Frame> frame;
+    std::optional<CivPacketView> frame;
 };
 
 class Connection {
-    int        *fd;
-    char       buf[1024];
-    const char header[2] = {FRAME_PRE, FRAME_PRE};
-    size_t     start=0;
-    size_t     end=0;
+    int       *fd;
+    uint8_t    buf[1024];
+    const unsigned char header[2] = {FRAME_PRE, FRAME_PRE};
+    size_t     len       = 0;
 
   protected:
     bool write_buf(const char *buf, size_t len) {
@@ -85,29 +85,33 @@ class Connection {
     Connection(int *fd) : fd(fd) {};
 
     FeedResult feed() {
-        int res = read(*fd, buf + end, sizeof(buf) - end);
+        int res = read(*fd, buf + len, sizeof(buf) - len);
         if (res < 0) {
             return {res, std::nullopt};
         }
-        end += res;
-        char *frame_start = (char *)memmem(buf, end, header, sizeof(header));
+        len += res;
+        uint8_t *frame_start = (uint8_t *)memmem(buf, len, header, sizeof(header));
         if (frame_start == NULL) {
-            buf[0] = buf[end - 1];
-            end    = 1;
+            buf[0] = buf[len - 1];
+            len    = 1;
             return {0, std::nullopt};
         }
-        if (frame_start != buf) {
-            end = end + buf - frame_start;
-            memmove(buf, frame_start, end);
-            start = 0;
+        while (*(frame_start + 2) == FRAME_PRE) {
+            frame_start++;
+            len--;
+            if (!len) {
+                return {0, std::nullopt};
+            }
         }
-        if (end >= FRAME_ADD_LEN) {
-            char *end_pos = (char *)memchr(buf + FRAME_ADD_LEN, FRAME_END, end - FRAME_ADD_LEN);
-            if (end_pos) {
-                size_t frame_len = end_pos - buf + 1;
-                start            = frame_len;
-                end              = start;
-                return {res, Frame{buf, frame_len}};
+        if (frame_start != buf) {
+            memmove(buf, frame_start, len);
+        }
+        if (len > FRAME_ADD_LEN) {
+            uint8_t *frame_end = (uint8_t *)memchr(buf + FRAME_ADD_LEN, FRAME_END, len - FRAME_ADD_LEN);
+            if (frame_end) {
+                size_t frame_len = frame_end - buf + 1;
+                len              = 0;
+                return {res, CivPacketView{buf, frame_len}};
             }
         }
         return {0, std::nullopt};
@@ -116,8 +120,7 @@ class Connection {
     bool send(const char * data, size_t len) {
         return write_buf(data, len);
     }
-    bool send(const Frame &frame) {
-        auto data = frame.dump();
+    bool send(std::string_view &data) {
         return write_buf(data.data(), data.size());
     }
 };
@@ -129,6 +132,10 @@ static void cat_thread() {
     Connection conn_bt{&fd_bt};
 
     Connection *conn = &conn_wire;
+
+    // TX (egress) buffres
+    uint8_t tx_buf[64];
+    CivTxPacker resp{tx_buf, LOCAL_ADDRESS, 0};
 
     // Setup BT socket
     int fd_bt_sock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
@@ -190,7 +197,8 @@ static void cat_thread() {
         if (fds[0].revents & POLLIN) {
             auto res = conn_wire.feed();
             if (res.frame) {
-                conn_wire.send(res.frame->process());
+                auto raw_resp = process_civ_message(res.frame.value(), resp);
+                conn_wire.send(raw_resp);
                 conn = &conn_wire;
             }
         }
@@ -199,7 +207,8 @@ static void cat_thread() {
         if (fd_bt >= 0 && (fds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
             auto res = conn_bt.feed();
             if (res.frame) {
-                conn_bt.send(res.frame->process());
+                auto raw_resp = process_civ_message(res.frame.value(), resp);
+                conn_bt.send(raw_resp);
                 conn = &conn_bt;
             }
             else if (res.status <= 0) {
@@ -256,8 +265,6 @@ void cat_init() {
         return;
     }
 
-    cat_frame_set_sm(nullptr);
-
     cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change, &cfg_sm.cp_fg_freq);
 
     /* * */
@@ -276,22 +283,16 @@ void cat_destruct() {
 }
 
 static void on_fg_freq_change(Subject *s, void *user_data) {
-    auto *p = static_cast<ComputedParameter<int32_t>*>(user_data);
-    int32_t new_freq = p->get();
+    static uint8_t tx_buf[16];
+    static CivTxPacker resp_packer{tx_buf, 0, LOCAL_ADDRESS};
 
-    uint8_t bcd[5];
-    to_bcd(bcd, new_freq, 10);
+    int32_t new_freq = cfg_sm.cp_fg_freq.get();
 
-    std::vector<char> buf(5 + 1 + FRAME_ADD_LEN);
-    buf[0] = FRAME_PRE;
-    buf[1] = FRAME_PRE;
-    buf[2] = 0;
-    buf[3] = LOCAL_ADDRESS;
-    buf[4] = C_SND_FREQ;
-    std::copy(bcd, bcd + 5, buf.begin() + 5);
-    buf.back() = FRAME_END;
+    auto resp = make_freq_response_00(new_freq, resp_packer);
 
-    send_queue.push(std::move(buf));
+    std::vector<char> data(resp.begin(), resp.end());
+
+    send_queue.push(std::move(data));
 
     // Notify thread
     if (fd_queue_event >= 0) {

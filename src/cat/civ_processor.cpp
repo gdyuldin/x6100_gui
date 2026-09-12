@@ -1,0 +1,1010 @@
+/*
+ * X6100 CI-V command handlers — new dispatch using CivPacketView/CivTxPacker.
+ *
+ * Zero-copy replacement for Frame::process(). All 18 handlers from
+ * cat_frame.cpp are adapted here. When migration is complete, cat_frame.cpp
+ * and cat_internal.h can be removed.
+ */
+
+#include "civ_processor.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+extern "C" {
+    #include "meter.h"
+    #include "radio.h"
+    #include "tx_info.h"
+}
+
+#include "lvgl/lvgl.h"
+
+namespace {
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+constexpr uint8_t C_SND_FREQ = 0x00;      /* Send frequency data */
+constexpr uint8_t C_SND_MODE = 0x01;      /* Send mode data, Sc  for transceive mode does not ack */
+constexpr uint8_t C_RD_BAND = 0x02;       /* Read band edge frequencies */
+constexpr uint8_t C_RD_FREQ = 0x03;       /* Read display frequency */
+constexpr uint8_t C_RD_MODE = 0x04;       /* Read display mode */
+constexpr uint8_t C_SET_FREQ = 0x05;      /* Set frequency data(1) */
+constexpr uint8_t C_SET_MODE = 0x06;      /* Set mode data, Sc */
+constexpr uint8_t C_SET_VFO = 0x07;       /* Set VFO */
+constexpr uint8_t C_SET_MEM = 0x08;       /* Set channel, Sc(2) */
+constexpr uint8_t C_WR_MEM = 0x09;        /* Write memory */
+constexpr uint8_t C_MEM2VFO = 0x0a;       /* Memory to VFO */
+constexpr uint8_t C_CLR_MEM = 0x0b;       /* Memory clear */
+constexpr uint8_t C_RD_OFFS = 0x0c;       /* Read duplex offset frequency; default changes with HF/6M/2M */
+constexpr uint8_t C_SET_OFFS = 0x0d;      /* Set duplex offset frequency */
+constexpr uint8_t C_CTL_SCAN = 0x0e;      /* Control scan, Sc */
+constexpr uint8_t C_CTL_SPLT = 0x0f;      /* Control split, and duplex mode Sc */
+constexpr uint8_t C_SET_TS = 0x10;        /* Set tuning step, Sc */
+constexpr uint8_t C_CTL_ATT = 0x11;       /* Set/get attenuator, Sc */
+constexpr uint8_t C_CTL_ANT = 0x12;       /* Set/get antenna, Sc */
+constexpr uint8_t C_CTL_ANN = 0x13;       /* Control announce (speech synth.), Sc */
+constexpr uint8_t C_CTL_LVL = 0x14;       /* Set AF/RF/squelch, Sc */
+constexpr uint8_t C_RD_SQSM = 0x15;       /* Read squelch condition/S-meter level, Sc */
+constexpr uint8_t C_CTL_FUNC = 0x16;      /* Function settings (AGC,NB,etc.), Sc */
+constexpr uint8_t C_SND_CW = 0x17;        /* Send CW message */
+constexpr uint8_t C_SET_PWR = 0x18;       /* Set Power ON/OFF, Sc */
+constexpr uint8_t C_RD_TRXID = 0x19;      /* Read transceiver ID code */
+constexpr uint8_t C_CTL_MEM = 0x1a;       /* Misc memory/bank/rig control functions, Sc */
+constexpr uint8_t C_SET_TONE = 0x1b;      /* Set tone frequency */
+constexpr uint8_t C_CTL_PTT = 0x1c;       /* Control Transmit On/Off, Sc */
+constexpr uint8_t C_CTL_EDGE = 0x1e;      /* Band edges */
+constexpr uint8_t C_CTL_DVT = 0x1f;       /* Digital modes calsigns & messages */
+constexpr uint8_t C_CTL_DIG = 0x20;       /* Digital modes settings & status */
+constexpr uint8_t C_CTL_RIT = 0x21;       /* RIT/XIT control */
+constexpr uint8_t C_CTL_DSD = 0x22;       /* D-STAR Data */
+constexpr uint8_t C_SEND_SEL_FREQ = 0x25; /* Send/Recv sel/unsel VFO frequency */
+constexpr uint8_t C_SEND_SEL_MODE = 0x26;
+constexpr uint8_t C_CTL_SCP = 0x27;   /* Scope control & data */
+constexpr uint8_t C_SND_VOICE = 0x28; /* Transmit Voice Memory Contents */
+constexpr uint8_t C_CTL_MTEXT = 0x70; /* Microtelecom Extension */
+constexpr uint8_t C_CTL_MISC = 0x7f;  /* Miscellaneous control, Sc */
+
+constexpr uint8_t CODE_OK = 0xFB;
+constexpr uint8_t CODE_NG = 0xFA;
+
+constexpr uint8_t S_VFOA = 0x00;
+constexpr uint8_t S_VFOB = 0x01;
+constexpr uint8_t S_BTOA = 0xa0;
+constexpr uint8_t S_XCHNG = 0xb0;
+
+constexpr uint8_t M_LSB = 0x00;
+constexpr uint8_t M_USB = 0x01;
+constexpr uint8_t M_AM  = 0x02;
+constexpr uint8_t M_CW  = 0x03;
+constexpr uint8_t M_NFM = 0x05;
+constexpr uint8_t M_CWR = 0x07;
+
+constexpr uint8_t MEM_BS_REG = 0x01;
+constexpr uint8_t MEM_IF_FW  = 0x03;
+constexpr uint8_t MEM_LOCK   = 0x05;
+constexpr uint8_t MEM_DM_FG  = 0x06;
+
+// ============================================================================
+// SettingsManager backing the handlers
+// ============================================================================
+
+SettingsManager *civ_sm = &cfg_sm;
+
+// ============================================================================
+// BCD helpers
+// ============================================================================
+
+void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len) {
+    int16_t i;
+
+    for (i = 0; i < len / 2; i++) {
+        uint8_t a = data % 10;
+
+        data /= 10;
+        a |= (data % 10) << 4;
+        data /= 10;
+        bcd_data[i] = a;
+    }
+
+    if (len & 1) {
+        bcd_data[i] &= 0x0f;
+        bcd_data[i] |= data % 10;
+    }
+}
+
+void to_bcd_be(uint8_t bcd_data[], uint64_t data, uint8_t len) {
+    int16_t i;
+
+    for (i = (len / 2); i >= 0; i--) {
+        uint8_t a = data % 10;
+
+        data /= 10;
+        a |= (data % 10) << 4;
+        data /= 10;
+        bcd_data[i] = a;
+    }
+
+    if (len & 1) {
+        bcd_data[i] &= 0x0f;
+        bcd_data[i] |= data % 10;
+    }
+
+}
+
+uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
+    int16_t     i;
+    uint64_t    data = 0;
+
+    if (len & 1) {
+        data = bcd_data[len / 2] & 0x0F;
+    }
+
+    for (i = (len / 2) - 1; i >= 0; i--) {
+        data *= 10;
+        data += bcd_data[i] >> 4;
+        data *= 10;
+        data += bcd_data[i] & 0x0F;
+    }
+
+    return data;
+}
+
+uint64_t from_bcd_be(const uint8_t bcd_data[], uint8_t len) {
+    int16_t     i = 0;
+    uint64_t    data = 0;
+
+    if (len & 1) {
+        data = bcd_data[0] & 0x0F;
+        i++;
+    }
+
+    for (; i <= (len / 2); i++) {
+        data *= 10;
+        data += bcd_data[i] >> 4;
+        data *= 10;
+        data += bcd_data[i] & 0x0F;
+    }
+
+    return data;
+}
+
+// ============================================================================
+// Mode helpers
+// ============================================================================
+
+x6100_mode_t ci_mode_2_x_mode(uint8_t mode, bool data_mode=false) {
+    x6100_mode_t r_mode;
+
+    switch (mode) {
+        case M_LSB:
+            r_mode = data_mode ? x6100_mode_lsb_dig : x6100_mode_lsb;
+            break;
+        case M_USB:
+            r_mode = data_mode ? x6100_mode_usb_dig : x6100_mode_usb;
+            break;
+        case M_AM:
+            r_mode = x6100_mode_am;
+            break;
+        case M_CW:
+            r_mode = x6100_mode_cw;
+            break;
+        case M_NFM:
+            r_mode = x6100_mode_nfm;
+            break;
+        case M_CWR:
+            r_mode = x6100_mode_cwr;
+            break;
+        default:
+            break;
+    }
+    return r_mode;
+}
+
+uint8_t x_mode_2_ci_mode(x6100_mode_t mode, bool *data_mode=nullptr) {
+    switch (mode) {
+        case x6100_mode_lsb_dig:
+            if (data_mode) *data_mode = true;
+        case x6100_mode_lsb:
+            return M_LSB;
+            break;
+        case x6100_mode_usb_dig:
+            if (data_mode) *data_mode = true;
+        case x6100_mode_usb:
+            return M_USB;
+            break;
+        case x6100_mode_cw:
+            return M_CW;
+            break;
+        case x6100_mode_cwr:
+            return M_CWR;
+            break;
+        case x6100_mode_am:
+            return M_AM;
+            break;
+        case x6100_mode_nfm:
+            return M_NFM;
+            break;
+        default:
+            return 0;
+            break;
+    }
+}
+
+uint8_t get_if_bandwidth() {
+    uint32_t bw = civ_sm->cp_cur_filter_bw.get();
+    switch (civ_sm->cp_cur_mode.get()) {
+        case x6100_mode_cw:
+        case x6100_mode_cwr:
+        case x6100_mode_lsb:
+        case x6100_mode_lsb_dig:
+        case x6100_mode_usb:
+        case x6100_mode_usb_dig:
+            if (bw <= 500) {
+                return (bw - 25) / 50;
+            } else {
+                return (bw - 50) / 100 + 5;
+            }
+            break;
+        case x6100_mode_am:
+        case x6100_mode_nfm:
+            return (bw - 100) / 200;
+        default:
+            return 31;
+            break;
+    }
+}
+
+int32_t freq_step_from_ci(uint8_t val) {
+    switch (val) {
+        case 0x00:
+            return 10;
+        case 0x01:
+            return 100;
+        case 0x02:
+            return 500;
+        case 0x03:
+            return 1000;
+        case 0x04:
+            return 5000;
+    }
+    return 500;
+
+}
+
+uint8_t freq_step_to_ci(int32_t val) {
+    switch (val) {
+        case 1 ... 10:
+            return 0x00;
+        case 100:
+            return 0x01;
+        case 500:
+            return 0x02;
+        case 1000:
+            return 0x03;
+        case 5000:
+            return 0x04;
+    }
+    return 0x02;
+}
+
+// ============================================================================
+// VFO helpers
+// ============================================================================
+
+Parameter<int32_t>& vfo_freq(bool fg, int cur_vfo) {
+    if (fg)
+    {
+        return cur_vfo == X6100_VFO_A ? civ_sm->p_band_vfoa_freq : civ_sm->p_band_vfob_freq;
+    }
+    else
+    {
+        return cur_vfo == X6100_VFO_A ? civ_sm->p_band_vfob_freq : civ_sm->p_band_vfoa_freq;
+    }
+}
+
+Parameter<int32_t>& vfo_mode(bool fg, int cur_vfo) {
+    if (fg)
+    {
+        return cur_vfo == X6100_VFO_A ? civ_sm->p_band_vfoa_mode : civ_sm->p_band_vfob_mode;
+    }
+    else
+    {
+        return cur_vfo == X6100_VFO_A ? civ_sm->p_band_vfob_mode : civ_sm->p_band_vfoa_mode;
+    }
+}
+
+// ============================================================================
+// Logging + set_unsupported
+// ============================================================================
+
+void log_frame_raw(std::string_view raw, const char *prefix) {
+    std::string s;
+    char tmp[32];
+    size_t len = raw.size();
+    s.reserve(len * 3 + 16);
+
+    // header: first 4 bytes (FE FE addr_radio addr_ctrl)
+    snprintf(tmp, sizeof(tmp), "[%02X:%02X:%02X:%02X]-[",
+             static_cast<uint8_t>(raw[0]), static_cast<uint8_t>(raw[1]),
+             static_cast<uint8_t>(raw[2]), static_cast<uint8_t>(raw[3]));
+    s += tmp;
+
+    // data: bytes 4 .. len-2 (cmd + optional payload)
+    for (size_t i = 4; i + 1 < len; i++) {
+        snprintf(tmp, sizeof(tmp), "%02X:", static_cast<uint8_t>(raw[i]));
+        s += tmp;
+    }
+    if (len > 4) s.pop_back();
+
+    // footer: last byte (FRAME_END)
+    snprintf(tmp, sizeof(tmp), "]-[%02X]", static_cast<uint8_t>(raw[len - 1]));
+    s += tmp;
+
+    LV_LOG_USER("%s\t: %s\t(Len %zu)", prefix, s.c_str(), len);
+}
+
+std::string_view set_unsupported(const CivPacketView &req, CivTxPacker &resp) {
+    log_frame_raw(req.raw(), "unsupported");
+    return resp.set_code(CODE_NG)
+               .get_packet();
+}
+
+// ============================================================================
+// Handler dispatch
+// ============================================================================
+
+using cmd_handler_t = std::string_view(*)(const CivPacketView&, CivTxPacker&);
+
+// Forward declarations
+std::string_view handle_snd_freq_x00(const CivPacketView&, CivTxPacker&);
+std::string_view handle_rd_freq_x03(const CivPacketView&, CivTxPacker&);
+std::string_view handle_rd_mode_x04(const CivPacketView&, CivTxPacker&);
+std::string_view handle_set_freq_x05(const CivPacketView&, CivTxPacker&);
+std::string_view handle_set_mode_x06(const CivPacketView&, CivTxPacker&);
+std::string_view handle_set_vfo_x07(const CivPacketView&, CivTxPacker&);
+std::string_view handle_ctl_splt_x0f(const CivPacketView&, CivTxPacker&);
+std::string_view handle_set_ts_x10(const CivPacketView&, CivTxPacker&);
+std::string_view handle_ctl_att_x11(const CivPacketView&, CivTxPacker&);
+std::string_view handle_ctl_lvl_x14(const CivPacketView&, CivTxPacker&);
+std::string_view handle_rd_sqsm_x15(const CivPacketView&, CivTxPacker&);
+std::string_view handle_ctl_func_x16(const CivPacketView&, CivTxPacker&);
+std::string_view handle_rd_trxid_x19(const CivPacketView&, CivTxPacker&);
+std::string_view handle_ctl_mem_x1a(const CivPacketView&, CivTxPacker&);
+std::string_view handle_ctl_ptt_x1c(const CivPacketView&, CivTxPacker&);
+std::string_view handle_send_sel_freq_x25(const CivPacketView&, CivTxPacker&);
+std::string_view handle_send_sel_mode_x26(const CivPacketView&, CivTxPacker&);
+std::string_view handle_ctl_scp_x27(const CivPacketView&, CivTxPacker&);
+
+cmd_handler_t cmd_handlers[256] = {};
+bool cmd_handlers_ready = false;
+
+void init_cmd_handlers() {
+    if (cmd_handlers_ready) return;
+    cmd_handlers_ready = true;
+    cmd_handlers[0x00] = handle_snd_freq_x00;
+    cmd_handlers[0x03] = handle_rd_freq_x03;
+    cmd_handlers[0x04] = handle_rd_mode_x04;
+    cmd_handlers[0x05] = handle_set_freq_x05;
+    cmd_handlers[0x06] = handle_set_mode_x06;
+    cmd_handlers[0x07] = handle_set_vfo_x07;
+    cmd_handlers[0x0f] = handle_ctl_splt_x0f;
+    cmd_handlers[0x10] = handle_set_ts_x10;
+    cmd_handlers[0x11] = handle_ctl_att_x11;
+    cmd_handlers[0x14] = handle_ctl_lvl_x14;
+    cmd_handlers[0x15] = handle_rd_sqsm_x15;
+    cmd_handlers[0x16] = handle_ctl_func_x16;
+    cmd_handlers[0x19] = handle_rd_trxid_x19;
+    cmd_handlers[0x1a] = handle_ctl_mem_x1a;
+    cmd_handlers[0x1c] = handle_ctl_ptt_x1c;
+    cmd_handlers[0x25] = handle_send_sel_freq_x25;
+    cmd_handlers[0x26] = handle_send_sel_mode_x26;
+    cmd_handlers[0x27] = handle_ctl_scp_x27;
+}
+
+// ============================================================================
+// 0x00 — Send frequency (set foreground freq from BCD)
+// ============================================================================
+
+std::string_view handle_snd_freq_x00(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if (data_size == 5) {
+        civ_sm->cp_fg_freq.set(from_bcd(
+            reinterpret_cast<const uint8_t*>(request.get_command_data().data()), 10));
+        return resp.set_code(CODE_OK).get_packet();
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x03 — Read display frequency
+// ============================================================================
+
+std::string_view handle_rd_freq_x03(const CivPacketView &request, CivTxPacker &resp) {
+    uint8_t bcd[5];
+    to_bcd(bcd, civ_sm->cp_fg_freq.get(), 10);
+    return resp.set_command(request.get_command()).append_data(bcd, 5).get_packet();
+}
+
+// ============================================================================
+// 0x04 — Read display mode
+// ============================================================================
+
+std::string_view handle_rd_mode_x04(const CivPacketView &request, CivTxPacker &resp) {
+    uint8_t v = x_mode_2_ci_mode((x6100_mode_t)civ_sm->cp_cur_mode.get());
+    uint8_t d[] = {v, v};
+    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+}
+
+// ============================================================================
+// 0x05 — Set frequency
+// ============================================================================
+
+std::string_view handle_set_freq_x05(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if (data_size == 5) {
+        civ_sm->cp_fg_freq.set(from_bcd(
+            reinterpret_cast<const uint8_t*>(request.get_command_data().data()), 10));
+        return resp.set_code(CODE_OK).get_packet();
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x06 — Set mode
+// ============================================================================
+
+std::string_view handle_set_mode_x06(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if ((data_size >= 1) && (data_size <= 2)) {
+        civ_sm->cp_cur_mode.set(ci_mode_2_x_mode(request.get_subcommand()));
+        return resp.set_code(CODE_OK).get_packet();
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x07 — Set VFO
+// ============================================================================
+
+std::string_view handle_set_vfo_x07(const CivPacketView &request, CivTxPacker &resp) {
+    x6100_vfo_t cur_vfo = (x6100_vfo_t)civ_sm->p_band_current_vfo.get();
+
+
+    switch (request.get_vfo()) {
+        case S_VFOA:
+            if (cur_vfo != X6100_VFO_A) {
+                civ_sm->p_band_current_vfo.set(X6100_VFO_A);
+            }
+            return resp.set_code(CODE_OK).get_packet();
+
+        case S_VFOB:
+            if (cur_vfo != X6100_VFO_B) {
+                civ_sm->p_band_current_vfo.set(X6100_VFO_B);
+            }
+            return resp.set_code(CODE_OK).get_packet();
+
+        case S_XCHNG:
+            civ_sm->p_band_current_vfo.set(
+                cur_vfo == X6100_VFO_A ? X6100_VFO_B : X6100_VFO_A);
+            return resp.set_code(CODE_OK).get_packet();
+
+        case S_BTOA:
+            civ_sm->cfg_band_vfo_copy();
+            return resp.set_code(CODE_OK).get_packet();
+
+        case FRAME_END:
+            return resp.set_command(request.get_command())
+                       .set_vfo(static_cast<uint8_t>(cur_vfo == X6100_VFO_A ? S_VFOA : S_VFOB)).get_packet();
+
+        default:
+            return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x0F — Control split
+// ============================================================================
+
+std::string_view handle_ctl_splt_x0f(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if (data_size == 0) {
+        uint8_t d[] = {static_cast<uint8_t>(civ_sm->p_band_split.get())};
+        return resp.set_command(request.get_command()).append_data(d, 1).get_packet();
+    } else if (data_size == 1) {
+        civ_sm->p_band_split.set(request.get_subcommand());
+        return resp.set_code(CODE_OK).get_packet();
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x10 — Set tuning step
+// ============================================================================
+
+std::string_view handle_set_ts_x10(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if (data_size == 0) {
+        uint8_t d[] = {freq_step_to_ci(civ_sm->p_mode_freq_step.get())};
+        return resp.set_command(request.get_command()).append_data(d, 1).get_packet();
+    } else if (data_size == 1) {
+        civ_sm->p_mode_freq_step.set(freq_step_from_ci(request.get_subcommand()));
+        return resp.set_code(CODE_OK).get_packet();
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x11 — Get/set attenuator
+// ============================================================================
+
+std::string_view handle_ctl_att_x11(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if (data_size == 0) {
+        uint8_t d[] = {static_cast<uint8_t>(civ_sm->cp_cur_att.get() * 0x20)};
+        return resp.set_command(request.get_command()).append_data(d, 1).get_packet();
+    } else if (data_size == 1) {
+        civ_sm->cp_cur_att.set(request.get_subcommand());
+        return resp.set_code(CODE_OK).get_packet();
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x14 — Set AF/RF/squelch level
+// ============================================================================
+
+std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    uint8_t bcd[3] = {0, 0, 0};
+    if (data_size >= 1) {
+        switch (request.get_subcommand()) {
+            case 0x01:
+                if (data_size == 1) {
+                    to_bcd_be(&bcd[1], civ_sm->p_volume.get() * 255 / 55, 3);
+                    return resp.set_command(request.get_command())
+                               .set_subcommand(request.get_subcommand())
+                               .append_data(&bcd[1], 2)
+                               .get_packet();
+                } else if (data_size == 3) {
+                    civ_sm->p_volume.set(from_bcd_be(
+                        reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 3) * 55 / 255);
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x02:
+                if (data_size == 1) {
+                    to_bcd_be(&bcd[1], civ_sm->p_rfgain.get() * 255 / 100, 3);
+                    return resp.set_command(request.get_command())
+                               .set_subcommand(request.get_subcommand())
+                               .append_data(&bcd[1], 2)
+                               .get_packet();
+                } else if (data_size == 3) {
+                    civ_sm->p_rfgain.set(from_bcd_be(
+                        reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 3) * 100 / 255);
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x03:
+                if (data_size == 1) {
+                    to_bcd_be(&bcd[1], civ_sm->p_squelch.get() * 255 / 100, 3);
+                    return resp.set_command(request.get_command())
+                               .set_subcommand(request.get_subcommand())
+                               .append_data(&bcd[1], 2)
+                               .get_packet();
+                } else if (data_size == 3) {
+                    civ_sm->p_squelch.set(from_bcd_be(
+                        reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 3) * 100 / 255);
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x0a:
+                if (data_size == 1) {
+                    to_bcd_be(&bcd[1], std::round(civ_sm->p_pwr.get() * 255 / 10), 3);
+                    return resp.set_command(request.get_command())
+                               .set_subcommand(request.get_subcommand())
+                               .append_data(&bcd[1], 2)
+                               .get_packet();
+                } else if (data_size == 3) {
+                    float pwr = from_bcd_be(
+                        reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 3) * 10.0f / 255.0f;
+                    pwr = LV_MIN(pwr, 10.0f);
+                    civ_sm->p_pwr.set(pwr);
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x15:
+                to_bcd_be(&bcd[1], civ_sm->p_moni.get() * 255 / 100, 3);
+                return resp.set_command(request.get_command())
+                           .set_subcommand(request.get_subcommand())
+                           .append_data(&bcd[1], 2)
+                           .get_packet();
+            default:
+                return set_unsupported(request, resp);
+        }
+    }
+    return set_unsupported(request, resp);
+}
+
+// ============================================================================
+// 0x15 — Read squelch condition / S-meter
+// ============================================================================
+
+std::string_view handle_rd_sqsm_x15(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if (data_size == 1) {
+        static float alc, pwr, swr;
+        static uint8_t msg_id;
+        tx_info_refresh(&msg_id, &alc, &pwr, &swr);
+        uint8_t val;
+        uint8_t bcd[3] = {0, 0, 0};
+        switch (request.get_subcommand()) {
+            case 0x02: {
+                int16_t db = meter_get_raw_db();
+                val = db * 0.75f + 96;
+                to_bcd_be(&bcd[1], val, 3);
+                return resp.set_command(request.get_command())
+                           .set_subcommand(request.get_subcommand())
+                           .append_data(&bcd[1], 2)
+                           .get_packet();
+            }
+            case 0x11:
+                val = -pwr * pwr + 35 * pwr;
+                to_bcd_be(&bcd[1], val, 3);
+                return resp.set_command(request.get_command())
+                           .set_subcommand(request.get_subcommand())
+                           .get_packet();
+            case 0x12:
+                val = -21 * swr * swr + 134 * swr - 122;
+                to_bcd_be(&bcd[1], val, 3);
+                return resp.set_command(request.get_command())
+                           .set_subcommand(request.get_subcommand())
+                           .append_data(&bcd[1], 2)
+                           .get_packet();
+            case 0x13:
+                val = alc * 120 / 10;
+                to_bcd_be(&bcd[1], val, 3);
+                return resp.set_command(request.get_command())
+                           .set_subcommand(request.get_subcommand())
+                           .append_data(&bcd[1], 2)
+                           .get_packet();
+            default:
+                return resp.set_code(CODE_NG).get_packet();
+        }
+    } else {
+        return set_unsupported(request, resp);
+        // return resp.set_code(CODE_NG).get_packet();
+    }
+}
+
+// ============================================================================
+// 0x16 — Function settings (AGC, NB, NR, etc.)
+// ============================================================================
+
+std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if ((data_size == 1) || (data_size == 2)) {
+        switch (request.get_subcommand()) {
+            case 0x02:
+                if (data_size == 1) {
+                    uint8_t d[] = {request.get_subcommand(), static_cast<uint8_t>(civ_sm->cp_cur_pre.get())};
+                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                } else {
+                    civ_sm->cp_cur_pre.set(static_cast<uint8_t>(request.get_command_data()[1]) > 0);
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x22:
+                if (data_size == 1) {
+                    uint8_t d[] = {request.get_subcommand(), static_cast<uint8_t>(civ_sm->p_nb.get())};
+                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                } else {
+                    civ_sm->p_nb.set(static_cast<uint8_t>(request.get_command_data()[1]));
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x40:
+                if (data_size == 1) {
+                    uint8_t d[] = {request.get_subcommand(), static_cast<uint8_t>(civ_sm->p_nr.get())};
+                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                } else {
+                    civ_sm->p_nr.set(static_cast<uint8_t>(request.get_command_data()[1]));
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x44:
+                if (data_size == 1) {
+                    uint8_t d[] = {request.get_subcommand(), 0x00};
+                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                } else {
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x45:
+                return resp.set_code(CODE_NG).get_packet();
+            case 0x46:
+                if (data_size == 1) {
+                    uint8_t d[] = {request.get_subcommand(), 0x00};
+                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                } else {
+                    return resp.set_code(CODE_OK).get_packet();
+                }
+                break;
+            case 0x5D:
+                return resp.set_code(CODE_NG).get_packet();
+            default:
+                return set_unsupported(request, resp);
+        }
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x19 — Read transceiver ID
+// ============================================================================
+
+std::string_view handle_rd_trxid_x19(const CivPacketView &request, CivTxPacker &resp) {
+    if ((request.get_command_data().size() == 1) && (request.get_subcommand() == 0)) {
+        uint8_t d[] = {0x00, LOCAL_ADDRESS};
+        return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+    }
+    return set_unsupported(request, resp);
+}
+
+// ============================================================================
+// 0x1A — Misc memory/bank/rig control
+// ============================================================================
+
+std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    x6100_mode_t cur_mode = (x6100_mode_t)civ_sm->cp_cur_mode.get();
+
+    if (data_size == 1) {
+        switch (request.get_subcommand()) {
+            case MEM_IF_FW: {
+                uint8_t d[] = {request.get_subcommand(), get_if_bandwidth()};
+                return resp.set_command(request.get_command())
+                    .append_data(d, 2).get_packet();
+            }
+
+            case MEM_DM_FG: {
+                uint8_t d[] = {request.get_subcommand(),
+                               x_mode_2_ci_mode(cur_mode),
+                               static_cast<uint8_t>((cur_mode == x6100_mode_lsb_dig) || (cur_mode == x6100_mode_usb_dig)),
+                               0x00};
+                return resp.set_command(request.get_command())
+                    .append_data(d, 4).get_packet();
+            }
+
+            default:
+                return set_unsupported(request, resp);
+        }
+    } else {
+        switch (request.get_subcommand()) {
+            case MEM_LOCK:
+                return resp.set_code(CODE_NG).get_packet();
+            case MEM_DM_FG: {
+                x6100_mode_t new_mode = ci_mode_2_x_mode(
+                    static_cast<uint8_t>(request.get_command_data()[1]),
+                    static_cast<uint8_t>(request.get_command_data()[2]));
+                civ_sm->cp_cur_mode.set(new_mode);
+                return resp.set_code(CODE_OK).get_packet();
+            }
+            default:
+                return set_unsupported(request, resp);
+        }
+    }
+}
+
+// ============================================================================
+// 0x1C — Control PTT
+// ============================================================================
+
+std::string_view handle_ctl_ptt_x1c(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if ((data_size >= 1) && (request.get_subcommand() == 0x00)) {
+        if (data_size == 1) {
+            uint8_t d[] = {0x00, static_cast<uint8_t>((radio_get_state() == RADIO_RX) ? 0 : 1)};
+            return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+        } else {
+            switch (static_cast<uint8_t>(request.get_command_data()[1])) {
+                case 0:
+                    radio_set_ptt(false);
+                    break;
+                case 1:
+                    radio_set_ptt(true);
+                    break;
+            }
+            uint8_t d[] = {0x00, CODE_OK};
+            return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+        }
+    }
+    return set_unsupported(request, resp);
+}
+
+// ============================================================================
+// 0x25 — Send/Recv select/unselect VFO frequency
+// ============================================================================
+
+std::string_view handle_send_sel_freq_x25(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    ComputedParameter<int32_t> *freq;
+
+    if (request.get_vfo() == 0) {
+        freq = &civ_sm->cp_fg_freq;
+    } else {
+        freq = &civ_sm->cp_bg_freq;
+    }
+
+    if (data_size == 1) {
+        uint8_t bcd[5];
+        to_bcd(bcd, freq->get(), 10);
+        return resp.set_command(request.get_command())
+            .set_subcommand(request.get_vfo())
+            .append_data(bcd, 5).get_packet();
+    } else if (data_size == 6) {
+        freq->set(from_bcd(
+            reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 10));
+        return resp.set_code(CODE_OK).get_packet();
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x26 — Send/Recv select/unselect VFO mode
+// ============================================================================
+
+std::string_view handle_send_sel_mode_x26(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    Parameter<int32_t> *mode_par;
+
+    if (request.get_vfo() == 0) {
+        mode_par = civ_sm->p_band_current_vfo.get() == X6100_VFO_A
+            ? &civ_sm->p_band_vfoa_mode
+            : &civ_sm->p_band_vfob_mode;
+    } else {
+        mode_par = civ_sm->p_band_current_vfo.get() == X6100_VFO_B
+            ? &civ_sm->p_band_vfoa_mode
+            : &civ_sm->p_band_vfob_mode;
+    }
+
+    switch (data_size) {
+        case 1: {
+            bool data_mode = false;
+            uint8_t v = x_mode_2_ci_mode((x6100_mode_t)mode_par->get(), &data_mode);
+            uint8_t d[] = {request.get_vfo(), v, static_cast<uint8_t>(data_mode), 0x01};
+            return resp.set_command(request.get_command())
+                .append_data(d, 4).get_packet();
+        }
+        case 4:
+        case 3: {
+            bool data_mode = static_cast<uint8_t>(request.get_command_data()[2]);
+            x6100_mode_t new_mode = ci_mode_2_x_mode(
+                static_cast<uint8_t>(request.get_command_data()[1]), data_mode);
+            mode_par->set(new_mode);
+            return resp.set_code(CODE_OK).get_packet();
+        }
+        case 2: {
+            x6100_mode_t new_mode = ci_mode_2_x_mode(
+                static_cast<uint8_t>(request.get_command_data()[1]), false);
+            mode_par->set(new_mode);
+            return resp.set_code(CODE_OK).get_packet();
+        }
+        default:
+            return set_unsupported(request, resp);
+    }
+}
+
+// ============================================================================
+// 0x27 — Scope control & data
+// ============================================================================
+
+std::string_view handle_ctl_scp_x27(const CivPacketView &request, CivTxPacker &resp) {
+    size_t data_size = request.get_command_data().size();
+    if (data_size >= 1) {
+        switch (request.get_subcommand()) {
+            case 0x10:
+                if (data_size == 1) {
+                    uint8_t d[] = {request.get_subcommand(), 0x01};
+                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                } else {
+                    return resp.set_command(request.get_command())
+                        .set_subcommand(request.get_subcommand())
+                        .get_packet();
+                }
+                break;
+            case 0x11:
+                if (data_size == 1) {
+                    uint8_t d[] = {request.get_subcommand(), 0x01};
+                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                } else {
+                    return resp.set_command(request.get_command())
+                        .set_subcommand(request.get_subcommand())
+                        .get_packet();
+                }
+                break;
+            case 0x13:
+                return resp.set_code(CODE_NG).get_packet();
+                break;
+            case 0x14:
+                if (data_size == 1) {
+                    uint8_t d[] = {request.get_subcommand(), 0x00, 0x00};
+                    return resp.set_command(request.get_command()).append_data(d, 3).get_packet();
+                } else {
+                    return resp.set_command(request.get_command())
+                        .set_subcommand(request.get_subcommand())
+                        .get_packet();
+                }
+                break;
+            case 0x15:
+                if (data_size >= 3) {
+                    uint8_t bcd[7] = {request.get_subcommand(), 0, 0, 0, 0, 0, 0};
+                    to_bcd(&bcd[2], 50000, 10);
+                    return resp.set_command(request.get_command())
+                        .set_subcommand(request.get_subcommand())
+                        .append_data(&bcd[1], 6)
+                        .get_packet();
+                } else {
+                    return resp.set_command(request.get_command())
+                        .set_subcommand(request.get_subcommand())
+                        .get_packet();
+                }
+                break;
+            case 0x17:
+                return resp.set_code(CODE_NG).get_packet();
+                break;
+            case 0x19:
+                {
+                    uint8_t d[] = {request.get_subcommand(), 0x00, 0x00, 0x00, 0x00};
+                    return resp.set_command(request.get_command()).append_data(d, 5).get_packet();
+                }
+            case 0x1A:
+                return resp.set_code(CODE_NG).get_packet();
+            default:
+                return set_unsupported(request, resp);
+        }
+    } else {
+        return set_unsupported(request, resp);
+    }
+}
+
+} // anonymous namespace
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+void civ_set_sm(SettingsManager *sm) {
+    civ_sm = sm ? sm : &cfg_sm;
+}
+
+std::string_view process_civ_message(const CivPacketView &request, CivTxPacker &response_packer) {
+    init_cmd_handlers();
+
+    response_packer.set_controller_address(request.get_controller_address());
+    cmd_handler_t handler = cmd_handlers[request.get_command()];
+    if (handler) {
+        return handler(request, response_packer);
+    } else {
+        return set_unsupported(request, response_packer);
+    }
+}
+
+std::string_view make_freq_response_00(int32_t freq, CivTxPacker &response_packer) {
+    uint8_t bcd[5];
+    to_bcd(bcd, freq, 10);
+
+    return response_packer.set_command(C_SND_FREQ).append_data(bcd, 5).get_packet();
+}

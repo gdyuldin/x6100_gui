@@ -1,4 +1,4 @@
-add_library(cat STATIC cat_frame.cpp)
+add_library(cat STATIC cat.cpp civ_protocol.cpp civ_processor.cpp)
 
 # PUBLIC: cat.h is the only header consumers need (cat/cat.h).
 target_include_directories(cat PUBLIC

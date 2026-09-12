@@ -34,6 +34,7 @@
 #include "cw.h"
 #include "panel.h"
 #include "cat/cat.h"
+#include "cat_lan/cat_lan.h"
 #include "rtty.h"
 #include "display.h"
 #include "events.h"
@@ -162,6 +163,7 @@ int main(void) {
     wifi_power_setup();
     display_init();
     cat_init();
+    cat_lan_init();
     gps_init();
     if (!qso_log_init()) {
         LV_LOG_ERROR("Can't init QSO log");
@@ -197,6 +199,7 @@ int main(void) {
 
     // Cleanup
     display_invert(false);
+    cat_lan_destruct();
     wifi_cleanup();
     cfg_api_flush_all();
     cfg_db_shutdown();

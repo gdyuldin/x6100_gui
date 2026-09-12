@@ -26,6 +26,18 @@ template <typename T> class TSQueue {
         m_queue.pop();
         return item;
     }
+
+    // Non-blocking pop. Returns true if an item was dequeued, false if empty.
+    bool try_pop(T &item) {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        if (m_queue.empty()) {
+            return false;
+        }
+        item = m_queue.front();
+        m_queue.pop();
+        return true;
+    }
+
     bool empty() {
         std::unique_lock<std::mutex> lock(m_mutex);
         return m_queue.empty();
