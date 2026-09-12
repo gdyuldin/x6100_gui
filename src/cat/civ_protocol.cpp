@@ -48,24 +48,37 @@ CivTxPackerAfterCommand CivTxPacker::set_command(uint8_t cmd) {
     return CivTxPackerAfterCommand(*this);
 }
 
-std::string_view CivTxPacker::finalizeAndReset()  {
-        m_buf[m_currentSize] = FRAME_END;
-        size_t totalLength = m_currentSize + 1;
+std::string_view CivTxPacker::finalizeAndReset() {
+    m_buf[m_currentSize] = FRAME_END;
+    size_t totalLength   = m_currentSize + 1;
 
-        std::string_view res(reinterpret_cast<const char*>(m_buf), totalLength);
-        m_currentSize = 4;
-        return res;
+    std::string_view res(reinterpret_cast<const char *>(m_buf), totalLength);
+    m_currentSize = 4;
+    return res;
+}
+
+void CivTxPacker::append_data_imp(const uint8_t *data, size_t length) {
+    if (data && length > 0) {
+        std::memcpy(&m_buf[m_currentSize], data, length);
+        m_currentSize += length;
     }
+}
+
+void CivTxPacker::append_byte_imp(const uint8_t data) {
+    m_buf[m_currentSize++] = data;
+}
 
 // ============================================================================
 // CivTxPackerAfterData
 // ============================================================================
 
 CivTxPackerAfterData& CivTxPackerAfterData::append_data(const uint8_t* data, size_t length) {
-    if (data && length > 0) {
-        std::memcpy(&m_p.m_buf[m_p.m_currentSize], data, length);
-        m_p.m_currentSize += length;
-    }
+    m_p.append_data_imp(data, length);
+    return *this;
+}
+
+CivTxPackerAfterData &CivTxPackerAfterData::append_byte(const uint8_t data) {
+    m_p.append_byte_imp(data);
     return *this;
 }
 
@@ -91,10 +104,12 @@ CivTxPackerAfterData CivTxPackerAfterCommand::set_vfo(uint8_t vfoId) {
 }
 
 CivTxPackerAfterData CivTxPackerAfterCommand::append_data(const uint8_t* data, size_t length) {
-    if (data && length > 0) {
-        std::memcpy(&m_p.m_buf[m_p.m_currentSize], data, length);
-        m_p.m_currentSize += length;
-    }
+    m_p.append_data_imp(data, length);
+    return CivTxPackerAfterData(m_p);
+}
+
+CivTxPackerAfterData CivTxPackerAfterCommand::append_byte(const uint8_t data) {
+    m_p.append_byte_imp(data);
     return CivTxPackerAfterData(m_p);
 }
 

@@ -70,6 +70,9 @@ private:
 
     std::string_view finalizeAndReset();
 
+    void append_data_imp(const uint8_t* data, size_t length);
+    void append_byte_imp(const uint8_t data);
+
 
     friend class CivTxPackerAfterCommand;
     friend class CivTxPackerAfterData;
@@ -82,21 +85,23 @@ public:
     CivTxPackerAfterData(CivTxPacker& packer) : m_p(packer) {}
 
     CivTxPackerAfterData& append_data(const uint8_t* data, size_t length);
+    CivTxPackerAfterData& append_byte(const uint8_t data);
 
     std::string_view get_packet();
 
-private:
+    private:
     CivTxPacker& m_p;
 };
 
 // --- Stage 2: After command write ---
 class CivTxPackerAfterCommand {
-public:
+    public:
     CivTxPackerAfterCommand(CivTxPacker& packer) : m_p(packer) {}
 
     CivTxPackerAfterData set_subcommand(uint8_t subcmd);
     CivTxPackerAfterData set_vfo(uint8_t vfoId);
     CivTxPackerAfterData append_data(const uint8_t* data, size_t length);
+    CivTxPackerAfterData append_byte(const uint8_t data);
     std::string_view get_packet();
 
 private:

@@ -14,4 +14,7 @@ void civ_set_sm(SettingsManager *sm);
 std::string_view process_civ_message(const CivPacketView &request, CivTxPacker &response_packer);
 
 
-std::string_view make_freq_response_00(int32_t freq, CivTxPacker &response_packer);
+// Live data section (broadcast notifications about changes)
+std::string_view pack_fg_freq_notify_00(int32_t freq, CivTxPacker &response_packer);
+std::string_view pack_mode_notify_01(x6100_mode_t mode, CivTxPacker &response_packer);
+std::string_view pack_vfo_notify_07(x6100_vfo_t vfo, CivTxPacker &response_packer);

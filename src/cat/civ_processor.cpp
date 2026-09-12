@@ -118,9 +118,7 @@ void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len) {
 }
 
 void to_bcd_be(uint8_t bcd_data[], uint64_t data, uint8_t len) {
-    int16_t i;
-
-    for (i = (len / 2); i >= 0; i--) {
+    for (int16_t i = (len - 1) / 2; i >= 0; i--) {
         uint8_t a = data % 10;
 
         data /= 10;
@@ -128,46 +126,40 @@ void to_bcd_be(uint8_t bcd_data[], uint64_t data, uint8_t len) {
         data /= 10;
         bcd_data[i] = a;
     }
-
-    if (len & 1) {
-        bcd_data[i] &= 0x0f;
-        bcd_data[i] |= data % 10;
-    }
-
 }
 
-uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
+uint64_t from_bcd(std::string_view bcd_data, uint8_t len) {
     int16_t     i;
     uint64_t    data = 0;
 
     if (len & 1) {
-        data = bcd_data[len / 2] & 0x0F;
+        data = static_cast<uint8_t>(bcd_data[len / 2]) & 0x0F;
     }
 
     for (i = (len / 2) - 1; i >= 0; i--) {
         data *= 10;
-        data += bcd_data[i] >> 4;
+        data += static_cast<uint8_t>(bcd_data[i]) >> 4;
         data *= 10;
-        data += bcd_data[i] & 0x0F;
+        data += static_cast<uint8_t>(bcd_data[i]) & 0x0F;
     }
 
     return data;
 }
 
-uint64_t from_bcd_be(const uint8_t bcd_data[], uint8_t len) {
+uint64_t from_bcd_be(std::string_view bcd_data, uint8_t len) {
     int16_t     i = 0;
     uint64_t    data = 0;
 
     if (len & 1) {
-        data = bcd_data[0] & 0x0F;
+        data = static_cast<uint8_t>(bcd_data[0]) & 0x0F;
         i++;
     }
 
     for (; i <= (len / 2); i++) {
         data *= 10;
-        data += bcd_data[i] >> 4;
+        data += static_cast<uint8_t>(bcd_data[i]) >> 4;
         data *= 10;
-        data += bcd_data[i] & 0x0F;
+        data += static_cast<uint8_t>(bcd_data[i]) & 0x0F;
     }
 
     return data;
@@ -413,8 +405,7 @@ void init_cmd_handlers() {
 std::string_view handle_snd_freq_x00(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 5) {
-        civ_sm->cp_fg_freq.set(from_bcd(
-            reinterpret_cast<const uint8_t*>(request.get_command_data().data()), 10));
+        civ_sm->cp_fg_freq.set(from_bcd(request.get_command_data(), 10));
         return resp.set_code(CODE_OK).get_packet();
     } else {
         return set_unsupported(request, resp);
@@ -437,8 +428,7 @@ std::string_view handle_rd_freq_x03(const CivPacketView &request, CivTxPacker &r
 
 std::string_view handle_rd_mode_x04(const CivPacketView &request, CivTxPacker &resp) {
     uint8_t v = x_mode_2_ci_mode((x6100_mode_t)civ_sm->cp_cur_mode.get());
-    uint8_t d[] = {v, v};
-    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+    return resp.set_command(request.get_command()).append_byte(v).append_byte(v).get_packet();
 }
 
 // ============================================================================
@@ -448,8 +438,7 @@ std::string_view handle_rd_mode_x04(const CivPacketView &request, CivTxPacker &r
 std::string_view handle_set_freq_x05(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 5) {
-        civ_sm->cp_fg_freq.set(from_bcd(
-            reinterpret_cast<const uint8_t*>(request.get_command_data().data()), 10));
+        civ_sm->cp_fg_freq.set(from_bcd(request.get_command_data(), 10));
         return resp.set_code(CODE_OK).get_packet();
     } else {
         return set_unsupported(request, resp);
@@ -516,8 +505,7 @@ std::string_view handle_set_vfo_x07(const CivPacketView &request, CivTxPacker &r
 std::string_view handle_ctl_splt_x0f(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 0) {
-        uint8_t d[] = {static_cast<uint8_t>(civ_sm->p_band_split.get())};
-        return resp.set_command(request.get_command()).append_data(d, 1).get_packet();
+        return resp.set_command(request.get_command()).append_byte(static_cast<uint8_t>(civ_sm->p_band_split.get())).get_packet();
     } else if (data_size == 1) {
         civ_sm->p_band_split.set(request.get_subcommand());
         return resp.set_code(CODE_OK).get_packet();
@@ -533,8 +521,7 @@ std::string_view handle_ctl_splt_x0f(const CivPacketView &request, CivTxPacker &
 std::string_view handle_set_ts_x10(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 0) {
-        uint8_t d[] = {freq_step_to_ci(civ_sm->p_mode_freq_step.get())};
-        return resp.set_command(request.get_command()).append_data(d, 1).get_packet();
+        return resp.set_command(request.get_command()).append_byte(freq_step_to_ci(civ_sm->p_mode_freq_step.get())).get_packet();
     } else if (data_size == 1) {
         civ_sm->p_mode_freq_step.set(freq_step_from_ci(request.get_subcommand()));
         return resp.set_code(CODE_OK).get_packet();
@@ -550,8 +537,7 @@ std::string_view handle_set_ts_x10(const CivPacketView &request, CivTxPacker &re
 std::string_view handle_ctl_att_x11(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 0) {
-        uint8_t d[] = {static_cast<uint8_t>(civ_sm->cp_cur_att.get() * 0x20)};
-        return resp.set_command(request.get_command()).append_data(d, 1).get_packet();
+        return resp.set_command(request.get_command()).append_byte(static_cast<uint8_t>(civ_sm->cp_cur_att.get() * 0x20)).get_packet();
     } else if (data_size == 1) {
         civ_sm->cp_cur_att.set(request.get_subcommand());
         return resp.set_code(CODE_OK).get_packet();
@@ -565,75 +551,60 @@ std::string_view handle_ctl_att_x11(const CivPacketView &request, CivTxPacker &r
 // ============================================================================
 
 std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &resp) {
-    size_t data_size = request.get_command_data().size();
-    uint8_t bcd[3] = {0, 0, 0};
-    if (data_size >= 1) {
-        switch (request.get_subcommand()) {
-            case 0x01:
-                if (data_size == 1) {
-                    to_bcd_be(&bcd[1], civ_sm->p_volume.get() * 255 / 55, 3);
-                    return resp.set_command(request.get_command())
-                               .set_subcommand(request.get_subcommand())
-                               .append_data(&bcd[1], 2)
-                               .get_packet();
-                } else if (data_size == 3) {
-                    civ_sm->p_volume.set(from_bcd_be(
-                        reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 3) * 55 / 255);
-                    return resp.set_code(CODE_OK).get_packet();
-                }
+    size_t  data_size = request.get_command_data().size();
+    uint8_t bcd[2]    = {0, 0};
+    uint8_t subcmd    = request.get_subcommand();
+
+    if (data_size == 1) {
+        CivTxPackerAfterCommand after_cmd = resp.set_command(request.get_command());
+        switch (subcmd) {
+            case 0x01: // Get AF level
+                to_bcd_be(bcd, civ_sm->p_volume.get() * 255 / 55, 3);
                 break;
-            case 0x02:
-                if (data_size == 1) {
-                    to_bcd_be(&bcd[1], civ_sm->p_rfgain.get() * 255 / 100, 3);
-                    return resp.set_command(request.get_command())
-                               .set_subcommand(request.get_subcommand())
-                               .append_data(&bcd[1], 2)
-                               .get_packet();
-                } else if (data_size == 3) {
-                    civ_sm->p_rfgain.set(from_bcd_be(
-                        reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 3) * 100 / 255);
-                    return resp.set_code(CODE_OK).get_packet();
-                }
+            case 0x02: // Get RF gain
+                to_bcd_be(bcd, civ_sm->p_rfgain.get() * 255 / 100, 3);
                 break;
-            case 0x03:
-                if (data_size == 1) {
-                    to_bcd_be(&bcd[1], civ_sm->p_squelch.get() * 255 / 100, 3);
-                    return resp.set_command(request.get_command())
-                               .set_subcommand(request.get_subcommand())
-                               .append_data(&bcd[1], 2)
-                               .get_packet();
-                } else if (data_size == 3) {
-                    civ_sm->p_squelch.set(from_bcd_be(
-                        reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 3) * 100 / 255);
-                    return resp.set_code(CODE_OK).get_packet();
-                }
+            case 0x03: // Get SQL level
+                to_bcd_be(bcd, civ_sm->p_squelch.get() * 255 / 100, 3);
                 break;
-            case 0x0a:
-                if (data_size == 1) {
-                    to_bcd_be(&bcd[1], std::round(civ_sm->p_pwr.get() * 255 / 10), 3);
-                    return resp.set_command(request.get_command())
-                               .set_subcommand(request.get_subcommand())
-                               .append_data(&bcd[1], 2)
-                               .get_packet();
-                } else if (data_size == 3) {
-                    float pwr = from_bcd_be(
-                        reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 3) * 10.0f / 255.0f;
-                    pwr = LV_MIN(pwr, 10.0f);
-                    civ_sm->p_pwr.set(pwr);
-                    return resp.set_code(CODE_OK).get_packet();
-                }
+            case 0x0a: // Get Tx power
+                to_bcd_be(bcd, std::round(civ_sm->p_pwr.get() * 255 / 10), 3);
                 break;
-            case 0x15:
-                to_bcd_be(&bcd[1], civ_sm->p_moni.get() * 255 / 100, 3);
-                return resp.set_command(request.get_command())
-                           .set_subcommand(request.get_subcommand())
-                           .append_data(&bcd[1], 2)
-                           .get_packet();
+            case 0x15: // Get MONI level
+                to_bcd_be(bcd, civ_sm->p_moni.get() * 255 / 100, 3);
+                break;
             default:
                 return set_unsupported(request, resp);
         }
+        return after_cmd.set_subcommand(subcmd).append_data(bcd, 2).get_packet();
+    } else if (data_size == 3) {
+        auto bcd_val = from_bcd_be(request.get_subcommand_data(), 3);
+        switch (subcmd) {
+            case 0x01: // Set AF level
+                civ_sm->p_volume.set(bcd_val * 55 / 255);
+                break;
+            case 0x02: // Set RF gain
+                civ_sm->p_rfgain.set(bcd_val * 100 / 255);
+                break;
+            case 0x03: // Set SQL level
+                civ_sm->p_squelch.set(bcd_val * 100 / 255);
+                break;
+            case 0x0a: // Set Tx power
+                {
+                    float pwr = static_cast<float>(bcd_val) * 10.0f / 255.0f;
+                    civ_sm->p_pwr.set(pwr);
+                    break;
+                }
+            case 0x15: // Set MONI level
+                civ_sm->p_moni.set(bcd_val * 100 / 255);
+                break;
+            default:
+                return set_unsupported(request, resp);
+        }
+        return resp.set_code(CODE_OK).get_packet();
+    } else {
+        return set_unsupported(request, resp);
     }
-    return set_unsupported(request, resp);
 }
 
 // ============================================================================
@@ -643,41 +614,40 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
 std::string_view handle_rd_sqsm_x15(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 1) {
-        static float alc, pwr, swr;
+        static float   alc, pwr, swr;
         static uint8_t msg_id;
         tx_info_refresh(&msg_id, &alc, &pwr, &swr);
         uint8_t val;
-        uint8_t bcd[3] = {0, 0, 0};
+        uint8_t bcd[2] = {0, 0};
         switch (request.get_subcommand()) {
-            case 0x02: {
-                int16_t db = meter_get_raw_db();
-                val = db * 0.75f + 96;
-                to_bcd_be(&bcd[1], val, 3);
-                return resp.set_command(request.get_command())
-                           .set_subcommand(request.get_subcommand())
-                           .append_data(&bcd[1], 2)
-                           .get_packet();
-            }
-            case 0x11:
+            case 0x02: // Get S-Meter
+                {
+                    int16_t db = meter_get_raw_db();
+                    val        = db * 0.75f + 96;
+                    to_bcd_be(bcd, val, 3);
+                    return resp.set_command(request.get_command())
+                        .set_subcommand(request.get_subcommand())
+                        .append_data(bcd, 2)
+                        .get_packet();
+                }
+            case 0x11: // Get Power-Meter
                 val = -pwr * pwr + 35 * pwr;
-                to_bcd_be(&bcd[1], val, 3);
-                return resp.set_command(request.get_command())
-                           .set_subcommand(request.get_subcommand())
-                           .get_packet();
-            case 0x12:
+                to_bcd_be(bcd, val, 3);
+                return resp.set_command(request.get_command()).set_subcommand(request.get_subcommand()).get_packet();
+            case 0x12: // Get SWR-Meter
                 val = -21 * swr * swr + 134 * swr - 122;
-                to_bcd_be(&bcd[1], val, 3);
+                to_bcd_be(bcd, val, 3);
                 return resp.set_command(request.get_command())
-                           .set_subcommand(request.get_subcommand())
-                           .append_data(&bcd[1], 2)
-                           .get_packet();
-            case 0x13:
+                    .set_subcommand(request.get_subcommand())
+                    .append_data(bcd, 2)
+                    .get_packet();
+            case 0x13: // Get ALC-Meter,
                 val = alc * 120 / 10;
-                to_bcd_be(&bcd[1], val, 3);
+                to_bcd_be(bcd, val, 3);
                 return resp.set_command(request.get_command())
-                           .set_subcommand(request.get_subcommand())
-                           .append_data(&bcd[1], 2)
-                           .get_packet();
+                    .set_subcommand(request.get_subcommand())
+                    .append_data(bcd, 2)
+                    .get_packet();
             default:
                 return resp.set_code(CODE_NG).get_packet();
         }
@@ -693,58 +663,55 @@ std::string_view handle_rd_sqsm_x15(const CivPacketView &request, CivTxPacker &r
 
 std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
-    if ((data_size == 1) || (data_size == 2)) {
-        switch (request.get_subcommand()) {
+    uint8_t subcmd = request.get_subcommand();
+
+    auto after_cmd = resp.set_command(request.get_command());
+
+    if (data_size == 1) {
+        // READ — return current value
+        switch (subcmd) {
             case 0x02:
-                if (data_size == 1) {
-                    uint8_t d[] = {request.get_subcommand(), static_cast<uint8_t>(civ_sm->cp_cur_pre.get())};
-                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
-                } else {
-                    civ_sm->cp_cur_pre.set(static_cast<uint8_t>(request.get_command_data()[1]) > 0);
-                    return resp.set_code(CODE_OK).get_packet();
-                }
+                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->cp_cur_pre.get())).get_packet();
+            case 0x22:
+                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->p_nb.get())).get_packet();
+            case 0x40:
+                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->p_nr.get())).get_packet();
+            case 0x44:
+                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->p_comp.get() > 1)).get_packet();
+            case 0x46:
+                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->p_vox_en.get())).get_packet();
+            case 0x45: // Monitor — unsupported
+            case 0x5D: // Tone squelch — unsupported
+                return resp.set_code(CODE_NG).get_packet();
+            default:
+                return set_unsupported(request, resp);
+        }
+    } else if (data_size == 2) {
+        // WRITE — set value from request
+        auto new_val = static_cast<uint8_t>(request.get_subcommand_data()[0]);
+        switch (subcmd) {
+            case 0x02:
+                civ_sm->cp_cur_pre.set(new_val > 0);
                 break;
             case 0x22:
-                if (data_size == 1) {
-                    uint8_t d[] = {request.get_subcommand(), static_cast<uint8_t>(civ_sm->p_nb.get())};
-                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
-                } else {
-                    civ_sm->p_nb.set(static_cast<uint8_t>(request.get_command_data()[1]));
-                    return resp.set_code(CODE_OK).get_packet();
-                }
+                civ_sm->p_nb.set(new_val);
                 break;
             case 0x40:
-                if (data_size == 1) {
-                    uint8_t d[] = {request.get_subcommand(), static_cast<uint8_t>(civ_sm->p_nr.get())};
-                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
-                } else {
-                    civ_sm->p_nr.set(static_cast<uint8_t>(request.get_command_data()[1]));
-                    return resp.set_code(CODE_OK).get_packet();
-                }
+                civ_sm->p_nr.set(new_val);
                 break;
             case 0x44:
-                if (data_size == 1) {
-                    uint8_t d[] = {request.get_subcommand(), 0x00};
-                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
-                } else {
-                    return resp.set_code(CODE_OK).get_packet();
-                }
+                civ_sm->p_comp.set(new_val ? 4 : 1);
+                break;
+            case 0x46:
+                civ_sm->p_vox_en.set(new_val);
                 break;
             case 0x45:
-                return resp.set_code(CODE_NG).get_packet();
-            case 0x46:
-                if (data_size == 1) {
-                    uint8_t d[] = {request.get_subcommand(), 0x00};
-                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
-                } else {
-                    return resp.set_code(CODE_OK).get_packet();
-                }
-                break;
             case 0x5D:
                 return resp.set_code(CODE_NG).get_packet();
             default:
                 return set_unsupported(request, resp);
         }
+        return resp.set_code(CODE_OK).get_packet();
     } else {
         return set_unsupported(request, resp);
     }
@@ -756,8 +723,7 @@ std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &
 
 std::string_view handle_rd_trxid_x19(const CivPacketView &request, CivTxPacker &resp) {
     if ((request.get_command_data().size() == 1) && (request.get_subcommand() == 0)) {
-        uint8_t d[] = {0x00, LOCAL_ADDRESS};
-        return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+        return resp.set_command(request.get_command()).set_subcommand(0x00).append_byte(LOCAL_ADDRESS).get_packet();
     }
     return set_unsupported(request, resp);
 }
@@ -767,25 +733,22 @@ std::string_view handle_rd_trxid_x19(const CivPacketView &request, CivTxPacker &
 // ============================================================================
 
 std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &resp) {
-    size_t data_size = request.get_command_data().size();
-    x6100_mode_t cur_mode = (x6100_mode_t)civ_sm->cp_cur_mode.get();
+    size_t       data_size = request.get_command_data().size();
+    x6100_mode_t cur_mode  = (x6100_mode_t)civ_sm->cp_cur_mode.get();
 
     if (data_size == 1) {
         switch (request.get_subcommand()) {
-            case MEM_IF_FW: {
-                uint8_t d[] = {request.get_subcommand(), get_if_bandwidth()};
-                return resp.set_command(request.get_command())
-                    .append_data(d, 2).get_packet();
-            }
+            case MEM_IF_FW:
+                return resp.set_command(request.get_command()).set_subcommand(request.get_subcommand()).append_byte(get_if_bandwidth()).get_packet();
 
-            case MEM_DM_FG: {
-                uint8_t d[] = {request.get_subcommand(),
-                               x_mode_2_ci_mode(cur_mode),
-                               static_cast<uint8_t>((cur_mode == x6100_mode_lsb_dig) || (cur_mode == x6100_mode_usb_dig)),
-                               0x00};
-                return resp.set_command(request.get_command())
-                    .append_data(d, 4).get_packet();
-            }
+            case MEM_DM_FG:
+                {
+                    uint8_t d[] = {
+                        request.get_subcommand(), x_mode_2_ci_mode(cur_mode),
+                        static_cast<uint8_t>((cur_mode == x6100_mode_lsb_dig) || (cur_mode == x6100_mode_usb_dig)),
+                        0x00};
+                    return resp.set_command(request.get_command()).append_data(d, 4).get_packet();
+                }
 
             default:
                 return set_unsupported(request, resp);
@@ -794,13 +757,13 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
         switch (request.get_subcommand()) {
             case MEM_LOCK:
                 return resp.set_code(CODE_NG).get_packet();
-            case MEM_DM_FG: {
-                x6100_mode_t new_mode = ci_mode_2_x_mode(
-                    static_cast<uint8_t>(request.get_command_data()[1]),
-                    static_cast<uint8_t>(request.get_command_data()[2]));
-                civ_sm->cp_cur_mode.set(new_mode);
-                return resp.set_code(CODE_OK).get_packet();
-            }
+            case MEM_DM_FG:
+                {
+                    x6100_mode_t new_mode = ci_mode_2_x_mode(static_cast<uint8_t>(request.get_command_data()[1]),
+                                                             static_cast<uint8_t>(request.get_command_data()[2]));
+                    civ_sm->cp_cur_mode.set(new_mode);
+                    return resp.set_code(CODE_OK).get_packet();
+                }
             default:
                 return set_unsupported(request, resp);
         }
@@ -815,8 +778,7 @@ std::string_view handle_ctl_ptt_x1c(const CivPacketView &request, CivTxPacker &r
     size_t data_size = request.get_command_data().size();
     if ((data_size >= 1) && (request.get_subcommand() == 0x00)) {
         if (data_size == 1) {
-            uint8_t d[] = {0x00, static_cast<uint8_t>((radio_get_state() == RADIO_RX) ? 0 : 1)};
-            return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+            return resp.set_command(request.get_command()).set_subcommand(0x00).append_byte(static_cast<uint8_t>((radio_get_state() == RADIO_RX) ? 0 : 1)).get_packet();
         } else {
             switch (static_cast<uint8_t>(request.get_command_data()[1])) {
                 case 0:
@@ -826,8 +788,7 @@ std::string_view handle_ctl_ptt_x1c(const CivPacketView &request, CivTxPacker &r
                     radio_set_ptt(true);
                     break;
             }
-            uint8_t d[] = {0x00, CODE_OK};
-            return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+            return resp.set_command(request.get_command()).set_subcommand(0x00).append_byte(CODE_OK).get_packet();
         }
     }
     return set_unsupported(request, resp);
@@ -855,7 +816,7 @@ std::string_view handle_send_sel_freq_x25(const CivPacketView &request, CivTxPac
             .append_data(bcd, 5).get_packet();
     } else if (data_size == 6) {
         freq->set(from_bcd(
-            reinterpret_cast<const uint8_t*>(request.get_command_data().data()) + 1, 10));
+            request.get_command_data().substr(1), 10));
         return resp.set_code(CODE_OK).get_packet();
     } else {
         return set_unsupported(request, resp);
@@ -915,30 +876,28 @@ std::string_view handle_ctl_scp_x27(const CivPacketView &request, CivTxPacker &r
     size_t data_size = request.get_command_data().size();
     if (data_size >= 1) {
         switch (request.get_subcommand()) {
-            case 0x10:
+            case 0x10: // Send/read the Scope ON/OFF
                 if (data_size == 1) {
-                    uint8_t d[] = {request.get_subcommand(), 0x01};
-                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                    return resp.set_command(request.get_command()).set_subcommand(request.get_subcommand()).append_byte(0x01).get_packet();
                 } else {
                     return resp.set_command(request.get_command())
                         .set_subcommand(request.get_subcommand())
                         .get_packet();
                 }
                 break;
-            case 0x11:
+            case 0x11: // Send/read the Scope wave data output
                 if (data_size == 1) {
-                    uint8_t d[] = {request.get_subcommand(), 0x01};
-                    return resp.set_command(request.get_command()).append_data(d, 2).get_packet();
+                    return resp.set_command(request.get_command()).set_subcommand(request.get_subcommand()).append_byte(0x01).get_packet();
                 } else {
                     return resp.set_command(request.get_command())
                         .set_subcommand(request.get_subcommand())
                         .get_packet();
                 }
                 break;
-            case 0x13:
+            case 0x13: // Send/read the Single/Dual scope setting
                 return resp.set_code(CODE_NG).get_packet();
                 break;
-            case 0x14:
+            case 0x14: // Send/read the Scope Center mode,
                 if (data_size == 1) {
                     uint8_t d[] = {request.get_subcommand(), 0x00, 0x00};
                     return resp.set_command(request.get_command()).append_data(d, 3).get_packet();
@@ -1002,9 +961,16 @@ std::string_view process_civ_message(const CivPacketView &request, CivTxPacker &
     }
 }
 
-std::string_view make_freq_response_00(int32_t freq, CivTxPacker &response_packer) {
+std::string_view pack_fg_freq_notify_00(int32_t freq, CivTxPacker &response_packer) {
     uint8_t bcd[5];
     to_bcd(bcd, freq, 10);
-
     return response_packer.set_command(C_SND_FREQ).append_data(bcd, 5).get_packet();
+}
+
+std::string_view pack_mode_notify_01(x6100_mode_t mode, CivTxPacker &response_packer) {
+    return response_packer.set_command(C_SND_MODE).append_byte(x_mode_2_ci_mode(mode, NULL)).get_packet();
+}
+
+std::string_view pack_vfo_notify_07(x6100_vfo_t vfo, CivTxPacker &response_packer) {
+    return response_packer.set_command(C_SET_VFO).append_byte(vfo).get_packet();
 }

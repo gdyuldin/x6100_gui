@@ -82,13 +82,15 @@ static bool send_control(int fd, uint16_t type, uint16_t seq, bool tracked, cons
 static bool civ_data_send(const uint8_t *civ_data, size_t civ_len);
 static bool send_tracked(int fd, const uint8_t *data, size_t len, const sockaddr_in *dst);
 static void process_control_packet(const uint8_t *buf, size_t len, const sockaddr_in *src);
-static void process_civ_packet(const uint8_t *buf, size_t len, const sockaddr_in *src);
+static void process_civ_packet(const uint8_t *buf, size_t len, const sockaddr_in *src, CivTxPacker &resp_packer);
 static void send_capabilities(void);
 static void send_conninfo(void);
 static void handle_retransmit(int fd, const uint8_t *buf, size_t len, const sockaddr_in *dst);
 static void check_retransmit(void);
 static void purge_buffer(void);
 static void on_fg_freq_change_cb(Subject *s, void *user_data);
+static void on_mode_change_cb(Subject *s, void *user_data);
+static void on_vfo_change_cb(Subject *s, void *user_data);
 static void handle_login_packet(const uint8_t *buf, size_t len);
 static void handle_token_packet(const uint8_t *buf, size_t len);
 static void handle_conninfo_packet(const uint8_t *buf, size_t len);
@@ -535,28 +537,38 @@ static void purge_buffer(void) {
     }
 }
 
-// ---- Frequency change echo -----------------------------------------------
+// ---- CIV notification helper + callbacks ----------------------------------
 
-static void on_fg_freq_change_cb(Subject *s, void *user_data) {
-    static uint8_t tx_buf[16];
-    static CivTxPacker resp_packer{tx_buf, 0, LOCAL_ADDRESS};
-
-    (void)s;
-    (void)user_data;
-    if (auth_state < ST_CIV_ACTIVE) return;
-
-    int32_t freq_hz = cfg_sm.cp_fg_freq.get();
-
-    auto resp = make_freq_response_00(freq_hz, resp_packer);
-
-    std::vector<uint8_t> data(resp.begin(), resp.end());
-    send_queue.push(std::move(data));
-
+static void push_civ_notify_lan(std::string_view resp) {
+    send_queue.push(std::vector<uint8_t>(resp.begin(), resp.end()));
     if (fd_event >= 0) {
         uint64_t u = 1;
         ssize_t r = write(fd_event, &u, sizeof(u));
         (void)r;
     }
+}
+
+static void on_fg_freq_change_cb(Subject *s, void *user_data) {
+    if (auth_state < ST_CIV_ACTIVE) return;
+    uint8_t buf[16];
+    CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
+    push_civ_notify_lan(pack_fg_freq_notify_00(cfg_sm.cp_fg_freq.get(), packer));
+}
+
+static void on_mode_change_cb(Subject *s, void *user_data) {
+    if (auth_state < ST_CIV_ACTIVE) return;
+    uint8_t buf[16];
+    CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
+    push_civ_notify_lan(pack_mode_notify_01(
+        static_cast<x6100_mode_t>(cfg_sm.cp_cur_mode.get()), packer));
+}
+
+static void on_vfo_change_cb(Subject *s, void *user_data) {
+    if (auth_state < ST_CIV_ACTIVE) return;
+    uint8_t buf[16];
+    CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
+    push_civ_notify_lan(pack_vfo_notify_07(
+        static_cast<x6100_vfo_t>(cfg_sm.p_band_current_vfo.get()), packer));
 }
 
 // ---- Thread ---------------------------------------------------------------
@@ -694,6 +706,8 @@ int cat_lan_init(void) {
                 CONTROL_PORT, CIV_PORT);
 
     cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change_cb, nullptr);
+    cfg_sm.cp_cur_mode.subscribe(on_mode_change_cb, nullptr);
+    cfg_sm.p_band_current_vfo.subscribe(on_vfo_change_cb, nullptr);
 
     keep_running = true;
     thread = new std::thread(cat_lan_thread);

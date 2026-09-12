@@ -55,6 +55,17 @@ static std::thread* thread = nullptr;
 static std::atomic<bool> keep_running(false);
 
 static void on_fg_freq_change(Subject *s, void *user_data);
+static void on_mode_change(Subject *s, void *user_data);
+static void on_vfo_change(Subject *s, void *user_data);
+
+static void push_civ_notify(std::string_view resp) {
+    send_queue.push(std::vector<char>(resp.begin(), resp.end()));
+    if (fd_queue_event >= 0) {
+        uint64_t u = 1;
+        ssize_t ret = write(fd_queue_event, &u, sizeof(u));
+        (void)ret;
+    }
+}
 
 struct FeedResult {
     int status;
@@ -265,7 +276,9 @@ void cat_init() {
         return;
     }
 
-    cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change, &cfg_sm.cp_fg_freq);
+    cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change);
+    cfg_sm.cp_cur_mode.subscribe(on_mode_change);
+    cfg_sm.p_band_current_vfo.subscribe(on_vfo_change);
 
     /* * */
     if (!thread) {
@@ -283,21 +296,21 @@ void cat_destruct() {
 }
 
 static void on_fg_freq_change(Subject *s, void *user_data) {
-    static uint8_t tx_buf[16];
-    static CivTxPacker resp_packer{tx_buf, 0, LOCAL_ADDRESS};
+    uint8_t buf[16];
+    CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
+    push_civ_notify(pack_fg_freq_notify_00(cfg_sm.cp_fg_freq.get(), packer));
+}
 
-    int32_t new_freq = cfg_sm.cp_fg_freq.get();
+static void on_mode_change(Subject *s, void *user_data) {
+    uint8_t buf[16];
+    CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
+    push_civ_notify(pack_mode_notify_01(
+        static_cast<x6100_mode_t>(cfg_sm.cp_cur_mode.get()), packer));
+}
 
-    auto resp = make_freq_response_00(new_freq, resp_packer);
-
-    std::vector<char> data(resp.begin(), resp.end());
-
-    send_queue.push(std::move(data));
-
-    // Notify thread
-    if (fd_queue_event >= 0) {
-        uint64_t u = 1;
-        ssize_t ret;
-        ret = write(fd_queue_event, &u, sizeof(uint64_t));
-    }
+static void on_vfo_change(Subject *s, void *user_data) {
+    uint8_t buf[16];
+    CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
+    push_civ_notify(pack_vfo_notify_07(
+        static_cast<x6100_vfo_t>(cfg_sm.p_band_current_vfo.get()), packer));
 }
