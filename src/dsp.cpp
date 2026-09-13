@@ -11,6 +11,8 @@
 #include "cfg/settings_manager.h"
 #include "cat/scope_streamer.h"
 
+#include "common/resampler.h"
+
 #include "cw.h"
 #include "util.h"
 
@@ -94,6 +96,8 @@ static iirfilt_rrrf audio_dc_blocker;
 static float  *audio;
 
 static bool ready = false;
+
+static std::atomic<audio_lan_notify_t> audio_lan_notify{nullptr};
 
 static int32_t filter_from = 0;
 static int32_t filter_to   = 3000;
@@ -276,40 +280,6 @@ class ChunkedSpgram {
             psd[i] = 10.0f * log10f(psd[i]);
         }
     };
-};
-
-class Resampler {
-    const size_t             N;
-    size_t                   i = 0;
-    std::unique_ptr<float[]> buf;
-    firdecim_rrrf            des;
-
-  public:
-    Resampler(size_t N) : N(N), buf(std::make_unique<float[]>(N)) {
-        des = firdecim_rrrf_create_kaiser(N, 7, 60.0f);
-        firdecim_rrrf_set_scale(des, 1.0f / static_cast<float>(N));
-    }
-    ~Resampler() { firdecim_rrrf_destroy(des); }
-
-    Resampler(const Resampler&)            = delete;
-    Resampler& operator=(const Resampler&) = delete;
-    Resampler(Resampler&&)                 = delete;
-    Resampler& operator=(Resampler&&)      = delete;
-
-
-    bool feed(float f) {
-        if (i < N) {
-            buf[i++] = f;
-        }
-        return i == N;
-    }
-
-    float execute() {
-        float res;
-        firdecim_rrrf_execute(des, buf.get(), &res);
-        i = 0;
-        return res;
-    }
 };
 
 static Resampler resampler_dialog{DIALOG_DECIM};
@@ -708,6 +678,13 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
         }
         audio_samples_fn(resampled_n, audio);
     }
+
+    auto cb = audio_lan_notify.load(std::memory_order_acquire);
+    if (cb) cb(samples, nsamples);
+}
+
+void dsp_set_audio_lan_notify(audio_lan_notify_t cb) {
+    audio_lan_notify.store(cb, std::memory_order_release);
 }
 
 static void dsp_update_min_max(float *psd_lin, uint16_t size) {

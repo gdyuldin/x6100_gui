@@ -5,10 +5,14 @@
 #include "cat/civ_processor.h"
 #include "cat/scope_streamer.h"
 #include "common/queue.h"
+#include "common/resampler.h"
+#include "dsp.h"
+#include "audio.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <cerrno>
@@ -35,6 +39,11 @@
 #define POLL_TIMEOUT_MS  100
 #define AUTH_USERNAME    "root"
 #define AUTH_PASSWORD    "root"
+
+// Audio port and resampling
+#define AUDIO_PORT           50003
+#define AUDIO_RESAMPLE_FACTOR 3
+#define AUDIO_PACKET_SAMPLES 480
 
 enum AuthState {
     ST_LISTENING,
@@ -85,6 +94,14 @@ static Subscription                sub_vfo;
 static std::chrono::steady_clock::time_point last_ping_time{
     std::chrono::steady_clock::now()};
 
+static int                fd_audio            = -1;
+static struct sockaddr_in client_audio;
+static bool               client_audio_valid  = false;
+static uint16_t           audio_send_seq      = 0;
+static int                audio_rx_rate       = 16000;
+
+static audio_player_t    *wfview_player       = nullptr;
+
 static bool udp_send(int fd, const void *data, size_t len, const sockaddr_in *dst);
 static bool send_control(int fd, uint16_t type, uint16_t seq, bool tracked, const sockaddr_in *dst);
 static bool civ_data_send(const uint8_t *civ_data, size_t civ_len);
@@ -102,6 +119,9 @@ static void on_vfo_change_cb(Subject *s, void *user_data);
 static void handle_login_packet(const uint8_t *buf, size_t len);
 static void handle_token_packet(const uint8_t *buf, size_t len);
 static void handle_conninfo_packet(const uint8_t *buf, size_t len);
+static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_in *src);
+static void audio_lan_tx_cb(int16_t *samples, size_t n);
+static void cleanup_audio();
 
 static uint32_t make_my_id(uint16_t port) {
     return (uint32_t)port;
@@ -222,6 +242,7 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
     // Close on control port
     if (in->type == CTL_TYPE_CLOSE) {
         LV_LOG_INFO("LAN: close received on control port");
+        cleanup_audio();
         client_ctrl_valid = false;
         client_civ_valid  = false;
         scope_streamer_set_notify(nullptr);
@@ -259,6 +280,7 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
     default:
         if (in->type == 0x03) {
             LV_LOG_INFO("LAN: re-AYT received, restarting auth");
+            cleanup_audio();
             client_ctrl       = *src;
             client_ctrl_valid = true;
             remote_id         = in->sentid;
@@ -290,7 +312,8 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
 
 static void handle_login_packet(const uint8_t *buf, size_t len) {
     if (len < sizeof(login_packet_t)) return;
-    // New login means old connection is dead — clean up scope callback
+    // New login means old connection is dead — clean up scope callback and audio
+    cleanup_audio();
     scope_streamer_set_notify(nullptr);
     const login_packet_t *in = (const login_packet_t *)buf;
 
@@ -331,9 +354,14 @@ static void handle_login_packet(const uint8_t *buf, size_t len) {
 
 static void handle_token_packet(const uint8_t *buf, size_t len) {
     if (len < sizeof(token_packet_t)) return;
-    // New token exchange means old connection is dead
-    scope_streamer_set_notify(nullptr);
     const token_packet_t *in = (const token_packet_t *)buf;
+
+    bool is_new_token = (in->requesttype == 0x02);
+    if (is_new_token) {
+        LV_LOG_INFO("LAN: new token request");
+    } else {
+        LV_LOG_INFO("LAN: token renewal");
+    }
 
     remote_id = in->sentid;
     token     = in->token;
@@ -355,10 +383,14 @@ static void handle_token_packet(const uint8_t *buf, size_t len) {
     resp.response     = 0;
 
     send_tracked(fd_control, (const uint8_t *)&resp, sizeof(resp), &client_ctrl);
-    auth_state = ST_TOKEN_SENT;
-    send_capabilities();
-    send_conninfo();
-    LV_LOG_INFO("LAN: token confirmed, caps+conninfo sent");
+    auth_state = ST_CIV_ACTIVE;
+    if (is_new_token) {
+        send_capabilities();
+        send_conninfo();
+        LV_LOG_INFO("LAN: token confirmed, caps+conninfo sent");
+    } else {
+        LV_LOG_INFO("LAN: token renewal confirmed");
+    }
 }
 
 static void send_capabilities(void) {
@@ -382,7 +414,7 @@ static void send_capabilities(void) {
     uint8_t mac[6] = {0x00, 0x1E, 0xC0, 0xFF, 0xEE, 0x01};
     std::memcpy(rad->macaddress, mac, 6);
     std::strncpy(rad->name, "X6100", sizeof(rad->name) - 1);
-    rad->civ = 0xE0;
+    rad->civ = LOCAL_ADDRESS;
     rad->baudrate = htonl(19200U);
 
     send_tracked(fd_control, buf, sizeof(buf), &client_ctrl);
@@ -411,9 +443,17 @@ static void send_conninfo(void) {
 }
 
 static void handle_conninfo_packet(const uint8_t *buf, size_t len) {
-    (void)buf;
-    (void)len;
     LV_LOG_INFO("LAN: stream request received");
+
+    // Parse client-requested audio sample rate from conninfo
+    if (len >= sizeof(conninfo_packet_t)) {
+        const conninfo_packet_t *in = (const conninfo_packet_t *)buf;
+        if (in->rxsample != 0) {
+            audio_rx_rate = (int)ntohl(in->rxsample);
+            LV_LOG_INFO("LAN: client requests audio rx rate %d Hz", audio_rx_rate);
+        }
+    }
+
     // Clear any stale scope callback before registering new one
     scope_streamer_set_notify(nullptr);
 
@@ -431,12 +471,13 @@ static void handle_conninfo_packet(const uint8_t *buf, size_t len) {
     resp.error        = 0;
     resp.disc         = 0;
     resp.civport      = htons(CIV_PORT);
-    resp.audioport    = 0;
+    resp.audioport    = htons(AUDIO_PORT);
     resp.commoncap    = 0x8010;
 
     send_tracked(fd_control, (const uint8_t *)&resp, sizeof(resp), &client_ctrl);
     auth_state = ST_CIV_ACTIVE;
-    LV_LOG_INFO("LAN: CIV stream active on port %d", CIV_PORT);
+    LV_LOG_INFO("LAN: CIV stream active on port %d, audio on port %d",
+                CIV_PORT, AUDIO_PORT);
 
     // LAN waterfall streaming overrides serial
     scope_streamer_set_notify([](std::string_view pkt) {
@@ -444,6 +485,149 @@ static void handle_conninfo_packet(const uint8_t *buf, size_t len) {
             civ_data_send(reinterpret_cast<const uint8_t *>(pkt.data()), pkt.size());
         }
     });
+}
+
+// ---- Audio port processing ------------------------------------------------
+
+static audio_packet_t make_audio_header(uint16_t seq, uint16_t sendseq, uint16_t datalen) {
+    audio_packet_t pkt;
+    std::memset(&pkt, 0, sizeof(pkt));
+    pkt.len     = sizeof(pkt) + datalen;
+    pkt.sentid  = my_id;
+    pkt.rcvdid  = remote_id;
+    pkt.ident   = 0x0080;
+    pkt.datalen = htons(datalen);
+    pkt.sendseq = htons(sendseq);
+    pkt.seq     = seq;
+    return pkt;
+}
+
+static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_in *src) {
+    if (len < sizeof(control_packet_t)) return;
+    const control_packet_t *hdr = (const control_packet_t *)buf;
+
+    if (hdr->type == 0x01) {
+        handle_retransmit(fd_audio, buf, len, src);
+        return;
+    }
+
+    // Ping on audio port
+    if (len == PING_SIZE) {
+        const ping_packet_t *pin = (const ping_packet_t *)buf;
+        if (pin->type == 0x07 && pin->reply == 0x00) {
+            ping_packet_t resp;
+            std::memset(&resp, 0, sizeof(resp));
+            resp.len    = sizeof(resp);
+            resp.type   = 0x07;
+            resp.seq    = pin->seq;
+            resp.sentid = my_id;
+            resp.rcvdid = remote_id;
+            resp.reply  = 0x01;
+            resp.time   = pin->time;
+            udp_send(fd_audio, &resp, sizeof(resp), &client_audio);
+        }
+        return;
+    }
+
+    // Handshake: associate audio client with control client by IP
+    if (len == CONTROL_SIZE) {
+        if (hdr->type == 0x03) {
+            // Must have an authenticated control client from the same IP
+            if (!client_ctrl_valid || client_ctrl.sin_addr.s_addr != src->sin_addr.s_addr) {
+                LV_LOG_WARN("LAN/AUDIO: AYT from unknown IP, ignoring");
+                return;
+            }
+            client_audio       = *src;
+            client_audio_valid = true;
+            remote_id          = hdr->sentid;
+            audio_send_seq     = 0;
+
+            // Create PulseAudio playback stream for incoming network audio
+            if (!wfview_player) {
+                wfview_player = audio_create_player((uint32_t)audio_rx_rate, 1);
+                if (!wfview_player) {
+                    LV_LOG_ERROR("LAN/AUDIO: failed to create audio player");
+                } else {
+                    LV_LOG_INFO("LAN/AUDIO: created player at %d Hz", audio_rx_rate);
+                }
+            }
+
+            // Register DSP callback to forward RX audio to network
+            dsp_set_audio_lan_notify(audio_lan_tx_cb);
+
+            send_control(fd_audio, 0x04, 0, false, &client_audio);
+            send_control(fd_audio, 0x06, 0x01, false, &client_audio);
+            LV_LOG_INFO("LAN/AUDIO: handshake");
+        } else if (hdr->type == 0x06) {
+            remote_id = hdr->sentid;
+            LV_LOG_INFO("LAN/AUDIO: ready");
+        } else if (hdr->type == CTL_TYPE_CLOSE) {
+            LV_LOG_INFO("LAN/AUDIO: close received");
+            cleanup_audio();
+        }
+        return;
+    }
+
+    // Audio data packet
+    if (len >= AUDIO_SIZE) {
+        if (!client_audio_valid) return;
+
+        const audio_packet_t *ap = (const audio_packet_t *)buf;
+        if (ap->ident != 0x0080) return;
+
+        uint16_t datalen = ntohs(ap->datalen);
+        size_t payload_offset = AUDIO_SIZE;
+        if (payload_offset + datalen > len) return;
+
+        if (wfview_player) {
+            const int16_t *pcm = (const int16_t *)(buf + payload_offset);
+            size_t nsamples = datalen / 2;
+            audio_player_send(wfview_player, const_cast<int16_t *>(pcm), nsamples);
+        }
+    }
+}
+
+// ---- Audio TX thread, callbacks, cleanup -----------------------------------
+
+static void cleanup_audio() {
+    dsp_set_audio_lan_notify(nullptr);
+
+    if (wfview_player) {
+        audio_player_release(wfview_player);
+        wfview_player = nullptr;
+    }
+
+    client_audio_valid = false;
+}
+
+static void audio_lan_tx_cb(int16_t *samples, size_t n) {
+    if (!client_audio_valid) return;
+
+    static Resampler decim(AUDIO_RESAMPLE_FACTOR);
+    static int16_t pkt_buf[AUDIO_PACKET_SAMPLES];
+    static size_t pkt_fill = 0;
+
+    float k = 1.0f / (1 << 15);
+    for (size_t i = 0; i < n; i++) {
+        float sample_f = (float)samples[i] * k;
+        if (decim.feed(sample_f)) {
+            float resampled = decim.execute();
+            int16_t val = (int16_t)(resampled * (1 << 15));
+            if (val < -32767) val = -32767;
+            if (val > 32767)  val = 32767;
+            pkt_buf[pkt_fill++] = val;
+            if (pkt_fill >= AUDIO_PACKET_SAMPLES) {
+                audio_packet_t hdr = make_audio_header(0, audio_send_seq++,
+                    AUDIO_PACKET_SAMPLES * 2);
+                uint8_t out[sizeof(hdr) + AUDIO_PACKET_SAMPLES * 2];
+                std::memcpy(out, &hdr, sizeof(hdr));
+                std::memcpy(out + sizeof(hdr), pkt_buf, sizeof(pkt_buf));
+                sendto(fd_audio, out, sizeof(out), 0,
+                       (const sockaddr *)&client_audio, sizeof(client_audio));
+                pkt_fill = 0;
+            }
+        }
+    }
 }
 
 // ---- CI-V port processing ------------------------------------------------
@@ -643,7 +827,7 @@ static void cat_lan_thread() {
     CivTxPacker resp_packer{tx_buf, 0, LOCAL_ADDRESS};
 
     while (keep_running) {
-        struct pollfd fds[3];
+        struct pollfd fds[4];
         std::memset(fds, 0, sizeof(fds));
 
         fds[0].fd     = fd_control;
@@ -652,8 +836,10 @@ static void cat_lan_thread() {
         fds[1].events = POLLIN;
         fds[2].fd     = fd_event;
         fds[2].events = POLLIN;
+        fds[3].fd     = fd_audio;
+        fds[3].events = POLLIN;
 
-        int ret = poll(fds, 3, POLL_TIMEOUT_MS);
+        int ret = poll(fds, 4, POLL_TIMEOUT_MS);
         if (ret < 0) {
             if (errno == EINTR) continue;
             break;
@@ -704,6 +890,17 @@ static void cat_lan_thread() {
             }
         }
 
+        // Audio port
+        if (fd_audio >= 0 && fds[3].revents & POLLIN) {
+            sockaddr_in src;
+            socklen_t src_len = sizeof(src);
+            ssize_t n = recvfrom(fd_audio, recv_buf, sizeof(recv_buf), 0,
+                                 (sockaddr *)&src, &src_len);
+            if (n > 0) {
+                process_audio_packet(recv_buf, (size_t)n, &src);
+            }
+        }
+
         // Periodic maintenance
         if (auth_state >= ST_CIV_ACTIVE && client_ctrl_valid) {
             auto now = std::chrono::steady_clock::now();
@@ -711,6 +908,7 @@ static void cat_lan_thread() {
                 now - last_ping_time).count();
             if (elapsed >= PING_TIMEOUT_SEC) {
                 LV_LOG_WARN("LAN: ping timeout (%lds), disconnecting", elapsed);
+                cleanup_audio();
                 client_ctrl_valid = false;
                 client_civ_valid  = false;
                 scope_streamer_set_notify(nullptr);
@@ -783,11 +981,35 @@ int cat_lan_init(void) {
         return -1;
     }
 
+    // Audio socket
+    fd_audio = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd_audio < 0) {
+        perror("cat_lan: socket audio");
+        close(fd_event); fd_event = -1;
+        close(fd_civ); fd_civ = -1;
+        close(fd_control); fd_control = -1;
+        return -1;
+    }
+    setsockopt(fd_audio, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(AUDIO_PORT);
+    if (bind(fd_audio, (sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("cat_lan: bind audio");
+        close(fd_audio); fd_audio = -1;
+        close(fd_event); fd_event = -1;
+        close(fd_civ); fd_civ = -1;
+        close(fd_control); fd_control = -1;
+        return -1;
+    }
+    fcntl(fd_audio, F_SETFL, O_NONBLOCK);
+
     my_id      = make_my_id(CONTROL_PORT);
     auth_state = ST_LISTENING;
 
-    LV_LOG_INFO("LAN CAT listening on port %d (control) and %d (CIV)",
-                CONTROL_PORT, CIV_PORT);
+    LV_LOG_INFO("LAN CAT listening on control port %d, CIV port %d, audio port %d",
+                CONTROL_PORT, CIV_PORT, AUDIO_PORT);
 
     sub_freq = Subscription(cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change_cb, nullptr));
     sub_mode = Subscription(cfg_sm.cp_cur_mode.subscribe(on_mode_change_cb, nullptr));
@@ -803,6 +1025,9 @@ void cat_lan_destruct(void) {
     if (!keep_running) return;
 
     scope_streamer_set_notify(nullptr);
+    dsp_set_audio_lan_notify(nullptr);
+
+    cleanup_audio();
 
     if (thread) {
         keep_running = false;
@@ -816,12 +1041,14 @@ void cat_lan_destruct(void) {
         delete thread;
         thread = nullptr;
     }
-    if (fd_control >= 0) { close(fd_control); fd_control = -1; }
-    if (fd_civ >= 0)     { close(fd_civ);     fd_civ     = -1; }
-    if (fd_event >= 0)   { close(fd_event);   fd_event   = -1; }
+    if (fd_audio >= 0)         { close(fd_audio);         fd_audio         = -1; }
+    if (fd_control >= 0)       { close(fd_control);       fd_control       = -1; }
+    if (fd_civ >= 0)           { close(fd_civ);           fd_civ           = -1; }
+    if (fd_event >= 0)         { close(fd_event);         fd_event         = -1; }
 
     client_ctrl_valid = false;
     client_civ_valid  = false;
+    client_audio_valid = false;
     auth_state        = ST_LISTENING;
     token             = 0;
     send_seq          = 1;

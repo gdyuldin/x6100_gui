@@ -9,4 +9,4 @@ target_include_directories(cat_lan PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
 
-target_link_libraries(cat_lan PUBLIC cat)
+target_link_libraries(cat_lan PUBLIC cat liquid)

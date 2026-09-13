@@ -50,6 +50,9 @@ void dsp_set_spectrum_enabled(bool enabled);
 void dsp_set_spectrum_beta(float x);
 
 void dsp_put_audio_samples(size_t nsamples, int16_t *samples);
+
+typedef void (*audio_lan_notify_t)(int16_t *samples, size_t count);
+void dsp_set_audio_lan_notify(audio_lan_notify_t cb);
 #ifdef __cplusplus
 }
 #endif

@@ -40,7 +40,10 @@ extern "C" {
 #define CAPABILITIES_SIZE      0x42
 #define RADIO_CAP_SIZE         0x66
 #define CIV_SIZE               0x15
+#define AUDIO_PORT             50003
 #define AUDIO_SIZE             0x18
+#define AUDIO_RESAMPLE_FACTOR  3
+#define AUDIO_PACKET_SAMPLES   480
 #define DATA_SIZE              0x15
 #define GUIDLEN                16
 
@@ -83,6 +86,18 @@ typedef struct openclose_packet {
     uint16_t sendseq;
     uint8_t  magic;
 } openclose_packet_t;
+
+typedef struct audio_packet {
+    uint32_t len;
+    uint16_t type;
+    uint16_t seq;
+    uint32_t sentid;
+    uint32_t rcvdid;
+    uint16_t ident;
+    uint16_t sendseq;
+    uint16_t unused;
+    uint16_t datalen;
+} audio_packet_t;
 
 typedef struct token_packet {
     uint32_t len;

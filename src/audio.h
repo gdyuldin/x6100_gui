@@ -14,6 +14,10 @@
 #include <pulse/pulseaudio.h>
 #include <aether_radio/x6100_control/control.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define AUDIO_PLAY_RATE     (48000)
 #define AUDIO_CAPTURE_RATE  (48000)
 
@@ -31,7 +35,7 @@ void audio_mixer_setup(x6100_base_ver_t base_ver);
 int audio_play(int16_t *buf, size_t samples);
 void audio_play_wait();
 
-// audio_player_t *audio_create_player(uint32_t sample_rate, uint32_t ch);
+audio_player_t *audio_create_player(uint32_t sample_rate, uint32_t ch);
 audio_player_t *audio_get_player(uint32_t sample_rate, uint32_t ch);
 int audio_player_send(audio_player_t *player, int16_t *samples_buf, size_t samples);
 void audio_player_wait(audio_player_t *player);
@@ -46,3 +50,7 @@ float audio_set_play_vol(float db);
 float audio_set_rec_vol(float db);
 
 float audio_get_peak_db();
+
+#ifdef __cplusplus
+}
+#endif

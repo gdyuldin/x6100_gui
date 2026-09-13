@@ -24,7 +24,7 @@
 #include "params/params.h"
 #include "cfg/cfg_api.h"
 
-#define AUDIO_RATE_MS   100
+#define AUDIO_RATE_MS   30
 
 static pa_threaded_mainloop *mloop;
 static pa_mainloop_api      *mlapi;
