@@ -42,6 +42,13 @@ template <typename T> class TSQueue {
         std::unique_lock<std::mutex> lock(m_mutex);
         return m_queue.empty();
     }
+
+    void clear() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        while (!m_queue.empty()) {
+            m_queue.pop();
+        }
+    }
 };
 
 #endif

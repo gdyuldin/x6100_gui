@@ -100,6 +100,8 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_atu_enabled{"atu", false, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_cat_baud{"cat_baud", 19200, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
 
     // UI
     Parameter<int32_t> p_auto_level_enabled{"auto_level_enabled", true, 0, 1,

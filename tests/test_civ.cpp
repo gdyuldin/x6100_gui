@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+#include <sstream>
+#include <iomanip>
 
 #include "cat/civ_processor.h"
 #include "cat/civ_protocol.h"
@@ -64,6 +66,22 @@ extern "C" void radio_set_ptt(bool) {}
 
 // ---- helpers ---------------------------------------------------------------
 
+namespace Catch {
+    template <>
+    struct StringMaker<std::vector<uint8_t>> {
+        static std::string convert(const std::vector<uint8_t>& v) {
+            std::ostringstream oss;
+            oss << "Hex: [ ";
+            oss << std::hex << std::uppercase << std::setfill('0');
+            for (auto b : v) {
+                oss << "0x" << std::setw(2) << static_cast<int>(b) << " ";
+            }
+            oss << "]";
+            return oss.str();
+        }
+    };
+}
+
 static std::vector<uint8_t> to_bytes(std::string_view sv) {
     return std::vector<uint8_t>(sv.begin(), sv.end());
 }
@@ -75,8 +93,8 @@ static std::vector<uint8_t> ci_v_frame(uint8_t cmd, const std::vector<uint8_t> &
     std::vector<uint8_t> raw(payload.size() + 6);
     raw[0] = FRAME_PRE;
     raw[1] = FRAME_PRE;
-    raw[2] = 0xE0;
-    raw[3] = LOCAL_ADDRESS;
+    raw[2] = LOCAL_ADDRESS;
+    raw[3] = 0xE0;
     raw[4] = cmd;
     std::copy(payload.begin(), payload.end(), raw.begin() + 5);
     raw.back() = FRAME_END;
@@ -666,7 +684,7 @@ TEST_CASE("C_CTL_SCP sub 0x10 returns scope available", "[cat]") {
     auto sv = process_civ_message(req, packer);
 
     REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
-        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_SCP, 0x10, 0x01, 0xFD
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_SCP, 0x10, 0x00, 0xFD
     }));
 }
 

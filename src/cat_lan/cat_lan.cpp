@@ -3,6 +3,7 @@
 #include "cat/cat.h"
 #include "cat/civ_protocol.h"
 #include "cat/civ_processor.h"
+#include "cat/scope_streamer.h"
 #include "common/queue.h"
 
 #include <algorithm>
@@ -76,6 +77,13 @@ static std::mutex                  tx_mutex;
 static std::map<uint16_t, int>     rx_missing;
 static std::mutex                  missing_mutex;
 static TSQueue<std::vector<uint8_t>> send_queue;
+
+static Subscription                sub_freq;
+static Subscription                sub_mode;
+static Subscription                sub_vfo;
+
+static std::chrono::steady_clock::time_point last_ping_time{
+    std::chrono::steady_clock::now()};
 
 static bool udp_send(int fd, const void *data, size_t len, const sockaddr_in *dst);
 static bool send_control(int fd, uint16_t type, uint16_t seq, bool tracked, const sockaddr_in *dst);
@@ -196,6 +204,7 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
     if (len == PING_SIZE) {
         const ping_packet_t *pin = (const ping_packet_t *)buf;
         if (pin->type == 0x07 && pin->reply == 0x00) {
+            last_ping_time = std::chrono::steady_clock::now();
             ping_packet_t resp;
             std::memset(&resp, 0, sizeof(resp));
             resp.len    = sizeof(resp);
@@ -207,6 +216,19 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
             resp.time   = pin->time;
             udp_send(fd_control, &resp, sizeof(resp), &client_ctrl);
         }
+        return;
+    }
+
+    // Close on control port
+    if (in->type == CTL_TYPE_CLOSE) {
+        LV_LOG_INFO("LAN: close received on control port");
+        client_ctrl_valid = false;
+        client_civ_valid  = false;
+        scope_streamer_set_notify(nullptr);
+        auth_state = ST_LISTENING;
+        send_queue.clear();
+        { std::lock_guard<std::mutex> lock(tx_mutex); tx_buffer.clear(); }
+        { std::lock_guard<std::mutex> lock(missing_mutex); rx_missing.clear(); }
         return;
     }
 
@@ -236,7 +258,29 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
 
     default:
         if (in->type == 0x03) {
+            LV_LOG_INFO("LAN: re-AYT received, restarting auth");
+            client_ctrl       = *src;
+            client_ctrl_valid = true;
+            remote_id         = in->sentid;
+            client_civ_valid  = false;
+            scope_streamer_set_notify(nullptr);
+            token             = 0;
+            send_seq          = 1;
+            civ_send_seq      = 0;
+            auth_seq          = 0x30;
+            tok_request       = 0;
+            {
+                std::lock_guard<std::mutex> lock(tx_mutex);
+                tx_buffer.clear();
+            }
+            {
+                std::lock_guard<std::mutex> lock(missing_mutex);
+                rx_missing.clear();
+            }
+            send_queue.clear();
             send_control(fd_control, 0x04, 0, false, &client_ctrl);
+            send_control(fd_control, 0x06, 0x01, false, &client_ctrl);
+            auth_state = ST_AYT_SENT;
         }
         break;
     }
@@ -246,6 +290,8 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
 
 static void handle_login_packet(const uint8_t *buf, size_t len) {
     if (len < sizeof(login_packet_t)) return;
+    // New login means old connection is dead — clean up scope callback
+    scope_streamer_set_notify(nullptr);
     const login_packet_t *in = (const login_packet_t *)buf;
 
     uint8_t expected_user[16], expected_pass[16];
@@ -285,6 +331,8 @@ static void handle_login_packet(const uint8_t *buf, size_t len) {
 
 static void handle_token_packet(const uint8_t *buf, size_t len) {
     if (len < sizeof(token_packet_t)) return;
+    // New token exchange means old connection is dead
+    scope_streamer_set_notify(nullptr);
     const token_packet_t *in = (const token_packet_t *)buf;
 
     remote_id = in->sentid;
@@ -366,6 +414,8 @@ static void handle_conninfo_packet(const uint8_t *buf, size_t len) {
     (void)buf;
     (void)len;
     LV_LOG_INFO("LAN: stream request received");
+    // Clear any stale scope callback before registering new one
+    scope_streamer_set_notify(nullptr);
 
     status_packet_t resp;
     std::memset(&resp, 0, sizeof(resp));
@@ -387,6 +437,13 @@ static void handle_conninfo_packet(const uint8_t *buf, size_t len) {
     send_tracked(fd_control, (const uint8_t *)&resp, sizeof(resp), &client_ctrl);
     auth_state = ST_CIV_ACTIVE;
     LV_LOG_INFO("LAN: CIV stream active on port %d", CIV_PORT);
+
+    // LAN waterfall streaming overrides serial
+    scope_streamer_set_notify([](std::string_view pkt) {
+        if (auth_state >= ST_CIV_ACTIVE && client_civ_valid) {
+            civ_data_send(reinterpret_cast<const uint8_t *>(pkt.data()), pkt.size());
+        }
+    });
 }
 
 // ---- CI-V port processing ------------------------------------------------
@@ -435,7 +492,7 @@ static void process_civ_packet(const uint8_t *buf, size_t len, const sockaddr_in
 
     case OPENCLOSE_SIZE: {
         const openclose_packet_t *oc = (const openclose_packet_t *)buf;
-        if (oc->magic == 0x04) {
+        if (oc->magic == MAGIC_OPEN) {
             LV_LOG_INFO("LAN/CIV: open");
             openclose_packet_t resp;
             std::memset(&resp, 0, sizeof(resp));
@@ -444,8 +501,12 @@ static void process_civ_packet(const uint8_t *buf, size_t len, const sockaddr_in
             resp.rcvdid  = remote_id;
             resp.data    = oc->data;
             resp.sendseq = htons(civ_send_seq++);
-            resp.magic   = 0x04;
+            resp.magic   = MAGIC_OPEN;
             send_tracked(fd_civ, (const uint8_t *)&resp, sizeof(resp), &client_civ);
+        } else if (oc->magic == MAGIC_CLOSE) {
+            LV_LOG_INFO("LAN/CIV: close received");
+            client_civ_valid = false;
+            scope_streamer_set_notify(nullptr);
         }
         break;
     }
@@ -550,9 +611,11 @@ static void push_civ_notify_lan(std::string_view resp) {
 
 static void on_fg_freq_change_cb(Subject *s, void *user_data) {
     if (auth_state < ST_CIV_ACTIVE) return;
+    int32_t freq = cfg_sm.cp_fg_freq.get();
+    scope_streamer_set_center_freq(freq);
     uint8_t buf[16];
     CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
-    push_civ_notify_lan(pack_fg_freq_notify_00(cfg_sm.cp_fg_freq.get(), packer));
+    push_civ_notify_lan(pack_fg_freq_notify_00(freq, packer));
 }
 
 static void on_mode_change_cb(Subject *s, void *user_data) {
@@ -577,7 +640,7 @@ static void cat_lan_thread() {
     uint8_t recv_buf[65536];
 
     uint8_t tx_buf[64];
-    CivTxPacker resp_packer{tx_buf, LOCAL_ADDRESS, 0};
+    CivTxPacker resp_packer{tx_buf, 0, LOCAL_ADDRESS};
 
     while (keep_running) {
         struct pollfd fds[3];
@@ -642,6 +705,27 @@ static void cat_lan_thread() {
         }
 
         // Periodic maintenance
+        if (auth_state >= ST_CIV_ACTIVE && client_ctrl_valid) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                now - last_ping_time).count();
+            if (elapsed >= PING_TIMEOUT_SEC) {
+                LV_LOG_WARN("LAN: ping timeout (%lds), disconnecting", elapsed);
+                client_ctrl_valid = false;
+                client_civ_valid  = false;
+                scope_streamer_set_notify(nullptr);
+                auth_state = ST_LISTENING;
+                {
+                    std::lock_guard<std::mutex> lock(tx_mutex);
+                    tx_buffer.clear();
+                }
+                {
+                    std::lock_guard<std::mutex> lock(missing_mutex);
+                    rx_missing.clear();
+                }
+                send_queue.clear();
+            }
+        }
         check_retransmit();
         purge_buffer();
     }
@@ -705,9 +789,9 @@ int cat_lan_init(void) {
     LV_LOG_INFO("LAN CAT listening on port %d (control) and %d (CIV)",
                 CONTROL_PORT, CIV_PORT);
 
-    cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change_cb, nullptr);
-    cfg_sm.cp_cur_mode.subscribe(on_mode_change_cb, nullptr);
-    cfg_sm.p_band_current_vfo.subscribe(on_vfo_change_cb, nullptr);
+    sub_freq = Subscription(cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change_cb, nullptr));
+    sub_mode = Subscription(cfg_sm.cp_cur_mode.subscribe(on_mode_change_cb, nullptr));
+    sub_vfo  = Subscription(cfg_sm.p_band_current_vfo.subscribe(on_vfo_change_cb, nullptr));
 
     keep_running = true;
     thread = new std::thread(cat_lan_thread);
@@ -716,8 +800,18 @@ int cat_lan_init(void) {
 }
 
 void cat_lan_destruct(void) {
+    if (!keep_running) return;
+
+    scope_streamer_set_notify(nullptr);
+
     if (thread) {
         keep_running = false;
+        // Wake the poll loop so the thread exits promptly
+        if (fd_event >= 0) {
+            uint64_t u = 1;
+            ssize_t res = write(fd_event, &u, sizeof(u));
+            (void)res;
+        }
         thread->join();
         delete thread;
         thread = nullptr;
@@ -729,6 +823,25 @@ void cat_lan_destruct(void) {
     client_ctrl_valid = false;
     client_civ_valid  = false;
     auth_state        = ST_LISTENING;
+    token             = 0;
+    send_seq          = 1;
+    civ_send_seq      = 0;
+    auth_seq          = 0x30;
+    tok_request       = 0;
+
+    sub_freq.reset();
+    sub_mode.reset();
+    sub_vfo.reset();
+
+    {
+        std::lock_guard<std::mutex> lock(tx_mutex);
+        tx_buffer.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(missing_mutex);
+        rx_missing.clear();
+    }
+    send_queue.clear();
 
     LV_LOG_INFO("LAN CAT shut down");
 }

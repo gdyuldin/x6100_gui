@@ -7,6 +7,8 @@
  */
 
 #include "civ_processor.h"
+#include "civ_internal.h"
+#include "scope_streamer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -95,6 +97,10 @@ constexpr uint8_t MEM_DM_FG  = 0x06;
 
 SettingsManager *civ_sm = &cfg_sm;
 
+} // anonymous namespace
+
+namespace civ::detail {
+
 // ============================================================================
 // BCD helpers
 // ============================================================================
@@ -164,6 +170,11 @@ uint64_t from_bcd_be(std::string_view bcd_data, uint8_t len) {
 
     return data;
 }
+
+} // namespace civ::detail
+
+namespace {
+using namespace civ::detail;
 
 // ============================================================================
 // Mode helpers
@@ -311,42 +322,6 @@ Parameter<int32_t>& vfo_mode(bool fg, int cur_vfo) {
 }
 
 // ============================================================================
-// Logging + set_unsupported
-// ============================================================================
-
-void log_frame_raw(std::string_view raw, const char *prefix) {
-    std::string s;
-    char tmp[32];
-    size_t len = raw.size();
-    s.reserve(len * 3 + 16);
-
-    // header: first 4 bytes (FE FE addr_radio addr_ctrl)
-    snprintf(tmp, sizeof(tmp), "[%02X:%02X:%02X:%02X]-[",
-             static_cast<uint8_t>(raw[0]), static_cast<uint8_t>(raw[1]),
-             static_cast<uint8_t>(raw[2]), static_cast<uint8_t>(raw[3]));
-    s += tmp;
-
-    // data: bytes 4 .. len-2 (cmd + optional payload)
-    for (size_t i = 4; i + 1 < len; i++) {
-        snprintf(tmp, sizeof(tmp), "%02X:", static_cast<uint8_t>(raw[i]));
-        s += tmp;
-    }
-    if (len > 4) s.pop_back();
-
-    // footer: last byte (FRAME_END)
-    snprintf(tmp, sizeof(tmp), "]-[%02X]", static_cast<uint8_t>(raw[len - 1]));
-    s += tmp;
-
-    LV_LOG_USER("%s\t: %s\t(Len %zu)", prefix, s.c_str(), len);
-}
-
-std::string_view set_unsupported(const CivPacketView &req, CivTxPacker &resp) {
-    log_frame_raw(req.raw(), "unsupported");
-    return resp.set_code(CODE_NG)
-               .get_packet();
-}
-
-// ============================================================================
 // Handler dispatch
 // ============================================================================
 
@@ -396,6 +371,7 @@ void init_cmd_handlers() {
     cmd_handlers[0x25] = handle_send_sel_freq_x25;
     cmd_handlers[0x26] = handle_send_sel_mode_x26;
     cmd_handlers[0x27] = handle_ctl_scp_x27;
+    // cmd_handlers[0x27] = scope_streamer_handle_27;
 }
 
 // ============================================================================
@@ -406,9 +382,9 @@ std::string_view handle_snd_freq_x00(const CivPacketView &request, CivTxPacker &
     size_t data_size = request.get_command_data().size();
     if (data_size == 5) {
         civ_sm->cp_fg_freq.set(from_bcd(request.get_command_data(), 10));
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -439,9 +415,9 @@ std::string_view handle_set_freq_x05(const CivPacketView &request, CivTxPacker &
     size_t data_size = request.get_command_data().size();
     if (data_size == 5) {
         civ_sm->cp_fg_freq.set(from_bcd(request.get_command_data(), 10));
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -453,9 +429,9 @@ std::string_view handle_set_mode_x06(const CivPacketView &request, CivTxPacker &
     size_t data_size = request.get_command_data().size();
     if ((data_size >= 1) && (data_size <= 2)) {
         civ_sm->cp_cur_mode.set(ci_mode_2_x_mode(request.get_subcommand()));
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -472,29 +448,29 @@ std::string_view handle_set_vfo_x07(const CivPacketView &request, CivTxPacker &r
             if (cur_vfo != X6100_VFO_A) {
                 civ_sm->p_band_current_vfo.set(X6100_VFO_A);
             }
-            return resp.set_code(CODE_OK).get_packet();
+            return resp.set_ok().get_packet();
 
         case S_VFOB:
             if (cur_vfo != X6100_VFO_B) {
                 civ_sm->p_band_current_vfo.set(X6100_VFO_B);
             }
-            return resp.set_code(CODE_OK).get_packet();
+            return resp.set_ok().get_packet();
 
         case S_XCHNG:
             civ_sm->p_band_current_vfo.set(
                 cur_vfo == X6100_VFO_A ? X6100_VFO_B : X6100_VFO_A);
-            return resp.set_code(CODE_OK).get_packet();
+            return resp.set_ok().get_packet();
 
         case S_BTOA:
             civ_sm->cfg_band_vfo_copy();
-            return resp.set_code(CODE_OK).get_packet();
+            return resp.set_ok().get_packet();
 
         case FRAME_END:
             return resp.set_command(request.get_command())
                        .set_vfo(static_cast<uint8_t>(cur_vfo == X6100_VFO_A ? S_VFOA : S_VFOB)).get_packet();
 
         default:
-            return set_unsupported(request, resp);
+            return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -508,9 +484,9 @@ std::string_view handle_ctl_splt_x0f(const CivPacketView &request, CivTxPacker &
         return resp.set_command(request.get_command()).append_byte(static_cast<uint8_t>(civ_sm->p_band_split.get())).get_packet();
     } else if (data_size == 1) {
         civ_sm->p_band_split.set(request.get_subcommand());
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -524,9 +500,9 @@ std::string_view handle_set_ts_x10(const CivPacketView &request, CivTxPacker &re
         return resp.set_command(request.get_command()).append_byte(freq_step_to_ci(civ_sm->p_mode_freq_step.get())).get_packet();
     } else if (data_size == 1) {
         civ_sm->p_mode_freq_step.set(freq_step_from_ci(request.get_subcommand()));
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -540,9 +516,9 @@ std::string_view handle_ctl_att_x11(const CivPacketView &request, CivTxPacker &r
         return resp.set_command(request.get_command()).append_byte(static_cast<uint8_t>(civ_sm->cp_cur_att.get() * 0x20)).get_packet();
     } else if (data_size == 1) {
         civ_sm->cp_cur_att.set(request.get_subcommand());
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -556,7 +532,7 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
     uint8_t subcmd    = request.get_subcommand();
 
     if (data_size == 1) {
-        CivTxPackerAfterCommand after_cmd = resp.set_command(request.get_command());
+        auto after_cmd = resp.set_command(request.get_command()).set_subcommand(subcmd);
         switch (subcmd) {
             case 0x01: // Get AF level
                 to_bcd_be(bcd, civ_sm->p_volume.get() * 255 / 55, 3);
@@ -567,6 +543,9 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
             case 0x03: // Get SQL level
                 to_bcd_be(bcd, civ_sm->p_squelch.get() * 255 / 100, 3);
                 break;
+            case 0x07: //  [TWIN PBT] (PBT1) position
+            case 0x08: //  [TWIN PBT] (PBT2) position
+                return after_cmd.append_byte(0x01).append_byte(0x28).get_packet();
             case 0x0a: // Get Tx power
                 to_bcd_be(bcd, std::round(civ_sm->p_pwr.get() * 255 / 10), 3);
                 break;
@@ -574,9 +553,9 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
                 to_bcd_be(bcd, civ_sm->p_moni.get() * 255 / 100, 3);
                 break;
             default:
-                return set_unsupported(request, resp);
+                return civ::detail::set_unsupported(request, resp);
         }
-        return after_cmd.set_subcommand(subcmd).append_data(bcd, 2).get_packet();
+        return after_cmd.append_data(bcd, 2).get_packet();
     } else if (data_size == 3) {
         auto bcd_val = from_bcd_be(request.get_subcommand_data(), 3);
         switch (subcmd) {
@@ -599,11 +578,11 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
                 civ_sm->p_moni.set(bcd_val * 100 / 255);
                 break;
             default:
-                return set_unsupported(request, resp);
+                return civ::detail::set_unsupported(request, resp);
         }
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -630,6 +609,11 @@ std::string_view handle_rd_sqsm_x15(const CivPacketView &request, CivTxPacker &r
                         .append_data(bcd, 2)
                         .get_packet();
                 }
+            case 0x07: // Read the OVF status (not supported)
+                return resp.set_command(request.get_command())
+                    .set_subcommand(request.get_subcommand())
+                    .append_byte(0x00)
+                    .get_packet();
             case 0x11: // Get Power-Meter
                 val = -pwr * pwr + 35 * pwr;
                 to_bcd_be(bcd, val, 3);
@@ -649,11 +633,11 @@ std::string_view handle_rd_sqsm_x15(const CivPacketView &request, CivTxPacker &r
                     .append_data(bcd, 2)
                     .get_packet();
             default:
-                return resp.set_code(CODE_NG).get_packet();
+                return resp.set_ng().get_packet();
         }
     } else {
-        return set_unsupported(request, resp);
-        // return resp.set_code(CODE_NG).get_packet();
+        return civ::detail::set_unsupported(request, resp);
+        // return resp.set_ng().get_packet();
     }
 }
 
@@ -665,26 +649,27 @@ std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &
     size_t data_size = request.get_command_data().size();
     uint8_t subcmd = request.get_subcommand();
 
-    auto after_cmd = resp.set_command(request.get_command());
 
     if (data_size == 1) {
         // READ — return current value
+        auto after_cmd = resp.set_command(request.get_command()).set_subcommand(subcmd);
         switch (subcmd) {
             case 0x02:
-                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->cp_cur_pre.get())).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->cp_cur_pre.get())).get_packet();
             case 0x22:
-                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->p_nb.get())).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_nb.get())).get_packet();
             case 0x40:
-                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->p_nr.get())).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_nr.get())).get_packet();
             case 0x44:
-                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->p_comp.get() > 1)).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_comp.get() > 1)).get_packet();
             case 0x46:
-                return after_cmd.set_subcommand(subcmd).append_byte(static_cast<uint8_t>(civ_sm->p_vox_en.get())).get_packet();
-            case 0x45: // Monitor — unsupported
+                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_vox_en.get())).get_packet();
+            case 0x45: // Monitor on/off
+                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_moni.get() > 0)).get_packet();
             case 0x5D: // Tone squelch — unsupported
-                return resp.set_code(CODE_NG).get_packet();
+                return after_cmd.append_byte(0x00).get_packet();
             default:
-                return set_unsupported(request, resp);
+                return civ::detail::set_unsupported(request, resp);
         }
     } else if (data_size == 2) {
         // WRITE — set value from request
@@ -707,13 +692,13 @@ std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &
                 break;
             case 0x45:
             case 0x5D:
-                return resp.set_code(CODE_NG).get_packet();
+                return resp.set_ng().get_packet();
             default:
-                return set_unsupported(request, resp);
+                return civ::detail::set_unsupported(request, resp);
         }
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -725,7 +710,7 @@ std::string_view handle_rd_trxid_x19(const CivPacketView &request, CivTxPacker &
     if ((request.get_command_data().size() == 1) && (request.get_subcommand() == 0)) {
         return resp.set_command(request.get_command()).set_subcommand(0x00).append_byte(LOCAL_ADDRESS).get_packet();
     }
-    return set_unsupported(request, resp);
+    return civ::detail::set_unsupported(request, resp);
 }
 
 // ============================================================================
@@ -751,21 +736,21 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
                 }
 
             default:
-                return set_unsupported(request, resp);
+                return civ::detail::set_unsupported(request, resp);
         }
     } else {
         switch (request.get_subcommand()) {
             case MEM_LOCK:
-                return resp.set_code(CODE_NG).get_packet();
+                return resp.set_ng().get_packet();
             case MEM_DM_FG:
                 {
                     x6100_mode_t new_mode = ci_mode_2_x_mode(static_cast<uint8_t>(request.get_command_data()[1]),
                                                              static_cast<uint8_t>(request.get_command_data()[2]));
                     civ_sm->cp_cur_mode.set(new_mode);
-                    return resp.set_code(CODE_OK).get_packet();
+                    return resp.set_ok().get_packet();
                 }
             default:
-                return set_unsupported(request, resp);
+                return civ::detail::set_unsupported(request, resp);
         }
     }
 }
@@ -791,7 +776,7 @@ std::string_view handle_ctl_ptt_x1c(const CivPacketView &request, CivTxPacker &r
             return resp.set_command(request.get_command()).set_subcommand(0x00).append_byte(CODE_OK).get_packet();
         }
     }
-    return set_unsupported(request, resp);
+    return civ::detail::set_unsupported(request, resp);
 }
 
 // ============================================================================
@@ -817,9 +802,9 @@ std::string_view handle_send_sel_freq_x25(const CivPacketView &request, CivTxPac
     } else if (data_size == 6) {
         freq->set(from_bcd(
             request.get_command_data().substr(1), 10));
-        return resp.set_code(CODE_OK).get_packet();
+        return resp.set_ok().get_packet();
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -855,16 +840,16 @@ std::string_view handle_send_sel_mode_x26(const CivPacketView &request, CivTxPac
             x6100_mode_t new_mode = ci_mode_2_x_mode(
                 static_cast<uint8_t>(request.get_command_data()[1]), data_mode);
             mode_par->set(new_mode);
-            return resp.set_code(CODE_OK).get_packet();
+            return resp.set_ok().get_packet();
         }
         case 2: {
             x6100_mode_t new_mode = ci_mode_2_x_mode(
                 static_cast<uint8_t>(request.get_command_data()[1]), false);
             mode_par->set(new_mode);
-            return resp.set_code(CODE_OK).get_packet();
+            return resp.set_ok().get_packet();
         }
         default:
-            return set_unsupported(request, resp);
+            return civ::detail::set_unsupported(request, resp);
     }
 }
 
@@ -873,6 +858,12 @@ std::string_view handle_send_sel_mode_x26(const CivPacketView &request, CivTxPac
 // ============================================================================
 
 std::string_view handle_ctl_scp_x27(const CivPacketView &request, CivTxPacker &resp) {
+    civ::detail::log_frame_raw(request.raw(), "req ");
+    auto resp_data = scope_streamer_handle_27(request, resp);
+    civ::detail::log_frame_raw(resp_data, "resp");
+    return resp_data;
+
+
     size_t data_size = request.get_command_data().size();
     if (data_size >= 1) {
         switch (request.get_subcommand()) {
@@ -895,7 +886,7 @@ std::string_view handle_ctl_scp_x27(const CivPacketView &request, CivTxPacker &r
                 }
                 break;
             case 0x13: // Send/read the Single/Dual scope setting
-                return resp.set_code(CODE_NG).get_packet();
+                return resp.set_ng().get_packet();
                 break;
             case 0x14: // Send/read the Scope Center mode,
                 if (data_size == 1) {
@@ -922,7 +913,7 @@ std::string_view handle_ctl_scp_x27(const CivPacketView &request, CivTxPacker &r
                 }
                 break;
             case 0x17:
-                return resp.set_code(CODE_NG).get_packet();
+                return resp.set_ng().get_packet();
                 break;
             case 0x19:
                 {
@@ -930,16 +921,57 @@ std::string_view handle_ctl_scp_x27(const CivPacketView &request, CivTxPacker &r
                     return resp.set_command(request.get_command()).append_data(d, 5).get_packet();
                 }
             case 0x1A:
-                return resp.set_code(CODE_NG).get_packet();
+                return resp.set_ng().get_packet();
             default:
-                return set_unsupported(request, resp);
+                return civ::detail::set_unsupported(request, resp);
         }
     } else {
-        return set_unsupported(request, resp);
+        return civ::detail::set_unsupported(request, resp);
     }
 }
 
 } // anonymous namespace
+
+
+// ============================================================================
+// Logging + set_unsupported
+// ============================================================================
+namespace civ::detail {
+
+    void log_frame_raw(std::string_view raw, const char *prefix) {
+    std::string s;
+    char tmp[32];
+    size_t len = raw.size();
+    s.reserve(len * 3 + 16);
+
+    // header: first 4 bytes (FE FE addr_radio addr_ctrl)
+    snprintf(tmp, sizeof(tmp), "[%02X:%02X:%02X:%02X]-[",
+                static_cast<uint8_t>(raw[0]), static_cast<uint8_t>(raw[1]),
+                static_cast<uint8_t>(raw[2]), static_cast<uint8_t>(raw[3]));
+    s += tmp;
+
+    // data: bytes 4 .. len-2 (cmd + optional payload)
+    for (size_t i = 4; i + 1 < len; i++) {
+        snprintf(tmp, sizeof(tmp), "%02X:", static_cast<uint8_t>(raw[i]));
+        s += tmp;
+    }
+    if (len > 4) s.pop_back();
+
+    // footer: last byte (FRAME_END)
+    snprintf(tmp, sizeof(tmp), "]-[%02X]", static_cast<uint8_t>(raw[len - 1]));
+    s += tmp;
+
+    LV_LOG_USER("%s\t: %s\t(Len %zu)", prefix, s.c_str(), len);
+}
+
+std::string_view set_unsupported(const CivPacketView &req, CivTxPacker &resp) {
+    log_frame_raw(req.raw(), "unsupported");
+    return resp.set_ng()
+                .get_packet();
+}
+
+} // namespace civ::detail
+
 
 // ============================================================================
 // Public API
@@ -952,12 +984,12 @@ void civ_set_sm(SettingsManager *sm) {
 std::string_view process_civ_message(const CivPacketView &request, CivTxPacker &response_packer) {
     init_cmd_handlers();
 
-    response_packer.set_controller_address(request.get_controller_address());
+    response_packer.set_dst_addr(request.get_src_address());
     cmd_handler_t handler = cmd_handlers[request.get_command()];
     if (handler) {
         return handler(request, response_packer);
     } else {
-        return set_unsupported(request, response_packer);
+        return civ::detail::set_unsupported(request, response_packer);
     }
 }
 

@@ -9,6 +9,7 @@
 #include "cat.h"
 #include "civ_processor.h"
 #include "civ_protocol.h"
+#include "scope_streamer.h"
 
 #include <mutex>
 #include <thread>
@@ -57,6 +58,7 @@ static std::atomic<bool> keep_running(false);
 static void on_fg_freq_change(Subject *s, void *user_data);
 static void on_mode_change(Subject *s, void *user_data);
 static void on_vfo_change(Subject *s, void *user_data);
+static void on_cat_baud_change(Subject *s, void *user_data);
 
 static void push_civ_notify(std::string_view resp) {
     send_queue.push(std::vector<char>(resp.begin(), resp.end()));
@@ -136,8 +138,6 @@ class Connection {
     }
 };
 
-void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len);
-
 static void cat_thread() {
     Connection conn_wire{&fd_wire};
     Connection conn_bt{&fd_bt};
@@ -146,7 +146,7 @@ static void cat_thread() {
 
     // TX (egress) buffres
     uint8_t tx_buf[64];
-    CivTxPacker resp{tx_buf, LOCAL_ADDRESS, 0};
+    CivTxPacker resp{tx_buf, 0, LOCAL_ADDRESS};
 
     // Setup BT socket
     int fd_bt_sock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
@@ -262,8 +262,9 @@ void cat_init() {
 
         tcgetattr(fd_wire, &attr);
 
-        cfsetispeed(&attr, B19200);
-        cfsetospeed(&attr, B19200);
+        speed_t speed = (cfg_sm.p_cat_baud.get() >= 115200) ? B115200 : B19200;
+        cfsetispeed(&attr, speed);
+        cfsetospeed(&attr, speed);
         cfmakeraw(&attr);
 
         if (tcsetattr(fd_wire, 0, &attr) < 0) {
@@ -279,6 +280,13 @@ void cat_init() {
     cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change);
     cfg_sm.cp_cur_mode.subscribe(on_mode_change);
     cfg_sm.p_band_current_vfo.subscribe(on_vfo_change);
+    cfg_sm.p_cat_baud.subscribe(on_cat_baud_change);
+
+    // CI-V waterfall streaming notify: only if baud >= 115200
+    // (LAN connection registration in cat_lan will override this)
+    if (cfg_sm.p_cat_baud.get() >= 115200) {
+        scope_streamer_set_notify(push_civ_notify);
+    }
 
     /* * */
     if (!thread) {
@@ -296,9 +304,11 @@ void cat_destruct() {
 }
 
 static void on_fg_freq_change(Subject *s, void *user_data) {
+    int32_t freq = cfg_sm.cp_fg_freq.get();
+    scope_streamer_set_center_freq(freq);
     uint8_t buf[16];
     CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
-    push_civ_notify(pack_fg_freq_notify_00(cfg_sm.cp_fg_freq.get(), packer));
+    push_civ_notify(pack_fg_freq_notify_00(freq, packer));
 }
 
 static void on_mode_change(Subject *s, void *user_data) {
@@ -313,4 +323,14 @@ static void on_vfo_change(Subject *s, void *user_data) {
     CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
     push_civ_notify(pack_vfo_notify_07(
         static_cast<x6100_vfo_t>(cfg_sm.p_band_current_vfo.get()), packer));
+}
+
+static void on_cat_baud_change(Subject *s, void *user_data) {
+    if (fd_wire < 0) return;
+    struct termios attr;
+    tcgetattr(fd_wire, &attr);
+    speed_t speed = (cfg_sm.p_cat_baud.get() >= 115200) ? B115200 : B19200;
+    cfsetispeed(&attr, speed);
+    cfsetospeed(&attr, speed);
+    tcsetattr(fd_wire, 0, &attr);
 }

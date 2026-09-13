@@ -9,6 +9,7 @@
 #include "dsp.h"
 
 #include "cfg/settings_manager.h"
+#include "cat/scope_streamer.h"
 
 #include "cw.h"
 #include "util.h"
@@ -550,6 +551,15 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
                 width_hz /= spectrum_factor;
             }
             waterfall_data(waterfall_psd, WATERFALL_NFFT, tx, base_freq, width_hz);
+        }
+
+        // CI-V scope streaming (uses same PSD data, independent of waterfall_on)
+        {
+            uint32_t width_hz = FULL_BW_HZ;
+            if (waterfall_fft_decim) {
+                width_hz /= spectrum_factor;
+            }
+            scope_streamer_push_data(waterfall_psd, WATERFALL_NFFT, base_freq, width_hz);
         }
 
         // TODO: skip on disabled auto min/max

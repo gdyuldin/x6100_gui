@@ -20,6 +20,17 @@ extern "C" {
 #define WATCHDOG_SIZE          0x14
 #define PING_SIZE              0x15
 #define OPENCLOSE_SIZE         0x16
+
+// Control packet types
+#define CTL_TYPE_CLOSE      0x05   // Close/disconnect
+
+// Open/close magic values
+#define MAGIC_OPEN          0x04   // Open handshake
+#define MAGIC_CLOSE         0x05   // Close/disconnect
+
+// Ping timeout for connection staleness detection
+#define PING_TIMEOUT_SEC    15
+
 #define RETRANSMIT_RANGE_SIZE  0x18
 #define TOKEN_SIZE             0x40
 #define STATUS_SIZE            0x50

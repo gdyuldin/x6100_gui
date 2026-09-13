@@ -4,11 +4,11 @@
 // CivPacketView
 // ============================================================================
 
-uint8_t CivPacketView::get_radio_address() const {
+uint8_t CivPacketView::get_dst_address() const {
     return static_cast<uint8_t>(m_view[2]);
 }
 
-uint8_t CivPacketView::get_controller_address() const {
+uint8_t CivPacketView::get_src_address() const {
     return static_cast<uint8_t>(m_view[3]);
 }
 
@@ -38,8 +38,8 @@ std::string_view CivPacketView::get_subcommand_data() const {
 // CivTxPacker
 // ============================================================================
 
-void CivTxPacker::set_controller_address(uint8_t controllerAddr) {
-    m_buf[3] = controllerAddr;
+void CivTxPacker::set_dst_addr(uint8_t dstAddr) {
+    m_buf[2] = dstAddr;
 }
 
 CivTxPackerAfterCommand CivTxPacker::set_command(uint8_t cmd) {
@@ -121,8 +121,13 @@ std::string_view CivTxPackerAfterCommand::get_packet() {
 // CivTxPackerAfterCode
 // ============================================================================
 
-CivTxPackerAfterCode CivTxPacker::set_code(uint8_t code) {
-    set_command(code);
+CivTxPackerAfterCode CivTxPacker::set_ok() {
+    set_command(0xFB);
+    return CivTxPackerAfterCode(*this);
+}
+
+CivTxPackerAfterCode CivTxPacker::set_ng() {
+    set_command(0xFA);
     return CivTxPackerAfterCode(*this);
 }
 

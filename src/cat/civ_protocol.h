@@ -25,8 +25,8 @@ public:
     CivPacketView(const uint8_t* start, size_t length)
         : m_view(reinterpret_cast<const char*>(start), length) {}
 
-    uint8_t get_radio_address() const;
-    uint8_t get_controller_address() const;
+    uint8_t get_dst_address() const;
+    uint8_t get_src_address() const;
 
     uint8_t get_command() const;
     std::string_view get_command_data() const;
@@ -52,17 +52,18 @@ private:
 // --- Stage 1: Pure packer ---
 class CivTxPacker {
 public:
-    CivTxPacker(uint8_t* txBuffer, uint8_t radioAddr, uint8_t controllerAddr)
+    CivTxPacker(uint8_t* txBuffer, uint8_t dstAddr, uint8_t srcAddr)
         : m_buf(txBuffer)
     {
         m_buf[0] = FRAME_PRE; m_buf[1] = FRAME_PRE;
-        m_buf[2] = radioAddr; m_buf[3] = controllerAddr;
+        m_buf[2] = dstAddr; m_buf[3] = srcAddr;
         m_currentSize = 4;
     }
 
-    void set_controller_address(uint8_t controllerAddr);
+    void set_dst_addr(uint8_t dstAddr);
     CivTxPackerAfterCommand set_command(uint8_t cmd);
-    CivTxPackerAfterCode set_code(uint8_t code);
+    CivTxPackerAfterCode set_ok();
+    CivTxPackerAfterCode set_ng();
 
 private:
     uint8_t* m_buf;
