@@ -14,6 +14,7 @@
 #include <vector>
 #include <stdexcept>
 #include <map>
+#include <memory>
 
 #include "globals.h"
 #include "buttons.h"
@@ -53,6 +54,7 @@ struct Control {
     const char *name;
 
     Control(const char *name) : name(name) {};
+    virtual ~Control() = default;
 
     virtual std::string to_str()=0;
 
@@ -63,9 +65,10 @@ struct Control {
   protected:
     static std::string float_to_str(float val, std::string fmt) {
         size_t len = snprintf(nullptr, 0, fmt.c_str(), val);
-        char  *buf = (char *)malloc(len + 1);
-        sprintf(buf, fmt.c_str(), val);
-        return std::string(buf);
+        std::string buf(len + 1, '\0');
+        snprintf(buf.data(), buf.size(), fmt.c_str(), val);
+        buf.resize(len);
+        return buf;
     }
 };
 
@@ -175,71 +178,80 @@ static void on_knob_info_enabled_change(Subject *subj, void *user_data);
 static void update_visibility();
 
 
-static std::map<int, Control*> controls = {
-    {CTRL_VOL, new ControlSubjInt("Volume", &cfg_sm.p_volume)},
-    {CTRL_VOL, new ControlSubjInt("Volume", &cfg_sm.p_volume)},
-    {CTRL_SQL, new ControlSubjInt("Voice SQL", &cfg_sm.p_squelch)},
-    {CTRL_RFG, new ControlSubjInt("RF gain", &cfg_sm.p_rfgain)},
-    {CTRL_FILTER_LOW, new ControlSubjInt("Filter low", &cfg_sm.cp_cur_filter_low)},
-    {CTRL_FILTER_HIGH, new ControlSubjInt("Filter high", &cfg_sm.cp_cur_filter_high)},
-    {CTRL_FILTER_BW, new ControlSubjInt("Filter bw", &cfg_sm.cp_cur_filter_bw)},
-    {CTRL_PWR, new ControlSubjFloat("Power", &cfg_sm.p_pwr, "%0.1f")},
-    {CTRL_MIC, new ControlSubjChoices("MIC", &cfg_sm.p_mic, {"Built-In", "Handle", "Auto"})},
-    {CTRL_HMIC, new ControlSubjInt("H-MIC gain", &cfg_sm.p_hmic)},
-    {CTRL_IMIC, new ControlSubjInt("I-MIC gain", &cfg_sm.p_imic)},
-    {CTRL_MONI, new ControlSubjInt("Moni level", &cfg_sm.p_moni)},
-    {CTRL_SPECTRUM_FACTOR, new ControlSubjInt("Zoom", &cfg_sm.p_mode_zoom)},
-    {CTRL_COMP, new ControlComp("Compressor", &cfg_sm.p_comp)},
+static std::map<int, std::unique_ptr<Control>> make_controls() {
+    std::map<int, std::unique_ptr<Control>> controls;
 
-    {CTRL_VOX_ON, new ControlSubjOnOff("VOX", &cfg_sm.p_vox_en)},
-    {CTRL_VOX_GAIN, new ControlSubjInt("VOX gain", &cfg_sm.p_vox_gain)},
-    {CTRL_VOX_AG, new ControlSubjInt("VOX a-gain", &cfg_sm.p_vox_ag)},
-    {CTRL_VOX_DELAY, new ControlSubjInt("VOX delay", &cfg_sm.p_vox_delay)},
+    auto add = [&controls](int key, Control *item) {
+        controls.emplace(key, std::unique_ptr<Control>(item));
+    };
 
-    {CTRL_ANT, new ControlSubjInt("Ant", &cfg_sm.p_ant_id)},
-    {CTRL_RIT, new ControlSubjInt("RIT", &cfg_sm.p_rit)},
-    {CTRL_XIT, new ControlSubjInt("XIT", &cfg_sm.p_xit)},
-    {CTRL_IF_SHIFT, new ControlSubjInt("IF shift", &cfg_sm.p_band_if_shift)},
+    add(CTRL_VOL, new ControlSubjInt("Volume", &cfg_sm.p_volume));
+    add(CTRL_SQL, new ControlSubjInt("Voice SQL", &cfg_sm.p_squelch));
+    add(CTRL_RFG, new ControlSubjInt("RF gain", &cfg_sm.p_rfgain));
+    add(CTRL_FILTER_LOW, new ControlSubjInt("Filter low", &cfg_sm.cp_cur_filter_low));
+    add(CTRL_FILTER_HIGH, new ControlSubjInt("Filter high", &cfg_sm.cp_cur_filter_high));
+    add(CTRL_FILTER_BW, new ControlSubjInt("Filter bw", &cfg_sm.cp_cur_filter_bw));
+    add(CTRL_PWR, new ControlSubjFloat("Power", &cfg_sm.p_pwr, "%0.1f"));
+    add(CTRL_MIC, new ControlSubjChoices("MIC", &cfg_sm.p_mic, {"Built-In", "Handle", "Auto"}));
+    add(CTRL_HMIC, new ControlSubjInt("H-MIC gain", &cfg_sm.p_hmic));
+    add(CTRL_IMIC, new ControlSubjInt("I-MIC gain", &cfg_sm.p_imic));
+    add(CTRL_MONI, new ControlSubjInt("Moni level", &cfg_sm.p_moni));
+    add(CTRL_SPECTRUM_FACTOR, new ControlSubjInt("Zoom", &cfg_sm.p_mode_zoom));
+    add(CTRL_COMP, new ControlComp("Compressor", &cfg_sm.p_comp));
 
-    {CTRL_DNF, new ControlSubjOnOff("Notch filter", &cfg_sm.p_dnf)},
-    {CTRL_DNF_CENTER, new ControlSubjInt("DNF center", &cfg_sm.p_dnf_center)},
-    {CTRL_DNF_WIDTH, new ControlSubjInt("DNF width", &cfg_sm.p_dnf_width)},
-    {CTRL_DNF_AUTO, new ControlSubjOnOff("DNF auto", &cfg_sm.p_dnf_auto)},
-    {CTRL_NB, new ControlSubjOnOff("Noise blanker", &cfg_sm.p_nb)},
-    {CTRL_NB_LEVEL, new ControlSubjInt("NB level", &cfg_sm.p_nb_level)},
-    {CTRL_NB_WIDTH, new ControlSubjInt("NB width", &cfg_sm.p_nb_width)},
-    {CTRL_NR, new ControlSubjOnOff("Noise reduction", &cfg_sm.p_nr)},
-    {CTRL_NR_LEVEL, new ControlSubjInt("NR level", &cfg_sm.p_nr_level)},
+    add(CTRL_VOX_ON, new ControlSubjOnOff("VOX", &cfg_sm.p_vox_en));
+    add(CTRL_VOX_GAIN, new ControlSubjInt("VOX gain", &cfg_sm.p_vox_gain));
+    add(CTRL_VOX_AG, new ControlSubjInt("VOX a-gain", &cfg_sm.p_vox_ag));
+    add(CTRL_VOX_DELAY, new ControlSubjInt("VOX delay", &cfg_sm.p_vox_delay));
 
-    {CTRL_AGC_HANG, new ControlSubjOnOff("AGC hang", &cfg_sm.p_agc_hang)},
-    {CTRL_AGC_KNEE, new ControlSubjInt("AGC knee", &cfg_sm.p_agc_knee)},
-    {CTRL_AGC_SLOPE, new ControlSubjInt("AGC slope", &cfg_sm.p_agc_slope)},
+    add(CTRL_ANT, new ControlSubjInt("Ant", &cfg_sm.p_ant_id));
+    add(CTRL_RIT, new ControlSubjInt("RIT", &cfg_sm.p_rit));
+    add(CTRL_XIT, new ControlSubjInt("XIT", &cfg_sm.p_xit));
+    add(CTRL_IF_SHIFT, new ControlSubjInt("IF shift", &cfg_sm.p_band_if_shift));
 
-    {CTRL_KEY_SPEED, new ControlSubjInt("Key speed", &cfg_sm.p_key_speed)},
-    {CTRL_KEY_TRAIN, new ControlSubjOnOff("Key train", &cfg_sm.p_key_train)},
-    {CTRL_KEY_MODE, new ControlSubjChoices("Key mode", &cfg_sm.p_key_mode, {"Manual", "Auto-L", "Auto-R"})},
-    {CTRL_IAMBIC_MODE, new ControlSubjChoices("Iambic mode", &cfg_sm.p_iambic_mode, {"A", "B"})},
-    {CTRL_KEY_TONE, new ControlSubjInt("Key tone", &cfg_sm.p_key_tone)},
-    {CTRL_KEY_VOL, new ControlSubjInt("Key vol", &cfg_sm.p_key_vol)},
-    {CTRL_QSK_TIME, new ControlSubjInt("QSK time", &cfg_sm.p_qsk_time)},
-    {CTRL_KEY_RATIO, new ControlSubjFloat("Key ratio", &cfg_sm.p_key_ratio)},
-    {CTRL_CW_DECODER, new ControlSubjOnOff("CW decoder", &cfg_sm.p_cw_decoder)},
-    {CTRL_CW_TUNE, new ControlSubjOnOff("CW tuner", &cfg_sm.p_cw_tune)},
-    {CTRL_CW_DECODER_SNR, new ControlSubjFloat("CW decoded snr", &cfg_sm.p_cw_decoder_snr)},
-    {CTRL_CW_PEAK_ON, new ControlSubjOnOff("CW peak", &cfg_sm.p_cw_peak_on)},
-    {CTRL_CW_PEAK_Q, new ControlSubjInt("CW peak Q", &cfg_sm.p_cw_peak_q)},
-    // {MFK_RTTY_RATE, Control("RTTY rate", []() { return to_str((float)params.rtty_rate / 100.0f, "%0.2f"); })},
-    // {MFK_RTTY_SHIFT, Control("RTTY shift", []() { return std::to_string(params.rtty_shift); })},
-    // {MFK_RTTY_CENTER, Control("RTTY center", []() { return std::to_string(params.rtty_center); })},
-    // {MFK_RTTY_REVERSE, Control("RTTY reverse", []() { return std::string(params.rtty_reverse ? "On" : "Off"); })},
-};
+    add(CTRL_DNF, new ControlSubjOnOff("Notch filter", &cfg_sm.p_dnf));
+    add(CTRL_DNF_CENTER, new ControlSubjInt("DNF center", &cfg_sm.p_dnf_center));
+    add(CTRL_DNF_WIDTH, new ControlSubjInt("DNF width", &cfg_sm.p_dnf_width));
+    add(CTRL_DNF_AUTO, new ControlSubjOnOff("DNF auto", &cfg_sm.p_dnf_auto));
+    add(CTRL_NB, new ControlSubjOnOff("Noise blanker", &cfg_sm.p_nb));
+    add(CTRL_NB_LEVEL, new ControlSubjInt("NB level", &cfg_sm.p_nb_level));
+    add(CTRL_NB_WIDTH, new ControlSubjInt("NB width", &cfg_sm.p_nb_width));
+    add(CTRL_NR, new ControlSubjOnOff("Noise reduction", &cfg_sm.p_nr));
+    add(CTRL_NR_LEVEL, new ControlSubjInt("NR level", &cfg_sm.p_nr_level));
+
+    add(CTRL_AGC_HANG, new ControlSubjOnOff("AGC hang", &cfg_sm.p_agc_hang));
+    add(CTRL_AGC_KNEE, new ControlSubjInt("AGC knee", &cfg_sm.p_agc_knee));
+    add(CTRL_AGC_SLOPE, new ControlSubjInt("AGC slope", &cfg_sm.p_agc_slope));
+
+    add(CTRL_KEY_SPEED, new ControlSubjInt("Key speed", &cfg_sm.p_key_speed));
+    add(CTRL_KEY_TRAIN, new ControlSubjOnOff("Key train", &cfg_sm.p_key_train));
+    add(CTRL_KEY_MODE, new ControlSubjChoices("Key mode", &cfg_sm.p_key_mode, {"Manual", "Auto-L", "Auto-R"}));
+    add(CTRL_IAMBIC_MODE, new ControlSubjChoices("Iambic mode", &cfg_sm.p_iambic_mode, {"A", "B"}));
+    add(CTRL_KEY_TONE, new ControlSubjInt("Key tone", &cfg_sm.p_key_tone));
+    add(CTRL_KEY_VOL, new ControlSubjInt("Key vol", &cfg_sm.p_key_vol));
+    add(CTRL_QSK_TIME, new ControlSubjInt("QSK time", &cfg_sm.p_qsk_time));
+    add(CTRL_KEY_RATIO, new ControlSubjFloat("Key ratio", &cfg_sm.p_key_ratio));
+    add(CTRL_CW_DECODER, new ControlSubjOnOff("CW decoder", &cfg_sm.p_cw_decoder));
+    add(CTRL_CW_TUNE, new ControlSubjOnOff("CW tuner", &cfg_sm.p_cw_tune));
+    add(CTRL_CW_DECODER_SNR, new ControlSubjFloat("CW decoded snr", &cfg_sm.p_cw_decoder_snr));
+    add(CTRL_CW_PEAK_ON, new ControlSubjOnOff("CW peak", &cfg_sm.p_cw_peak_on));
+    add(CTRL_CW_PEAK_Q, new ControlSubjInt("CW peak Q", &cfg_sm.p_cw_peak_q));
+    // add(MFK_RTTY_RATE, Control("RTTY rate", []() { return to_str((float)params.rtty_rate / 100.0f, "%0.2f"); }));
+    // add(MFK_RTTY_SHIFT, Control("RTTY shift", []() { return std::to_string(params.rtty_shift); }));
+    // add(MFK_RTTY_CENTER, Control("RTTY center", []() { return std::to_string(params.rtty_center); }));
+    // add(MFK_RTTY_REVERSE, Control("RTTY reverse", []() { return std::string(params.rtty_reverse ? "On" : "Off"); }));
+
+    return controls;
+}
+
+static const std::map<int, std::unique_ptr<Control>> controls = make_controls();
 
 static lv_obj_t *vol_info;
 
 static lv_obj_t *mfk_info;
 
-static KnobInfo *vol_knob_info = new KnobInfo(&vol_info, LV_SYMBOL_UP);
-static KnobInfo *mfk_knob_info = new KnobInfo(&mfk_info, LV_SYMBOL_DOWN);
+static std::unique_ptr<KnobInfo> vol_knob_info = std::make_unique<KnobInfo>(&vol_info, LV_SYMBOL_UP);
+static std::unique_ptr<KnobInfo> mfk_knob_info = std::make_unique<KnobInfo>(&mfk_info, LV_SYMBOL_DOWN);
 
 
 void knobs_init(lv_obj_t * parent) {
@@ -297,7 +309,7 @@ void knobs_set_vol_state(bool edit) {
 void knobs_set_vol_param(cfg_ctrl_t control) {
     Control *item;
     try {
-        item = controls.at(control);
+        item = controls.at(control).get();
     } catch (const std::out_of_range &ex) {
         LV_LOG_WARN("VOL Control %d is unknown, skip, %s", control, ex.what());
         return;
@@ -314,7 +326,7 @@ void knobs_set_mfk_state(bool edit) {
 void knobs_set_mfk_param(cfg_ctrl_t control) {
     Control *item;
     try {
-        item = controls.at(control);
+        item = controls.at(control).get();
     } catch (const std::out_of_range &ex) {
         LV_LOG_WARN("MFK Control %d is unknown, skip, %s", control, ex.what());
         return;

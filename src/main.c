@@ -206,6 +206,7 @@ int main(void) {
 
     // Cleanup
     radio_shutdown();
+    usb_devices_monitor_shutdown();
     if (tick_pthread_started) {
         pthread_join(tick_pthread, NULL);
     }

@@ -12,6 +12,7 @@ enum usb_devices_event_t {
 };
 
 void usb_devices_monitor_init();
+void usb_devices_monitor_shutdown();
 
 #ifdef __cplusplus
 }
