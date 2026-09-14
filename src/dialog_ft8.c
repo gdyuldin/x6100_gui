@@ -108,6 +108,8 @@ static int32_t filter_low, filter_high;
 
 static float base_gain_offset;
 
+static uint32_t dsp_audio_sub_id = AUDIO_SUB_INVALID;
+
 static void construct_cb(lv_obj_t *parent);
 static void key_cb(lv_event_t * e);
 static void destruct_cb();
@@ -194,7 +196,6 @@ static dialog_t dialog = {
     .run = false,
     .construct_cb = construct_cb,
     .destruct_cb = destruct_cb,
-    .audio_cb = audio_cb,
     .rotary_cb = rotary_cb,
     .key_cb = key_cb,
 };
@@ -244,7 +245,7 @@ static void worker_init() {
         .ctx         = NULL,
     };
     audio_worker = audio_worker_create(
-        DIALOG_CAPTURE_RATE,
+        FTX_CAPTURE_RATE,
         param_i_get(cfg_ft8_protocol),
         filter_low, filter_high,
         &cb);
@@ -294,7 +295,7 @@ static void key_cb(lv_event_t * e) {
 }
 
 static void destruct_cb() {
-    // TODO: check free mem
+    dsp_audio_set_active(dsp_audio_sub_id, false);
     keyboard_close();
     worker_done();
     table_view_destroy();
@@ -521,6 +522,11 @@ static void construct_cb(lv_obj_t *parent) {
     lm_set_band(true);
 
     worker_init();
+
+    if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
+        dsp_audio_sub_id = dsp_audio_subscribe_resampled(audio_cb, FTX_CAPTURE_RATE);
+    }
+    dsp_audio_set_active(dsp_audio_sub_id, true);
 
     /* Logger */
     ft8_log = adif_log_init("/mnt/ft_log.adi");
@@ -804,7 +810,7 @@ static bool keyboard_ok_cb() {
     return true;
 }
 
-static void audio_cb(unsigned int n, float *samples) {
+static void audio_cb(size_t n, float *samples) {
     if (state == RX_PROCESS) {
         audio_worker_feed(audio_worker, n, samples);
     }
@@ -960,8 +966,8 @@ static void on_psd_cb(const float *psd, uint16_t nfft, float sec_since_slot_star
     (void)ctx;
     if (!psd || !nfft) return;
 
-    uint32_t low_bin  = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_low  / DIALOG_CAPTURE_RATE;
-    uint32_t high_bin = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_high / DIALOG_CAPTURE_RATE;
+    uint32_t low_bin  = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_low  / FTX_CAPTURE_RATE;
+    uint32_t high_bin = (uint32_t)nfft / 2u + (uint32_t)nfft * filter_high / FTX_CAPTURE_RATE;
     if (high_bin > nfft) high_bin = nfft;
     if (low_bin >= high_bin) return;
 

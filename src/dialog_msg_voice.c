@@ -23,6 +23,7 @@
 #include "audio.h"
 #include "dialog.h"
 #include "dialog_msg_voice.h"
+#include "dsp.h"
 #include "styles.h"
 #include "params/params.h"
 #include "events.h"
@@ -43,6 +44,7 @@ typedef enum {
 } voice_beacon_t;
 
 static msg_voice_state_t    state = MSG_VOICE_OFF;
+static uint32_t             dsp_audio_sub_id = AUDIO_SUB_INVALID;
 static voice_beacon_t       beacon = VOICE_BEACON_OFF;
 static char                 *path = "/mnt/msg";
 
@@ -170,7 +172,6 @@ static dialog_t             dialog = {
     .construct_cb = construct_cb,
     .destruct_cb = destruct_cb,
     .btn_page = &page_msg_voice_1,
-    .audio_cb = NULL,
     .key_cb = NULL
 };
 
@@ -549,6 +550,11 @@ void dialog_msg_voice_rec_cb(button_data_t *btn_data) {
             audio_set_play_mode(AUDIO_PLAY_VOICE_REC);
             state = MSG_VOICE_RECORD;
 
+            if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
+                dsp_audio_sub_id = dsp_audio_subscribe_raw(dialog_msg_voice_put_audio_samples, true);
+            }
+            dsp_audio_set_active(dsp_audio_sub_id, true);
+
             buttons_unload_page();
             buttons_load(1, &btn_rec_stop);
         }
@@ -559,6 +565,7 @@ static void rec_stop_cb(button_data_t *btn_data) {
     buttons_unload_page();
     buttons_load_page(&page_msg_voice_2);
 
+    dsp_audio_set_active(dsp_audio_sub_id, false);
     audio_set_play_mode(AUDIO_PLAY_OFF);
     state = MSG_VOICE_OFF;
     close_file();

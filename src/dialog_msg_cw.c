@@ -129,7 +129,6 @@ static dialog_t             dialog = {
     .construct_cb = construct_cb,
     .destruct_cb = destruct_cb,
     .btn_page = &buttons_page_msg_cw_1,
-    .audio_cb = NULL,
     .key_cb = NULL
 };
 

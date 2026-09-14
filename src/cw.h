@@ -24,9 +24,11 @@ extern "C" {
 #include <stdbool.h>
 #include <liquid/liquid.h>
 
+#define CW_CAPTURE_RATE 8000
+
 void cw_init();
 
-void cw_put_audio_samples(unsigned int n, float *samples);
+void cw_put_audio_samples(size_t n, float *samples);
 
 float cw_get_tone_freq(void);
 

@@ -8,11 +8,15 @@
 
 #pragma once
 
-#include "helpers.h"
-
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <liquid/liquid.h>
+
+#include "helpers.h"
+#include "audio.h"
+
+#define RTTY_CAPTURE_RATE (AUDIO_CAPTURE_RATE / 3)
 
 typedef enum {
     RTTY_OFF = 0,
@@ -21,7 +25,7 @@ typedef enum {
 } rtty_state_t;
 
 void rtty_init();
-void rtty_put_audio_samples(unsigned int n, float *samples);
+void rtty_put_audio_samples(size_t n, float *samples);
 
 void rtty_set_state(rtty_state_t state);
 rtty_state_t rtty_get_state();

@@ -5,7 +5,6 @@
 #include "cat/civ_processor.h"
 #include "cat/scope_streamer.h"
 #include "common/queue.h"
-#include "common/resampler.h"
 #include "dsp.h"
 #include "audio.h"
 
@@ -104,6 +103,8 @@ static int                audio_rx_rate       = 16000;
 
 static audio_player_t    *wfview_player       = nullptr;
 
+static uint32_t          dsp_audio_sub_id     = AUDIO_SUB_INVALID;
+
 static bool udp_send(int fd, const void *data, size_t len, const sockaddr_in *dst);
 static bool send_control(int fd, uint16_t type, uint16_t seq, bool tracked, const sockaddr_in *dst);
 static bool civ_data_send(const uint8_t *civ_data, size_t civ_len);
@@ -122,7 +123,7 @@ static void handle_login_packet(const uint8_t *buf, size_t len);
 static void handle_token_packet(const uint8_t *buf, size_t len);
 static void handle_conninfo_packet(const uint8_t *buf, size_t len);
 static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_in *src);
-static void audio_lan_tx_cb(int16_t *samples, size_t n);
+static void audio_lan_tx_cb(size_t n, float *samples);
 static void cleanup_audio();
 
 static uint32_t make_my_id(uint16_t port) {
@@ -555,7 +556,10 @@ static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_
             }
 
             // Register DSP callback to forward RX audio to network
-            dsp_set_audio_lan_notify(audio_lan_tx_cb);
+            if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
+                dsp_audio_sub_id = dsp_audio_subscribe_resampled(audio_lan_tx_cb, 16000);
+            }
+            dsp_audio_set_active(dsp_audio_sub_id, true);
 
             send_control(fd_audio, 0x04, 0, false, &client_audio);
             send_control(fd_audio, 0x06, 0x01, false, &client_audio);
@@ -592,7 +596,7 @@ static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_
 // ---- Audio TX thread, callbacks, cleanup -----------------------------------
 
 static void cleanup_audio() {
-    dsp_set_audio_lan_notify(nullptr);
+    dsp_audio_set_active(dsp_audio_sub_id, false);
 
     if (wfview_player) {
         audio_player_release(wfview_player);
@@ -602,32 +606,25 @@ static void cleanup_audio() {
     client_audio_valid = false;
 }
 
-static void audio_lan_tx_cb(int16_t *samples, size_t n) {
+static void audio_lan_tx_cb(size_t n, float *samples) {
     if (!client_audio_valid) return;
 
-    static Resampler decim(AUDIO_RESAMPLE_FACTOR);
     static int16_t pkt_buf[AUDIO_PACKET_SAMPLES];
-    static float samples_decim[AUDIO_PACKET_SAMPLES];
+    static float samples_buf[AUDIO_PACKET_SAMPLES];
     static size_t ndec = 0;
 
-    float samples_float[n];
-
-    vector_s16_to_f(samples, samples_float, n);
     for (size_t i = 0; i < n; i++) {
-        float sample_f = samples_float[i];
-        if (decim.feed(sample_f)) {
-            samples_decim[ndec++] = decim.execute();
-            if (ndec >= AUDIO_PACKET_SAMPLES) {
-                vector_f_to_s16(samples_decim, pkt_buf, AUDIO_PACKET_SAMPLES);
-                ndec = 0;
-                audio_packet_t hdr = make_audio_header(0, audio_send_seq++,
-                    AUDIO_PACKET_SAMPLES * 2);
-                uint8_t out[sizeof(hdr) + AUDIO_PACKET_SAMPLES * 2];
-                std::memcpy(out, &hdr, sizeof(hdr));
-                std::memcpy(out + sizeof(hdr), pkt_buf, sizeof(pkt_buf));
-                sendto(fd_audio, out, sizeof(out), 0,
-                       (const sockaddr *)&client_audio, sizeof(client_audio));
-            }
+        samples_buf[ndec++] = samples[i];
+        if (ndec >= AUDIO_PACKET_SAMPLES) {
+            vector_f_to_s16(samples_buf, pkt_buf, AUDIO_PACKET_SAMPLES);
+            ndec = 0;
+            audio_packet_t hdr = make_audio_header(0, audio_send_seq++,
+                AUDIO_PACKET_SAMPLES * 2);
+            uint8_t out[sizeof(hdr) + AUDIO_PACKET_SAMPLES * 2];
+            std::memcpy(out, &hdr, sizeof(hdr));
+            std::memcpy(out + sizeof(hdr), pkt_buf, sizeof(pkt_buf));
+            sendto(fd_audio, out, sizeof(out), 0,
+                   (const sockaddr *)&client_audio, sizeof(client_audio));
         }
     }
 }
@@ -1027,7 +1024,8 @@ void cat_lan_destruct(void) {
     if (!keep_running) return;
 
     scope_streamer_set_notify(nullptr);
-    dsp_set_audio_lan_notify(nullptr);
+    dsp_audio_unsubscribe(dsp_audio_sub_id);
+    dsp_audio_sub_id = AUDIO_SUB_INVALID;
 
     cleanup_audio();
 

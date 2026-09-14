@@ -13,12 +13,13 @@
 
 #include "common/resampler.h"
 
-#include "cw.h"
+#include "helpers.h"
 #include "util.h"
 #include "common/vector.h"
 
 #include <algorithm>
 #include <atomic>
+#include <mutex>
 #include <numeric>
 
 #include "dialog_msg_voice.h"
@@ -27,8 +28,6 @@ extern "C" {
     #include "audio.h"
     #include "meter.h"
     #include "radio.h"
-    #include "recorder.h"
-    #include "rtty.h"
     #include "spectrum.h"
     #include "waterfall.h"
 
@@ -94,16 +93,50 @@ static uint8_t  psd_delay;
 static uint8_t  min_max_delay;
 
 static iirfilt_rrrf audio_dc_blocker;
-static float  *audio;
 
 static bool ready = false;
-
-static std::atomic<audio_lan_notify_t> audio_lan_notify{nullptr};
 
 static int32_t filter_from = 0;
 static int32_t filter_to   = 3000;
 static x6100_mode_t cur_mode;
 static float noise_level = S_MIN;
+
+/* Audio subscriptions for audio from BASE */
+
+#define MAX_RAW_SUBS        4
+#define MAX_RESAMPLED_SUBS  8
+#define MAX_AUDIO_SUBS      (MAX_RAW_SUBS + MAX_RESAMPLED_SUBS)
+
+enum AudioSubKind {
+    AUDIO_SUB_FREE = 0,
+    AUDIO_SUB_RAW,
+    AUDIO_SUB_RESAMPLED,
+};
+
+struct AudioSub {
+    uint32_t          id        = 0;
+    AudioSubKind      kind      = AUDIO_SUB_FREE;
+    audio_raw_cb_t    raw_cb    = nullptr;
+    audio_float_cb_t  float_cb  = nullptr;
+    uint32_t          rate_hz   = 0;
+    std::atomic<bool> active{false};
+    bool              exclusive = false;
+    Resampler        *resampler = nullptr;
+};
+
+/*
+ * Flat list of subscriptions, guarded by subs_mutex. Free slots have
+ * kind == AUDIO_SUB_FREE. IDs are monotonic and never reused, so a stale id
+ * matches nothing and dsp_audio_set_active()/dsp_audio_unsubscribe() become
+ * harmless no-ops for it.
+ *
+ * subs_mutex is held for the whole dsp_put_audio_samples() dispatch, so
+ * callbacks must never call dsp_audio_subscribe_*(), dsp_audio_unsubscribe()
+ * or dsp_audio_set_active() (non-recursive mutex -> deadlock).
+ */
+static AudioSub           subs[MAX_AUDIO_SUBS];
+static std::mutex         subs_mutex;
+static uint32_t           next_sub_id = 1;
 
 static void dsp_update_min_max(float *psd_lin, uint16_t size);
 static void update_zoom(int32_t new_zoom);
@@ -283,9 +316,6 @@ class ChunkedSpgram {
     };
 };
 
-static Resampler resampler_dialog{DIALOG_DECIM};
-static Resampler resampler_cw{CW_DECIM};
-
 /* * */
 
 void dsp_init() {
@@ -322,7 +352,6 @@ void dsp_init() {
         psd_delay = R8_PSD_DELAY;
     }
 
-    audio            = (float *)malloc(AUDIO_CAPTURE_RATE * sizeof(float));
     audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 50.0f * AUDIO_CAPTURE_RATE);
 
     cfg_sm.p_mode_zoom.subscribe_and_notify(on_zoom_change);
@@ -638,54 +667,154 @@ void dsp_set_spectrum_beta(float x) {
     spectrum_beta = x;
 }
 
+static uint32_t alloc_sub_id() {
+    if (next_sub_id == AUDIO_SUB_INVALID) {
+        next_sub_id = 1;
+    }
+    return next_sub_id++;
+}
+
+uint32_t dsp_audio_subscribe_raw(audio_raw_cb_t cb, bool exclusive) {
+    if (!cb) {
+        return AUDIO_SUB_INVALID;
+    }
+
+    std::lock_guard<std::mutex> lock(subs_mutex);
+
+    for (size_t i = 0; i < MAX_AUDIO_SUBS; i++) {
+        if (subs[i].kind != AUDIO_SUB_FREE) {
+            continue;
+        }
+        subs[i].id        = alloc_sub_id();
+        subs[i].kind      = AUDIO_SUB_RAW;
+        subs[i].raw_cb    = cb;
+        subs[i].exclusive = exclusive;
+        subs[i].active.store(false, std::memory_order_relaxed);
+        return subs[i].id;
+    }
+
+    return AUDIO_SUB_INVALID;
+}
+
+uint32_t dsp_audio_subscribe_resampled(audio_float_cb_t cb, uint32_t target_rate_hz) {
+    if (!cb) {
+        return AUDIO_SUB_INVALID;
+    }
+
+    Resampler *resampler = new Resampler(AUDIO_CAPTURE_RATE / target_rate_hz);
+
+    std::lock_guard<std::mutex> lock(subs_mutex);
+
+    for (size_t i = 0; i < MAX_AUDIO_SUBS; i++) {
+        if (subs[i].kind != AUDIO_SUB_FREE) {
+            continue;
+        }
+        subs[i].id        = alloc_sub_id();
+        subs[i].kind      = AUDIO_SUB_RESAMPLED;
+        subs[i].float_cb  = cb;
+        subs[i].rate_hz   = target_rate_hz;
+        subs[i].resampler = resampler;
+        subs[i].active.store(false, std::memory_order_relaxed);
+        return subs[i].id;
+    }
+
+    delete resampler;
+    return AUDIO_SUB_INVALID;
+}
+
+void dsp_audio_set_active(uint32_t id, bool active) {
+    if (id == AUDIO_SUB_INVALID) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(subs_mutex);
+
+    for (size_t i = 0; i < MAX_AUDIO_SUBS; i++) {
+        if (subs[i].kind != AUDIO_SUB_FREE && subs[i].id == id) {
+            subs[i].active.store(active, std::memory_order_release);
+            return;
+        }
+    }
+}
+
+void dsp_audio_unsubscribe(uint32_t id) {
+    if (id == AUDIO_SUB_INVALID) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(subs_mutex);
+
+    for (size_t i = 0; i < MAX_AUDIO_SUBS; i++) {
+        if (subs[i].kind == AUDIO_SUB_FREE || subs[i].id != id) {
+            continue;
+        }
+
+        subs[i].active.store(false, std::memory_order_relaxed);
+
+        if (subs[i].kind == AUDIO_SUB_RESAMPLED) {
+            delete subs[i].resampler;
+            subs[i].resampler = nullptr;
+            subs[i].float_cb  = nullptr;
+        } else {
+            subs[i].raw_cb = nullptr;
+        }
+
+        subs[i].kind = AUDIO_SUB_FREE;
+        subs[i].id   = 0;
+        return;
+    }
+}
+
 void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
     if (!ready) {
         return;
     }
 
-    if (dialog_msg_voice_get_state() == MSG_VOICE_RECORD) {
-        dialog_msg_voice_put_audio_samples(nsamples, samples);
-        return;
+    std::lock_guard<std::mutex> lock(subs_mutex);
+
+    for (size_t i = 0; i < MAX_AUDIO_SUBS; i++) {
+        if (subs[i].kind == AUDIO_SUB_RAW && subs[i].raw_cb != nullptr && subs[i].exclusive &&
+            subs[i].active.load(std::memory_order_acquire)) {
+            subs[i].raw_cb(nsamples, samples);
+            return;
+        }
     }
 
-    if (recorder_is_on()) {
-        recorder_put_audio_samples(nsamples, samples);
+    for (size_t i = 0; i < MAX_AUDIO_SUBS; i++) {
+        if (subs[i].kind == AUDIO_SUB_RAW && subs[i].raw_cb != nullptr && !subs[i].exclusive &&
+            subs[i].active.load(std::memory_order_acquire)) {
+            subs[i].raw_cb(nsamples, samples);
+        }
     }
 
-    void (*audio_samples_fn)(unsigned int, float *) = NULL;
-    Resampler * resampler;
-
-    if (rtty_get_state() == RTTY_RX) {
-        audio_samples_fn = rtty_put_audio_samples;
-        resampler = &resampler_dialog;
-    } else if (cur_mode == x6100_mode_cw || cur_mode == x6100_mode_cwr) {
-        audio_samples_fn = cw_put_audio_samples;
-        resampler = &resampler_cw;
-    } else if (dialog_need_audio()) {
-        audio_samples_fn = dialog_audio_samples;
-        resampler = &resampler_dialog;
+    float float_samples[nsamples];
+    vector_s16_to_f(samples, float_samples, nsamples);
+    for (size_t i = 0; i < nsamples; i++) {
+        iirfilt_rrrf_execute(audio_dc_blocker, float_samples[i], &float_samples[i]);
     }
 
-    if (audio_samples_fn != NULL) {
-        float float_samples[nsamples];
-        vector_s16_to_f(samples, float_samples, nsamples);
-        size_t resampled_n = 0;
-        for (uint16_t i = 0; i < nsamples; i++) {
-            // dc blocker
-            iirfilt_rrrf_execute(audio_dc_blocker, float_samples[i], &float_samples[i]);
-            if (resampler->feed(float_samples[i])) {
-                audio[resampled_n++] = resampler->execute();
+    for (size_t si = 0; si < MAX_AUDIO_SUBS; si++) {
+        if (subs[si].kind != AUDIO_SUB_RESAMPLED || subs[si].resampler == nullptr) {
+            continue;
+        }
+        if (!subs[si].active.load(std::memory_order_acquire)) {
+            continue;
+        }
+
+        Resampler *s = subs[si].resampler;
+        size_t decim = s->decim_factor();
+        size_t out_n = 0;
+        float scratch[nsamples / decim + 1];
+
+        for (size_t i = 0; i < nsamples; i++) {
+            if (s->feed(float_samples[i])) {
+                scratch[out_n++] = s->execute();
             }
         }
-        audio_samples_fn(resampled_n, audio);
+        if (out_n > 0) {
+            subs[si].float_cb(out_n, scratch);
+        }
     }
-
-    auto cb = audio_lan_notify.load(std::memory_order_acquire);
-    if (cb) cb(samples, nsamples);
-}
-
-void dsp_set_audio_lan_notify(audio_lan_notify_t cb) {
-    audio_lan_notify.store(cb, std::memory_order_release);
 }
 
 static void dsp_update_min_max(float *psd_lin, uint16_t size) {

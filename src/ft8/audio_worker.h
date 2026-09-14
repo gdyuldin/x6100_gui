@@ -32,6 +32,8 @@
 
 #include <ft8lib/constants.h>
 
+#define FTX_CAPTURE_RATE 12000 // (48000 / 3)
+
 #ifdef __cplusplus
 extern "C" {
 #endif

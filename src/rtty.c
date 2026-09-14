@@ -27,7 +27,7 @@
 #define RTTY_SYMBOL_CODE (0b11011)
 #define RTTY_LETTER_CODE (0b11111)
 
-#define CAPTURE_RATE_F ((float)DIALOG_CAPTURE_RATE)
+#define CAPTURE_RATE_F ((float)RTTY_CAPTURE_RATE)
 
 typedef enum {
     RX_STATE_IDLE,
@@ -60,6 +60,8 @@ static bool           rx_letter     = true;
 
 static bool         ready = false;
 static rtty_state_t state = RTTY_OFF;
+
+static uint32_t     dsp_audio_sub_id = AUDIO_SUB_INVALID;
 
 static x6100_mode_t cur_mode;
 
@@ -146,6 +148,9 @@ void rtty_init() {
     pthread_mutex_init(&rtty_mux, NULL);
     subject_subscribe_and_notify((Subject*)cfg_cur_mode, on_cur_mode_change, NULL);
     init();
+    if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
+        dsp_audio_sub_id = dsp_audio_subscribe_resampled(rtty_put_audio_samples, RTTY_CAPTURE_RATE);
+    }
 }
 
 static char baudot_decoder(uint8_t c) {
@@ -261,7 +266,7 @@ static void add_symbol(float pwr) {
     }
 }
 
-void rtty_put_audio_samples(unsigned int n, float *samples) {
+void rtty_put_audio_samples(size_t n, float *samples) {
     pthread_mutex_lock(&rtty_mux);
 
     if (!ready) {
@@ -307,6 +312,7 @@ void rtty_put_audio_samples(unsigned int n, float *samples) {
 
 void rtty_set_state(rtty_state_t x) {
     state = x;
+    dsp_audio_set_active(dsp_audio_sub_id, x == RTTY_RX);
 }
 
 rtty_state_t rtty_get_state() {

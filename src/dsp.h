@@ -30,15 +30,14 @@ extern "C" {
 #define WATERFALL_NFFT (RADIO_SAMPLES * 2)
 #define SPECTRUM_NFFT SCREEN_WIDTH
 
-#define DIALOG_DECIM 3
-#define DIALOG_CAPTURE_RATE (AUDIO_CAPTURE_RATE / DIALOG_DECIM)
-
-#define CW_DECIM 6
-#define CW_CAPTURE_RATE (AUDIO_CAPTURE_RATE / CW_DECIM)
+#define AUDIO_SUB_INVALID  (0)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef void (*audio_raw_cb_t)(size_t n, int16_t *samples);
+typedef void (*audio_float_cb_t)(size_t n, float *samples);
 
 void dsp_init();
 void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq, bool vary_freq, uint8_t fft_dec);
@@ -51,8 +50,20 @@ void dsp_set_spectrum_beta(float x);
 
 void dsp_put_audio_samples(size_t nsamples, int16_t *samples);
 
-typedef void (*audio_lan_notify_t)(int16_t *samples, size_t count);
-void dsp_set_audio_lan_notify(audio_lan_notify_t cb);
+/*
+ * Audio subscriptions for audio from BASE.
+ *
+ * IDs are monotonic and never reused: dsp_audio_set_active() and
+ * dsp_audio_unsubscribe() on a stale or already-removed id are safe no-ops.
+ *
+ * Audio callbacks run while an internal mutex is held, so they must never call
+ * dsp_audio_subscribe_raw(), dsp_audio_subscribe_resampled(),
+ * dsp_audio_set_active() or dsp_audio_unsubscribe() (non-recursive mutex).
+ */
+uint32_t dsp_audio_subscribe_raw(audio_raw_cb_t cb, bool exclusive);
+uint32_t dsp_audio_subscribe_resampled(audio_float_cb_t cb, uint32_t target_rate_hz);
+void dsp_audio_set_active(uint32_t id, bool active);
+void dsp_audio_unsubscribe(uint32_t id);
 #ifdef __cplusplus
 }
 #endif

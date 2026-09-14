@@ -110,16 +110,6 @@ void dialog_item(dialog_t *dialog, lv_obj_t *obj) {
     }
 }
 
-bool dialog_need_audio() {
-    return dialog_is_run() && current_dialog->audio_cb;
-}
-
-void dialog_audio_samples(unsigned int n, float *samples) {
-    if (dialog_need_audio()) {
-        current_dialog->audio_cb(n, samples);
-    }
-}
-
 void dialog_rotary(int32_t diff) {
     if (dialog_is_run() && current_dialog->rotary_cb) {
         current_dialog->rotary_cb(diff);

@@ -48,11 +48,16 @@ static bool    cw_tune;
 static int32_t filter_low;
 static int32_t filter_high;
 
+static uint32_t     dsp_audio_sub_id = AUDIO_SUB_INVALID;
+static x6100_mode_t mode;
+
 static void on_key_tone_change(Subject *subj, void *user_data);
 static void on_val_float_change(Subject *subj, void *user_data);
 static void on_val_bool_change(Subject *subj, void *user_data);
 static void on_low_filter_change(Subject *subj, void *user_data);
 static void on_high_filter_change(Subject *subj, void *user_data);
+static void on_cw_mode_change(Subject *subj, void *user_data);
+static void update_cw_active();
 
 
 void cw_init() {
@@ -62,6 +67,12 @@ void cw_init() {
     cfg_sm.p_cw_decoder_snr_gist.subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr_gist);
     cfg_sm.p_cw_decoder.subscribe_and_notify(on_val_bool_change, (void*)&cw_decoder);
     cfg_sm.p_cw_tune.subscribe_and_notify(on_val_bool_change, (void*)&cw_tune);
+
+    cfg_sm.cp_cur_mode.subscribe_and_notify(on_cw_mode_change);
+
+    if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
+        dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, CW_CAPTURE_RATE);
+    }
 
     cw_detector = new CWDetector((float)CW_CAPTURE_RATE, 0.01f, 0.8f);
     cw_detector->set_f0(cfg_sm.p_key_tone.get());
@@ -78,7 +89,7 @@ static void update_peak_freq(float freq) {
     }
 }
 
-void cw_put_audio_samples(unsigned int n, float *samples) {
+void cw_put_audio_samples(size_t n, float *samples) {
     if (!ready) {
         return;
     }
@@ -158,6 +169,7 @@ static void on_val_float_change(Subject *subj, void *user_data) {
 
 static void on_val_bool_change(Subject *subj, void *user_data) {
     *(bool*)user_data = static_cast<SubjectT<int32_t>*>(subj)->get();
+    update_cw_active();
 }
 
 
@@ -167,6 +179,17 @@ static void on_low_filter_change(Subject *subj, void *user_data) {
 
 static void on_high_filter_change(Subject *subj, void *user_data) {
     filter_high = cfg_sm.cp_cur_filter_high.get();
+}
+
+static void on_cw_mode_change(Subject *subj, void *user_data) {
+    mode = static_cast<x6100_mode_t>(static_cast<SubjectT<int32_t>*>(subj)->get());
+    update_cw_active();
+}
+
+static void update_cw_active() {
+    bool on = (mode == x6100_mode_cw || mode == x6100_mode_cwr)
+           && (cw_decoder || cw_tune);
+    dsp_audio_set_active(dsp_audio_sub_id, on);
 }
 
 /**

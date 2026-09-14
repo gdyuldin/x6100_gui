@@ -38,6 +38,8 @@ class Resampler {
         i = 0;
         return res;
     }
+
+    size_t decim_factor() const { return N; }
 };
 
 #endif

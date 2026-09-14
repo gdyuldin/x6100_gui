@@ -125,7 +125,6 @@ static dialog_t dialog = {
     .construct_cb = construct_cb,
     .destruct_cb = destruct_cb,
     .btn_page = &btn_page,
-    .audio_cb = NULL,
     .key_cb = key_cb,
 };
 

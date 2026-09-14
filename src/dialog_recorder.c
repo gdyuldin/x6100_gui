@@ -109,7 +109,6 @@ static dialog_t             dialog = {
     .run = false,
     .construct_cb = construct_cb,
     .destruct_cb = destruct_cb,
-    .audio_cb = NULL,
     .btn_page = &btn_page,
     .key_cb = NULL
 };
