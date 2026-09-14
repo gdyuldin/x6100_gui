@@ -165,7 +165,7 @@ void scope_streamer_push_data(const float *psd_db, size_t len,
     if (scope_mode == 0) { // Center mode
         to_bcd(bcd, center_freq, 10);
         after_cmd.append_data(bcd, 5);
-        to_bcd(bcd, width_hz, 10);
+        to_bcd(bcd, width_hz / 2, 10);
         after_cmd.append_data(bcd, 5);
     } else {
         int32_t half = static_cast<int32_t>(width_hz) / 2;
