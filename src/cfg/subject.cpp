@@ -20,8 +20,8 @@ void Observer::unsubscribe() {
 // the main thread only. The queue is shallow — at most one entry per active
 // ObserverDelayed because of the coalescing scheduled_ guard.
 
-static std::mutex                     delayed_mutex_;
-static std::queue<ObserverDelayed *>  delayed_queue_;
+static std::mutex                    delayed_mutex_;
+static std::queue<ObserverDelayed *> delayed_queue_;
 
 void ObserverDelayed::notify() {
     // Coalesce: only one deferred delivery per observer is queued at a time.
@@ -95,7 +95,22 @@ void ObserverDelayed::drain() {
 
 void Subject::unsubscribe(Observer *observer) {
     const std::lock_guard<std::mutex> lock(mutex_subscribe);
-    observers.erase(std::find(observers.begin(), observers.end(), observer));
+    auto                              it = std::find(observers.begin(), observers.end(), observer);
+    if (it != observers.end()) {
+        observers.erase(it);
+    }
+}
+
+Subject::~Subject() {
+    // Two-way unlink: clear every observer's back-pointer so an Observer that
+    // outlives this Subject (e.g. a static Subscription destroyed after a
+    // global SettingsManager) can no longer call into freed memory. Must not
+    // touch ObserverDelayed::cancelled_/scheduled_ here — that would make
+    // drain() and the owning Subscription double-delete the observer.
+    const std::lock_guard<std::mutex> lock(mutex_subscribe);
+    for (Observer *o : observers) {
+        o->subj = nullptr;
+    }
 }
 
 // Thread-local suppression state: a depth counter plus the queue of subjects

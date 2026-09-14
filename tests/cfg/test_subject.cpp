@@ -6,7 +6,6 @@
 #include <thread>
 #include <vector>
 
-
 struct TestObserver {
     std::vector<int> values;
     void             callback(Subject *subj, void *self) {
@@ -29,21 +28,19 @@ TEST_CASE("SubjectT basic get/set", "[subject]") {
 TEST_CASE("SubjectT set same value does not notify", "[subject]") {
     SubjectT<int> s(10);
     TestObserver  obs;
-    auto          sub = s.subscribe(TestObserver::staticCallback, &obs);
+    Subscription  sub{s.subscribe(TestObserver::staticCallback, &obs)};
     s.set(10);
     REQUIRE(obs.values.empty());
-    delete sub;
 }
 
 TEST_CASE("SubjectT notifies observer on change", "[subject]") {
     SubjectT<int> s(0);
     TestObserver  obs;
-    auto          sub = s.subscribe(TestObserver::staticCallback, &obs);
+    Subscription  sub{s.subscribe(TestObserver::staticCallback, &obs)};
     s.set(5);
     REQUIRE(obs.values == std::vector<int>{5});
     s.set(10);
     REQUIRE(obs.values == std::vector<int>{5, 10});
-    delete sub;
 }
 
 TEST_CASE("Subscription RAII unsubscribe", "[subject]") {
@@ -73,14 +70,11 @@ TEST_CASE("Unsubscribe observer", "[subject]") {
 TEST_CASE("Multiple observers", "[subject]") {
     SubjectT<int> s(0);
     TestObserver  obs1, obs2;
-    auto          sub1 = s.subscribe(TestObserver::staticCallback, &obs1);
-    auto          sub2 = s.subscribe(TestObserver::staticCallback, &obs2);
+    Subscription  sub1{s.subscribe(TestObserver::staticCallback, &obs1)};
+    Subscription  sub2{s.subscribe(TestObserver::staticCallback, &obs2)};
     s.set(42);
     REQUIRE(obs1.values == std::vector<int>{42});
     REQUIRE(obs2.values == std::vector<int>{42});
-
-    delete sub1;
-    delete sub2;
 }
 
 TEST_CASE("Observer manual unsubscribe", "[subject]") {
@@ -268,5 +262,65 @@ TEST_CASE("ObserverDelayed keeps one coalesced delivery through suppression", "[
 
     ObserverDelayed::drain();
     REQUIRE(obs.values == std::vector<int>{2});
+}
+
+// Subject lifetime: an Observer/Subscription may outlive its Subject (e.g. a
+// static Subscription destroyed after a global SettingsManager). ~Subject()
+// clears the observers' back-pointers so the late unsubscribe is a no-op and
+// never touches freed memory (checked by the test build's ASan/UBSan).
+
+TEST_CASE("Subscription outliving its Subject is safe", "[subject][lifetime]") {
+    auto        *s = new SubjectT<int>(0);
+    TestObserver obs;
+    Subscription sub{s->subscribe(TestObserver::staticCallback, &obs)};
+
+    delete s; // subject destroyed first; sub destructor runs at scope exit
+    REQUIRE(obs.values.empty());
+}
+
+TEST_CASE("Subject destruction unlinks multiple observers", "[subject][lifetime]") {
+    auto        *s = new SubjectT<int>(0);
+    TestObserver obs1, obs2;
+    Subscription sub1{s->subscribe(TestObserver::staticCallback, &obs1)};
+    Subscription sub2{s->subscribe(TestObserver::staticCallback, &obs2)};
+
+    delete s;
+    REQUIRE(obs1.values.empty());
+    REQUIRE(obs2.values.empty());
+}
+
+TEST_CASE("Manual unsubscribe after Subject destruction is a no-op", "[subject][lifetime]") {
+    auto        *s = new SubjectT<int>(0);
+    TestObserver obs;
+    Observer    *raw = s->subscribe(TestObserver::staticCallback, &obs);
+
+    delete s;
+    raw->unsubscribe(); // must not dereference the freed subject
+    REQUIRE(obs.values.empty());
+    delete raw;
+}
+
+TEST_CASE("Queued ObserverDelayed skipped when Subject is destroyed", "[subject][lifetime][delayed]") {
+    auto        *s = new SubjectT<int>(0);
+    TestObserver obs;
+    Subscription sub{s->subscribe_delayed(TestObserver::staticCallback, &obs)};
+
+    s->set(5); // schedules a deferred delivery
+    delete s;  // subject dies while the observer is still queued
+
+    ObserverDelayed::drain(); // stale observer must be skipped, not invoked
+    REQUIRE(obs.values.empty());
+}
+
+TEST_CASE("Subscription destroyed before its Subject keeps normal behaviour", "[subject][lifetime]") {
+    auto        *s = new SubjectT<int>(0);
+    TestObserver obs;
+    {
+        Subscription sub{s->subscribe(TestObserver::staticCallback, &obs)};
+        s->set(1);
+        REQUIRE(obs.values == std::vector<int>{1});
+    } // sub unsubscribes here
+    delete s;
+    REQUIRE(obs.values == std::vector<int>{1});
 }
 

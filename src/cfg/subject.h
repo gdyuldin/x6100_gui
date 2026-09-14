@@ -104,6 +104,8 @@ class Subject {
     //   - Cross-thread subscribe/unsubscribe is serialized with the copy by
     //     mutex_subscribe; callbacks run lock-free, so they must only read
     //     SubjectT values (which have their own mutexes).
+    //   - ~Subject() clears Observer::subj of every still-subscribed observer
+    //     under mutex_subscribe, so observers surviving the subject are inert.
     void notify_impl();
 
     // Notification entry point: during a suppressed scope (NotifySuppressGuard)
@@ -111,8 +113,14 @@ class Subject {
     // firing callbacks immediately; otherwise behaves exactly like notify_impl().
     void notify();
 
-    // Subject is not designed to be deleted
-    ~Subject() = default;
+    // Destruction unlinks every observer: each Observer::subj is cleared under
+    // mutex_subscribe, so an Observer/Subscription that outlives its Subject
+    // becomes inert and its later ObserverDeleter::operator() (unsubscribe +
+    // delete) is a safe no-op instead of a use-after-free. Contract: a Subject
+    // must only be destroyed when no notify/subscribe is in flight on another
+    // thread (notify_impl() copies the list under the lock but runs callbacks
+    // unlocked).
+    ~Subject();
 
     // Force vtable for correct align with C-API opaque pointers
     virtual void force_vtable() {};

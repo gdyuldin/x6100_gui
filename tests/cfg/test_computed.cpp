@@ -68,10 +68,9 @@ TEST_CASE("ComputedParameter notifies its subscribers", "[computed]") {
     cp.bind(source);
 
     TestObserver obs;
-    auto         sub = cp.subscribe(TestObserver::staticCallback, &obs);
+    Subscription sub{cp.subscribe(TestObserver::staticCallback, &obs)};
     source.set(7);
     REQUIRE(obs.values == std::vector<int>{14});
-    delete sub;
 }
 
 TEST_CASE("ComputedParameter does not notify when recomputed value is equal", "[computed]") {
@@ -85,7 +84,7 @@ TEST_CASE("ComputedParameter does not notify when recomputed value is equal", "[
     REQUIRE(compute_evals == 1);
 
     TestObserver obs;
-    auto         sub = cp.subscribe(TestObserver::staticCallback, &obs);
+    Subscription sub{cp.subscribe(TestObserver::staticCallback, &obs)};
     cp.bind(a);
 
     a.set(10); // recompute -> 10, same as current value -> no notify
@@ -95,7 +94,6 @@ TEST_CASE("ComputedParameter does not notify when recomputed value is equal", "[
     a.set(7); // recompute -> still 10 -> still no notify
     REQUIRE(obs.values.empty());
     REQUIRE(compute_evals == 3);
-    delete sub;
 }
 
 TEST_CASE("ComputedParameter set routes through reverse fn", "[computed]") {
