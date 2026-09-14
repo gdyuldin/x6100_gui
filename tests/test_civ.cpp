@@ -593,6 +593,7 @@ TEST_CASE("C_CTL_MEM MEM_DM_FG read returns data mode info", "[cat]") {
     SettingsManager mgr;
     init_band_5(db, mgr);
     civ_set_sm(&mgr);
+    mgr.cp_cur_mode.set(x6100_mode_lsb_dig);
 
     auto raw = ci_v_frame(C_CTL_MEM, {MEM_DM_FG});
     CivPacketView req(raw.data(), raw.size());
@@ -602,7 +603,10 @@ TEST_CASE("C_CTL_MEM MEM_DM_FG read returns data mode info", "[cat]") {
 
     REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
         0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_MEM,
-        MEM_DM_FG, M_USB, 0x00, 0x00, 0xFD
+        MEM_DM_FG,
+        0x01, // Data mode
+        0x01, // Default filter(1)
+        0xFD
     }));
 }
 
@@ -657,6 +661,8 @@ TEST_CASE("C_SEND_SEL_MODE main/sub mode read", "[cat]") {
     init_band_5(db, mgr);
     civ_set_sm(&mgr);
 
+    mgr.cp_cur_mode.set(x6100_mode_usb_dig);
+
     auto raw = ci_v_frame(C_SEND_SEL_MODE, {0x00});
     CivPacketView req(raw.data(), raw.size());
     uint8_t txBuf[256];
@@ -665,7 +671,11 @@ TEST_CASE("C_SEND_SEL_MODE main/sub mode read", "[cat]") {
 
     REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
         0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_SEND_SEL_MODE,
-        0x00, M_USB, 0x00, 0x01, 0xFD
+        0x00,  // Foreground VFO
+        M_USB, // Mode
+        0x01,  // Mode data
+        0x01,  // default filter(1)
+        0xFD
     }));
 }
 

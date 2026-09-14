@@ -180,43 +180,45 @@ using namespace civ::detail;
 // Mode helpers
 // ============================================================================
 
-x6100_mode_t ci_mode_2_x_mode(uint8_t mode, bool data_mode=false) {
-    x6100_mode_t r_mode;
-
-    switch (mode) {
+// Set new mode preserving data flag
+x6100_mode_t ci_mode_2_x_mode(x6100_mode_t x_mode, uint8_t ci_mode) {
+    bool data_mode = (x_mode == x6100_mode_lsb_dig) || (x_mode == x6100_mode_usb_dig);
+    switch (ci_mode) {
         case M_LSB:
-            r_mode = data_mode ? x6100_mode_lsb_dig : x6100_mode_lsb;
-            break;
+            return data_mode ? x6100_mode_lsb_dig : x6100_mode_lsb;
         case M_USB:
-            r_mode = data_mode ? x6100_mode_usb_dig : x6100_mode_usb;
-            break;
+            return data_mode ? x6100_mode_usb_dig : x6100_mode_usb;
         case M_AM:
-            r_mode = x6100_mode_am;
-            break;
+            return x6100_mode_am;
         case M_CW:
-            r_mode = x6100_mode_cw;
-            break;
+            return x6100_mode_cw;
         case M_NFM:
-            r_mode = x6100_mode_nfm;
-            break;
+            return x6100_mode_nfm;
         case M_CWR:
-            r_mode = x6100_mode_cwr;
-            break;
+            return x6100_mode_cwr;
         default:
-            break;
+            return x_mode;
     }
-    return r_mode;
 }
 
-uint8_t x_mode_2_ci_mode(x6100_mode_t mode, bool *data_mode=nullptr) {
+x6100_mode_t ci_data_mode_2_x_mode(x6100_mode_t x_mode, uint8_t data_mode) {
+    if (data_mode) {
+        if (x_mode == x6100_mode_lsb) return x6100_mode_lsb_dig;
+        if (x_mode == x6100_mode_usb) return x6100_mode_usb_dig;
+    } else {
+        if (x_mode == x6100_mode_lsb_dig) return x6100_mode_lsb;
+        if (x_mode == x6100_mode_usb_dig) return x6100_mode_usb;
+    }
+    return x_mode;
+}
+
+uint8_t x_mode_2_ci_mode(x6100_mode_t mode) {
     switch (mode) {
         case x6100_mode_lsb_dig:
-            if (data_mode) *data_mode = true;
         case x6100_mode_lsb:
             return M_LSB;
             break;
         case x6100_mode_usb_dig:
-            if (data_mode) *data_mode = true;
         case x6100_mode_usb:
             return M_USB;
             break;
@@ -236,6 +238,10 @@ uint8_t x_mode_2_ci_mode(x6100_mode_t mode, bool *data_mode=nullptr) {
             return 0;
             break;
     }
+}
+
+uint8_t x_mode_is_data_mode(x6100_mode_t x_mode) {
+    return (x_mode == x6100_mode_lsb_dig) || (x_mode == x6100_mode_usb_dig);
 }
 
 uint8_t get_if_bandwidth() {
@@ -448,7 +454,10 @@ std::string_view handle_set_freq_x05(const CivPacketView &request, CivTxPacker &
 std::string_view handle_set_mode_x06(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if ((data_size >= 1) && (data_size <= 2)) {
-        civ_sm->cp_cur_mode.set(ci_mode_2_x_mode(request.get_subcommand()));
+        // Payload: mode, filter id
+        x6100_mode_t new_mode = static_cast<x6100_mode_t>(civ_sm->cp_cur_mode.get());
+        new_mode = ci_mode_2_x_mode(new_mode, request.get_subcommand());
+        civ_sm->cp_cur_mode.set(new_mode);
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -739,24 +748,16 @@ std::string_view handle_rd_trxid_x19(const CivPacketView &request, CivTxPacker &
 
 std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &resp) {
     size_t       data_size = request.get_command_data().size();
-    x6100_mode_t cur_mode  = (x6100_mode_t)civ_sm->cp_cur_mode.get();
+    x6100_mode_t mode      = (x6100_mode_t)civ_sm->cp_cur_mode.get();
 
     if (data_size == 1) {
+        auto after_cmd = resp.set_command(request.get_command()).set_subcommand(request.get_subcommand());
         switch (request.get_subcommand()) {
             case MEM_IF_FW:
-                return resp.set_command(request.get_command())
-                    .set_subcommand(request.get_subcommand())
-                    .append_byte(get_if_bandwidth())
-                    .get_packet();
+                return after_cmd.append_byte(get_if_bandwidth()).get_packet();
 
             case MEM_DM_FG:
-                {
-                    uint8_t d[] = {
-                        request.get_subcommand(), x_mode_2_ci_mode(cur_mode),
-                        static_cast<uint8_t>((cur_mode == x6100_mode_lsb_dig) || (cur_mode == x6100_mode_usb_dig)),
-                        0x00};
-                    return resp.set_command(request.get_command()).append_data(d, 4).get_packet();
-                }
+                return after_cmd.append_byte(x_mode_is_data_mode(mode)).append_byte(0x01).get_packet();
 
             default:
                 return civ::detail::set_unsupported(request, resp);
@@ -764,17 +765,16 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
     } else {
         switch (request.get_subcommand()) {
             // case MEM_IF_FW:
-            //     cfg_sm.cp_cur_filter_bw.set(if_bandwidth_from_ci(request.get_subcommand_data()[0]));
+            //     civ_sm->cp_cur_filter_bw.set(if_bandwidth_from_ci(request.get_subcommand_data()[0]));
             //     return resp.set_ok().get_packet();
             case MEM_LOCK:
                 return resp.set_ng().get_packet();
             case MEM_DM_FG:
-                {
-                    x6100_mode_t new_mode = ci_mode_2_x_mode(static_cast<uint8_t>(request.get_command_data()[1]),
-                                                             static_cast<uint8_t>(request.get_command_data()[2]));
-                    civ_sm->cp_cur_mode.set(new_mode);
-                    return resp.set_ok().get_packet();
-                }
+                // Payload: data mode, filter_id
+                mode = ci_mode_2_x_mode(mode, request.get_subcommand_data()[0]);
+                civ_sm->cp_cur_mode.set(mode);
+                return resp.set_ok().get_packet();
+
             default:
                 return civ::detail::set_unsupported(request, resp);
         }
@@ -839,41 +839,35 @@ std::string_view handle_send_sel_freq_x25(const CivPacketView &request, CivTxPac
 // ============================================================================
 
 std::string_view handle_send_sel_mode_x26(const CivPacketView &request, CivTxPacker &resp) {
-    size_t data_size = request.get_command_data().size();
+    size_t              data_size = request.get_command_data().size();
     Parameter<int32_t> *mode_par;
 
     if (request.get_vfo() == 0) {
-        mode_par = civ_sm->p_band_current_vfo.get() == X6100_VFO_A
-            ? &civ_sm->p_band_vfoa_mode
-            : &civ_sm->p_band_vfob_mode;
+        mode_par =
+            civ_sm->p_band_current_vfo.get() == X6100_VFO_A ? &civ_sm->p_band_vfoa_mode : &civ_sm->p_band_vfob_mode;
     } else {
-        mode_par = civ_sm->p_band_current_vfo.get() == X6100_VFO_B
-            ? &civ_sm->p_band_vfoa_mode
-            : &civ_sm->p_band_vfob_mode;
+        mode_par =
+            civ_sm->p_band_current_vfo.get() == X6100_VFO_B ? &civ_sm->p_band_vfoa_mode : &civ_sm->p_band_vfob_mode;
     }
+    x6100_mode_t mode = static_cast<x6100_mode_t>(mode_par->get());
 
+    auto after_vfo = resp.set_command(request.get_command()).set_vfo(request.get_vfo());
     switch (data_size) {
-        case 1: {
-            bool data_mode = false;
-            uint8_t v = x_mode_2_ci_mode((x6100_mode_t)mode_par->get(), &data_mode);
-            uint8_t d[] = {request.get_vfo(), v, static_cast<uint8_t>(data_mode), 0x01};
-            return resp.set_command(request.get_command())
-                .append_data(d, 4).get_packet();
-        }
+        case 1:
+            return after_vfo.append_byte(x_mode_2_ci_mode(mode))
+                .append_byte(x_mode_is_data_mode(mode))
+                .append_byte(0x01) // Default filter(1)
+                .get_packet();
         case 4:
-        case 3: {
-            bool data_mode = static_cast<uint8_t>(request.get_command_data()[2]);
-            x6100_mode_t new_mode = ci_mode_2_x_mode(
-                static_cast<uint8_t>(request.get_command_data()[1]), data_mode);
-            mode_par->set(new_mode);
+        case 3:
+            mode = ci_mode_2_x_mode(mode, request.get_subcommand_data()[0]);
+            mode = ci_data_mode_2_x_mode(mode, request.get_subcommand_data()[1]);
+            mode_par->set(mode);
             return resp.set_ok().get_packet();
-        }
-        case 2: {
-            x6100_mode_t new_mode = ci_mode_2_x_mode(
-                static_cast<uint8_t>(request.get_command_data()[1]), false);
-            mode_par->set(new_mode);
+        case 2:
+            mode = ci_mode_2_x_mode(mode, request.get_subcommand_data()[0]);
+            mode_par->set(mode);
             return resp.set_ok().get_packet();
-        }
         default:
             return civ::detail::set_unsupported(request, resp);
     }
@@ -1026,7 +1020,7 @@ std::string_view pack_fg_freq_notify_00(int32_t freq, CivTxPacker &response_pack
 }
 
 std::string_view pack_mode_notify_01(x6100_mode_t mode, CivTxPacker &response_packer) {
-    return response_packer.set_command(C_SND_MODE).append_byte(x_mode_2_ci_mode(mode, NULL)).get_packet();
+    return response_packer.set_command(C_SND_MODE).append_byte(x_mode_2_ci_mode(mode)).get_packet();
 }
 
 std::string_view pack_vfo_notify_07(x6100_vfo_t vfo, CivTxPacker &response_packer) {
