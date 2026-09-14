@@ -25,7 +25,7 @@ template <typename T> class ComputedParameter : public SubjectT<T> {
     }
 
     ~ComputedParameter() {
-        subscriptions_.clear(); // unsubscribe + delete all bound observers
+        subscriptions_.clear(); // unsubscribe and release all bound observers
     }
 
     // Recompute from compute_() and notify subscribers only when the value

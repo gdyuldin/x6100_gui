@@ -19,8 +19,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <numeric>
+#include <vector>
 
 #include "dialog_msg_voice.h"
 
@@ -148,7 +150,9 @@ static void on_cur_freq_change(Subject *subj, void *user_data);
 
 class ChunkedSpgram {
 
-    static inline std::map<int32_t, cfloat *> w_cache;
+    // Window cache keyed by window size. The vectors own the window samples, so
+    // the cache is released cleanly when the static map is destroyed at exit.
+    static inline std::map<int32_t, std::vector<cfloat>> w_cache;
 
     size_t   nfft_;
     size_t   chunk_size_  = 0;
@@ -175,27 +179,28 @@ class ChunkedSpgram {
     void setup_window() { w_ = get_cached_window(window_size_); };
 
     cfloat *get_cached_window(size_t window_size) {
-        if (auto search = w_cache.find(window_size); search != w_cache.end()) {
-            return search->second;
-        } else {
-            cfloat *window = (cfloat *)calloc(sizeof(cfloat), window_size);
-            size_t  i;
-            for (i = 0; i < window_size; i++) {
-                window[i] = liquid_kaiser(i, window_size, 10.0f);
-                // window[i] = liquid_hann(i, window_size);
-            }
-            // scale by window magnitude
-            float g = 0.0f;
-            for (i = 0; i < window_size; i++)
-                g += std::norm(window[i]);
-            g = 1.0f / sqrtf(g * nfft_ / window_size);
-
-            // scale window and copy
-            for (i = 0; i < window_size; i++)
-                window[i] *= g;
-            w_cache[window_size] = window;
-            return window;
+        auto search = w_cache.find((int32_t)window_size);
+        if (search != w_cache.end()) {
+            return search->second.data();
         }
+
+        std::vector<cfloat> window(window_size);
+        for (size_t i = 0; i < window_size; i++) {
+            window[i] = liquid_kaiser(i, window_size, 10.0f);
+            // window[i] = liquid_hann(i, window_size);
+        }
+        // scale by window magnitude
+        float g = 0.0f;
+        for (size_t i = 0; i < window_size; i++)
+            g += std::norm(window[i]);
+        g = 1.0f / sqrtf(g * nfft_ / window_size);
+
+        // scale window and copy
+        for (size_t i = 0; i < window_size; i++)
+            window[i] *= g;
+
+        auto it = w_cache.emplace((int32_t)window_size, std::move(window)).first;
+        return it->second.data();
     };
 
   public:

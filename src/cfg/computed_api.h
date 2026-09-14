@@ -11,6 +11,8 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
+#include <string>
+
 #include "computed_parameter.h"
 using ComputedParamInt   = ComputedParameter<int32_t>;
 using ComputedParamFloat = ComputedParameter<float>;

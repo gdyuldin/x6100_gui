@@ -16,8 +16,9 @@
 // validators, deferred-write enqueue and observer notifications all apply.
 // Ownership: the parameters (and the SettingsManager singleton) are static and
 // owned by C++ (cfg_api.cpp). C code only receives/holds opaque pointers and
-// must never free them. Observers returned by *_subscribe are owned by C/UI
-// code and freed with param_unsubscribe.
+// must never free them. Observers returned by *_subscribe are borrowed: the
+// Subject owns one reference while the observer stays subscribed; C/UI code
+// releases that reference with param_unsubscribe.
 //
 // cfg_api_init() does NOT open the DB or call cfg_db_init(): the caller owns
 // the sqlite3 connection and table initialisation (avoids double-Init).

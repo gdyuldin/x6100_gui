@@ -2,14 +2,14 @@
 
 #include "subject.h"
 
-// Generic subject helpers and the shared observer destroyer. These wrap the
+// Generic subject helpers and the shared observer release path. These wrap the
 // C++ Subject/SubjectT/Observer types in subject.h.
 
 void param_unsubscribe(Observer *o) {
     if (!o) {
         return;
     }
-    ObserverDeleter{}(o);
+    o->unsubscribe();
 }
 
 SubjectInt *subject_i_create(int32_t val) {
@@ -52,7 +52,10 @@ ObserverDelayed *subject_subscribe_delayed_and_notify(Subject *subj, observer_cb
     return subj->subscribe_delayed_and_notify(fn, user_data);
 }
 
-
 void observer_delayed_drain(void) {
     ObserverDelayed::drain();
+}
+
+void observer_delayed_shutdown(void) {
+    ObserverDelayed::shutdown();
 }

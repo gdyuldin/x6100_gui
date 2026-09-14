@@ -32,7 +32,8 @@ uint32_t cfg_atu_get_network(void);
 
 // ATU subjects: whether a saved network exists for the current freq/ant and
 // its value (0 when not loaded). The returned Observer / ObserverDelayed is
-// freed with param_unsubscribe.
+// borrowed from the Subject and its reference is released with
+// param_unsubscribe.
 Observer        *cfg_atu_loaded_subscribe(observer_cb cb, void *user_data);
 Observer        *cfg_atu_network_subscribe(observer_cb cb, void *user_data);
 ObserverDelayed *cfg_atu_loaded_subscribe_delayed(observer_cb cb, void *user_data);

@@ -54,6 +54,7 @@ static void fade_ready(lv_anim_t * a) {
 
 static void msg_show_timer(lv_timer_t *t) {
     delayed_message_t * msg = t->user_data;
+    t->user_data = NULL;
     if (fade_out_timer != NULL) {
         lv_timer_del(fade_out_timer);
     }
@@ -64,6 +65,7 @@ static void msg_show_timer(lv_timer_t *t) {
     lv_anim_start(&fade);
     fade_out_timer = lv_timer_create(fade_out_timer_cb, msg->dur - FADE_TIME, NULL);
     lv_timer_set_repeat_count(fade_out_timer, 1);
+    free(msg);
 }
 
 static void msg_update_cb(lv_event_t * e) {

@@ -640,9 +640,16 @@ static int drm_find_connector(void) {
 
     dbg("crtc_idx: %d", drm_dev.crtc_idx);
 
+    /* Success path: release the objects obtained for the search. */
+    drmModeFreeConnector(conn);
+    drmModeFreeResources(res);
+
     return 0;
 
 free_res:
+    if (conn) {
+        drmModeFreeConnector(conn);
+    }
     drmModeFreeResources(res);
 
     return -1;

@@ -1,7 +1,7 @@
 // test_subject.cpp
 #include <catch2/catch_test_macros.hpp>
 
-#include "subject.h" // SubjectT, Observer, Subscription, ObserverDeleter
+#include "subject.h" // SubjectT, Observer, Subscription
 #include <atomic>
 #include <thread>
 #include <vector>
@@ -58,13 +58,14 @@ TEST_CASE("Subscription RAII unsubscribe", "[subject]") {
 TEST_CASE("Unsubscribe observer", "[subject]") {
     SubjectT<int> s(0);
     TestObserver  obs;
-    auto          sub = s.subscribe(TestObserver::staticCallback, &obs);
+    // A borrowed observer (no Subscription): unsubscribe() releases the only
+    // reference and destroys it.
+    Observer *sub = s.subscribe(TestObserver::staticCallback, &obs);
     s.set(5);
     REQUIRE(obs.values == std::vector<int>{5});
     sub->unsubscribe();
     s.set(10);
     REQUIRE(obs.values == std::vector<int>{5});
-    delete sub;
 }
 
 TEST_CASE("Multiple observers", "[subject]") {
@@ -86,7 +87,6 @@ TEST_CASE("Observer manual unsubscribe", "[subject]") {
     raw->unsubscribe();
     s.set(2);
     REQUIRE(obs.values.size() == 1);
-    delete raw;
 }
 
 TEST_CASE("Concurrent set/get integrity", "[subject][threads]") {
@@ -264,9 +264,12 @@ TEST_CASE("ObserverDelayed keeps one coalesced delivery through suppression", "[
     REQUIRE(obs.values == std::vector<int>{2});
 }
 
-// Subject lifetime: an Observer/Subscription may outlive its Subject (e.g. a
-// static Subscription destroyed after a global SettingsManager). ~Subject()
-// clears the observers' back-pointers so the late unsubscribe is a no-op and
+// Subject lifetime: the Subject owns one reference per subscribed observer
+// while it holds it in its list. A borrowed observer (subscribe* result kept as
+// a raw pointer) is destroyed together with the Subject; a Subscription holds an
+// extra reference and may outlive the Subject (e.g. a static Subscription
+// destroyed after a global SettingsManager). ~Subject() detaches every observer
+// and releases the Subject's reference, so the late unsubscribe is a no-op and
 // never touches freed memory (checked by the test build's ASan/UBSan).
 
 TEST_CASE("Subscription outliving its Subject is safe", "[subject][lifetime]") {
@@ -289,15 +292,17 @@ TEST_CASE("Subject destruction unlinks multiple observers", "[subject][lifetime]
     REQUIRE(obs2.values.empty());
 }
 
-TEST_CASE("Manual unsubscribe after Subject destruction is a no-op", "[subject][lifetime]") {
+TEST_CASE("Subject destruction frees borrowed observers", "[subject][lifetime]") {
+    // Borrowed observers (fire-and-forget subscribe*) are owned by the Subject:
+    // deleting it releases the only reference and destroys them. A leak here is
+    // reported by the test build's LeakSanitizer.
     auto        *s = new SubjectT<int>(0);
     TestObserver obs;
-    Observer    *raw = s->subscribe(TestObserver::staticCallback, &obs);
+    s->subscribe(TestObserver::staticCallback, &obs);
+    s->subscribe_delayed(TestObserver::staticCallback, &obs);
 
     delete s;
-    raw->unsubscribe(); // must not dereference the freed subject
     REQUIRE(obs.values.empty());
-    delete raw;
 }
 
 TEST_CASE("Queued ObserverDelayed skipped when Subject is destroyed", "[subject][lifetime][delayed]") {
@@ -310,6 +315,19 @@ TEST_CASE("Queued ObserverDelayed skipped when Subject is destroyed", "[subject]
 
     ObserverDelayed::drain(); // stale observer must be skipped, not invoked
     REQUIRE(obs.values.empty());
+}
+
+TEST_CASE("ObserverDelayed::shutdown clears pending deliveries without invoking callbacks",
+          "[subject][lifetime][delayed]") {
+    auto        *s = new SubjectT<int>(0);
+    TestObserver obs;
+    Subscription sub{s->subscribe_delayed(TestObserver::staticCallback, &obs)};
+
+    s->set(5);                   // schedules a deferred delivery
+    ObserverDelayed::shutdown(); // drops it without firing the callback
+    REQUIRE(obs.values.empty());
+
+    delete s; // still subscribed: Subject releases its reference, sub the other
 }
 
 TEST_CASE("Subscription destroyed before its Subject keeps normal behaviour", "[subject][lifetime]") {

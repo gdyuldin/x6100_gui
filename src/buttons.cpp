@@ -1200,8 +1200,10 @@ static void disp_btn_clear(disp_btn_t *btn) {
         // Unbind data from display button
         btn->data->disp_btn = NULL;
         if (btn->data->observer) {
+            // unsubscribe() releases the Subject's reference; the observer is
+            // destroyed here because no other reference is held. It must not be
+            // deleted again.
             btn->data->observer->unsubscribe();
-            delete btn->data->observer;
             btn->data->observer = NULL;
         }
         btn->data = NULL;

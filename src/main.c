@@ -213,6 +213,7 @@ int main(void) {
     display_invert(false);
     cat_lan_destruct();
     wifi_cleanup();
+    observer_delayed_shutdown();
     cfg_api_flush_all();
     cfg_db_shutdown();
     return 0;

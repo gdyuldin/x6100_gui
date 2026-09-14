@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -18,16 +17,29 @@ class Observer {
     void (*fn)(Subject *, void *);
     void *user_data;
 
-    // Set by ObserverDelayed dtor when the observer is destroyed while still
-    // queued for delivery. drain_delayed() skips cancelled entries and deletes
-    // the observer (subscription RAII already unsubscribed it).
-    std::atomic<bool> cancelled_{false};
+    // Intrusive reference count for the subscription lifetime. The initial
+    // reference (refs_ == 1) is owned by the Subject that holds this observer in
+    // its observer list. A Subscription, param_unsubscribe and the delayed queue
+    // each hold one additional reference. The caller that releases the last
+    // reference destroys the observer.
+    std::atomic<int> refs_{1};
 
   public:
     Observer(Subject *subj, observer_cb fn, void *user_data) : subj(subj), fn(fn), user_data(user_data){};
     virtual ~Observer() = default;
     virtual void notify();
 
+    // Ownership protocol (internal): acquire one reference.
+    void add_ref() { refs_.fetch_add(1, std::memory_order_relaxed); }
+
+    // Ownership protocol (internal): release one reference and destroy the
+    // observer when it was the last one.
+    void release();
+
+    // Detach from the Subject and release the Subject's reference. A borrowed
+    // observer (one returned by subscribe* but not wrapped in a Subscription or
+    // otherwise referenced) is destroyed here; a Subscription keeps the observer
+    // alive through its own reference until it is reset.
     void unsubscribe();
 
     // Accessor for the C-API layer: cfg_api's param_unsubscribe reads this to
@@ -43,45 +55,73 @@ class ObserverDelayed : public Observer {
 
     void notify() override;
 
-    // Atomically takes ownership of a pending queue entry. Sets cancelled_ so
-    // drain() skips the callback and deletes this observer. Returns true if the
-    // observer was still queued (caller must NOT delete — drain() will).
-    // Must be called from the main thread, before ~ObserverDelayed runs.
-    bool cancel_if_queued();
-
     // Drain the delayed-observer queue on the main thread. Must be called
     // periodically from the main LVGL thread (same loop as lv_timer_handler).
-    // Each queued ObserverDelayed gets its callback fired exactly once with
-    // the latest value; cancelled observers are cleaned up and skipped.
+    // Each queued ObserverDelayed gets its callback fired exactly once with the
+    // latest value, then its queue reference is released.
     static void drain();
+
+    // Clear the delayed queue at shutdown without invoking callbacks. Every
+    // queued observer's queue reference is released; observers that still have
+    // other references (Subject/Subscription) are destroyed later by their
+    // owner. Call once from the main thread after all producers have stopped.
+    static void shutdown();
 
   private:
     // Coalescing guard: true while one enqueue is pending for this observer.
     // A call to notify() while one is pending collapses into the single
-    // queued delivery (latest value wins when drain_delayed() runs).
+    // queued delivery (latest value wins when drain() runs).
     std::atomic<bool> scheduled_{false};
 };
 
-// RAII-wrapper for deleting
-struct ObserverDeleter {
-    void operator()(Observer *obs) const {
-        if (obs) {
-            obs->unsubscribe();
-            // ObserverDelayed may still be sitting in the drain queue.
-            // cancel_if_queued() atomically claims the entry and marks it
-            // cancelled so drain() deletes it — we must not double-delete.
-            auto *delayed = dynamic_cast<ObserverDelayed *>(obs);
-            if (delayed && delayed->cancel_if_queued()) {
-                return;
-            }
-            delete obs;
+// Move-only RAII handle for a subscription. Holds one reference to the Observer
+// in addition to the Subject's reference, so the observer stays alive while the
+// handle exists (even when the Subject is destroyed first). On reset or
+// destruction it unsubscribes the observer and releases its reference: if that
+// was the last reference, the observer is destroyed.
+class Subscription {
+  public:
+    Subscription() = default;
+    explicit Subscription(Observer *obs) : obs_(obs) {
+        if (obs_) {
+            obs_->add_ref();
         }
     }
+    ~Subscription() { reset(); }
+
+    Subscription(const Subscription &)            = delete;
+    Subscription &operator=(const Subscription &) = delete;
+
+    Subscription(Subscription &&other) noexcept : obs_(other.obs_) { other.obs_ = nullptr; }
+
+    Subscription &operator=(Subscription &&other) noexcept {
+        if (this != &other) {
+            reset();
+            obs_       = other.obs_;
+            other.obs_ = nullptr;
+        }
+        return *this;
+    }
+
+    void reset() {
+        if (obs_) {
+            obs_->unsubscribe();
+            obs_->release();
+            obs_ = nullptr;
+        }
+    }
+
+    Observer *get() const { return obs_; }
+    Observer *operator->() const { return obs_; }
+
+  private:
+    Observer *obs_ = nullptr;
 };
 
-using Subscription = std::unique_ptr<Observer, ObserverDeleter>;
-
 class Subject {
+    // Observer::unsubscribe() removes itself through this method.
+    friend class Observer;
+
     // Mutex to protect editing observers list
     std::mutex mutex_subscribe;
 
@@ -104,8 +144,9 @@ class Subject {
     //   - Cross-thread subscribe/unsubscribe is serialized with the copy by
     //     mutex_subscribe; callbacks run lock-free, so they must only read
     //     SubjectT values (which have their own mutexes).
-    //   - ~Subject() clears Observer::subj of every still-subscribed observer
-    //     under mutex_subscribe, so observers surviving the subject are inert.
+    //   - ~Subject() detaches every still-subscribed observer and releases the
+    //     Subject's reference, so observers that outlive the subject are either
+    //     destroyed or kept alive solely by their Subscription reference.
     void notify_impl();
 
     // Notification entry point: during a suppressed scope (NotifySuppressGuard)
@@ -113,14 +154,18 @@ class Subject {
     // firing callbacks immediately; otherwise behaves exactly like notify_impl().
     void notify();
 
-    // Destruction unlinks every observer: each Observer::subj is cleared under
-    // mutex_subscribe, so an Observer/Subscription that outlives its Subject
-    // becomes inert and its later ObserverDeleter::operator() (unsubscribe +
-    // delete) is a safe no-op instead of a use-after-free. Contract: a Subject
-    // must only be destroyed when no notify/subscribe is in flight on another
-    // thread (notify_impl() copies the list under the lock but runs callbacks
-    // unlocked).
+    // Destruction releases the Subject's reference on every still-subscribed
+    // observer: each Observer::subj is cleared under mutex_subscribe and the
+    // reference is released, so a borrowed observer is destroyed and a
+    // Subscription-held one survives through its own reference. Contract: a
+    // Subject must only be destroyed when no notify/subscribe is in flight on
+    // another thread (notify_impl() copies the list under the lock but runs
+    // callbacks unlocked).
     ~Subject();
+
+    // Remove an observer from the list. Does NOT release the Subject's
+    // reference; Observer::unsubscribe() / ~Subject() do that.
+    void unsubscribe(Observer *o);
 
     // Force vtable for correct align with C-API opaque pointers
     virtual void force_vtable() {};
@@ -135,14 +180,14 @@ class Subject {
     static void pop_suppress();
     static bool is_suppressed();
 
-    // For C++ make sense to convert result to Subscription
-    Observer *subscribe(observer_cb fn, void *user_data = nullptr);
-    Observer *subscribe_and_notify(observer_cb fn, void *user_data = nullptr);
-    // For C++ make sense to convert result to Subscription
+    // Observer ownership: the Subject owns one reference while it holds the
+    // observer in its list. The returned pointer is borrowed; wrap it in a
+    // Subscription (or release it with param_unsubscribe) to keep an owned
+    // reference.
+    Observer        *subscribe(observer_cb fn, void *user_data = nullptr);
+    Observer        *subscribe_and_notify(observer_cb fn, void *user_data = nullptr);
     ObserverDelayed *subscribe_delayed(observer_cb fn, void *user_data = nullptr);
     ObserverDelayed *subscribe_delayed_and_notify(observer_cb fn, void *user_data = nullptr);
-
-    void unsubscribe(Observer *o);
 };
 
 // RAII wrapper for Subject::push_suppress/pop_suppress: suppresses all
