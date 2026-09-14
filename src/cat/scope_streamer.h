@@ -19,7 +19,7 @@ void scope_streamer_set_notify(scope_notify_cb_t cb);
 // formats a CI-V 0x27 0x00 packet, and calls the notify callback.
 // center_freq = base_freq from dsp, width_hz = FULL_BW_HZ / zoom
 void scope_streamer_push_data(const float *psd_db, size_t len,
-                               uint32_t center_freq, uint32_t width_hz);
+                               uint32_t center_freq, uint32_t width_hz, float min, float max);
 
 // Handle 0x27 subcommand get/set. Returns finalized packet if handled,
 // empty string_view if caller should use set_unsupported.

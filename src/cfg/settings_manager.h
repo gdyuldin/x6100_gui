@@ -298,7 +298,7 @@ class SettingsManager {
     //     &mode_params_};
     Parameter<int32_t> p_mode_freq_step{"freq_step", 500, [](int32_t v) { return clip(v, 1, 10000); },
         StorageType::MODE, pending_writes_, [this]() { on_mode_freq_step_not_found(); }, &mode_params_};
-    Parameter<int32_t> p_mode_zoom{"spectrum_factor", 1, [](int32_t v) { return clip(v, 1, 8); },
+    Parameter<int32_t> p_mode_zoom{"spectrum_factor", 1, [this](int32_t v) { return zoom_validate(v); },
         StorageType::MODE, pending_writes_, [this]() { on_mode_zoom_not_found(); }, &mode_params_};
 
   private:
@@ -528,6 +528,9 @@ class SettingsManager {
     // member params via `this`).
     int32_t filter_low_validate(int32_t v);
     int32_t filter_high_validate(int32_t v);
+
+    // Validate zoom
+    int32_t zoom_validate(int32_t v);
 
     // compute fns for cp_cur_filter_{low,high,bw}.
     int32_t cur_filter_low_compute();

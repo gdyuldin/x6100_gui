@@ -483,6 +483,13 @@ int32_t SettingsManager::filter_high_validate(int32_t v) {
     return clip(v, low + 1, 6000);
 }
 
+int32_t SettingsManager::zoom_validate(int32_t v) {
+    uint32_t v_u = std::max(static_cast<uint32_t>(v), 1u);
+    int p = 31 - __builtin_clz(v_u);
+    p = std::min(p, 3);
+    return 1 << p;
+}
+
 int32_t SettingsManager::cur_filter_low_compute() {
     // Current mode category drives the edge mapping. The filter params are
     // MODE-scoped to cp_cur_mode.get() (matches mode_id_ at steady state).

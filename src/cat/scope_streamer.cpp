@@ -20,7 +20,7 @@ namespace {
 bool                    scope_on             = false;
 bool                    scope_data_enabled   = false;
 uint8_t                 scope_mode           = 0;      // 0=Center,1=Fixed,2=SCROLL-C,3=SCROLL-F
-int32_t                 scope_span_hz        = 100000;
+int32_t                 scope_span_hz        = 50'000;
 int32_t                 scope_edge_start_hz  = 0;
 int32_t                 scope_edge_end_hz    = 0;
 float                   scope_ref_level_dB   = 0.0f;
@@ -29,7 +29,6 @@ uint16_t                scope_edge_num       = 1;      // 1-4
 
 std::atomic<scope_notify_cb_t> notify_cb{nullptr};
 
-constexpr uint16_t SCOPE_NFFT = 1024;
 constexpr uint16_t SCOPE_NBINS = 475;
 
 // ============================================================================
@@ -115,36 +114,33 @@ void scope_streamer_set_center_freq(int32_t freq_hz) {
 }
 
 void scope_streamer_push_data(const float *psd_db, size_t len,
-                               uint32_t center_freq, uint32_t width_hz) {
+                               uint32_t center_freq, uint32_t width_hz, float min, float max) {
 
     if (!scope_data_enabled) return;
     scope_notify_cb_t cb = notify_cb.load(std::memory_order_acquire);
     if (!cb) return;
-    // Scale 1024 float dB values to uint8_t 0-200
-    int32_t grid_min = cfg_sm.p_band_grid_min.get();
-    int32_t grid_max = cfg_sm.p_band_grid_max.get();
-    float min_db = static_cast<float>(grid_min);
-    float max_db = static_cast<float>(grid_max);
-    float range_db = max_db - min_db;
-    if (range_db < 1.0f) range_db = 48.0f;
 
-    uint8_t scaled[SCOPE_NFFT];
-    for (size_t i = 0; i < len && i < SCOPE_NFFT; i++) {
-        float v = (psd_db[i] - min_db) * 200.0f / range_db;
+    float range_db = max - min;
+    if (range_db < 1.0f) range_db = 48.0f;
+    float range_inv = 1 / range_db;
+
+    uint8_t scaled[len];
+    for (size_t i = 0; i < len; i++) {
+        float v = (psd_db[i] - min) * 200.0f * range_inv;
         if (v < 0.0f) v = 0.0f;
         if (v > 200.0f) v = 200.0f;
         scaled[i] = static_cast<uint8_t>(v + 0.5f);
     }
 
-    // Downsample 1024 -> 475
+    // Downsample len -> 475
     uint8_t binned[SCOPE_NBINS];
-    uint32_t step = (SCOPE_NFFT << 12) / SCOPE_NBINS;
+    uint32_t step = (len << 12) / SCOPE_NBINS;
     uint32_t acc = step >> 1;
     for (uint16_t i = 0; i < SCOPE_NBINS; i++) {
         uint32_t src_idx = acc >> 12;
         uint32_t frac = (acc >> 3) & 0x1F;
-        if (src_idx + 1 >= SCOPE_NFFT) {
-            binned[i] = scaled[SCOPE_NFFT - 1];
+        if (src_idx + 1 >= len) {
+            binned[i] = scaled[len - 1];
         } else {
             int v0 = scaled[src_idx];
             int v1 = scaled[src_idx + 1];
@@ -238,23 +234,24 @@ std::string_view scope_streamer_handle_27(const CivPacketView &req, CivTxPacker 
             // Ignore set Scope Center mode
             return resp.set_ok().get_packet();
 
-        case 0x15:
+        case 0x15: // Scope width
             {
                 if (data_size == 2) {
                     uint8_t bcd[5];
                     std::memset(bcd, 0, sizeof(bcd));
-                    to_bcd_be(bcd, scope_span_hz, 10);
+                    to_bcd(bcd, scope_span_hz, 10);
                     return resp.set_command(req.get_command())
                         .set_subcommand(subcmd)
-                        .append_byte(static_cast<uint8_t>(scope_mode))
+                        .append_byte(0x00)
                         .append_data(bcd, 5)
                         .get_packet();
                 }
                 auto data  = req.get_subcommand_data();
-                scope_span_hz = static_cast<int32_t>(from_bcd_be(data, 10));
-                // TODO: control zoom here
-                scope_span_hz = scope_span_hz < 25'000 ? 25'000 : scope_span_hz;
-                scope_span_hz = scope_span_hz > 100'000 ? 100'000 : scope_span_hz;
+                int32_t new_span = static_cast<int32_t>(from_bcd(data.substr(1), 10));
+                // Set to validate and get actual value
+                int32_t new_zoom = roundf(50'000.0f / new_span);
+                cfg_sm.p_mode_zoom.set(new_zoom);
+                scope_span_hz = 50'000 / cfg_sm.p_mode_zoom.get();
                 return resp.set_ok().get_packet();
             }
 

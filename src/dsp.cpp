@@ -65,6 +65,9 @@ static firdecim_crcf spectrum_decim_tx;
 static bool          waterfall_fft_decim = false;
 static float         zoom_level_offset = 0.0f;
 
+static float auto_min = S_MIN;
+static float auto_max = S9_40;
+
 static ChunkedSpgram *spectrum_sg_rx;
 static ChunkedSpgram *spectrum_sg_tx;
 static float          spectrum_psd[SPECTRUM_NFFT];
@@ -564,7 +567,7 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
             if (waterfall_fft_decim) {
                 width_hz /= spectrum_factor;
             }
-            scope_streamer_push_data(waterfall_psd, WATERFALL_NFFT, base_freq, width_hz);
+            scope_streamer_push_data(waterfall_psd, WATERFALL_NFFT, base_freq, width_hz, auto_min, auto_max);
         }
 
         // TODO: skip on disabled auto min/max
@@ -891,13 +894,15 @@ static void dsp_update_min_max(float *psd_lin, uint16_t size) {
     } else if (min > S8) {
         min = S8;
     }
-    float max = min + 48.0f;
+    auto_min = min;
+    auto_max = auto_min + 48.0f;
 
-    spectrum_update_min(min);
-    waterfall_update_min(min);
 
-    spectrum_update_max(max);
-    waterfall_update_max(max);
+    spectrum_update_min(auto_min);
+    waterfall_update_min(auto_min);
+
+    spectrum_update_max(auto_max);
+    waterfall_update_max(auto_max);
 }
 
 void dsp_set_waterfall_enabled(bool enabled) {
