@@ -34,7 +34,7 @@
 #include "cw.h"
 #include "panel.h"
 #include "cat/cat.h"
-#include "cat_lan/cat_lan.h"
+#include "cat/lan/cat_lan.h"
 #include "rtty.h"
 #include "display.h"
 #include "events.h"

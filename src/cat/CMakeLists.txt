@@ -14,3 +14,5 @@ target_include_directories(cat PRIVATE
 )
 
 target_link_libraries(cat PUBLIC cfg lvgl aether_x6100_control)
+
+add_subdirectory(lan)

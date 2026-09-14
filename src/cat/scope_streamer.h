@@ -8,7 +8,7 @@ class CivPacketView;
 class CivTxPacker;
 
 // Notify callback type: called from DSP thread with a formatted CI-V packet.
-// The callback pushes the packet into cat/cat_lan's send queue.
+// The callback pushes the packet into cat/lan's send queue.
 using scope_notify_cb_t = void (*)(std::string_view);
 
 // Register the active notify callback. Only one path (LAN or serial) is active.

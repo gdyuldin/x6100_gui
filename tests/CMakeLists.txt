@@ -21,7 +21,6 @@ add_test(NAME test_ft8_qso COMMAND $<TARGET_FILE:test_ft8_qso> --colour-mode=ans
 add_subdirectory(cfg)
 
 add_subdirectory(../src/cat ${CMAKE_BINARY_DIR}/src/cat)
-add_subdirectory(../src/cat_lan ${CMAKE_BINARY_DIR}/src/cat_lan)
 add_executable(test_civ test_civ.cpp)
 target_include_directories(test_civ PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(test_civ PRIVATE cat Catch2::Catch2WithMain)

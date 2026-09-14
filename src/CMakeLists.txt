@@ -25,7 +25,6 @@ add_subdirectory(params)
 add_subdirectory(qth)
 add_subdirectory(cfg)
 add_subdirectory(cat)
-add_subdirectory(cat_lan)
 
 include_directories(utf8)
 include_directories(${CMAKE_SYSROOT}/usr/include/RHVoice/)

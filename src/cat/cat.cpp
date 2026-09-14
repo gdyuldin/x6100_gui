@@ -283,7 +283,7 @@ void cat_init() {
     cfg_sm.p_cat_baud.subscribe(on_cat_baud_change);
 
     // CI-V waterfall streaming notify: only if baud >= 115200
-    // (LAN connection registration in cat_lan will override this)
+    // (LAN connection registration in cat/lan will override this)
     if (cfg_sm.p_cat_baud.get() >= 115200) {
         scope_streamer_set_notify(push_civ_notify);
     }
