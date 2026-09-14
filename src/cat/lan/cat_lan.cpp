@@ -263,6 +263,7 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
             client_ctrl        = *src;
             client_ctrl_valid  = true;
             remote_id          = in->sentid;
+            last_ping_time     = std::chrono::steady_clock::now();
             send_control(fd_control, 0x04, 0, false, &client_ctrl);
             send_control(fd_control, 0x06, 0x01, false, &client_ctrl);
             auth_state = ST_AYT_SENT;
@@ -287,6 +288,7 @@ static void process_control_packet(const uint8_t *buf, size_t len, const sockadd
             client_ctrl       = *src;
             client_ctrl_valid = true;
             remote_id         = in->sentid;
+            last_ping_time    = std::chrono::steady_clock::now();
             client_civ_valid  = false;
             scope_streamer_set_notify(nullptr);
             token             = 0;
@@ -906,7 +908,7 @@ static void cat_lan_thread() {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 now - last_ping_time).count();
             if (elapsed >= PING_TIMEOUT_SEC) {
-                LV_LOG_WARN("LAN: ping timeout (%lds), disconnecting", elapsed);
+                LV_LOG_WARN("LAN: ping timeout (%llds), disconnecting", (long long)elapsed);
                 cleanup_audio();
                 client_ctrl_valid = false;
                 client_civ_valid  = false;

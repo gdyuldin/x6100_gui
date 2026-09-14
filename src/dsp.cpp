@@ -357,7 +357,7 @@ void dsp_init() {
         psd_delay = R8_PSD_DELAY;
     }
 
-    audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 50.0f * AUDIO_CAPTURE_RATE);
+    audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 50.0f / AUDIO_CAPTURE_RATE);
 
     cfg_sm.p_mode_zoom.subscribe_and_notify(on_zoom_change);
 
