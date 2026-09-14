@@ -246,6 +246,7 @@ uint8_t x_mode_is_data_mode(x6100_mode_t x_mode) {
 
 uint8_t get_if_bandwidth() {
     uint32_t bw = civ_sm->cp_cur_filter_bw.get();
+    uint8_t val;
     switch (civ_sm->cp_cur_mode.get()) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
@@ -254,18 +255,20 @@ uint8_t get_if_bandwidth() {
         case x6100_mode_usb:
         case x6100_mode_usb_dig:
             if (bw <= 500) {
-                return (bw - 25) / 50;
+                val =(bw - 25) / 50;
             } else {
-                return (bw - 50) / 100 + 5;
+                val = (bw - 50) / 100 + 5;
             }
             break;
         case x6100_mode_am:
         case x6100_mode_nfm:
-            return (bw - 100) / 200;
+            val = (bw - 100) / 200;
+            break;
         default:
-            return 31;
+            val = 31;
             break;
     }
+    return (val / 10) << 4 | (val % 10);
 }
 
 static uint32_t if_bandwidth_from_ci(uint8_t data) {
