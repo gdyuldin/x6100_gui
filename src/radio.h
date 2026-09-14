@@ -38,6 +38,7 @@ typedef void (*radio_rx_tx_change_t) (bool tx);
 
 void radio_init();
 void radio_start();
+void radio_shutdown();
 void radio_bb_reset();
 radio_state_t radio_get_state();
 

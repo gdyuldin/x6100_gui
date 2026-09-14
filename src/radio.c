@@ -21,6 +21,7 @@
 
 #include "cfg/cfg_api.h"
 #include "cfg/db.h"
+#include "globals.h"
 #include "util.h"
 #include "dsp.h"
 #include "params/params.h"
@@ -110,6 +111,8 @@ static void recompute_subj_cb(Subject *subj, void *user_data);
  **********************/
 
 static pthread_mutex_t  control_mux;
+static pthread_t        radio_pthread;
+static bool             radio_pthread_started = false;
 
 static x6100_flow_t    *pack;
 static x6100_base_ver_t base_ver;
@@ -320,10 +323,22 @@ void radio_start() {
 
     pthread_mutex_init(&control_mux, NULL);
 
-    pthread_t thread;
+    int rc = pthread_create(&radio_pthread, NULL, radio_thread, NULL);
 
-    pthread_create(&thread, NULL, radio_thread, NULL);
-    pthread_detach(thread);
+    if (rc != 0) {
+        LV_LOG_ERROR("Can't start radio thread: %d", rc);
+    } else {
+        radio_pthread_started = true;
+    }
+}
+
+void radio_shutdown() {
+    if (!radio_pthread_started) {
+        return;
+    }
+
+    pthread_join(radio_pthread, NULL);
+    radio_pthread_started = false;
 }
 
 radio_state_t radio_get_state() {
@@ -878,7 +893,7 @@ static bool radio_tick() {
 }
 
 static void * radio_thread(void *arg) {
-    while (true) {
+    while (app_is_running) {
         now_time = get_time();
 
         radio_tick();
@@ -891,4 +906,6 @@ static void * radio_thread(void *arg) {
             idle_time = now_time;
         }
     }
+
+    return NULL;
 }

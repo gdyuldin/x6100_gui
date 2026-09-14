@@ -55,6 +55,9 @@ volatile sig_atomic_t app_is_running = 1;
 static lv_disp_drv_t        disp_drv_primary;
 static lv_disp_drv_t        disp_drv_overlay;
 
+static pthread_t            tick_pthread;
+static bool                 tick_pthread_started = false;
+
 void * tick_thread (void *args);
 
 static void handle_sigint(int signum) {
@@ -170,9 +173,13 @@ int main(void) {
     }
     qso_log_import_adif("/mnt/incoming_log.adi");
 
-    pthread_t thread;
-    pthread_create(&thread, NULL, tick_thread, NULL);
-    pthread_detach(thread);
+    int rc = pthread_create(&tick_pthread, NULL, tick_thread, NULL);
+
+    if (rc != 0) {
+        LV_LOG_ERROR("Can't start tick thread: %d", rc);
+    } else {
+        tick_pthread_started = true;
+    }
 
 #if 0
     lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_0, 0);
@@ -198,6 +205,10 @@ int main(void) {
     }
 
     // Cleanup
+    radio_shutdown();
+    if (tick_pthread_started) {
+        pthread_join(tick_pthread, NULL);
+    }
     display_invert(false);
     cat_lan_destruct();
     wifi_cleanup();
@@ -208,8 +219,10 @@ int main(void) {
 
 void * tick_thread (void *args)
 {
-      while(1) {
+      while (app_is_running) {
         usleep(5 * 1000);
         lv_tick_inc(5);
     }
+
+      return NULL;
 }

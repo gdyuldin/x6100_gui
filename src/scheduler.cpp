@@ -27,15 +27,29 @@ struct msg_data_t {
     void    *user_data;
 };
 
-static std::queue<item_t> queue;
-static std::mutex m_mutex;
+struct scheduler_state_t {
+    std::queue<item_t> queue;
+    std::mutex         mutex;
+};
+
 static std::thread::id main_thread_id;
+
+/*
+ * The scheduler state outlives the process: it is allocated once and never
+ * freed. This keeps the queue alive during process teardown, so a still
+ * running producer thread (e.g. radio_thread) cannot push into a destroyed
+ * queue.
+ */
+static scheduler_state_t &sched() {
+    static scheduler_state_t *state = new scheduler_state_t();
+    return *state;
+}
 
 static void msg_send_trampoline(void *arg);
 
 void scheduler_put(scheduler_fn_t fn, void * arg, size_t arg_size) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (queue.size() > QUEUE_MAX_SIZE){
+    std::lock_guard<std::mutex> lock(sched().mutex);
+    if (sched().queue.size() > QUEUE_MAX_SIZE){
         LV_LOG_ERROR("Scheduler queue overflow");
         return;
     }
@@ -45,7 +59,7 @@ void scheduler_put(scheduler_fn_t fn, void * arg, size_t arg_size) {
         memcpy(arg_copy, arg, arg_size);
     }
     item_t item = {fn, arg_copy};
-    queue.push(item);
+    sched().queue.push(item);
     return; // cppcheck-suppress memleak
 }
 
@@ -68,11 +82,11 @@ void scheduler_init() {
 
 void scheduler_work() {
     item_t item;
-    while (!queue.empty()) {
+    while (!sched().queue.empty()) {
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            item = queue.front();
-            queue.pop();
+            std::lock_guard<std::mutex> lock(sched().mutex);
+            item = sched().queue.front();
+            sched().queue.pop();
         }
         item.fn(item.arg);
         if (item.arg) {
