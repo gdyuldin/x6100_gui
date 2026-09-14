@@ -262,6 +262,26 @@ uint8_t get_if_bandwidth() {
     }
 }
 
+static uint32_t if_bandwidth_from_ci(uint8_t data) {
+    switch (civ_sm->cp_cur_mode.get()) {
+        case x6100_mode_cw:
+        case x6100_mode_cwr:
+        case x6100_mode_lsb:
+        case x6100_mode_lsb_dig:
+        case x6100_mode_usb:
+        case x6100_mode_usb_dig:
+            if (data <= 9) {
+                return (uint32_t)data * 50u + 50u;       // 50 ~ 500 Hz
+            }
+            return (uint32_t)data * 100u - 400u;         // 600 ~ 3600 Hz
+        case x6100_mode_am:
+        case x6100_mode_nfm:
+            return (uint32_t)data * 200u + 200u;         // 200 Hz ~ 10.0 kHz
+        default:
+            return 2700u;                                 // fallback
+    }
+}
+
 int32_t freq_step_from_ci(uint8_t val) {
     switch (val) {
         case 0x00:
@@ -724,7 +744,10 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
     if (data_size == 1) {
         switch (request.get_subcommand()) {
             case MEM_IF_FW:
-                return resp.set_command(request.get_command()).set_subcommand(request.get_subcommand()).append_byte(get_if_bandwidth()).get_packet();
+                return resp.set_command(request.get_command())
+                    .set_subcommand(request.get_subcommand())
+                    .append_byte(get_if_bandwidth())
+                    .get_packet();
 
             case MEM_DM_FG:
                 {
@@ -740,6 +763,9 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
         }
     } else {
         switch (request.get_subcommand()) {
+            // case MEM_IF_FW:
+            //     cfg_sm.cp_cur_filter_bw.set(if_bandwidth_from_ci(request.get_subcommand_data()[0]));
+            //     return resp.set_ok().get_packet();
             case MEM_LOCK:
                 return resp.set_ng().get_packet();
             case MEM_DM_FG:

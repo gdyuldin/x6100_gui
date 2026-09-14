@@ -77,35 +77,27 @@ uint8_t freq_range_code(int32_t freq_hz) {
 using namespace civ::detail;
 
 // ============================================================================
-// Reference level encode/decode (7-byte format)
+// Reference level encode/decode (3-byte format)
 // ============================================================================
 
-void ref_level_encode(uint8_t buf[7], float dB) {
+void ref_level_encode(uint8_t buf[3], float dB) {
     bool neg = dB < 0.0f;
     float abs_val = neg ? -dB : dB;
-    int tens   = static_cast<int>(abs_val / 10.0f);
-    int ones   = static_cast<int>(std::fmod(abs_val, 10.0f));
-    int tenths = static_cast<int>(std::round(std::fmod(abs_val, 1.0f) * 10.0f));
-    tens   = std::clamp(tens, 0, 2);
-    ones   = std::clamp(ones, 0, 9);
-    tenths = (tenths >= 5) ? 5 : 0;
-    buf[0] = 0x00;
-    buf[1] = 0x00;
-    buf[2] = static_cast<uint8_t>(tens);
-    buf[3] = static_cast<uint8_t>(ones);
-    buf[4] = static_cast<uint8_t>(tenths);
-    buf[5] = 0x00;
-    buf[6] = neg ? 1 : 0;
+
+    // round to 0.5, send up to 0.01
+    int abs_scaled = (abs_val * 2);
+    abs_scaled *= 50;
+
+    buf[0] = 0;
+    to_bcd_be(&buf[1], abs_scaled, 4);
+    buf[2] = neg;
 }
 
 float ref_level_decode(std::string_view data) {
-    if (data.size() < 7) return 0.0f;
-    int tens   = static_cast<uint8_t>(data[2]);
-    int ones   = static_cast<uint8_t>(data[3]);
-    int tenths = static_cast<uint8_t>(data[4]);
-    bool neg   = data[6] != 0;
-    float val = static_cast<float>(tens * 10 + ones + tenths * 0.1f);
-    return neg ? -val : val;
+    if (data.size() < 4) return 0.0f;
+    int sig = data[3] > 0 ? -1 : 1;
+    float val = from_bcd_be(&data[1], 2);
+    return val * 0.01f * sig;
 }
 
 } // anonymous namespace
@@ -236,7 +228,7 @@ std::string_view scope_streamer_handle_27(const CivPacketView &req, CivTxPacker 
             0001=FIX mode,
             0002=SCROLL-C mode,
             0003=SCROLL-F mode) */
-            if (data_size == 1) {
+            if (data_size == 2) {
                 return resp.set_command(req.get_command())
                     .set_subcommand(subcmd)
                     .append_byte(0x00)
@@ -287,12 +279,12 @@ std::string_view scope_streamer_handle_27(const CivPacketView &req, CivTxPacker 
 
         case 0x19: // Send/read the Scope Reference level setting
             {
-                if (data_size == 1) {
-                    uint8_t enc[7];
+                if (data_size == 2) {
+                    uint8_t enc[4];
                     ref_level_encode(enc, scope_ref_level_dB);
-                    return resp.set_command(req.get_command()).set_subcommand(subcmd).append_data(enc, 7).get_packet();
+                    return resp.set_command(req.get_command()).set_subcommand(subcmd).append_data(enc, 4).get_packet();
                 }
-                if (data_size >= 8) {
+                if (data_size >= 5) {
                     scope_ref_level_dB = ref_level_decode(req.get_subcommand_data());
                 }
                 return resp.set_ok().get_packet();

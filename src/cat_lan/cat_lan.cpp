@@ -32,6 +32,8 @@
 #include "cfg/settings_manager.h"
 #include "lvgl/lvgl.h"
 
+#include "common/vector.h"
+
 #define CONTROL_PORT     50001
 #define CIV_PORT         50002
 #define TX_BUF_SIZE      500
@@ -605,18 +607,19 @@ static void audio_lan_tx_cb(int16_t *samples, size_t n) {
 
     static Resampler decim(AUDIO_RESAMPLE_FACTOR);
     static int16_t pkt_buf[AUDIO_PACKET_SAMPLES];
-    static size_t pkt_fill = 0;
+    static float samples_decim[AUDIO_PACKET_SAMPLES];
+    static size_t ndec = 0;
 
-    float k = 1.0f / (1 << 15);
+    float samples_float[n];
+
+    vector_s16_to_f(samples, samples_float, n);
     for (size_t i = 0; i < n; i++) {
-        float sample_f = (float)samples[i] * k;
+        float sample_f = samples_float[i];
         if (decim.feed(sample_f)) {
-            float resampled = decim.execute();
-            int16_t val = (int16_t)(resampled * (1 << 15));
-            if (val < -32767) val = -32767;
-            if (val > 32767)  val = 32767;
-            pkt_buf[pkt_fill++] = val;
-            if (pkt_fill >= AUDIO_PACKET_SAMPLES) {
+            samples_decim[ndec++] = decim.execute();
+            if (ndec >= AUDIO_PACKET_SAMPLES) {
+                vector_f_to_s16(samples_decim, pkt_buf, AUDIO_PACKET_SAMPLES);
+                ndec = 0;
                 audio_packet_t hdr = make_audio_header(0, audio_send_seq++,
                     AUDIO_PACKET_SAMPLES * 2);
                 uint8_t out[sizeof(hdr) + AUDIO_PACKET_SAMPLES * 2];
@@ -624,7 +627,6 @@ static void audio_lan_tx_cb(int16_t *samples, size_t n) {
                 std::memcpy(out + sizeof(hdr), pkt_buf, sizeof(pkt_buf));
                 sendto(fd_audio, out, sizeof(out), 0,
                        (const sockaddr *)&client_audio, sizeof(client_audio));
-                pkt_fill = 0;
             }
         }
     }

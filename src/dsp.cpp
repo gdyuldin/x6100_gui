@@ -15,6 +15,7 @@
 
 #include "cw.h"
 #include "util.h"
+#include "common/vector.h"
 
 #include <algorithm>
 #include <atomic>
@@ -666,13 +667,13 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
     }
 
     if (audio_samples_fn != NULL) {
-        float k = 1.0f / (1 << 15);
+        float float_samples[nsamples];
+        vector_s16_to_f(samples, float_samples, nsamples);
         size_t resampled_n = 0;
         for (uint16_t i = 0; i < nsamples; i++) {
-            float sample = samples[i] * k;
             // dc blocker
-            iirfilt_rrrf_execute(audio_dc_blocker, sample, &audio[i]);
-            if (resampler->feed(sample)) {
+            iirfilt_rrrf_execute(audio_dc_blocker, float_samples[i], &float_samples[i]);
+            if (resampler->feed(float_samples[i])) {
                 audio[resampled_n++] = resampler->execute();
             }
         }
