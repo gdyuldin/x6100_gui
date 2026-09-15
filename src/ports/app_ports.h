@@ -7,6 +7,7 @@
 
 #include "audio_port.h"
 #include "dsp_audio_port.h"
+#include "psd_port.h"
 #include "radio_port.h"
 #include "telemetry_port.h"
 
@@ -15,4 +16,5 @@ typedef struct {
     const telemetry_port_t *telemetry;
     const audio_port_t     *audio;
     const dsp_audio_port_t *dsp_audio;
+    const psd_port_t       *psd;
 } app_ports_t;

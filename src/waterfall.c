@@ -78,6 +78,13 @@ static void on_if_shift_changed(Subject *subj, void *user_data);
 static void on_dialog_start_cb(void *s, lv_msg_t *m);
 static void on_dialog_stop_cb(void *s, lv_msg_t *m);
 
+static uint32_t waterfall_sub_id = DSP_FRAME_SUB_INVALID;
+
+static void waterfall_frame_cb(const dsp_frame_t *frame, void *user_data) {
+    (void)user_data;
+    waterfall_data(frame->psd_db, frame->size, frame->tx, frame->base_freq, frame->width_hz, frame->min, frame->max);
+}
+
 lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h) {
     s_wf_x = y;
     s_wf_w = h;
@@ -107,6 +114,11 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
 
     lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start_cb, NULL);
     lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop_cb, NULL);
+
+    if (waterfall_sub_id == DSP_FRAME_SUB_INVALID) {
+        waterfall_sub_id = dsp_frame_subscribe(DSP_FRAME_WATERFALL, waterfall_frame_cb, NULL);
+    }
+
     return obj;
 }
 
@@ -114,7 +126,7 @@ static void scroll_down() {
     last_row_id = (last_row_id + 1) % s_wf_w;
 }
 
-void waterfall_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint32_t width_hz, float min, float max) {
+void waterfall_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint32_t width_hz, float min, float max) {
     if (!ready) {
         return;
     }

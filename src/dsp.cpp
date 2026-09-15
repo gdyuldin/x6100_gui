@@ -9,7 +9,6 @@
 #include "dsp.h"
 
 #include "cfg/cfg_api.h"
-#include "cat/scope_streamer.h"
 
 #include "common/resampler.h"
 
@@ -28,8 +27,6 @@ extern "C" {
     #include "audio.h"
     #include "meter.h"
     #include "radio.h"
-    #include "spectrum.h"
-    #include "waterfall.h"
     #include "params/params.h"
 
     #include <math.h>
@@ -146,6 +143,39 @@ struct AudioSub {
 static AudioSub           subs[MAX_AUDIO_SUBS];
 static std::mutex         subs_mutex;
 static uint32_t           next_sub_id = 1;
+
+/* PSD frame subscribers (spectrum / waterfall / scope). */
+
+#define MAX_FRAME_SUBS  4
+
+struct FrameSub {
+    uint32_t          id     = 0;
+    dsp_frame_kind_t  kind   = DSP_FRAME_KIND_COUNT;
+    dsp_frame_cb_t    cb     = nullptr;
+    void             *ud     = nullptr;
+    bool              used   = false;
+    std::atomic<bool> active{false};
+};
+
+/*
+ * Flat list of frame subscribers, guarded by frame_subs_mutex. Frames are
+ * dispatched in the DSP thread; the same reentrancy contract as the audio
+ * subscriptions applies (callbacks must not call dsp_frame_*()).
+ */
+static FrameSub           frame_subs[MAX_FRAME_SUBS];
+static std::mutex         frame_subs_mutex;
+static uint32_t           next_frame_sub_id = 1;
+
+static void emit_frame(dsp_frame_kind_t kind, const dsp_frame_t *frame) {
+    std::lock_guard<std::mutex> lock(frame_subs_mutex);
+
+    for (size_t i = 0; i < MAX_FRAME_SUBS; i++) {
+        FrameSub &s = frame_subs[i];
+        if (s.used && s.kind == kind && s.cb != nullptr && s.active.load(std::memory_order_acquire)) {
+            s.cb(frame, s.ud);
+        }
+    }
+}
 
 static void dsp_update_auto_levels(float *psd_lin, uint16_t size);
 static void dsp_resolve_levels(bool tx, float *out_min, float *out_max);
@@ -313,6 +343,7 @@ class ChunkedSpgram {
             psd[i]     = LV_MAX(LIQUID_SPGRAM_PSD_MIN, psd_[k]) * scale;
         }
         if (accumulate_) {
+            printf("num_transforms: %u\n", num_transforms_);
             clear();
         }
     };
@@ -460,7 +491,17 @@ static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_
             spectrum_prev_freq = base_freq;
         }
         lpf_block(spectrum_psd_filtered, spectrum_psd, spectrum_beta, SPECTRUM_NFFT);
-        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx, base_freq, fft_dec, min, max);
+        const dsp_frame_t frame = {
+            .psd_db    = spectrum_psd_filtered,
+            .size      = SPECTRUM_NFFT,
+            .tx        = tx,
+            .base_freq = base_freq,
+            .width_hz  = FULL_BW_HZ,
+            .fft_dec   = fft_dec,
+            .min       = min,
+            .max       = max,
+        };
+        emit_frame(DSP_FRAME_SPECTRUM, &frame);
         spectrum_time = now;
         return true;
     }
@@ -569,23 +610,29 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
         /* S-meter runs every PSD refresh regardless of waterfall UI state. */
         update_s_meter();
 
-        bool waterfall_on = waterfall_enabled.load(std::memory_order_relaxed);
-        if (waterfall_on) {
-            uint32_t width_hz = FULL_BW_HZ;
-            if (waterfall_fft_decim) {
-                width_hz /= spectrum_factor;
-            }
-            waterfall_data(waterfall_psd, WATERFALL_NFFT, tx, base_freq, width_hz, level_min, level_max);
+        uint32_t width_hz = FULL_BW_HZ;
+        if (waterfall_fft_decim) {
+            width_hz /= spectrum_factor;
         }
 
-        // CI-V scope streaming (uses same PSD data, independent of waterfall_on)
-        {
-            uint32_t width_hz = FULL_BW_HZ;
-            if (waterfall_fft_decim) {
-                width_hz /= spectrum_factor;
-            }
-            scope_streamer_push_data(waterfall_psd, WATERFALL_NFFT, base_freq, width_hz, level_min, level_max);
+        const dsp_frame_t frame = {
+            .psd_db    = waterfall_psd,
+            .size      = WATERFALL_NFFT,
+            .tx        = tx,
+            .base_freq = base_freq,
+            .width_hz  = width_hz,
+            .fft_dec   = fft_dec,
+            .min       = level_min,
+            .max       = level_max,
+        };
+
+        if (waterfall_enabled.load(std::memory_order_relaxed)) {
+            emit_frame(DSP_FRAME_WATERFALL, &frame);
         }
+
+        // CI-V scope streaming (uses the same PSD data, independent of the
+        // waterfall UI state).
+        emit_frame(DSP_FRAME_SCOPE, &frame);
     }
 }
 
@@ -780,6 +827,66 @@ void dsp_audio_unsubscribe(uint32_t id) {
         subs[i].kind = AUDIO_SUB_FREE;
         subs[i].id   = 0;
         return;
+    }
+}
+
+uint32_t dsp_frame_subscribe(dsp_frame_kind_t kind, dsp_frame_cb_t cb, void *user_data) {
+    if (!cb || kind >= DSP_FRAME_KIND_COUNT) {
+        return DSP_FRAME_SUB_INVALID;
+    }
+
+    std::lock_guard<std::mutex> lock(frame_subs_mutex);
+
+    for (size_t i = 0; i < MAX_FRAME_SUBS; i++) {
+        if (frame_subs[i].used) {
+            continue;
+        }
+        if (next_frame_sub_id == DSP_FRAME_SUB_INVALID) {
+            next_frame_sub_id = 1;
+        }
+        frame_subs[i].id     = next_frame_sub_id++;
+        frame_subs[i].kind   = kind;
+        frame_subs[i].cb     = cb;
+        frame_subs[i].ud     = user_data;
+        frame_subs[i].used   = true;
+        frame_subs[i].active.store(true, std::memory_order_relaxed);
+        return frame_subs[i].id;
+    }
+
+    return DSP_FRAME_SUB_INVALID;
+}
+
+void dsp_frame_set_active(uint32_t id, bool active) {
+    if (id == DSP_FRAME_SUB_INVALID) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(frame_subs_mutex);
+
+    for (size_t i = 0; i < MAX_FRAME_SUBS; i++) {
+        if (frame_subs[i].used && frame_subs[i].id == id) {
+            frame_subs[i].active.store(active, std::memory_order_release);
+            return;
+        }
+    }
+}
+
+void dsp_frame_unsubscribe(uint32_t id) {
+    if (id == DSP_FRAME_SUB_INVALID) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(frame_subs_mutex);
+
+    for (size_t i = 0; i < MAX_FRAME_SUBS; i++) {
+        if (frame_subs[i].used && frame_subs[i].id == id) {
+            frame_subs[i].active.store(false, std::memory_order_relaxed);
+            frame_subs[i].cb   = nullptr;
+            frame_subs[i].ud   = nullptr;
+            frame_subs[i].used = false;
+            frame_subs[i].id   = 0;
+            return;
+        }
     }
 }
 

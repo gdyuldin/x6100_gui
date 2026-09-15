@@ -15,7 +15,7 @@
 #include "lvgl/lvgl.h"
 
 lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h);
-void      spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint8_t fft_dec, float min, float max);
+void      spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint8_t fft_dec, float min, float max);
 void      spectrum_clear();
 
 /* Direct-render entry point. Call from the main loop between lv_timer_handler()

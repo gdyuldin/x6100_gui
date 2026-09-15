@@ -80,6 +80,69 @@ static uint32_t port_dsp_audio_subscribe_resampled(dsp_audio_float_cb_t cb, uint
 static void port_dsp_audio_set_active(uint32_t id, bool active) { dsp_audio_set_active(id, active); }
 static void port_dsp_audio_unsubscribe(uint32_t id) { dsp_audio_unsubscribe(id); }
 
+/* PSD source (CI-V scope streaming) */
+
+#define MAX_PSD_SUBS 4
+
+struct PsdSlot {
+    uint32_t        dsp_id;
+    psd_frame_cb_t  cb;
+    void           *ud;
+};
+
+static PsdSlot psd_slots[MAX_PSD_SUBS];
+
+static void psd_adapter(const dsp_frame_t *frame, void *user_data) {
+    PsdSlot *slot = static_cast<PsdSlot *>(user_data);
+
+    if (slot->cb) {
+        slot->cb(frame->psd_db, frame->size, frame->base_freq, frame->width_hz, frame->min, frame->max, slot->ud);
+    }
+}
+
+static uint32_t port_psd_subscribe(psd_frame_cb_t cb, void *user_data) {
+    if (!cb) {
+        return PSD_SUB_INVALID;
+    }
+
+    for (size_t i = 0; i < MAX_PSD_SUBS; i++) {
+        if (psd_slots[i].dsp_id != PSD_SUB_INVALID) {
+            continue;
+        }
+
+        uint32_t id = dsp_frame_subscribe(DSP_FRAME_SCOPE, &psd_adapter, &psd_slots[i]);
+        if (id == DSP_FRAME_SUB_INVALID) {
+            return PSD_SUB_INVALID;
+        }
+
+        psd_slots[i].dsp_id = id;
+        psd_slots[i].cb     = cb;
+        psd_slots[i].ud     = user_data;
+        return id;
+    }
+
+    return PSD_SUB_INVALID;
+}
+
+static void port_psd_set_active(uint32_t id, bool active) { dsp_frame_set_active(id, active); }
+
+static void port_psd_unsubscribe(uint32_t id) {
+    if (id == PSD_SUB_INVALID) {
+        return;
+    }
+
+    dsp_frame_unsubscribe(id);
+
+    for (size_t i = 0; i < MAX_PSD_SUBS; i++) {
+        if (psd_slots[i].dsp_id == id) {
+            psd_slots[i].dsp_id = PSD_SUB_INVALID;
+            psd_slots[i].cb     = nullptr;
+            psd_slots[i].ud     = nullptr;
+            return;
+        }
+    }
+}
+
 static const radio_port_t radio_port = {
     .is_rx = &port_is_rx,
     .set_ptt = &port_set_ptt,
@@ -110,9 +173,16 @@ static const dsp_audio_port_t dsp_audio_port = {
     .unsubscribe = &port_dsp_audio_unsubscribe,
 };
 
+static const psd_port_t psd_port = {
+    .subscribe = &port_psd_subscribe,
+    .set_active = &port_psd_set_active,
+    .unsubscribe = &port_psd_unsubscribe,
+};
+
 const app_ports_t app_ports = {
     .radio = &radio_port,
     .telemetry = &telemetry_port,
     .audio = &audio_port,
     .dsp_audio = &dsp_audio_port,
+    .psd = &psd_port,
 };

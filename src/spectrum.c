@@ -230,6 +230,13 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     }
 }
 
+static uint32_t spectrum_sub_id = DSP_FRAME_SUB_INVALID;
+
+static void spectrum_frame_cb(const dsp_frame_t *frame, void *user_data) {
+    (void)user_data;
+    spectrum_data(frame->psd_db, frame->size, frame->tx, frame->base_freq, frame->fft_dec, frame->min, frame->max);
+}
+
 lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     s_spec_x = y;
     s_spec_w = h;
@@ -272,10 +279,14 @@ lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     subject_subscribe_and_notify((Subject *)cfg.computed.fg_freq(), on_fg_freq_change, NULL);
     subject_subscribe_and_notify((Subject *)cfg.general.rit(), on_rit_change, NULL);
 
+    if (spectrum_sub_id == DSP_FRAME_SUB_INVALID) {
+        spectrum_sub_id = dsp_frame_subscribe(DSP_FRAME_SPECTRUM, spectrum_frame_cb, NULL);
+    }
+
     return obj;
 }
 
-void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_lo_freq, uint8_t fft_dec, float min, float max) {
+void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_lo_freq, uint8_t fft_dec, float min, float max) {
     uint64_t now = get_time();
 
     if (base_lo_freq != cur_base_lo_freq) {
