@@ -3,6 +3,7 @@ add_executable(${PROJECT_NAME})
 target_sources(${PROJECT_NAME} PUBLIC
     main.c main_screen.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
+    app_ports.cpp
     waterfall.c rotary.cpp keyboard.c encoder.c
     events.c msg.c msg_tiny.c keypad.c
     hkey.c clock.c

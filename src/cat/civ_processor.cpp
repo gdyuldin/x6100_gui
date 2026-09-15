@@ -17,13 +17,10 @@
 #include <cstring>
 #include <string>
 
-extern "C" {
-    #include "meter.h"
-    #include "radio.h"
-    #include "tx_info.h"
-}
-
 #include "lvgl/lvgl.h"
+
+// Application ports injected via civ_set_ports() (cat_init calls it).
+static const app_ports_t *g_ports = nullptr;
 
 namespace {
 
@@ -628,13 +625,13 @@ std::string_view handle_rd_sqsm_x15(const CivPacketView &request, CivTxPacker &r
     if (data_size == 1) {
         static float   alc, pwr, swr;
         static uint8_t msg_id;
-        tx_info_refresh(&msg_id, &alc, &pwr, &swr);
+        g_ports->telemetry->tx_info_refresh(&msg_id, &alc, &pwr, &swr);
         uint8_t val;
         uint8_t bcd[2] = {0, 0};
         switch (request.get_subcommand()) {
             case 0x02: // Get S-Meter
                 {
-                    int16_t db = meter_get_raw_db();
+                    int16_t db = g_ports->telemetry->meter_get_raw_db();
                     val        = db * 0.75f + 96;
                     to_bcd_be(bcd, val, 3);
                     return resp.set_command(request.get_command())
@@ -793,14 +790,14 @@ std::string_view handle_ctl_ptt_x1c(const CivPacketView &request, CivTxPacker &r
     size_t data_size = request.get_command_data().size();
     if ((data_size >= 1) && (request.get_subcommand() == 0x00)) {
         if (data_size == 1) {
-            return resp.set_command(request.get_command()).set_subcommand(0x00).append_byte(static_cast<uint8_t>((radio_get_state() == RADIO_RX) ? 0 : 1)).get_packet();
+            return resp.set_command(request.get_command()).set_subcommand(0x00).append_byte(static_cast<uint8_t>(g_ports->radio->is_rx() ? 0 : 1)).get_packet();
         } else {
             switch (static_cast<uint8_t>(request.get_command_data()[1])) {
                 case 0:
-                    radio_set_ptt(false);
+                    g_ports->radio->set_ptt(false);
                     break;
                 case 1:
-                    radio_set_ptt(true);
+                    g_ports->radio->set_ptt(true);
                     break;
             }
             return resp.set_command(request.get_command()).set_subcommand(0x00).append_byte(CODE_OK).get_packet();
@@ -1000,6 +997,10 @@ std::string_view set_unsupported(const CivPacketView &req, CivTxPacker &resp) {
 // ============================================================================
 // Public API
 // ============================================================================
+
+void civ_set_ports(const app_ports_t *ports) {
+    g_ports = ports;
+}
 
 std::string_view process_civ_message(const CivPacketView &request, CivTxPacker &response_packer) {
     init_cmd_handlers();

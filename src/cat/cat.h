@@ -2,6 +2,8 @@
 
 #include <stddef.h>
 
+#include "../ports/app_ports.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -9,7 +11,7 @@ extern "C" {
 #define LOCAL_ADDRESS 0xA4
 
 
-void cat_init();
+void cat_init(const app_ports_t *ports);
 void cat_destruct();
 
 #ifdef __cplusplus

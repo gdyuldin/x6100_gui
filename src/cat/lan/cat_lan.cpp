@@ -5,8 +5,6 @@
 #include "cat/civ_processor.h"
 #include "cat/scope_streamer.h"
 #include "common/queue.h"
-#include "dsp.h"
-#include "audio.h"
 
 #include <algorithm>
 #include <atomic>
@@ -101,9 +99,12 @@ static bool               client_audio_valid  = false;
 static uint16_t           audio_send_seq      = 0;
 static int                audio_rx_rate       = 16000;
 
-static audio_player_t    *wfview_player       = nullptr;
+static audio_port_player_t *wfview_player       = nullptr;
 
-static uint32_t          dsp_audio_sub_id     = AUDIO_SUB_INVALID;
+static uint32_t          dsp_audio_sub_id     = DSP_AUDIO_SUB_INVALID;
+
+// Application ports injected by cat_lan_init().
+static const app_ports_t *g_ports = nullptr;
 
 static bool udp_send(int fd, const void *data, size_t len, const sockaddr_in *dst);
 static bool send_control(int fd, uint16_t type, uint16_t seq, bool tracked, const sockaddr_in *dst);
@@ -549,7 +550,7 @@ static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_
 
             // Create PulseAudio playback stream for incoming network audio
             if (!wfview_player) {
-                wfview_player = audio_create_player((uint32_t)audio_rx_rate, 1);
+                wfview_player = g_ports->audio->create_player((uint32_t)audio_rx_rate, 1);
                 if (!wfview_player) {
                     LV_LOG_ERROR("LAN/AUDIO: failed to create audio player");
                 } else {
@@ -558,10 +559,10 @@ static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_
             }
 
             // Register DSP callback to forward RX audio to network
-            if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
-                dsp_audio_sub_id = dsp_audio_subscribe_resampled(audio_lan_tx_cb, 16000);
+            if (dsp_audio_sub_id == DSP_AUDIO_SUB_INVALID) {
+                dsp_audio_sub_id = g_ports->dsp_audio->subscribe_resampled(audio_lan_tx_cb, 16000);
             }
-            dsp_audio_set_active(dsp_audio_sub_id, true);
+            g_ports->dsp_audio->set_active(dsp_audio_sub_id, true);
 
             send_control(fd_audio, 0x04, 0, false, &client_audio);
             send_control(fd_audio, 0x06, 0x01, false, &client_audio);
@@ -590,7 +591,7 @@ static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_
         if (wfview_player) {
             const int16_t *pcm = (const int16_t *)(buf + payload_offset);
             size_t nsamples = datalen / 2;
-            audio_player_send(wfview_player, const_cast<int16_t *>(pcm), nsamples);
+            g_ports->audio->player_send(wfview_player, const_cast<int16_t *>(pcm), nsamples);
         }
     }
 }
@@ -598,10 +599,10 @@ static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_
 // ---- Audio TX thread, callbacks, cleanup -----------------------------------
 
 static void cleanup_audio() {
-    dsp_audio_set_active(dsp_audio_sub_id, false);
+    g_ports->dsp_audio->set_active(dsp_audio_sub_id, false);
 
     if (wfview_player) {
-        audio_player_release(wfview_player);
+        g_ports->audio->player_release(wfview_player);
         wfview_player = nullptr;
     }
 
@@ -932,7 +933,9 @@ static void cat_lan_thread() {
 
 // ---- Public API -----------------------------------------------------------
 
-int cat_lan_init(void) {
+int cat_lan_init(const app_ports_t *ports) {
+    g_ports = ports;
+
     if (fd_control >= 0) {
         LV_LOG_WARN("LAN CAT already initialized");
         return 0;
@@ -1026,8 +1029,8 @@ void cat_lan_destruct(void) {
     if (!keep_running) return;
 
     scope_streamer_set_notify(nullptr);
-    dsp_audio_unsubscribe(dsp_audio_sub_id);
-    dsp_audio_sub_id = AUDIO_SUB_INVALID;
+    g_ports->dsp_audio->unsubscribe(dsp_audio_sub_id);
+    dsp_audio_sub_id = DSP_AUDIO_SUB_INVALID;
 
     cleanup_audio();
 

@@ -16,23 +16,42 @@
 #include "cfg/settings_manager.h"
 #include "cfg/storage_policy.h"
 
-// Stubs for external C functions that cat handler code calls.
-extern "C" {
-#include "meter.h"
-#include "radio.h"
-#include "tx_info.h"
-}
+// Fake application ports, injected via civ_set_ports(): CI-V handlers use them
+// instead of the application's radio/telemetry objects.
+namespace {
 
-extern "C" bool tx_info_refresh(uint8_t *, float *alc, float *pwr, float *vswr) {
+bool fake_tx_info_refresh(uint8_t *, float *alc, float *pwr, float *vswr) {
     *alc = 0.0f;
     *pwr = 2.0f;
     *vswr = 1.0f;
     return false;
 }
 
-extern "C" int16_t meter_get_raw_db() { return 0; }
-extern "C" radio_state_t radio_get_state() { return RADIO_RX; }
-extern "C" void radio_set_ptt(bool) {}
+int16_t fake_meter_get_raw_db() { return 0; }
+bool    fake_is_rx() { return true; }
+void    fake_set_ptt(bool) {}
+
+const radio_port_t test_radio_port = {
+    .is_rx = &fake_is_rx,
+    .set_ptt = &fake_set_ptt,
+    .set_freq = nullptr,
+    .set_modem = nullptr,
+    .set_pwr = nullptr,
+};
+
+const telemetry_port_t test_telemetry_port = {
+    .tx_info_refresh = &fake_tx_info_refresh,
+    .meter_get_raw_db = &fake_meter_get_raw_db,
+};
+
+const app_ports_t test_ports = {
+    .radio = &test_radio_port,
+    .telemetry = &test_telemetry_port,
+    .audio = nullptr,
+    .dsp_audio = nullptr,
+};
+
+} // namespace
 
 // ---- protocol constants (CI-V / X6100) --------------------------------------
 
@@ -182,6 +201,7 @@ static void init_band_5(TestDbGuard &db, SettingsManager &mgr) {
     set_band_5(db);
     mgr.p_band_id.set_quiet(5);
     mgr.init_load();
+    civ_set_ports(&test_ports);
 }
 
 // ---- unknown command -------------------------------------------------------

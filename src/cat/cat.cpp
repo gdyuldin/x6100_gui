@@ -31,11 +31,6 @@
 
 extern "C" {
     #include "../events.h"
-    #include "../meter.h"
-    #include "../radio.h"
-    #include "../spectrum.h"
-    #include "../waterfall.h"
-    #include "../tx_info.h"
 
     #include <aether_radio/x6100_control/low/gpio.h>
     #include <fcntl.h>
@@ -247,7 +242,9 @@ static void cat_thread() {
     }
 }
 
-void cat_init() {
+void cat_init(const app_ports_t *ports) {
+    civ_set_ports(ports);
+
     /* UART */
     x6100_gpio_set(x6100_pin_usb, 1); /* USB -> CAT */
 

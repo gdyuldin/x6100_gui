@@ -33,6 +33,7 @@
 #include "audio.h"
 #include "cw.h"
 #include "panel.h"
+#include "app_ports.h"
 #include "cat/cat.h"
 #include "cat/lan/cat_lan.h"
 #include "rtty.h"
@@ -165,8 +166,8 @@ int main(void) {
     rtty_init();
     wifi_power_setup();
     display_init();
-    cat_init();
-    cat_lan_init();
+    cat_init(&app_ports);
+    cat_lan_init(&app_ports);
     gps_init();
     if (!qso_log_init()) {
         LV_LOG_ERROR("Can't init QSO log");

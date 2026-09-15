@@ -22,11 +22,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "../ports/app_ports.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void tx_worker_construct(uint32_t sample_rate);
+void tx_worker_construct(const app_ports_t *ports, uint32_t sample_rate);
 void tx_worker_destruct();
 
 /* Abort-check callback. Return true to stop TX after the current block. */

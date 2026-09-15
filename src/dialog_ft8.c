@@ -8,6 +8,7 @@
 
 #include "dialog_ft8.h"
 
+#include "app_ports.h"
 #include "ft8/worker.h"
 #include "ft8/qso.h"
 #include "ft8/utils.h"
@@ -546,7 +547,7 @@ static void construct_cb(lv_obj_t *parent) {
     }
 
     // setup tx_worker (with lower sample rate)
-    tx_worker_construct(AUDIO_PLAY_RATE / 8);
+    tx_worker_construct(&app_ports, AUDIO_PLAY_RATE / 8);
 }
 
 /* Buttons */
