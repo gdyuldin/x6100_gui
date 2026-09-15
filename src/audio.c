@@ -395,35 +395,49 @@ float audio_get_peak_db() {
     return peak_db;
 }
 
-static void monitor_cb(pa_stream *stream, size_t nbytes, void *udata) {
-    int16_t *buf = NULL;
+static void monitor_cb(pa_stream *s, size_t length, void *userdata) {
+    const void *data;
 
-    pa_stream_peek(stream, (const void**) &buf, &nbytes);
-    int16_t max_val = 1;
-    int16_t cur_val;
-    for (size_t i=0; i < nbytes / 2; i++) {
-        cur_val = buf[i];
-        if (cur_val > max_val) {
-            max_val = cur_val;
-        }
+    if (pa_stream_peek(s, &data, &length) < 0) {
+        return;
     }
-    peak_db = 20.0f * log10f((float) max_val / ((1UL << 15) - 1));
-    pa_stream_drop(stream);
-}
 
+    if (!data || length < sizeof(float)) {
+        /* No data available (can happen when the stream is corked) */
+        pa_stream_drop(s);
+        return;
+    }
+    float peak = *(const float *)data;
+    pa_stream_drop(s);
+
+    if (peak < 0.0)
+        peak = 0.0;
+    if (peak > 1.0)
+        peak = 1.0;
+
+    peak_db = 20.0f * log10f(peak);
+    // printf("peak %f\n", peak_db);
+}
 
 static void record_monitor_setup() {
 
-    pa_sample_spec  spec = {
-        .format = PA_SAMPLE_S16NE,
+    pa_sample_spec spec = {
+        .format   = PA_SAMPLE_FLOAT32,
         .channels = 1,
-        .rate = AUDIO_CAPTURE_RATE,
+        .rate     = AUDIO_RATE_MS,
     };
+
+    pa_buffer_attr attr;
+
+    memset(&attr, 0, sizeof(attr));
+    attr.fragsize  = sizeof(float); /* request one peak value per fragment */
+    attr.maxlength = (uint32_t)-1;
 
     monitor_stm = pa_stream_new(ctx, "X6100 GUI Monitor", &spec, NULL);
 
     pa_threaded_mainloop_lock(mloop);
     pa_stream_set_read_callback(monitor_stm, monitor_cb, NULL);
-    pa_stream_connect_record(monitor_stm, capture_device, NULL, PA_STREAM_PEAK_DETECT);
+    pa_stream_connect_record(monitor_stm, capture_device, &attr,
+                             PA_STREAM_DONT_MOVE | PA_STREAM_PEAK_DETECT | PA_STREAM_ADJUST_LATENCY);
     pa_threaded_mainloop_unlock(mloop);
 }
