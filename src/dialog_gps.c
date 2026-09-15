@@ -11,6 +11,7 @@
 #include "dialog.h"
 #include "styles.h"
 #include "events.h"
+#include "pubsub_ids.h"
 #include "radio.h"
 #include "keyboard.h"
 #include "qth/qth.h"
@@ -47,6 +48,8 @@ static lv_obj_t             *qth;
 static lv_obj_t             *status;
 
 static lv_timer_t           *status_update_timer;
+
+static void                 *gps_sub;
 
 static dialog_t             dialog = {
     .run = false,
@@ -145,15 +148,17 @@ char *deg_to_str2(deg_str_type type, double f, char *buf, unsigned int buf_size,
     return buf;
 }
 
-static void gps_cb(lv_event_t * e) {
-    struct gps_data_t   *msg = lv_event_get_param(e);
+static void gps_cb(void *s, lv_msg_t *m) {
+    struct gps_data_t   data;
     char                str[64];
 
-    if (msg->set & SATELLITE_SET) {
-        lv_label_set_text_fmt(satellites_cnt, "%i/%i", msg->satellites_visible, msg->satellites_used);
+    gps_get_snapshot(&data);
+
+    if (data.set & SATELLITE_SET) {
+        lv_label_set_text_fmt(satellites_cnt, "%i/%i", data.satellites_visible, data.satellites_used);
     }
 
-    switch (msg->fix.mode) {
+    switch (data.fix.mode) {
         case MODE_3D:
             lv_label_set_text(fix, "3D");
             break;
@@ -170,22 +175,22 @@ static void gps_cb(lv_event_t * e) {
             break;
     }
 
-    if (msg->set & TIME_SET) {
-        timespec_to_iso8601(msg->fix.time, str, sizeof(str));
+    if (data.set & TIME_SET) {
+        timespec_to_iso8601(data.fix.time, str, sizeof(str));
         lv_label_set_text(date, str);
     } else {
         lv_label_set_text(date, "N/A");
     }
 
-    if (msg->fix.mode >= MODE_2D) {
-        deg_to_str2(deg_type, msg->fix.latitude, str, sizeof(str), "N", "S");
+    if (data.fix.mode >= MODE_2D) {
+        deg_to_str2(deg_type, data.fix.latitude, str, sizeof(str), "N", "S");
         lv_label_set_text(lat, str);
 
-        deg_to_str2(deg_type, msg->fix.longitude, str, sizeof(str), "E", "W");
+        deg_to_str2(deg_type, data.fix.longitude, str, sizeof(str), "E", "W");
         lv_label_set_text(lon, str);
 
         char qth_val[9];
-        qth_pos_to_str(msg->fix.latitude, msg->fix.longitude, qth_val);
+        qth_pos_to_str(data.fix.latitude, data.fix.longitude, qth_val);
         lv_label_set_text(qth, qth_val);
 
         int saved_qth_len = strlen(params.qth.x);
@@ -219,7 +224,7 @@ static void construct_cb(lv_obj_t *parent) {
 
     lv_group_add_obj(keyboard_group, dialog.obj);
     lv_obj_add_event_cb(dialog.obj, key_cb, LV_EVENT_KEY, NULL);
-    lv_obj_add_event_cb(dialog.obj, gps_cb, EVENT_GPS, NULL);
+    gps_sub = lv_msg_subscribe(MSG_GPS, gps_cb, NULL);
 
     /* Working, satellites count */
 
@@ -336,6 +341,10 @@ static void construct_cb(lv_obj_t *parent) {
 }
 
 static void destruct_cb() {
+    if (gps_sub) {
+        lv_msg_unsubscribe(gps_sub);
+        gps_sub = NULL;
+    }
     lv_timer_del(status_update_timer);
 }
 

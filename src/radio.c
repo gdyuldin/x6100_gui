@@ -27,7 +27,6 @@
 #include "params/params.h"
 #include "hkey.h"
 #include "tx_info.h"
-#include "dialog_swrscan.h"
 #include "cw.h"
 #include "pubsub_ids.h"
 #include "scheduler.h"
@@ -124,6 +123,9 @@ static uint64_t         prev_time;
 static uint64_t         idle_time;
 static bool             mute = false;
 static bool             low_power = false;
+
+static pthread_mutex_t  swrscan_cb_mux = PTHREAD_MUTEX_INITIALIZER;
+static radio_swrscan_cb_t swrscan_cb = NULL;
 
 static cfloat           samples_buf[RADIO_SAMPLES*2];
 
@@ -422,6 +424,12 @@ void radio_stop_swrscan() {
         x6100_control_txpwr_set(param_f_get(cfg.general.pwr()));
         radio_unlock();
     }
+}
+
+void radio_swrscan_set_cb(radio_swrscan_cb_t cb) {
+    pthread_mutex_lock(&swrscan_cb_mux);
+    swrscan_cb = cb;
+    pthread_mutex_unlock(&swrscan_cb_mux);
 }
 
 void radio_set_pwr(float d) {
@@ -867,7 +875,11 @@ static bool radio_tick() {
                 break;
 
             case RADIO_SWRSCAN:
-                dialog_swrscan_update(pack->vswr * 0.1f);
+                pthread_mutex_lock(&swrscan_cb_mux);
+                if (swrscan_cb) {
+                    swrscan_cb(pack->vswr * 0.1f);
+                }
+                pthread_mutex_unlock(&swrscan_cb_mux);
                 break;
 
             case RADIO_POWEROFF:

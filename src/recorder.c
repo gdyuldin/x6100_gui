@@ -11,11 +11,11 @@
 #include <sndfile.h>
 
 #include "audio.h"
-#include "dialog_recorder.h"
 #include "recorder.h"
 #include "dsp.h"
 #include "msg.h"
 #include "params/params.h"
+#include "scheduler.h"
 
 char            *recorder_path = "/mnt/rec";
 
@@ -69,14 +69,14 @@ void recorder_set_on(bool x) {
         }
         dsp_audio_set_active(dsp_audio_sub_id, true);
         on = true;
+        scheduler_msg_send(MSG_RECORDER_START, NULL);
     } else {
         msg_update_text_fmt("Recorder is off");
         dsp_audio_set_active(dsp_audio_sub_id, false);
         on = false;
         sf_close(file);
+        scheduler_msg_send(MSG_RECORDER_STOP, NULL);
     }
-
-    dialog_recorder_set_on(on);
 }
 
 bool recorder_is_on() {

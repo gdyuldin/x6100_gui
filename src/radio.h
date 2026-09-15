@@ -68,6 +68,16 @@ void radio_start_atu();
 bool radio_start_swrscan();
 void radio_stop_swrscan();
 
+/**
+ * Register a callback invoked from the radio thread for each SWR-scan sample.
+ * The callback must return quickly and must not take the radio lock itself
+ * beyond what radio_set_freq already does. Registering NULL unregisters; the
+ * call waits for any in-flight callback to finish, so the consumer's state is
+ * guaranteed to be unused once radio_swrscan_set_cb(NULL) returns.
+ */
+typedef void (*radio_swrscan_cb_t)(float vswr);
+void radio_swrscan_set_cb(radio_swrscan_cb_t cb);
+
 void radio_poweroff();
 void radio_set_ptt(bool tx);
 void radio_set_modem(bool tx);

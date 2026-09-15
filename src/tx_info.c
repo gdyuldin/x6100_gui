@@ -10,7 +10,6 @@
 
 #include <stdio.h>
 
-#include "dialog.h"
 #include "events.h"
 #include "msg_tiny.h"
 #include "params/params.h"
@@ -37,6 +36,8 @@ static uint8_t msg_id;
 static uint64_t prev_ui_update = 0;
 
 static x6100_mode_t cur_mode;
+
+static bool dialog_run = false;
 
 static lv_obj_t     *obj;
 static lv_obj_t     *pwr_label;
@@ -90,7 +91,7 @@ static void update_tx_info(void *arg) {
         lv_obj_add_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
         msg_tiny_set_text_fmt("ALC: %.1f", alc);
     }
-    if (dialog_is_run() || !params.mag_alc.x) {
+    if (dialog_run || !params.mag_alc.x) {
         lv_obj_clear_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(vswr_label, LV_OBJ_FLAG_HIDDEN);
     } else {
@@ -104,6 +105,16 @@ static void update_labels_cb(lv_timer_t *t) {
     lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
     lv_label_set_text_fmt(vswr_label, "%.2f", vswr);
     lv_label_set_text_fmt(pwr_label, "%.2f", pwr);
+}
+
+static void on_dialog_start(void *s, lv_msg_t *msg) {
+    dialog_run = true;
+    update_tx_info(NULL);
+}
+
+static void on_dialog_stop(void *s, lv_msg_t *msg) {
+    dialog_run = false;
+    update_tx_info(NULL);
 }
 
 static lv_color_t swr_bar_color_cb(float val) {
@@ -128,6 +139,8 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
     lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
+    lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start, NULL);
+    lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop, NULL);
 
     lv_obj_update_layout(obj);
     lv_coord_t w = lv_obj_get_content_width(obj);

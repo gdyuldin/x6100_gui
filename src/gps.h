@@ -20,3 +20,10 @@ typedef enum {
 void gps_init();
 
 gps_status_t gps_status();
+
+/**
+ * Copy the latest GPS data into out. The internal snapshot is guarded by a
+ * mutex, so this is safe to call from the main thread while the GPS thread
+ * updates it. Intended to be called from a MSG_GPS subscriber.
+ */
+void gps_get_snapshot(struct gps_data_t *out);

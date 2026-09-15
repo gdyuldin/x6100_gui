@@ -20,7 +20,6 @@ lv_event_code_t        EVENT_KEYPAD;
 lv_event_code_t        EVENT_HKEY;
 lv_event_code_t        EVENT_SCREEN_UPDATE;
 lv_event_code_t        EVENT_MSG_UPDATE;
-lv_event_code_t        EVENT_GPS;
 lv_event_code_t        EVENT_BAND_UP;
 lv_event_code_t        EVENT_BAND_DOWN;
 
@@ -41,7 +40,6 @@ void event_init() {
     EVENT_HKEY = lv_event_register_id();
     EVENT_SCREEN_UPDATE = lv_event_register_id();
     EVENT_MSG_UPDATE = lv_event_register_id();
-    EVENT_GPS = lv_event_register_id();
     EVENT_BAND_UP = lv_event_register_id();
     EVENT_BAND_DOWN = lv_event_register_id();
 

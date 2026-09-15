@@ -12,5 +12,3 @@
 #include "dialog.h"
 
 extern dialog_t *dialog_recorder;
-
-void dialog_recorder_set_on(bool on);

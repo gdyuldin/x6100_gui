@@ -9,21 +9,23 @@
 #include "gps.h"
 
 #include "lvgl/lvgl.h"
-#include "events.h"
-#include "dialog_gps.h"
+#include "scheduler.h"
 #include "usb_devices.h"
 #include "pubsub_ids.h"
 
 #include <errno.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <unistd.h>
 
 static struct gps_data_t    gpsdata;
+static struct gps_data_t    snapshot;
 static uint64_t             prev_time = 0;
 static gps_status_t         status=GPS_STATUS_WAITING;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  cond = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t snapshot_mux = PTHREAD_MUTEX_INITIALIZER;
 
 static bool connect() {
     if (gps_open("localhost", "2947", &gpsdata) == -1) {
@@ -44,12 +46,12 @@ static void data_receive() {
                 continue;
             }
             status = GPS_STATUS_WORKING;
-            if (dialog_gps->run) {
-                struct gps_data_t *msg = malloc(sizeof(struct gps_data_t));
 
-                memcpy(msg, &gpsdata, sizeof(*msg));
-                event_send(dialog_gps->obj, EVENT_GPS, msg);
-            }
+            pthread_mutex_lock(&snapshot_mux);
+            memcpy(&snapshot, &gpsdata, sizeof(snapshot));
+            pthread_mutex_unlock(&snapshot_mux);
+
+            scheduler_msg_send(MSG_GPS, NULL);
         }
     }
 }
@@ -94,4 +96,10 @@ void gps_init() {
 
 gps_status_t gps_status() {
     return status;
+}
+
+void gps_get_snapshot(struct gps_data_t *out) {
+    pthread_mutex_lock(&snapshot_mux);
+    memcpy(out, &snapshot, sizeof(*out));
+    pthread_mutex_unlock(&snapshot_mux);
 }

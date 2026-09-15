@@ -17,8 +17,6 @@ extern "C" {
 
 extern dialog_t *dialog_swrscan;
 
-void dialog_swrscan_update(float vswr);
-
 #ifdef __cplusplus
 }
 #endif

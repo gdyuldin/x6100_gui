@@ -58,6 +58,8 @@ static void dialog_swrscan_span_cb(button_data_t *btn_data);
 static void set_span(Subject *subj, void *user_data);
 static void set_linear(Subject *subj, void *user_data);
 
+static void swrscan_update_cb(float vswr);
+
 static const char *scale_label_fn();
 static const char *span_label_fn();
 
@@ -274,6 +276,8 @@ static void construct_cb(lv_obj_t *parent) {
     lv_group_add_obj(keyboard_group, chart);
     lv_obj_add_event_cb(chart, key_cb, LV_EVENT_KEY, NULL);
 
+    radio_swrscan_set_cb(swrscan_update_cb);
+
     do_init();
 }
 
@@ -282,6 +286,7 @@ static void destruct_cb() {
         // Stop
         dialog_swrscan_run_cb(NULL);
     }
+    radio_swrscan_set_cb(NULL);
     if (freq_obs) {
         param_unsubscribe((Observer*)freq_obs);
         freq_obs = NULL;
@@ -390,7 +395,7 @@ const char *span_label_fn() {
     return buf;
 }
 
-void dialog_swrscan_update(float vswr) {
+static void swrscan_update_cb(float vswr) {
     if (run) {
         do_step(vswr);
     }

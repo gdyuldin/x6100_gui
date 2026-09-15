@@ -125,7 +125,6 @@ extern lv_event_code_t EVENT_KEYPAD;
 extern lv_event_code_t EVENT_HKEY;
 extern lv_event_code_t EVENT_SCREEN_UPDATE;
 extern lv_event_code_t EVENT_MSG_UPDATE;
-extern lv_event_code_t EVENT_GPS;
 extern lv_event_code_t EVENT_BAND_UP;
 extern lv_event_code_t EVENT_BAND_DOWN;
 

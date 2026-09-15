@@ -17,6 +17,11 @@ enum msg_t {
     MSG_RADIO_TX,
     MSG_LOW_POWER,
 
+    // Service state messages
+    MSG_GPS,
+    MSG_RECORDER_START,
+    MSG_RECORDER_STOP,
+
     // UI locks messages
     MSG_LOCK_AB,
     MSG_LOCK_MODE,
