@@ -1102,7 +1102,7 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
 
     /* Panel (CW/RTTY) */
     panel_init(obj);
-    msg_init(obj, spectrum_height);
+    msg_init(obj, waterfall);
     msg_tiny_init(spectrum);
 
     /* Top container (meter, clock, freq) */

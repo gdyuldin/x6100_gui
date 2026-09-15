@@ -59,7 +59,7 @@ static void msg_show_timer(lv_timer_t *t) {
         lv_timer_del(fade_out_timer);
     }
     lv_label_set_text(obj, msg->text);
-    lv_obj_move_foreground(obj);
+    lv_obj_move_foreground(container);
     lv_anim_set_values(&fade, lv_obj_get_style_opa(obj, 0), LV_OPA_COVER);
     fade_run = true;
     lv_anim_start(&fade);
@@ -96,12 +96,12 @@ static void create_msg(const char * fmt, enum msg_type_t type, uint16_t dur, va_
     event_send(obj, EVENT_MSG_UPDATE, (void*)msg);
 }
 
-lv_obj_t * msg_init(lv_obj_t *parent, lv_coord_t spectrum_h) {
+lv_obj_t * msg_init(lv_obj_t *parent, lv_obj_t *align_obj) {
     container = lv_obj_create(parent);
     lv_obj_remove_style_all(container);
     lv_obj_add_style(container, &style.msg, 0);
     lv_obj_update_layout(container);
-    lv_obj_align(container, LV_ALIGN_CENTER, 0, (INDICATORS_HEIGHT + spectrum_h - BTN_HEIGHT) / 2);
+    lv_obj_align_to(container, align_obj, LV_ALIGN_CENTER, 0, -BTN_HEIGHT / 2);
 
     obj = lv_label_create(container);
     lv_obj_set_width(obj, lv_obj_get_width(container) - 20);
