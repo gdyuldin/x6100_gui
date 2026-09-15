@@ -8,7 +8,6 @@
 
 #include "worker.h"
 
-#include "../util.h"
 #include "gfsk.h"
 
 #include "lvgl/lvgl.h"

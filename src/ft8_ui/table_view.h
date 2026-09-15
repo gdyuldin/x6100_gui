@@ -32,7 +32,7 @@
 #include "lvgl/lvgl.h"
 
 #include "../qso_log.h"
-#include "qso.h"   /* ftx_msg_meta_t */
+#include "../ft8/qso.h"   /* ftx_msg_meta_t */
 
 #ifdef __cplusplus
 extern "C" {

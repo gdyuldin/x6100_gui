@@ -18,7 +18,7 @@
 #include <time.h>
 
 #include <liquid/liquid.h>
-#include "util.h"
+#include "common/time.h"
 #include <ft8lib/constants.h>
 
 #include "worker.h"

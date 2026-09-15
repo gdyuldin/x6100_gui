@@ -9,6 +9,7 @@
 #pragma once
 
 #include "helpers.h"
+#include "common/time.h"
 
 #ifdef __cplusplus
 
@@ -27,7 +28,6 @@ extern "C" {
 
 #define ARRAY_SIZE(arr) (sizeof((arr)) / sizeof((arr)[0]))
 
-uint64_t get_time();
 void get_time_str(char *str, size_t str_size);
 
 void split_freq(int32_t freq, uint16_t *mhz, uint16_t *khz, uint16_t *hz);

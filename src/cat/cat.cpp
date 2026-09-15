@@ -27,11 +27,8 @@
 
 #include "../cfg/cfg_api.h"
 #include "../common/queue.h"
-#include "../scheduler.h"
 
 extern "C" {
-    #include "../events.h"
-
     #include <aether_radio/x6100_control/low/gpio.h>
     #include <fcntl.h>
     #include <stdio.h>

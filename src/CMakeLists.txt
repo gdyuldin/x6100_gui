@@ -9,9 +9,10 @@ target_sources(${PROJECT_NAME} PUBLIC
     hkey.c clock.c
     meter.c band_info.cpp tx_info.c
     audio.c mfk.cpp cw.cpp cw_decoder.c panel.cpp
-    rtty.c screenshot.c display.cpp gps.c cat/cat.cpp
+    rtty.c screenshot.c display.cpp gps.c
     dialog.c dialog_settings.cpp dialog_swrscan.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
+    ft8_ui/table_view.c
     dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
     textarea_window.c cw_encoder.c buttons.cpp vol.cpp recorder.c
     voice.cpp cw_tune_ui.c adif.c qso_log.c scheduler.cpp
@@ -42,9 +43,9 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
 PkgConfig::deps
-FT8 QTH
+ft8_core ft8_app QTH
 cfg
-cat
+cat_core cat_transport
 cat_lan
 Threads::Threads
 lvgl lvgl::drivers

@@ -1,12 +1,21 @@
-add_library(FT8 STATIC
+# FT8 decoding core: message/QSO logic, protocol and audio workers. No UI and
+# no application services; depends on liquid-dsp/ft8lib from the sysroot, QTH
+# (linked by consumers) and LVGL for logging only.
+add_library(ft8_core STATIC
     qso.cpp worker.c utils.c gfsk.c
-    table_view.c
     cq_scheduler.c
-    tx_worker.c
     audio_worker.c
 )
 
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/..")
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../qth")
 
-target_link_libraries(FT8 PUBLIC aether_x6100_control cfg)
+target_link_libraries(ft8_core PUBLIC lvgl)
+
+# FT8 TX glue. Application-level: drives the audio/radio ports and reads config.
+# Depends on the core plus cfg and the legacy params module (which is compiled
+# into the executable, so its symbols resolve at final link).
+add_library(ft8_app STATIC
+    tx_worker.c
+)
+
+target_link_libraries(ft8_app PUBLIC ft8_core cfg)

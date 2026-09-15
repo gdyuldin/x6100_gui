@@ -35,7 +35,7 @@
 
 #include "ft8/audio_worker.h"
 #include "ft8/cq_scheduler.h"
-#include "ft8/table_view.h"
+#include "ft8_ui/table_view.h"
 #include "ft8/tx_worker.h"
 #include "widgets/lv_waterfall.h"
 #include "widgets/lv_finder.h"
@@ -72,7 +72,7 @@ typedef enum {
     TX_PROCESS,
 } ft8_state_t;
 
-/* ft8_cell_type_t and cell_data_t live in ft8/table_view.h */
+/* ft8_cell_type_t and cell_data_t live in ft8_ui/table_view.h */
 
 /* slot_info_t lives in ft8/audio_worker.h */
 
@@ -83,7 +83,7 @@ static bool        tx_time_slot;
 
 static ftx_tx_msg_t tx_msg;
 
-/* The lv_table widget is owned by ft8/table_view; expose its handle as
+/* The lv_table widget is owned by ft8_ui/table_view; expose its handle as
  * `table` so existing fade/group/anim call sites need no rename. */
 #define table (table_view_obj())
 
@@ -273,7 +273,7 @@ static void worker_done() {
 }
 
 /* Table widget lifecycle, draw, scroll and message insertion all live
- * in ft8/table_view.c. The dialog only owns the surrounding state. */
+ * in ft8_ui/table_view.c. The dialog only owns the surrounding state. */
 
 static void key_cb(lv_event_t * e) {
     uint32_t key = *((uint32_t *) lv_event_get_param(e));
