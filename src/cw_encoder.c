@@ -81,8 +81,8 @@ static void * endecode_thread(void *arg) {
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
 
-    time_t dit_nsec = 20000000L / (param_i_get(cfg_key_speed)) * 60;
-    time_t dah_nsec = dit_nsec * param_f_get(cfg_key_ratio);
+    time_t dit_nsec = 20000000L / (param_i_get(cfg.cw.key_speed())) * 60;
+    time_t dah_nsec = dit_nsec * param_f_get(cfg.cw.key_ratio());
     time_t world_space_nsec = dit_nsec * 7;
 
     struct timespec t;

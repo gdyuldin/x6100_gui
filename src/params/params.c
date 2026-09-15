@@ -393,7 +393,7 @@ void params_init() {
         cfg_db_init(db);
 
         // Init the new SettingsManager-backed C-API: loads global/band/mode
-        // params into cfg_sm and fills the cfg_* handles (Stage 1 migration).
+        // params into the SettingsManager (handles are accessors, always valid).
         cfg_api_init(NULL);
 
         // Background deferred-save thread for the new params (Idle until the

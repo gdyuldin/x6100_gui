@@ -146,7 +146,7 @@ static void update() {
 
 void rtty_init() {
     pthread_mutex_init(&rtty_mux, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_cur_mode, on_cur_mode_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.computed.mode(), on_cur_mode_change, NULL);
     init();
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
         dsp_audio_sub_id = dsp_audio_subscribe_resampled(rtty_put_audio_samples, RTTY_CAPTURE_RATE);
@@ -434,5 +434,5 @@ bool rtty_change_reverse(int16_t df) {
 }
 
 static void on_cur_mode_change(Subject *subj, void *user_data) {
-    cur_mode = cparam_i_get(cfg_cur_mode);
+    cur_mode = cparam_i_get(cfg.computed.mode());
 }

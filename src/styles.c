@@ -309,8 +309,8 @@ void styles_init(themes_t theme) {
 
     styles_set_theme(theme);
 
-    subject_subscribe_delayed((Subject *)cfg_spectrum_use_custom_color, update_spectrum_color_cb, NULL);
-    subject_subscribe_delayed((Subject *)cfg_spectrum_color, update_spectrum_color_cb, NULL);
+    subject_subscribe_delayed((Subject *)cfg.spectrum.spectrum_use_custom_color(), update_spectrum_color_cb, NULL);
+    subject_subscribe_delayed((Subject *)cfg.spectrum.spectrum_color(), update_spectrum_color_cb, NULL);
 }
 
 void styles_update_meter_colors(meter_color_t mc)
@@ -368,9 +368,9 @@ static void set_spectrum_color(lv_color_t color) {
 }
 
 static void update_spectrum_color(skin_t *skin) {
-    if (param_i_get(cfg_spectrum_use_custom_color)) {
+    if (param_i_get(cfg.spectrum.spectrum_use_custom_color())) {
         lv_color_t col;
-        col.full = param_i_get(cfg_spectrum_color);
+        col.full = param_i_get(cfg.spectrum.spectrum_color());
         set_spectrum_color(col);
     } else {
         set_spectrum_color(skin->spectrum_color);

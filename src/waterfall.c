@@ -100,10 +100,10 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
 
     ready = true;
 
-    subject_subscribe_and_notify((Subject*)cfg_fg_freq, on_fg_freq_change, NULL);
-    subject_subscribe_delayed_and_notify((Subject*)cfg_mode_zoom, on_zoom_changed, NULL);
-    subject_subscribe_delayed_and_notify((Subject*)cfg_band_if_shift, on_if_shift_changed, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_mode_lo_offset, on_mode_lo_offset_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.computed.fg_freq(), on_fg_freq_change, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg.mode.zoom(), on_zoom_changed, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg.band.if_shift(), on_if_shift_changed, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.computed.mode_lo_offset(), on_mode_lo_offset_change, NULL);
 
     lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start_cb, NULL);
     lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop_cb, NULL);
@@ -355,7 +355,7 @@ static void on_zoom_changed(Subject *subj, void *user_data) {
 static void on_if_shift_changed(Subject *subj, void *user_data) {
     delay = 2;
     if_shift = subject_i_get((SubjectInt*)subj);
-    radio_center_freq = cparam_i_get(cfg_fg_freq) - if_shift;
+    radio_center_freq = cparam_i_get(cfg.computed.fg_freq()) - if_shift;
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
 }
 

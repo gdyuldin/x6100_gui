@@ -1,7 +1,7 @@
 #include "settings_manager_api.h"
 
 #include "db.h"
-#include "settings_manager.h"
+#include "settings_internal.h"
 
 // SettingsManager-level operations exposed to C. cfg_api_init lives in
 // cfg_api.cpp (it also fills the extern parameter pointers); these are the

@@ -3,11 +3,7 @@
 #include "civ_protocol.h"
 #include <cstdint>
 
-#include "../cfg/settings_manager.h"
-
-
-// Redirect the SettingsManager used by CI-V command handlers.
-void civ_set_sm(SettingsManager *sm);
+#include <aether_radio/x6100_control/control.h>
 
 // Process one CI-V request packet. Dispatches to the registered handler
 // based on request.get_command(). Sets code 0xFA (CODE_NG) for unknown cmd.

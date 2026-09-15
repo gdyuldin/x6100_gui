@@ -8,7 +8,7 @@
 
 #include "dsp.h"
 
-#include "cfg/settings_manager.h"
+#include "cfg/cfg_api.h"
 #include "cat/scope_streamer.h"
 
 #include "common/resampler.h"
@@ -367,16 +367,16 @@ void dsp_init() {
 
     audio_dc_blocker = iirfilt_rrrf_create_dc_blocker(2.0f * M_PI_2f32 * 50.0f / AUDIO_CAPTURE_RATE);
 
-    cfg_sm.p_mode_zoom.subscribe_and_notify(on_zoom_change);
+    cfg.mode.zoom()->subscribe_and_notify(on_zoom_change);
 
-    cfg_sm.p_band_if_shift.subscribe(update_filters);
-    cfg_sm.cp_cur_filter_low.subscribe(update_filters);
-    cfg_sm.cp_cur_filter_high.subscribe_and_notify(update_filters);
-    cfg_sm.cp_cur_mode.subscribe_and_notify(update_filters);
+    cfg.band.if_shift()->subscribe(update_filters);
+    cfg.filter.low()->subscribe(update_filters);
+    cfg.filter.high()->subscribe_and_notify(update_filters);
+    cfg.computed.mode()->subscribe_and_notify(update_filters);
 
-    cfg_sm.cp_cur_mode.subscribe_and_notify(update_cur_mode);
+    cfg.computed.mode()->subscribe_and_notify(update_cur_mode);
 
-    cfg_sm.cp_fg_freq.subscribe(on_cur_freq_change);
+    cfg.computed.fg_freq()->subscribe(on_cur_freq_change);
     ready = true;
 }
 
@@ -624,7 +624,7 @@ static void update_zoom(int32_t new_zoom) {
 }
 
 static void on_zoom_change(Subject *subj, void *user_data) {
-    int32_t new_zoom = cfg_sm.p_mode_zoom.get();
+    int32_t new_zoom = cfg.mode.zoom()->get();
     if ((base_ver.rev < 8) && (util_compare_version(base_ver, (x6100_base_ver_t){1, 1, 9, 0}) < 0)) {
         update_zoom(new_zoom);
     } else {
@@ -639,10 +639,10 @@ static void on_zoom_change(Subject *subj, void *user_data) {
 }
 
 static void update_filters(Subject *subj, void *user_data) {
-    auto low = cfg_sm.cp_cur_filter_low.get();
-    auto high = cfg_sm.cp_cur_filter_high.get();
-    auto if_shift = cfg_sm.p_band_if_shift.get();
-    auto mode = cfg_sm.cp_cur_mode.get();
+    auto low = cfg.filter.low()->get();
+    auto high = cfg.filter.high()->get();
+    auto if_shift = cfg.band.if_shift()->get();
+    auto mode = cfg.computed.mode()->get();
     switch (mode) {
         case x6100_mode_lsb:
         case x6100_mode_lsb_dig:
@@ -664,7 +664,7 @@ static void update_filters(Subject *subj, void *user_data) {
 }
 
 static void update_cur_mode(Subject *subj, void *user_data) {
-    cur_mode = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
+    cur_mode = (x6100_mode_t)cfg.computed.mode()->get();
 }
 
 static void on_cur_freq_change(Subject *subj, void *user_data) {
@@ -915,13 +915,13 @@ static void dsp_resolve_levels(bool tx, float *out_min, float *out_max) {
     if (tx) {
         *out_min = DSP_TX_LEVEL_MIN;
         *out_max = DSP_TX_LEVEL_MAX;
-    } else if (cfg_sm.p_auto_level_enabled.get()) {
-        float offset = cfg_sm.p_auto_level_offset.get();
+    } else if (cfg.spectrum.auto_level_enabled()->get()) {
+        float offset = cfg.spectrum.auto_level_offset()->get();
         *out_min = auto_min - offset;
         *out_max = auto_max - offset;
     } else {
-        *out_min = cfg_sm.p_band_grid_min.get();
-        *out_max = cfg_sm.p_band_grid_max.get();
+        *out_min = cfg.band.grid_min()->get();
+        *out_max = cfg.band.grid_max()->get();
     }
 }
 

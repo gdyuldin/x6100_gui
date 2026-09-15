@@ -176,8 +176,8 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
     lv_bar_indicator_set_peak_enable(level_bar, true);
     lv_bar_indicator_set_peak_color(level_bar, style.colors.s_meter.peak);
 
-    subject_subscribe_delayed_and_notify((Subject*)cfg_cur_pre, on_bool_value_change, &pre);
-    subject_subscribe_delayed_and_notify((Subject*)cfg_cur_att, on_bool_value_change, &att);
+    subject_subscribe_delayed_and_notify((Subject*)cfg.computed.pre(), on_bool_value_change, &pre);
+    subject_subscribe_delayed_and_notify((Subject*)cfg.computed.att(), on_bool_value_change, &att);
 
     db_val_label = lv_label_create(obj);
     lv_obj_add_style(db_val_label, &style.text_base_color, LV_PART_MAIN);

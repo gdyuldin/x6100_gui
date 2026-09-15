@@ -1,15 +1,13 @@
 #include "scope_streamer.h"
 #include "civ_protocol.h"
 #include "civ_internal.h"
-#include "../cfg/settings_manager.h"
+#include "../cfg/cfg_api.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-
-extern SettingsManager cfg_sm;
 
 namespace {
 
@@ -250,8 +248,8 @@ std::string_view scope_streamer_handle_27(const CivPacketView &req, CivTxPacker 
                 int32_t new_span = static_cast<int32_t>(from_bcd(data.substr(1), 10));
                 // Set to validate and get actual value
                 int32_t new_zoom = roundf(50'000.0f / new_span);
-                cfg_sm.p_mode_zoom.set(new_zoom);
-                scope_span_hz = 50'000 / cfg_sm.p_mode_zoom.get();
+                cfg.mode.zoom()->set(new_zoom);
+                scope_span_hz = 50'000 / cfg.mode.zoom()->get();
                 return resp.set_ok().get_packet();
             }
 

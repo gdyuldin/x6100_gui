@@ -12,7 +12,7 @@
 #include "memory.h"
 
 #include "db.h"
-#include "settings_manager.h"
+#include "settings_internal.h"
 #include "subject.h"
 
 // cfg_memory_save: store the current active VFO frequency, mode, agc, pre and

@@ -12,6 +12,7 @@
 #include "cat/civ_processor.h"
 #include "cat/civ_protocol.h"
 #include "cfg/db.h"
+#include "cfg/settings_internal.h"
 #include "cfg/settings_manager.h"
 #include "cfg/storage_policy.h"
 
@@ -189,7 +190,7 @@ TEST_CASE("Frame::process returns CODE_NG for unknown command", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     auto raw = ci_v_frame(0xFF);
     CivPacketView req(raw.data(), raw.size());
@@ -208,7 +209,7 @@ TEST_CASE("C_RD_FREQ reads current frequency as 5-byte BCD", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     REQUIRE(mgr.cp_fg_freq.get() == 7'100'000);
 
@@ -231,7 +232,7 @@ TEST_CASE("C_SET_FREQ sets frequency from 5-byte BCD", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     // 14.2 MHz in little-endian BCD
     std::vector<uint8_t> payload = {0x00, 0x00, 0x20, 0x14, 0x00};
@@ -254,7 +255,7 @@ TEST_CASE("C_RD_MODE reads current mode as 2 bytes", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     auto raw = ci_v_frame(C_RD_MODE);
     CivPacketView req(raw.data(), raw.size());
@@ -273,7 +274,7 @@ TEST_CASE("C_SET_MODE sets mode", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     auto raw = ci_v_frame(C_SET_MODE, {0x03});
     CivPacketView req(raw.data(), raw.size());
@@ -293,7 +294,7 @@ TEST_CASE("C_SET_VFO switches VFO", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     // Read current VFO (empty payload)
     {
@@ -341,7 +342,7 @@ TEST_CASE("C_SET_VFO S_XCHNG swaps VFO", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_A);
 
@@ -363,7 +364,7 @@ TEST_CASE("C_CTL_SPLT read split status", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     mgr.p_band_split.set(0);
     {
@@ -398,7 +399,7 @@ TEST_CASE("C_SET_TS read/write tuning step", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     // Read default (500 Hz -> 0x02)
     {
@@ -434,7 +435,7 @@ TEST_CASE("C_CTL_ATT read/write attenuator", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     // Read default
     {
@@ -470,7 +471,7 @@ TEST_CASE("C_CTL_LVL volume read", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     mgr.p_volume.set(30);
 
@@ -490,7 +491,7 @@ TEST_CASE("C_CTL_LVL RF gain read", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     mgr.p_rfgain.set(50);
 
@@ -510,7 +511,7 @@ TEST_CASE("C_CTL_LVL squelch read", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     mgr.p_squelch.set(10);
 
@@ -532,7 +533,7 @@ TEST_CASE("C_RD_SQSM s-meter returns 3 bytes with stub meter == 0", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     auto raw = ci_v_frame(C_RD_SQSM, {0x02});
     CivPacketView req(raw.data(), raw.size());
@@ -552,7 +553,7 @@ TEST_CASE("C_CTL_FUNC preamp read", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     mgr.cp_cur_pre.set(1);
 
@@ -573,7 +574,7 @@ TEST_CASE("C_RD_TRXID returns transceiver ID", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     auto raw = ci_v_frame(C_RD_TRXID, {0x00});
     CivPacketView req(raw.data(), raw.size());
@@ -592,7 +593,7 @@ TEST_CASE("C_CTL_MEM MEM_DM_FG read returns data mode info", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
     mgr.cp_cur_mode.set(x6100_mode_lsb_dig);
 
     auto raw = ci_v_frame(C_CTL_MEM, {MEM_DM_FG});
@@ -616,7 +617,7 @@ TEST_CASE("C_CTL_PTT read returns RX state from stub", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     auto raw = ci_v_frame(C_CTL_PTT, {0x00});
     CivPacketView req(raw.data(), raw.size());
@@ -635,7 +636,7 @@ TEST_CASE("C_SEND_SEL_FREQ main/sub freq read", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     // Main VFO (sub 0) -> cp_fg_freq = vfoa_freq = 7.1 MHz
     REQUIRE(mgr.cp_fg_freq.get() == 7'100'000);
@@ -659,7 +660,7 @@ TEST_CASE("C_SEND_SEL_MODE main/sub mode read", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     mgr.cp_cur_mode.set(x6100_mode_usb_dig);
 
@@ -685,7 +686,7 @@ TEST_CASE("C_CTL_SCP sub 0x10 returns scope available", "[cat]") {
     TestDbGuard db;
     SettingsManager mgr;
     init_band_5(db, mgr);
-    civ_set_sm(&mgr);
+    cfg_set_instance(&mgr);
 
     auto raw = ci_v_frame(C_CTL_SCP, {0x10});
     CivPacketView req(raw.data(), raw.size());
@@ -700,7 +701,7 @@ TEST_CASE("C_CTL_SCP sub 0x10 returns scope available", "[cat]") {
 
 // ---- cleanup ---------------------------------------------------------------
 
-TEST_CASE("civ_set_sm(nullptr) restores production global", "[cat]") {
-    civ_set_sm(nullptr);
+TEST_CASE("cfg_set_instance(nullptr) restores production global", "[cat]") {
+    cfg_set_instance(nullptr);
     SUCCEED();
 }

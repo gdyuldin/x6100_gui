@@ -209,8 +209,8 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
     qso_log_record_t qso = qso_log_record_create(
         params.callsign.x,
         canonized_call,
-        now, param_i_get(cfg_ft8_protocol) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
-        s_snr, r_snr, cparam_i_get(cfg_fg_freq), NULL, NULL,
+        now, param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
+        s_snr, r_snr, cparam_i_get(cfg.computed.fg_freq()), NULL, NULL,
         params.qth.x, remote_grid
     );
     free(canonized_call);
@@ -235,7 +235,7 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
 static void worker_init() {
     qso_processor = ftx_qso_processor_init(params.callsign.x, params.qth.x,
                                            save_qso,
-                                           param_i_get(cfg_ft8_max_repeats));
+                                           param_i_get(cfg.ft8.max_repeats()));
 
     audio_worker_cb_t cb = {
         .on_message  = on_message_cb,
@@ -246,7 +246,7 @@ static void worker_init() {
     };
     audio_worker = audio_worker_create(
         FTX_CAPTURE_RATE,
-        param_i_get(cfg_ft8_protocol),
+        param_i_get(cfg.ft8.protocol()),
         filter_low, filter_high,
         &cb);
     if (audio_worker) {
@@ -310,7 +310,7 @@ static void destruct_cb() {
     lm_set_freq(false);
     lm_set_band(false);
 
-    radio_set_pwr(param_f_get(cfg_pwr));
+    radio_set_pwr(param_f_get(cfg.general.pwr()));
     adif_log_close(ft8_log);
 
     tx_worker_destruct();
@@ -318,7 +318,7 @@ static void destruct_cb() {
 
 static void load_band(int8_t dir) {
     cfg_digital_type_t type;
-    switch (param_i_get(cfg_ft8_protocol)) {
+    switch (param_i_get(cfg.ft8.protocol())) {
         case FTX_PROTOCOL_FT8:
             type = CFG_DIG_TYPE_FT8;
             lv_finder_set_width(finder, FT8_WIDTH_HZ);
@@ -397,7 +397,7 @@ static void rotary_cb(int32_t diff) {
         diff *= (abs_diff < 6) ? 5 : 10;
     }
     uint32_t f = params.ft8_tx_freq.x + diff;
-    f = limit(f, filter_low, filter_high - (param_i_get(cfg_ft8_protocol) == FTX_PROTOCOL_FT8 ? FT8_WIDTH_HZ : FT4_WIDTH_HZ));
+    f = limit(f, filter_low, filter_high - (param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? FT8_WIDTH_HZ : FT4_WIDTH_HZ));
 
     set_freq(f);
 
@@ -430,10 +430,10 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_add_event_cb(dialog.obj, band_cb, EVENT_BAND_DOWN, NULL);
 
     // Fill subjects for buttons
-    button_show_cq_all.subj = (Subject*)cfg_ft8_show_all;
-    button_mode_ft4_ft8.subj = (Subject*)cfg_ft8_protocol;
-    button_hold_freq.subj = (Subject*)cfg_ft8_hold_freq;
-    button_auto_en_dis.subj = (Subject*)cfg_ft8_auto;
+    button_show_cq_all.subj = (Subject*)cfg.ft8.show_all();
+    button_mode_ft4_ft8.subj = (Subject*)cfg.ft8.protocol();
+    button_hold_freq.subj = (Subject*)cfg.ft8.hold_freq();
+    button_auto_en_dis.subj = (Subject*)cfg.ft8.auto_mode();
 
     if (!cq_enabled) {
         cq_enabled = subject_i_create(false);
@@ -509,8 +509,8 @@ static void construct_cb(lv_obj_t *parent) {
     mem_save(MEM_BACKUP_ID);
     load_band(0);
 
-    filter_low = cparam_i_get(cfg_cur_filter_low);
-    filter_high = cparam_i_get(cfg_cur_filter_high);
+    filter_low = cparam_i_get(cfg.filter.low());
+    filter_high = cparam_i_get(cfg.filter.high());
 
     lv_finder_set_range(finder, filter_low, filter_high);
 
@@ -531,13 +531,13 @@ static void construct_cb(lv_obj_t *parent) {
     /* Logger */
     ft8_log = adif_log_init("/mnt/ft_log.adi");
 
-    if (param_f_get(cfg_pwr) > MAX_PWR) {
+    if (param_f_get(cfg.general.pwr()) > MAX_PWR) {
         radio_set_pwr(MAX_PWR);
         msg_schedule_text_fmt("Power was limited to %0.0fW", MAX_PWR);
     }
 
     // setup gain offset
-    float target_pwr = LV_MIN(param_f_get(cfg_pwr), MAX_PWR);
+    float target_pwr = LV_MIN(param_f_get(cfg.general.pwr()), MAX_PWR);
     if (x6100_control_get_base_ver().rev >= 3) {
         // patched firmware has a true power control
         base_gain_offset = -9.4f;
@@ -553,13 +553,13 @@ static void construct_cb(lv_obj_t *parent) {
 
 const char *cq_all_label_getter() {
     static char buf[32];
-    sprintf(buf, "Show:\n%s", param_i_get(cfg_ft8_show_all) ? "All": "CQ");
+    sprintf(buf, "Show:\n%s", param_i_get(cfg.ft8.show_all()) ? "All": "CQ");
     return buf;
 }
 
 const char *protocol_label_getter() {
     static char buf[32];
-    sprintf(buf, "Mode:\n%s", param_i_get(cfg_ft8_protocol) == FTX_PROTOCOL_FT8 ? "FT8": "FT4");
+    sprintf(buf, "Mode:\n%s", param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? "FT8": "FT4");
     return buf;
 }
 
@@ -577,31 +577,31 @@ const char *tx_call_label_getter() {
 
 const char *hold_freq_label_getter() {
     static char buf[32];
-    sprintf(buf, "Hold Freq:\n%s", param_i_get(cfg_ft8_hold_freq) ? "Enabled": "Disabled");
+    sprintf(buf, "Hold Freq:\n%s", param_i_get(cfg.ft8.hold_freq()) ? "Enabled": "Disabled");
     return buf;
 }
 
 const char *auto_label_getter() {
     static char buf[32];
-    sprintf(buf, "Auto:\n%s", param_i_get(cfg_ft8_auto) ? "Enabled": "Disabled");
+    sprintf(buf, "Auto:\n%s", param_i_get(cfg.ft8.auto_mode()) ? "Enabled": "Disabled");
     return buf;
 }
 
 static void show_cq_all_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
-    param_i_set(cfg_ft8_show_all, !param_i_get(cfg_ft8_show_all));
+    param_i_set(cfg.ft8.show_all(), !param_i_get(cfg.ft8.show_all()));
 }
 
 static void mode_ft4_ft8_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
 
-    ftx_protocol_t proto = param_i_get(cfg_ft8_protocol);
+    ftx_protocol_t proto = param_i_get(cfg.ft8.protocol());
     if (proto == FTX_PROTOCOL_FT8)
         proto = FTX_PROTOCOL_FT4;
     else {
         proto = FTX_PROTOCOL_FT8;
     }
-    param_i_set(cfg_ft8_protocol, proto);
+    param_i_set(cfg.ft8.protocol(), proto);
     subject_i_set(cq_enabled, false);
 
     worker_done();
@@ -612,14 +612,14 @@ static void mode_ft4_ft8_cb(struct button_data_t *btn_data) {
 
 static void mode_auto_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
-    bool new_val = !param_i_get(cfg_ft8_auto);
-    param_i_set(cfg_ft8_auto, new_val);
+    bool new_val = !param_i_get(cfg.ft8.auto_mode());
+    param_i_set(cfg.ft8.auto_mode(), new_val);
     ftx_qso_processor_set_auto(qso_processor, new_val);
 }
 
 static void hold_tx_freq_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
-    param_i_set(cfg_ft8_hold_freq, !param_i_get(cfg_ft8_hold_freq));
+    param_i_set(cfg.ft8.hold_freq(), !param_i_get(cfg.ft8.hold_freq()));
 }
 
 static void tx_cq_en_dis_cb(struct button_data_t *btn_data) {
@@ -648,7 +648,7 @@ static void tx_cq_en_dis_cb(struct button_data_t *btn_data) {
         } else {
             msg_schedule_text_fmt("Next TX: %s", tx_msg.msg);
         }
-        tx_msg.repeats = param_i_get(cfg_ft8_max_repeats);
+        tx_msg.repeats = param_i_get(cfg.ft8.max_repeats());
         ftx_qso_processor_reset(qso_processor);
         lv_finder_clear_cursor(finder);
     } else {
@@ -692,7 +692,7 @@ static void time_sync(struct button_data_t *btn_data) {
     time_t now = time(NULL);
     uint8_t sec = now % 60;
     float drift, slot_time;
-    switch (param_i_get(cfg_ft8_protocol)) {
+    switch (param_i_get(cfg.ft8.protocol())) {
         case FTX_PROTOCOL_FT4:
             slot_time = FT4_SLOT_TIME;
             break;
@@ -742,7 +742,7 @@ static void on_table_press(const cell_data_t *cell_data) {
     ftx_qso_processor_start_qso(qso_processor, (ftx_msg_meta_t *)&cell_data->meta, &tx_msg);
     if (strlen(tx_msg.msg) > 0) {
         lv_finder_set_cursor(finder, cell_data->meta.freq_hz);
-        if (!param_i_get(cfg_ft8_hold_freq)) {
+        if (!param_i_get(cfg.ft8.hold_freq())) {
             set_freq(cell_data->meta.freq_hz);
         }
         tx_time_slot = !cell_data->odd;
@@ -820,7 +820,7 @@ static bool get_time_slot(struct timespec now, float *sec_since_start) {
     bool cur_odd;
     float sec = (now.tv_sec % 60) + now.tv_nsec / 1.0e9f;
 
-    switch (param_i_get(cfg_ft8_protocol)) {
+    switch (param_i_get(cfg.ft8.protocol())) {
     case FTX_PROTOCOL_FT4:
         cur_odd = (int)(sec / FT4_SLOT_TIME) % 2;
         *sec_since_start = fmodf(sec, FT4_SLOT_TIME);
@@ -887,7 +887,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
 
     if ((strlen(tx_msg.msg) > 0) && (strcmp(old_msg, tx_msg.msg) != 0)) {
         lv_finder_set_cursor(finder, meta.freq_hz);
-        if (!param_i_get(cfg_ft8_hold_freq)) {
+        if (!param_i_get(cfg.ft8.hold_freq())) {
             set_freq(freq_hz);
         }
         tx_time_slot = !s_info->odd;
@@ -903,7 +903,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
         cell_type = CELL_RX_TO_ME;
     } else if (meta.type == FTX_MSG_TYPE_CQ) {
         cell_type = CELL_RX_CQ;
-    } else if (!param_i_get(cfg_ft8_show_all)) {
+    } else if (!param_i_get(cfg.ft8.show_all())) {
         return;
     } else {
         cell_type = CELL_RX_MSG;
@@ -913,8 +913,8 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     if (meta.type == FTX_MSG_TYPE_CQ) {
         cell_data.worked_type = qso_log_search_worked(
             meta.call_de,
-            param_i_get(cfg_ft8_protocol) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
-            qso_log_freq_to_band(cparam_i_get(cfg_fg_freq))
+            param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
+            qso_log_freq_to_band(cparam_i_get(cfg.computed.fg_freq()))
         );
     }
 

@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-#include "cfg/settings_manager.h"
+#include "cfg/cfg_api.h"
 #include "radio.h"
 #include "styles.h"
 #include "params/params.h"
@@ -136,9 +136,9 @@ lv_obj_t * freq_info_init(lv_obj_t * parent) {
     radio_fg_freq_subj->subscribe_delayed(observer_fn);
     radio_bg_freq_subj->subscribe_delayed_and_notify(observer_fn);
 
-    cfg_sm.p_band_current_vfo.subscribe_delayed_and_notify(on_vfo_change, NULL);
-    cfg_sm.p_mode_freq_step.subscribe_delayed_and_notify(on_step_change, NULL);
-    cfg_sm.cp_cur_mode.subscribe_delayed_and_notify(on_mode_change, NULL);
+    cfg.band.current_vfo()->subscribe_delayed_and_notify(on_vfo_change, NULL);
+    cfg.mode.freq_step()->subscribe_delayed_and_notify(on_step_change, NULL);
+    cfg.computed.mode()->subscribe_delayed_and_notify(on_mode_change, NULL);
 
     lv_msg_subscribe(MSG_LOCK_FREQ, lock_freq_change_cb, NULL);
 
@@ -161,7 +161,7 @@ const char *mode_to_str(x6100_mode_t mode) {
 
 static void update_fg_freq(void) {
     uint16_t mhz, khz, hz;
-    int32_t freq = cfg_sm.cp_fg_freq.get();
+    int32_t freq = cfg.computed.fg_freq()->get();
 
     split_freq(freq, &mhz, &khz, &hz);
     if (mhz) {
@@ -175,7 +175,7 @@ static void update_fg_freq(void) {
 
 static void update_bg_freq(void) {
     uint16_t mhz, khz, hz;
-    int32_t freq = cfg_sm.cp_bg_freq.get();
+    int32_t freq = cfg.computed.bg_freq()->get();
     split_freq(freq, &mhz, &khz, &hz);
     char buffer[16];
     if (mhz) {
@@ -188,7 +188,7 @@ static void update_bg_freq(void) {
 
 
 static void on_vfo_change(Subject *subj, void *user_data) {
-    x6100_vfo_t vfo = (x6100_vfo_t)cfg_sm.p_band_current_vfo.get();
+    x6100_vfo_t vfo = (x6100_vfo_t)cfg.band.current_vfo()->get();
     if (vfo == X6100_VFO_A) {
         lv_label_set_text(vfo_label, "A");
     } else {
@@ -198,12 +198,12 @@ static void on_vfo_change(Subject *subj, void *user_data) {
 
 
 static void on_step_change(Subject *subj, void *user_data) {
-    freq_step = cfg_sm.p_mode_freq_step.get();
+    freq_step = cfg.mode.freq_step()->get();
     lv_obj_invalidate(fg_freq_row);
 }
 
 static void on_mode_change(Subject *subj, void *user_data) {
-    x6100_mode_t mode = (x6100_mode_t)cfg_sm.cp_cur_mode.get();
+    x6100_mode_t mode = (x6100_mode_t)cfg.computed.mode()->get();
     lv_label_set_text(mode_label, mode_to_str(mode));
 }
 

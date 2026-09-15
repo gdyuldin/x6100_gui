@@ -8,6 +8,7 @@
 
 #include "civ_processor.h"
 #include "civ_internal.h"
+#include "../cfg/cfg_api.h"
 #include "scope_streamer.h"
 
 #include <algorithm>
@@ -90,12 +91,6 @@ constexpr uint8_t MEM_BS_REG = 0x01;
 constexpr uint8_t MEM_IF_FW  = 0x03;
 constexpr uint8_t MEM_LOCK   = 0x05;
 constexpr uint8_t MEM_DM_FG  = 0x06;
-
-// ============================================================================
-// SettingsManager backing the handlers
-// ============================================================================
-
-SettingsManager *civ_sm = &cfg_sm;
 
 } // anonymous namespace
 
@@ -245,9 +240,9 @@ uint8_t x_mode_is_data_mode(x6100_mode_t x_mode) {
 }
 
 uint8_t get_if_bandwidth() {
-    uint32_t bw = civ_sm->cp_cur_filter_bw.get();
+    uint32_t bw = cfg.filter.bw()->get();
     uint8_t val;
-    switch (civ_sm->cp_cur_mode.get()) {
+    switch (cfg.computed.mode()->get()) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
         case x6100_mode_lsb:
@@ -272,7 +267,7 @@ uint8_t get_if_bandwidth() {
 }
 
 static uint32_t if_bandwidth_from_ci(uint8_t data) {
-    switch (civ_sm->cp_cur_mode.get()) {
+    switch (cfg.computed.mode()->get()) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
         case x6100_mode_lsb:
@@ -331,22 +326,22 @@ uint8_t freq_step_to_ci(int32_t val) {
 Parameter<int32_t>& vfo_freq(bool fg, int cur_vfo) {
     if (fg)
     {
-        return cur_vfo == X6100_VFO_A ? civ_sm->p_band_vfoa_freq : civ_sm->p_band_vfob_freq;
+        return cur_vfo == X6100_VFO_A ? *cfg.band.vfoa_freq() : *cfg.band.vfob_freq();
     }
     else
     {
-        return cur_vfo == X6100_VFO_A ? civ_sm->p_band_vfob_freq : civ_sm->p_band_vfoa_freq;
+        return cur_vfo == X6100_VFO_A ? *cfg.band.vfob_freq() : *cfg.band.vfoa_freq();
     }
 }
 
 Parameter<int32_t>& vfo_mode(bool fg, int cur_vfo) {
     if (fg)
     {
-        return cur_vfo == X6100_VFO_A ? civ_sm->p_band_vfoa_mode : civ_sm->p_band_vfob_mode;
+        return cur_vfo == X6100_VFO_A ? *cfg.band.vfoa_mode() : *cfg.band.vfob_mode();
     }
     else
     {
-        return cur_vfo == X6100_VFO_A ? civ_sm->p_band_vfob_mode : civ_sm->p_band_vfoa_mode;
+        return cur_vfo == X6100_VFO_A ? *cfg.band.vfob_mode() : *cfg.band.vfoa_mode();
     }
 }
 
@@ -410,7 +405,7 @@ void init_cmd_handlers() {
 std::string_view handle_snd_freq_x00(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 5) {
-        civ_sm->cp_fg_freq.set(from_bcd(request.get_command_data(), 10));
+        cfg.computed.fg_freq()->set(from_bcd(request.get_command_data(), 10));
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -423,7 +418,7 @@ std::string_view handle_snd_freq_x00(const CivPacketView &request, CivTxPacker &
 
 std::string_view handle_rd_freq_x03(const CivPacketView &request, CivTxPacker &resp) {
     uint8_t bcd[5];
-    to_bcd(bcd, civ_sm->cp_fg_freq.get(), 10);
+    to_bcd(bcd, cfg.computed.fg_freq()->get(), 10);
     return resp.set_command(request.get_command()).append_data(bcd, 5).get_packet();
 }
 
@@ -432,7 +427,7 @@ std::string_view handle_rd_freq_x03(const CivPacketView &request, CivTxPacker &r
 // ============================================================================
 
 std::string_view handle_rd_mode_x04(const CivPacketView &request, CivTxPacker &resp) {
-    uint8_t v = x_mode_2_ci_mode((x6100_mode_t)civ_sm->cp_cur_mode.get());
+    uint8_t v = x_mode_2_ci_mode((x6100_mode_t)cfg.computed.mode()->get());
     return resp.set_command(request.get_command()).append_byte(v).append_byte(v).get_packet();
 }
 
@@ -443,7 +438,7 @@ std::string_view handle_rd_mode_x04(const CivPacketView &request, CivTxPacker &r
 std::string_view handle_set_freq_x05(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 5) {
-        civ_sm->cp_fg_freq.set(from_bcd(request.get_command_data(), 10));
+        cfg.computed.fg_freq()->set(from_bcd(request.get_command_data(), 10));
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -458,9 +453,9 @@ std::string_view handle_set_mode_x06(const CivPacketView &request, CivTxPacker &
     size_t data_size = request.get_command_data().size();
     if ((data_size >= 1) && (data_size <= 2)) {
         // Payload: mode, filter id
-        x6100_mode_t new_mode = static_cast<x6100_mode_t>(civ_sm->cp_cur_mode.get());
+        x6100_mode_t new_mode = static_cast<x6100_mode_t>(cfg.computed.mode()->get());
         new_mode = ci_mode_2_x_mode(new_mode, request.get_subcommand());
-        civ_sm->cp_cur_mode.set(new_mode);
+        cfg.computed.mode()->set(new_mode);
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -472,29 +467,29 @@ std::string_view handle_set_mode_x06(const CivPacketView &request, CivTxPacker &
 // ============================================================================
 
 std::string_view handle_set_vfo_x07(const CivPacketView &request, CivTxPacker &resp) {
-    x6100_vfo_t cur_vfo = (x6100_vfo_t)civ_sm->p_band_current_vfo.get();
+    x6100_vfo_t cur_vfo = (x6100_vfo_t)cfg.band.current_vfo()->get();
 
 
     switch (request.get_vfo()) {
         case S_VFOA:
             if (cur_vfo != X6100_VFO_A) {
-                civ_sm->p_band_current_vfo.set(X6100_VFO_A);
+                cfg.band.current_vfo()->set(X6100_VFO_A);
             }
             return resp.set_ok().get_packet();
 
         case S_VFOB:
             if (cur_vfo != X6100_VFO_B) {
-                civ_sm->p_band_current_vfo.set(X6100_VFO_B);
+                cfg.band.current_vfo()->set(X6100_VFO_B);
             }
             return resp.set_ok().get_packet();
 
         case S_XCHNG:
-            civ_sm->p_band_current_vfo.set(
+            cfg.band.current_vfo()->set(
                 cur_vfo == X6100_VFO_A ? X6100_VFO_B : X6100_VFO_A);
             return resp.set_ok().get_packet();
 
         case S_BTOA:
-            civ_sm->cfg_band_vfo_copy();
+            cfg_band_vfo_copy();
             return resp.set_ok().get_packet();
 
         case FRAME_END:
@@ -513,9 +508,11 @@ std::string_view handle_set_vfo_x07(const CivPacketView &request, CivTxPacker &r
 std::string_view handle_ctl_splt_x0f(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 0) {
-        return resp.set_command(request.get_command()).append_byte(static_cast<uint8_t>(civ_sm->p_band_split.get())).get_packet();
+        return resp.set_command(request.get_command())
+            .append_byte(static_cast<uint8_t>(cfg.band.split()->get()))
+            .get_packet();
     } else if (data_size == 1) {
-        civ_sm->p_band_split.set(request.get_subcommand());
+        cfg.band.split()->set(request.get_subcommand());
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -529,9 +526,11 @@ std::string_view handle_ctl_splt_x0f(const CivPacketView &request, CivTxPacker &
 std::string_view handle_set_ts_x10(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 0) {
-        return resp.set_command(request.get_command()).append_byte(freq_step_to_ci(civ_sm->p_mode_freq_step.get())).get_packet();
+        return resp.set_command(request.get_command())
+            .append_byte(freq_step_to_ci(cfg.mode.freq_step()->get()))
+            .get_packet();
     } else if (data_size == 1) {
-        civ_sm->p_mode_freq_step.set(freq_step_from_ci(request.get_subcommand()));
+        cfg.mode.freq_step()->set(freq_step_from_ci(request.get_subcommand()));
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -545,9 +544,11 @@ std::string_view handle_set_ts_x10(const CivPacketView &request, CivTxPacker &re
 std::string_view handle_ctl_att_x11(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 0) {
-        return resp.set_command(request.get_command()).append_byte(static_cast<uint8_t>(civ_sm->cp_cur_att.get() * 0x20)).get_packet();
+        return resp.set_command(request.get_command())
+            .append_byte(static_cast<uint8_t>(cfg.computed.att()->get() * 0x20))
+            .get_packet();
     } else if (data_size == 1) {
-        civ_sm->cp_cur_att.set(request.get_subcommand());
+        cfg.computed.att()->set(request.get_subcommand());
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -567,22 +568,22 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
         auto after_cmd = resp.set_command(request.get_command()).set_subcommand(subcmd);
         switch (subcmd) {
             case 0x01: // Get AF level
-                to_bcd_be(bcd, civ_sm->p_volume.get() * 255 / 55, 3);
+                to_bcd_be(bcd, cfg.general.volume()->get() * 255 / 55, 3);
                 break;
             case 0x02: // Get RF gain
-                to_bcd_be(bcd, civ_sm->p_rfgain.get() * 255 / 100, 3);
+                to_bcd_be(bcd, cfg.general.rfgain()->get() * 255 / 100, 3);
                 break;
             case 0x03: // Get SQL level
-                to_bcd_be(bcd, civ_sm->p_squelch.get() * 255 / 100, 3);
+                to_bcd_be(bcd, cfg.general.squelch()->get() * 255 / 100, 3);
                 break;
             case 0x07: //  [TWIN PBT] (PBT1) position
             case 0x08: //  [TWIN PBT] (PBT2) position
                 return after_cmd.append_byte(0x01).append_byte(0x28).get_packet();
             case 0x0a: // Get Tx power
-                to_bcd_be(bcd, std::round(civ_sm->p_pwr.get() * 255 / 10), 3);
+                to_bcd_be(bcd, std::round(cfg.general.pwr()->get() * 255 / 10), 3);
                 break;
             case 0x15: // Get MONI level
-                to_bcd_be(bcd, civ_sm->p_moni.get() * 255 / 100, 3);
+                to_bcd_be(bcd, cfg.general.moni()->get() * 255 / 100, 3);
                 break;
             default:
                 return civ::detail::set_unsupported(request, resp);
@@ -592,22 +593,22 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
         auto bcd_val = from_bcd_be(request.get_subcommand_data(), 3);
         switch (subcmd) {
             case 0x01: // Set AF level
-                civ_sm->p_volume.set(bcd_val * 55 / 255);
+                cfg.general.volume()->set(bcd_val * 55 / 255);
                 break;
             case 0x02: // Set RF gain
-                civ_sm->p_rfgain.set(bcd_val * 100 / 255);
+                cfg.general.rfgain()->set(bcd_val * 100 / 255);
                 break;
             case 0x03: // Set SQL level
-                civ_sm->p_squelch.set(bcd_val * 100 / 255);
+                cfg.general.squelch()->set(bcd_val * 100 / 255);
                 break;
             case 0x0a: // Set Tx power
                 {
                     float pwr = static_cast<float>(bcd_val) * 10.0f / 255.0f;
-                    civ_sm->p_pwr.set(pwr);
+                    cfg.general.pwr()->set(pwr);
                     break;
                 }
             case 0x15: // Set MONI level
-                civ_sm->p_moni.set(bcd_val * 100 / 255);
+                cfg.general.moni()->set(bcd_val * 100 / 255);
                 break;
             default:
                 return civ::detail::set_unsupported(request, resp);
@@ -687,17 +688,17 @@ std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &
         auto after_cmd = resp.set_command(request.get_command()).set_subcommand(subcmd);
         switch (subcmd) {
             case 0x02:
-                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->cp_cur_pre.get())).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(cfg.computed.pre()->get())).get_packet();
             case 0x22:
-                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_nb.get())).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(cfg.dsp.nb()->get())).get_packet();
             case 0x40:
-                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_nr.get())).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(cfg.dsp.nr()->get())).get_packet();
             case 0x44:
-                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_comp.get() > 1)).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(cfg.dsp.comp()->get() > 1)).get_packet();
             case 0x46:
-                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_vox_en.get())).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(cfg.vox.on()->get())).get_packet();
             case 0x45: // Monitor on/off
-                return after_cmd.append_byte(static_cast<uint8_t>(civ_sm->p_moni.get() > 0)).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(cfg.general.moni()->get() > 0)).get_packet();
             case 0x5D: // Tone squelch — unsupported
                 return after_cmd.append_byte(0x00).get_packet();
             default:
@@ -708,19 +709,19 @@ std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &
         auto new_val = static_cast<uint8_t>(request.get_subcommand_data()[0]);
         switch (subcmd) {
             case 0x02:
-                civ_sm->cp_cur_pre.set(new_val > 0);
+                cfg.computed.pre()->set(new_val > 0);
                 break;
             case 0x22:
-                civ_sm->p_nb.set(new_val);
+                cfg.dsp.nb()->set(new_val);
                 break;
             case 0x40:
-                civ_sm->p_nr.set(new_val);
+                cfg.dsp.nr()->set(new_val);
                 break;
             case 0x44:
-                civ_sm->p_comp.set(new_val ? 4 : 1);
+                cfg.dsp.comp()->set(new_val ? 4 : 1);
                 break;
             case 0x46:
-                civ_sm->p_vox_en.set(new_val);
+                cfg.vox.on()->set(new_val);
                 break;
             case 0x45:
             case 0x5D:
@@ -751,7 +752,7 @@ std::string_view handle_rd_trxid_x19(const CivPacketView &request, CivTxPacker &
 
 std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &resp) {
     size_t       data_size = request.get_command_data().size();
-    x6100_mode_t mode      = (x6100_mode_t)civ_sm->cp_cur_mode.get();
+    x6100_mode_t mode      = (x6100_mode_t)cfg.computed.mode()->get();
 
     if (data_size == 1) {
         auto after_cmd = resp.set_command(request.get_command()).set_subcommand(request.get_subcommand());
@@ -768,14 +769,14 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
     } else {
         switch (request.get_subcommand()) {
             // case MEM_IF_FW:
-            //     civ_sm->cp_cur_filter_bw.set(if_bandwidth_from_ci(request.get_subcommand_data()[0]));
+            //     cfg.filter.bw()->set(if_bandwidth_from_ci(request.get_subcommand_data()[0]));
             //     return resp.set_ok().get_packet();
             case MEM_LOCK:
                 return resp.set_ng().get_packet();
             case MEM_DM_FG:
                 // Payload: data mode, filter_id
                 mode = ci_mode_2_x_mode(mode, request.get_subcommand_data()[0]);
-                civ_sm->cp_cur_mode.set(mode);
+                cfg.computed.mode()->set(mode);
                 return resp.set_ok().get_packet();
 
             default:
@@ -817,9 +818,9 @@ std::string_view handle_send_sel_freq_x25(const CivPacketView &request, CivTxPac
     ComputedParameter<int32_t> *freq;
 
     if (request.get_vfo() == 0) {
-        freq = &civ_sm->cp_fg_freq;
+        freq = cfg.computed.fg_freq();
     } else {
-        freq = &civ_sm->cp_bg_freq;
+        freq = cfg.computed.bg_freq();
     }
 
     if (data_size == 1) {
@@ -847,10 +848,10 @@ std::string_view handle_send_sel_mode_x26(const CivPacketView &request, CivTxPac
 
     if (request.get_vfo() == 0) {
         mode_par =
-            civ_sm->p_band_current_vfo.get() == X6100_VFO_A ? &civ_sm->p_band_vfoa_mode : &civ_sm->p_band_vfob_mode;
+            cfg.band.current_vfo()->get() == X6100_VFO_A ? cfg.band.vfoa_mode() : cfg.band.vfob_mode();
     } else {
         mode_par =
-            civ_sm->p_band_current_vfo.get() == X6100_VFO_B ? &civ_sm->p_band_vfoa_mode : &civ_sm->p_band_vfob_mode;
+            cfg.band.current_vfo()->get() == X6100_VFO_B ? cfg.band.vfoa_mode() : cfg.band.vfob_mode();
     }
     x6100_mode_t mode = static_cast<x6100_mode_t>(mode_par->get());
 
@@ -999,10 +1000,6 @@ std::string_view set_unsupported(const CivPacketView &req, CivTxPacker &resp) {
 // ============================================================================
 // Public API
 // ============================================================================
-
-void civ_set_sm(SettingsManager *sm) {
-    civ_sm = sm ? sm : &cfg_sm;
-}
 
 std::string_view process_civ_message(const CivPacketView &request, CivTxPacker &response_packer) {
     init_cmd_handlers();

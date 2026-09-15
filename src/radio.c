@@ -144,9 +144,9 @@ void radio_bb_reset() {
 }
 
 static void recompute_display_freqs(void) {
-    bool split   = param_i_get(cfg_band_split);
-    int32_t fg   = cparam_i_get(cfg_fg_freq);
-    int32_t bg   = cparam_i_get(cfg_bg_freq);
+    bool split   = param_i_get(cfg.band.split());
+    int32_t fg   = cparam_i_get(cfg.computed.fg_freq());
+    int32_t bg   = cparam_i_get(cfg.computed.bg_freq());
     bool is_tx   = state == RADIO_TX;
 
     if (split && is_tx) {
@@ -167,9 +167,9 @@ static void init_display_freqs(void) {
     radio_fg_freq_subj = subject_i_create(14100000);
     radio_bg_freq_subj = subject_i_create(14150000);
 
-    subject_subscribe((Subject*)cfg_fg_freq, recompute_subj_cb, NULL);
-    subject_subscribe((Subject*)cfg_bg_freq, recompute_subj_cb, NULL);
-    subject_subscribe((Subject*)cfg_band_split, recompute_subj_cb, NULL);
+    subject_subscribe((Subject*)cfg.computed.fg_freq(), recompute_subj_cb, NULL);
+    subject_subscribe((Subject*)cfg.computed.bg_freq(), recompute_subj_cb, NULL);
+    subject_subscribe((Subject*)cfg.band.split(), recompute_subj_cb, NULL);
 
     recompute_display_freqs();
 }
@@ -207,102 +207,102 @@ void radio_start() {
 
     pack = malloc(sizeof(x6100_flow_t));
 
-    subject_subscribe_and_notify((Subject*)cfg_band_vfoa_freq, on_vfo_freq_change, (void*)X6100_VFO_A);
-    subject_subscribe_and_notify((Subject*)cfg_band_vfob_freq, on_vfo_freq_change, (void*)X6100_VFO_B);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfoa_freq(), on_vfo_freq_change, (void*)X6100_VFO_A);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfob_freq(), on_vfo_freq_change, (void*)X6100_VFO_B);
 
-    subject_subscribe_and_notify((Subject*)cfg_band_vfoa_mode, on_vfo_mode_change, (void*)X6100_VFO_A);
-    subject_subscribe_and_notify((Subject*)cfg_band_vfob_mode, on_vfo_mode_change, (void*)X6100_VFO_B);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfoa_mode(), on_vfo_mode_change, (void*)X6100_VFO_A);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfob_mode(), on_vfo_mode_change, (void*)X6100_VFO_B);
 
-    subject_subscribe_and_notify((Subject*)cfg_band_vfoa_agc, on_vfo_agc_change, (void*)X6100_VFO_A);
-    subject_subscribe_and_notify((Subject*)cfg_band_vfob_agc, on_vfo_agc_change, (void*)X6100_VFO_B);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfoa_agc(), on_vfo_agc_change, (void*)X6100_VFO_A);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfob_agc(), on_vfo_agc_change, (void*)X6100_VFO_B);
 
-    subject_subscribe_and_notify((Subject*)cfg_band_vfoa_att, on_vfo_att_change, (void*)X6100_VFO_A);
-    subject_subscribe_and_notify((Subject*)cfg_band_vfob_att, on_vfo_att_change, (void*)X6100_VFO_B);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfoa_att(), on_vfo_att_change, (void*)X6100_VFO_A);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfob_att(), on_vfo_att_change, (void*)X6100_VFO_B);
 
-    subject_subscribe_and_notify((Subject*)cfg_band_vfoa_pre, on_vfo_pre_change, (void*)X6100_VFO_A);
-    subject_subscribe_and_notify((Subject*)cfg_band_vfob_pre, on_vfo_pre_change, (void*)X6100_VFO_B);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfoa_pre(), on_vfo_pre_change, (void*)X6100_VFO_A);
+    subject_subscribe_and_notify((Subject*)cfg.band.vfob_pre(), on_vfo_pre_change, (void*)X6100_VFO_B);
 
-    subject_subscribe_and_notify((Subject*)cfg_band_current_vfo, on_change_uint32, x6100_control_vfo_set);
-    subject_subscribe_and_notify((Subject*)cfg_band_split, on_change_uint8, x6100_control_split_set);
-    subject_subscribe_and_notify((Subject*)cfg_rfgain, on_change_uint8, x6100_control_rfg_set);
+    subject_subscribe_and_notify((Subject*)cfg.band.current_vfo(), on_change_uint32, x6100_control_vfo_set);
+    subject_subscribe_and_notify((Subject*)cfg.band.split(), on_change_uint8, x6100_control_split_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.rfgain(), on_change_uint8, x6100_control_rfg_set);
 
-    subject_subscribe_and_notify((Subject*)cfg_band_if_shift, on_if_shift_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.band.if_shift(), on_if_shift_change, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg_band_tx_i_offset, on_change_int32, x6100_control_tx_i_offset_set);
-    subject_subscribe_and_notify((Subject*)cfg_band_tx_q_offset, on_change_int32, x6100_control_tx_q_offset_set);
+    subject_subscribe_and_notify((Subject*)cfg.band.tx_i_offset(), on_change_int32, x6100_control_tx_i_offset_set);
+    subject_subscribe_and_notify((Subject*)cfg.band.tx_q_offset(), on_change_int32, x6100_control_tx_q_offset_set);
 
-    subject_subscribe((Subject*)cfg_band_id, on_band_change, NULL);
+    subject_subscribe((Subject*)cfg.general.band_id(), on_band_change, NULL);
 
-    subject_subscribe((Subject*)cfg_cur_agc, update_agc_time, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_cur_mode, update_agc_time, NULL);
+    subject_subscribe((Subject*)cfg.computed.agc(), update_agc_time, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.computed.mode(), update_agc_time, NULL);
 
-    subject_subscribe((Subject*)cfg_cur_filter_low, on_low_filter_change, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_cur_mode, on_low_filter_change, NULL);
-    subject_subscribe((Subject*)cfg_cur_filter_high, on_high_filter_change, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_cur_mode, on_high_filter_change, NULL);
+    subject_subscribe((Subject*)cfg.filter.low(), on_low_filter_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.computed.mode(), on_low_filter_change, NULL);
+    subject_subscribe((Subject*)cfg.filter.high(), on_high_filter_change, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.computed.mode(), on_high_filter_change, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg_volume, on_change_uint8, x6100_control_rxvol_set);
-    subject_subscribe_and_notify((Subject*)cfg_squelch, on_change_uint8, x6100_control_sql_set);
-    subject_subscribe_and_notify((Subject*)cfg_pwr, on_change_float, x6100_control_txpwr_set);
-    subject_subscribe_and_notify((Subject*)cfg_output_gain, on_change_float, x6100_control_adc_dac_gain_set);
-    subject_subscribe_and_notify((Subject*)cfg_band_dac_offset, on_change_float, x6100_control_dac_gain_set);
-    subject_subscribe_and_notify((Subject*)cfg_atu_enabled, on_change_uint8, x6100_control_atu_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.volume(), on_change_uint8, x6100_control_rxvol_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.squelch(), on_change_uint8, x6100_control_sql_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.pwr(), on_change_float, x6100_control_txpwr_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.output_gain(), on_change_float, x6100_control_adc_dac_gain_set);
+    subject_subscribe_and_notify((Subject*)cfg.band.dac_offset(), on_change_float, x6100_control_dac_gain_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.atu_enabled(), on_change_uint8, x6100_control_atu_set);
     cfg_atu_network_subscribe(on_atu_network_change, NULL);
     on_atu_network_change(NULL, NULL);
 
     /* Compressor */
-    subject_subscribe_and_notify((Subject*)cfg_comp, on_change_comp_ratio, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_comp_threshold_offset, on_change_float, x6100_control_comp_threshold_set);
-    subject_subscribe_and_notify((Subject*)cfg_comp_makeup_offset, on_change_float, x6100_control_comp_makeup_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.comp(), on_change_comp_ratio, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.comp_threshold_offset(), on_change_float, x6100_control_comp_threshold_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.comp_makeup_offset(), on_change_float, x6100_control_comp_makeup_set);
 
     /* VOX */
-    subject_subscribe_and_notify((Subject*)cfg_vox_on, on_change_uint8, x6100_control_vox_set);
-    subject_subscribe_and_notify((Subject*)cfg_vox_gain, on_change_uint8, x6100_control_vox_gain_set);
-    subject_subscribe_and_notify((Subject*)cfg_vox_ag, on_change_uint8, x6100_control_vox_ag_set);
-    subject_subscribe_and_notify((Subject*)cfg_vox_delay, on_change_uint16, x6100_control_vox_delay_set);
+    subject_subscribe_and_notify((Subject*)cfg.vox.on(), on_change_uint8, x6100_control_vox_set);
+    subject_subscribe_and_notify((Subject*)cfg.vox.gain(), on_change_uint8, x6100_control_vox_gain_set);
+    subject_subscribe_and_notify((Subject*)cfg.vox.ag(), on_change_uint8, x6100_control_vox_ag_set);
+    subject_subscribe_and_notify((Subject*)cfg.vox.delay(), on_change_uint16, x6100_control_vox_delay_set);
 
-    subject_subscribe_and_notify((Subject*)cfg_mic, on_change_uint8, x6100_control_mic_set);
-    subject_subscribe_and_notify((Subject*)cfg_hmic, on_change_uint8, x6100_control_hmic_set);
-    subject_subscribe_and_notify((Subject*)cfg_imic, on_change_uint8, x6100_control_imic_set);
-    subject_subscribe_and_notify((Subject*)cfg_moni, on_change_uint8, x6100_control_moni_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.mic(), on_change_uint8, x6100_control_mic_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.hmic(), on_change_uint8, x6100_control_hmic_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.imic(), on_change_uint8, x6100_control_imic_set);
+    subject_subscribe_and_notify((Subject*)cfg.general.moni(), on_change_uint8, x6100_control_moni_set);
 
-    subject_subscribe_and_notify((Subject*)cfg_rit, base_control_command, (void*)x6100_rit);
-    subject_subscribe_and_notify((Subject*)cfg_xit, base_control_command, (void*)x6100_xit);
-    subject_subscribe_and_notify((Subject*)cfg_fm_emphasis, on_change_bool, x6100_control_fm_emp);
+    subject_subscribe_and_notify((Subject*)cfg.general.rit(), base_control_command, (void*)x6100_rit);
+    subject_subscribe_and_notify((Subject*)cfg.general.xit(), base_control_command, (void*)x6100_xit);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.fm_emphasis(), on_change_bool, x6100_control_fm_emp);
 
-    subject_subscribe_and_notify((Subject*)cfg_tx_filter_low, on_change_uint16, x6100_control_tx_filter_low_set);
-    subject_subscribe_and_notify((Subject*)cfg_tx_filter_high, on_change_uint16, x6100_control_tx_filter_high_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.tx_filter_low(), on_change_uint16, x6100_control_tx_filter_low_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.tx_filter_high(), on_change_uint16, x6100_control_tx_filter_high_set);
 
-    subject_subscribe_and_notify((Subject*)cfg_cessb_on, on_change_bool, x6100_control_cessb_set);
-    subject_subscribe_and_notify((Subject*)cfg_cessb_power_up, on_change_float, x6100_control_cessb_power_up_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.cessb_on(), on_change_bool, x6100_control_cessb_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.cessb_power_up(), on_change_float, x6100_control_cessb_power_up_set);
 
-    subject_subscribe_and_notify((Subject*)cfg_key_tone, on_change_uint16, x6100_control_key_tone_set);
-    subject_subscribe_and_notify((Subject*)cfg_key_speed, on_change_uint8, x6100_control_key_speed_set);
-    subject_subscribe_and_notify((Subject*)cfg_key_mode, on_change_uint8, x6100_control_key_mode_set);
-    subject_subscribe_and_notify((Subject*)cfg_iambic_mode, on_change_uint8, x6100_control_iambic_mode_set);
-    subject_subscribe_and_notify((Subject*)cfg_key_vol, on_change_uint16, x6100_control_key_vol_set);
-    subject_subscribe_and_notify((Subject*)cfg_key_train, on_change_uint8, x6100_control_key_train_set);
-    subject_subscribe_and_notify((Subject*)cfg_qsk_time, on_change_uint16, x6100_control_qsk_time_set);
-    subject_subscribe_and_notify((Subject*)cfg_key_ratio, on_change_float, x6100_control_key_ratio_set);
-    subject_subscribe_and_notify((Subject*)cfg_cw_peak_on, on_change_bool, x6100_control_cw_peak_set);
-    subject_subscribe_and_notify((Subject*)cfg_cw_peak_q, on_change_uint8, x6100_control_cw_peak_q_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.key_tone(), on_change_uint16, x6100_control_key_tone_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.key_speed(), on_change_uint8, x6100_control_key_speed_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.key_mode(), on_change_uint8, x6100_control_key_mode_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.iambic_mode(), on_change_uint8, x6100_control_iambic_mode_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.key_vol(), on_change_uint16, x6100_control_key_vol_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.key_train(), on_change_uint8, x6100_control_key_train_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.qsk_time(), on_change_uint16, x6100_control_qsk_time_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.key_ratio(), on_change_float, x6100_control_key_ratio_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.peak_on(), on_change_bool, x6100_control_cw_peak_set);
+    subject_subscribe_and_notify((Subject*)cfg.cw.peak_q(), on_change_uint8, x6100_control_cw_peak_q_set);
 
-    subject_subscribe_and_notify((Subject*)cfg_agc_hang, on_change_uint8, x6100_control_agc_hang_set);
-    subject_subscribe_and_notify((Subject*)cfg_agc_knee, on_change_int8, x6100_control_agc_knee_set);
-    subject_subscribe_and_notify((Subject*)cfg_agc_slope, on_change_uint8, x6100_control_agc_slope_set);
+    subject_subscribe_and_notify((Subject*)cfg.agc.hang(), on_change_uint8, x6100_control_agc_hang_set);
+    subject_subscribe_and_notify((Subject*)cfg.agc.knee(), on_change_int8, x6100_control_agc_knee_set);
+    subject_subscribe_and_notify((Subject*)cfg.agc.slope(), on_change_uint8, x6100_control_agc_slope_set);
 
-    subject_subscribe_and_notify((Subject*)cfg_dnf, on_change_uint8, x6100_control_dnf_set);
-    subject_subscribe_and_notify((Subject*)cfg_dnf_center, on_change_uint16, x6100_control_dnf_center_set);
-    subject_subscribe_and_notify((Subject*)cfg_dnf_width, on_change_uint16, x6100_control_dnf_width_set);
-    subject_subscribe_and_notify((Subject*)cfg_dnf_auto, on_change_uint16, x6100_control_dnf_update_set);
-    subject_subscribe_and_notify((Subject*)cfg_nb, on_change_uint8, x6100_control_nb_set);
-    subject_subscribe_and_notify((Subject*)cfg_nb_level, on_change_uint8, x6100_control_nb_level_set);
-    subject_subscribe_and_notify((Subject*)cfg_nb_width, on_change_uint8, x6100_control_nb_width_set);
-    subject_subscribe_and_notify((Subject*)cfg_nr, on_change_uint8, x6100_control_nr_set);
-    subject_subscribe_and_notify((Subject*)cfg_nr_level, on_change_uint8, x6100_control_nr_level_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.dnf(), on_change_uint8, x6100_control_dnf_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.dnf_center(), on_change_uint16, x6100_control_dnf_center_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.dnf_width(), on_change_uint16, x6100_control_dnf_width_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.dnf_auto(), on_change_uint16, x6100_control_dnf_update_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.nb(), on_change_uint8, x6100_control_nb_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.nb_level(), on_change_uint8, x6100_control_nb_level_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.nb_width(), on_change_uint8, x6100_control_nb_width_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.nr(), on_change_uint8, x6100_control_nr_set);
+    subject_subscribe_and_notify((Subject*)cfg.dsp.nr_level(), on_change_uint8, x6100_control_nr_level_set);
 
     if ((util_compare_version(base_ver, (x6100_base_ver_t){1, 1, 9, 0}) >= 0) || (base_ver.rev >= 8)) {
-        subject_subscribe_and_notify((Subject*)cfg_mode_zoom, on_fw_zoom_change, NULL);
+        subject_subscribe_and_notify((Subject*)cfg.mode.zoom(), on_fw_zoom_change, NULL);
     }
 
     x6100_control_charger_set(params.charger.x == RADIO_CHARGER_ON);
@@ -350,7 +350,7 @@ void radio_set_freq(int32_t freq) {
         LV_LOG_ERROR("Freq %i incorrect", freq);
         return;
     }
-    x6100_vfo_t vfo = param_i_get(cfg_band_current_vfo);
+    x6100_vfo_t vfo = param_i_get(cfg.band.current_vfo());
     int32_t shift = cfg_transverter_shift_for(freq);
     WITH_RADIO_LOCK(x6100_control_vfo_freq_set(vfo, freq - shift));
 }
@@ -360,7 +360,7 @@ bool radio_check_freq(int32_t freq) {
 }
 
 uint16_t radio_change_vol(int16_t df) {
-    int32_t vol = param_i_get(cfg_volume);
+    int32_t vol = param_i_get(cfg.general.volume());
     if (df == 0) {
         return vol;
     }
@@ -370,7 +370,7 @@ uint16_t radio_change_vol(int16_t df) {
     uint16_t new_val = limit(vol + df, 0, 55);
 
     if (new_val != vol) {
-        param_i_set(cfg_volume, new_val);
+        param_i_set(cfg.general.volume(), new_val);
     };
 
     return new_val;
@@ -378,7 +378,7 @@ uint16_t radio_change_vol(int16_t df) {
 
 void radio_change_mute() {
     mute = !mute;
-    x6100_control_rxvol_set(mute ? 0 : param_i_get(cfg_volume));
+    x6100_control_rxvol_set(mute ? 0 : param_i_get(cfg.general.volume()));
 }
 
 bool radio_change_spmode(int16_t df) {
@@ -404,7 +404,7 @@ bool radio_start_swrscan() {
         return false;
     }
 
-    cparam_i_set(cfg_cur_mode, x6100_mode_am);
+    cparam_i_set(cfg.computed.mode(), x6100_mode_am);
     radio_lock();
     x6100_control_txpwr_set(5.0f);
     x6100_control_swrscan_set(true);
@@ -419,7 +419,7 @@ void radio_stop_swrscan() {
         state = RADIO_RX;
         radio_lock();
         x6100_control_swrscan_set(false);
-        x6100_control_txpwr_set(param_f_get(cfg_pwr));
+        x6100_control_txpwr_set(param_f_get(cfg.general.pwr()));
         radio_unlock();
     }
 }
@@ -429,9 +429,9 @@ void radio_set_pwr(float d) {
 }
 
 x6100_vfo_t radio_toggle_vfo() {
-    x6100_vfo_t new_vfo = (param_i_get(cfg_band_current_vfo) == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A;
+    x6100_vfo_t new_vfo = (param_i_get(cfg.band.current_vfo()) == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A;
 
-    param_i_set(cfg_band_current_vfo, new_vfo);
+    param_i_set(cfg.band.current_vfo(), new_vfo);
     // TODO: move to another file
     voice_say_text_fmt("V F O %s", (new_vfo == X6100_VFO_A) ? "A" : "B");
 
@@ -529,12 +529,12 @@ static void on_vfo_freq_change(Subject *subj, void *user_data) {
     x6100_vfo_t vfo = (x6100_vfo_t )user_data;
     int32_t new_val;
     if (vfo == X6100_VFO_A) {
-        new_val = param_i_get(cfg_band_vfoa_freq);
+        new_val = param_i_get(cfg.band.vfoa_freq());
     } else {
-        new_val = param_i_get(cfg_band_vfob_freq);
+        new_val = param_i_get(cfg.band.vfob_freq());
     }
     int32_t shift = cfg_transverter_shift_for(new_val);
-    shift += param_i_get(cfg_band_if_shift);
+    shift += param_i_get(cfg.band.if_shift());
     WITH_RADIO_LOCK(x6100_control_vfo_freq_set(vfo, new_val - shift));
     LV_LOG_USER("Radio set vfo %i freq=%i (%i)", vfo, new_val, new_val - shift);
 }
@@ -554,8 +554,8 @@ static void on_vfo_agc_change(Subject *subj, void *user_data) {
 }
 
 static void update_agc_time(Subject *subj, void *user_data) {
-    x6100_agc_t     agc = cparam_i_get(cfg_cur_agc);
-    x6100_mode_t    mode = cparam_i_get(cfg_cur_mode);
+    x6100_agc_t     agc = cparam_i_get(cfg.computed.agc());
+    x6100_mode_t    mode = cparam_i_get(cfg.computed.mode());
     uint16_t        agc_time = 500;
 
     switch (agc) {
@@ -619,12 +619,12 @@ static void on_atu_network_change(Subject *subj, void *user_data) {
 }
 
 static void on_low_filter_change(Subject *subj, void *user_data) {
-    x6100_mode_t mode = cparam_i_get(cfg_cur_mode);
+    x6100_mode_t mode = cparam_i_get(cfg.computed.mode());
     if ((mode == x6100_mode_am) || (mode == x6100_mode_nfm)) {
         // No update low on AM/FM, low should be -high
         return;
     }
-    int32_t low = cparam_i_get(cfg_cur_filter_low);
+    int32_t low = cparam_i_get(cfg.filter.low());
     int32_t low2 = LV_MAX(0, low - FILTER_2_OFFSET_OUT);
     radio_lock();
     LV_LOG_USER("Radio set filters: low=%i, low2=%i", low, low2);
@@ -634,9 +634,9 @@ static void on_low_filter_change(Subject *subj, void *user_data) {
 }
 
 static void on_high_filter_change(Subject *subj, void *user_data) {
-    int32_t high = cparam_i_get(cfg_cur_filter_high);
+    int32_t high = cparam_i_get(cfg.filter.high());
     int32_t high2 = high + FILTER_2_OFFSET_OUT;
-    switch (cparam_i_get(cfg_cur_mode)) {
+    switch (cparam_i_get(cfg.computed.mode())) {
         case x6100_mode_am:
         case x6100_mode_nfm:
             // For AM BASE uses absolute low and high values to choose LPF filters for I and Q
@@ -684,7 +684,7 @@ static void on_fw_zoom_change(Subject *subj, void *user_data) {
 
 static void on_if_shift_change(Subject *subj, void *user_data) {
     int32_t shift = subject_i_get((SubjectInt*)subj);
-    int32_t cur_freq = cparam_i_get(cfg_fg_freq);
+    int32_t cur_freq = cparam_i_get(cfg.computed.fg_freq());
 
     LV_LOG_USER("Shift: %d, cur_freq: %d\n", shift, cur_freq);
     if (shift != 0) {
@@ -695,14 +695,14 @@ static void on_if_shift_change(Subject *subj, void *user_data) {
     } else {
         WITH_RADIO_LOCK(x6100_control_if_shift_set(false));
     }
-    x6100_vfo_t vfo = param_i_get(cfg_band_current_vfo);
+    x6100_vfo_t vfo = param_i_get(cfg.band.current_vfo());
     on_vfo_freq_change(NULL, (void*)vfo);
 }
 
 static void on_band_change(Subject *subj, void *user_data) {
     // Workaround for bug with ignored IQ offset on band change from BASE
-    int32_t i_val = param_i_get(cfg_band_tx_i_offset);
-    int32_t q_val = param_i_get(cfg_band_tx_q_offset);
+    int32_t i_val = param_i_get(cfg.band.tx_i_offset());
+    int32_t q_val = param_i_get(cfg.band.tx_q_offset());
     if (i_val == (int32_t)x6100_control_get(x6100_txiofs)) {
         i_val++;
     }
@@ -728,15 +728,15 @@ static void base_control_command(Subject *subj, void *user_data) {
  */
 static void recover_processing_audio_inputs() {
     usleep(10000);
-    x6100_vfo_t vfo = param_i_get(cfg_band_current_vfo);
+    x6100_vfo_t vfo = param_i_get(cfg.band.current_vfo());
     radio_lock();
     x6100_control_vfo_mode_set(vfo, x6100_mode_usb_dig);
     x6100_control_txpwr_set(0.1f);
     x6100_control_modem_set(true);
     usleep(50000);
     x6100_control_modem_set(false);
-    x6100_control_txpwr_set(param_f_get(cfg_pwr));
-    x6100_control_vfo_mode_set(vfo, cparam_i_get(cfg_cur_mode));
+    x6100_control_txpwr_set(param_f_get(cfg.general.pwr()));
+    x6100_control_vfo_mode_set(vfo, cparam_i_get(cfg.computed.mode()));
     radio_unlock();
 }
 
@@ -853,7 +853,7 @@ static bool radio_tick() {
                 if (pack->flag.atu_status && !pack->flag.tx) {
                     cfg_atu_save_network(pack->atu_params);
                     WITH_RADIO_LOCK(x6100_control_atu_tune(false));
-                    param_i_set(cfg_atu_enabled, true);
+                    param_i_set(cfg.general.atu_enabled(), true);
                     recover_processing_audio_inputs();
                     scheduler_msg_send(MSG_RADIO_RX, NULL);
 

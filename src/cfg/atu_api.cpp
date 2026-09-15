@@ -1,7 +1,7 @@
 #include "atu_api.h"
 
 #include "atu.h"
-#include "settings_manager.h"
+#include "settings_internal.h"
 #include "subject.h"
 
 void atu_wire_subscriptions(void) {

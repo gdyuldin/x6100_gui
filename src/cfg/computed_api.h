@@ -4,9 +4,8 @@
 // creation stays C++-only (ComputeFn/ReverseFn are C++ callables, constructed
 // by SettingsManager); typed get/set arrive through cfg_api.h.
 //
-// Usage from C code:
-//   extern ComputedParamInt* cfg_fg_freq;   // filled by C++ side
-//   cparam_i_set(cfg_fg_freq, 7100000);
+// Usage from C code (handle accessor declared in cfg_api.h):
+//   cparam_i_set(cfg.computed.fg_freq(), 7100000);
 
 #include <stdint.h>
 

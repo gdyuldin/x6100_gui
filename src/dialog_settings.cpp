@@ -11,7 +11,7 @@
 #include <vector>
 #include "voice.h"
 #include "dsp.h"
-#include "cfg/settings_manager.h"
+#include "cfg/cfg_api.h"
 #include "util.h"
 #include "display.h"
 
@@ -1304,7 +1304,7 @@ static void auto_level_offset_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    cfg_sm.p_auto_level_offset.set(val);
+    cfg.spectrum.auto_level_offset()->set(val);
 }
 
 static void auto_level_on_off_cb(lv_event_t * e) {
@@ -1329,7 +1329,7 @@ static uint8_t make_auto_offset(uint8_t row) {
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
-    auto_level_sw = switch_bool(obj, cfg_sm.p_auto_level_enabled);
+    auto_level_sw = switch_bool(obj, *cfg.spectrum.auto_level_enabled());
     lv_obj_add_event_cb(auto_level_sw, auto_level_on_off_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_set_width(auto_level_sw, SMALL_3 - 30);
 
@@ -1340,7 +1340,7 @@ static uint8_t make_auto_offset(uint8_t row) {
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
-    obj = slider_with_text(obj, cfg_sm.p_auto_level_offset.get(), -15.0f, 15.0f, AUTO_LEVEL_STEP,
+    obj = slider_with_text(obj, cfg.spectrum.auto_level_offset()->get(), -15.0f, 15.0f, AUTO_LEVEL_STEP,
                            SMALL_3 - 120, "%0.1f", auto_level_offset_update_cb);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
@@ -1386,8 +1386,8 @@ uint8_t make_spectrum_min_max(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    obj = slider_with_text(cell, cfg_sm.p_band_grid_min.get(), S_MIN, S7, 1, SMALL_3 - 120, "%d",
-                           grid_min_max_update_cb, (void*)&cfg_sm.p_band_grid_min);
+    obj = slider_with_text(cell, cfg.band.grid_min()->get(), S_MIN, S7, 1, SMALL_3 - 120, "%d",
+                           grid_min_max_update_cb, (void*)cfg.band.grid_min());
 
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
@@ -1401,8 +1401,8 @@ uint8_t make_spectrum_min_max(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    obj = slider_with_text(cell, cfg_sm.p_band_grid_max.get(), S8, S9_40, 1, SMALL_3 - 120, "%d",
-                           grid_min_max_update_cb, (void*)&cfg_sm.p_band_grid_max);
+    obj = slider_with_text(cell, cfg.band.grid_max()->get(), S8, S9_40, 1, SMALL_3 - 120, "%d",
+                           grid_min_max_update_cb, (void*)cfg.band.grid_max());
 
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
@@ -1554,7 +1554,7 @@ static uint8_t make_knob_info(uint8_t row) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
 
-    obj = switch_bool(obj, cfg_sm.p_knob_info);
+    obj = switch_bool(obj, *cfg.spectrum.knob_info());
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 
@@ -1578,7 +1578,7 @@ static uint8_t make_display_invert(uint8_t row) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
 
-    obj = switch_bool(obj, cfg_sm.p_display_invert);
+    obj = switch_bool(obj, *cfg.general.display_invert());
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 
@@ -1661,10 +1661,10 @@ static uint8_t make_comp_th_makeup(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, cfg_sm.p_comp_threshold_offset.get(),
+    slider_with_text(cell, cfg.dsp.comp_threshold_offset()->get(),
         -15.0f, 15.0f, COMP_TH_MAKEUP_STEP,
         SMALL_3 - 120, "%0.1f", comp_update_cb,
-        (void *)&cfg_sm.p_comp_threshold_offset);
+        (void *)cfg.dsp.comp_threshold_offset());
 
     cell = lv_obj_create(grid);
 
@@ -1674,10 +1674,10 @@ static uint8_t make_comp_th_makeup(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, cfg_sm.p_comp_makeup_offset.get(),
+    slider_with_text(cell, cfg.dsp.comp_makeup_offset()->get(),
         -15.0f, 15.0f, COMP_TH_MAKEUP_STEP,
         SMALL_3 - 120, "%0.1f", comp_update_cb,
-        (void *)&cfg_sm.p_comp_makeup_offset);
+        (void *)cfg.dsp.comp_makeup_offset());
 
     return row + 1;
 }
@@ -1723,12 +1723,12 @@ static uint8_t make_tx_offset(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider = slider_with_text(cell, cfg_sm.p_band_tx_i_offset.get() / TX_OFFSET_SCALE,
+    slider = slider_with_text(cell, cfg.band.tx_i_offset()->get() / TX_OFFSET_SCALE,
         -10000 / TX_OFFSET_SCALE, 10000 / TX_OFFSET_SCALE, 1,
         SMALL_3 - 110, "%d", tx_offset_update_cb,
-        (void *)&cfg_sm.p_band_tx_i_offset);
+        (void *)cfg.band.tx_i_offset());
 
-    observer = cfg_sm.p_band_tx_i_offset.subscribe(on_tx_offset_change, slider);
+    observer = cfg.band.tx_i_offset()->subscribe(on_tx_offset_change, slider);
     observers.emplace_back(observer);
 
     cell = lv_obj_create(grid);
@@ -1739,12 +1739,12 @@ static uint8_t make_tx_offset(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider = slider_with_text(cell, cfg_sm.p_band_tx_q_offset.get() / TX_OFFSET_SCALE,
+    slider = slider_with_text(cell, cfg.band.tx_q_offset()->get() / TX_OFFSET_SCALE,
         -10000 / TX_OFFSET_SCALE, 10000 / TX_OFFSET_SCALE, 1,
         SMALL_3 - 110, "%d", tx_offset_update_cb,
-        (void *)&cfg_sm.p_band_tx_q_offset);
+        (void *)cfg.band.tx_q_offset());
 
-    observer = cfg_sm.p_band_tx_q_offset.subscribe(on_tx_offset_change, slider);
+    observer = cfg.band.tx_q_offset()->subscribe(on_tx_offset_change, slider);
     observers.emplace_back(observer);
 
     return row + 1;
@@ -1760,7 +1760,7 @@ static void codec_gain_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    cfg_sm.p_output_gain.set(val);
+    cfg.dsp.output_gain()->set(val);
 }
 
 static uint8_t make_codec_gain(uint8_t row) {
@@ -1780,7 +1780,7 @@ static uint8_t make_codec_gain(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, cfg_sm.p_output_gain.get(),
+    slider_with_text(cell, cfg.dsp.output_gain()->get(),
         -25.0f, 25.0f, OUTPUT_GAIN_STEP,
         SMALL_6 - 120, "%0.1f", codec_gain_update_cb);
 
@@ -1796,12 +1796,12 @@ static void band_out_gain_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    cfg_sm.p_band_dac_offset.set(val);
+    cfg.band.dac_offset()->set(val);
 }
 
 static void on_dac_gain_change(Subject *subj, void *user_data) {
     lv_obj_t *slider = (lv_obj_t*)user_data;
-    lv_slider_set_value(slider, cfg_sm.p_band_dac_offset.get() / OUTPUT_GAIN_STEP, LV_ANIM_OFF);
+    lv_slider_set_value(slider, cfg.band.dac_offset()->get() / OUTPUT_GAIN_STEP, LV_ANIM_OFF);
     lv_event_send(slider, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
@@ -1823,11 +1823,11 @@ static uint8_t band_out_gain_correction(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider = slider_with_text(cell, cfg_sm.p_band_dac_offset.get(),
+    slider = slider_with_text(cell, cfg.band.dac_offset()->get(),
         -6.0f, 6.0f, OUTPUT_GAIN_STEP,
         SMALL_6 - 120, "%0.1f", band_out_gain_update_cb);
 
-    Observer *observer = cfg_sm.p_band_dac_offset.subscribe(on_dac_gain_change, slider);
+    Observer *observer = cfg.band.dac_offset()->subscribe(on_dac_gain_change, slider);
     observers.emplace_back(observer);
 
     return row + 1;
@@ -1851,7 +1851,7 @@ uint8_t make_fm_emphasis(uint8_t row) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
 
-    obj = switch_bool(obj, cfg_sm.p_fm_emphasis);
+    obj = switch_bool(obj, *cfg.dsp.fm_emphasis());
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 
@@ -1890,9 +1890,9 @@ uint8_t make_tx_filter(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, cfg_sm.p_tx_filter_low.get(),
+    slider_with_text(cell, cfg.dsp.tx_filter_low()->get(),
         50, 400, TX_FILTER_STEP,
-        SMALL_6 - 150, "%d", tx_filter_low_high_update_cb, (void*)&cfg_sm.p_tx_filter_low);
+        SMALL_6 - 150, "%d", tx_filter_low_high_update_cb, (void*)cfg.dsp.tx_filter_low());
     row++;
 
     cell = lv_label_create(grid);
@@ -1908,9 +1908,9 @@ uint8_t make_tx_filter(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, cfg_sm.p_tx_filter_high.get(),
+    slider_with_text(cell, cfg.dsp.tx_filter_high()->get(),
         2000, 4000, TX_FILTER_STEP,
-        SMALL_6 - 150, "%d", tx_filter_low_high_update_cb, (void*)&cfg_sm.p_tx_filter_high);
+        SMALL_6 - 150, "%d", tx_filter_low_high_update_cb, (void*)cfg.dsp.tx_filter_high());
     row++;
 
     return row;
@@ -1927,7 +1927,7 @@ static void cessb_power_up_update_cb(lv_event_t * e) {
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     lv_label_set_text_fmt(slider_label, fmt, val);
-    cfg_sm.p_cessb_power_up.set(val);
+    cfg.dsp.cessb_power_up()->set(val);
 }
 
 uint8_t make_cessb(uint8_t row) {
@@ -1951,7 +1951,7 @@ uint8_t make_cessb(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    obj = switch_bool(cell, cfg_sm.p_cessb_on);
+    obj = switch_bool(cell, *cfg.dsp.cessb_on());
     lv_obj_set_width(obj, SMALL_2 - 30);
 
 
@@ -1964,7 +1964,7 @@ uint8_t make_cessb(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    obj = slider_with_text(cell, cfg_sm.p_cessb_power_up.get(), 0.0f, 5.0f, CESSB_POWER_UP_STEP,
+    obj = slider_with_text(cell, cfg.dsp.cessb_power_up()->get(), 0.0f, 5.0f, CESSB_POWER_UP_STEP,
                            SMALL_3 - 40, "%0.1f", cessb_power_up_update_cb);
 
     row++;
@@ -2055,14 +2055,14 @@ static void rgb_color_update_cb(lv_event_t * e)
             lv_label_set_text(label, label_buf);
         }
     }
-    cfg_sm.p_spectrum_color.set(static_cast<int32_t>(col.full));
+    cfg.spectrum.spectrum_color()->set(static_cast<int32_t>(col.full));
 }
 
 /* Spectrum custom color toggle */
 static void spectrum_custom_color_toggle_cb(lv_event_t *e) {
     lv_obj_t *obj = lv_event_get_target(e);
     bool on = lv_obj_has_state(obj, LV_STATE_CHECKED);
-    cfg_sm.p_spectrum_use_custom_color.set(on);
+    cfg.spectrum.spectrum_use_custom_color()->set(on);
 
     if (row_rgb_picker_items.cnt) {
         show_row(row_rgb_picker_items, on);
@@ -2091,7 +2091,7 @@ static uint8_t make_spectrum_custom_color_toggle(uint8_t row) {
     lv_obj_center(spectrum_color_sw);
     lv_obj_set_width(spectrum_color_sw, SMALL_3 - 30);
 
-    if (cfg_sm.p_spectrum_use_custom_color.get()) {
+    if (cfg.spectrum.spectrum_use_custom_color()->get()) {
         lv_obj_add_state(spectrum_color_sw, LV_STATE_CHECKED);
     }
 
@@ -2159,7 +2159,7 @@ static uint8_t make_rgb_color_picker(uint8_t row)
     const char *labels[] = {"R", "G", "B"};
     lv_palette_t palettes[] = {LV_PALETTE_RED, LV_PALETTE_GREEN, LV_PALETTE_BLUE};
 
-    int32_t full = cfg_sm.p_spectrum_color.get();
+    int32_t full = cfg.spectrum.spectrum_color()->get();
     uint8_t init_values[] = {
         (uint8_t)((full >> 16) & 0xFF),
         (uint8_t)((full >> 8)  & 0xFF),
@@ -2333,8 +2333,8 @@ static void make_general_page() {
     row = make_charger(row);
     row = make_delimiter(row);
 
-    row = make_transverter(row, cfg_sm.p_transverter_0_from, cfg_sm.p_transverter_0_to, cfg_sm.p_transverter_0_shift);
-    row = make_transverter(row, cfg_sm.p_transverter_1_from, cfg_sm.p_transverter_1_to, cfg_sm.p_transverter_1_shift);
+    row = make_transverter(row, *cfg.transverter.t0_from(), *cfg.transverter.t0_to(), *cfg.transverter.t0_shift());
+    row = make_transverter(row, *cfg.transverter.t1_from(), *cfg.transverter.t1_to(), *cfg.transverter.t1_shift());
 
     row_dsc[row] = LV_GRID_TEMPLATE_LAST;
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);

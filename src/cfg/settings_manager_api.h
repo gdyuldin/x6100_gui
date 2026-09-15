@@ -12,10 +12,10 @@
 extern "C" {
 #endif
 
-// Initialise the manager (loads global/band/mode params) and fill the extern
-// globals in cfg_api.h. The caller owns the sqlite3 connection/table init
-// (cfg_api_init is not handed a db handle). on_db_error is kept for signature
-// compatibility; it is currently inert.
+// Initialise the manager (loads global/band/mode params). Parameter handles
+// are accessor functions in cfg_api.h and need no wiring. The caller owns the
+// sqlite3 connection/table init (cfg_api_init is not handed a db handle).
+// on_db_error is kept for signature compatibility; it is currently inert.
 void cfg_api_init(void (*on_db_error)(const char *));
 
 // Transverter shift for a frequency: the shift of the transverter whose

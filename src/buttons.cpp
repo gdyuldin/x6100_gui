@@ -10,7 +10,7 @@
 #include "globals.h"
 #include "controls.h"
 #include "util.h"
-#include "cfg/settings_manager.h"
+#include "cfg/cfg_api.h"
 #include "cfg/encoder_defaults.h"
 
 #include <stdio.h>
@@ -166,37 +166,37 @@ static button_data_t btn_vol = {
     .press           = button_encoder_update_cb,
     .ctrl            = CTRL_VOL,
     .encoder_allowed = true,
-    .subj            = (Subject*)&cfg_sm.p_volume,
+    .subj            = (Subject*)cfg.general.volume(),
 };
 
-static button_data_t btn_sql = make_encoder_btn(sql_label_getter, CTRL_SQL, (Subject*)&cfg_sm.p_squelch);
-static button_data_t btn_rfg = make_encoder_btn(rfg_label_getter, CTRL_RFG, (Subject*)&cfg_sm.p_rfgain);
-static button_data_t btn_tx_pwr = make_encoder_btn(tx_power_label_getter, CTRL_PWR, (Subject*)&cfg_sm.p_pwr);
-static button_data_t btn_flt_low  = make_encoder_btn(filter_low_label_getter, CTRL_FILTER_LOW, (Subject*)&cfg_sm.cp_cur_filter_low);
-static button_data_t btn_flt_high = make_encoder_btn(filter_high_label_getter, CTRL_FILTER_HIGH, (Subject*)&cfg_sm.cp_cur_filter_high);
-static button_data_t btn_flt_bw   = make_encoder_btn(filter_bw_label_getter, CTRL_FILTER_BW, (Subject*)&cfg_sm.cp_cur_filter_bw);
-static button_data_t btn_mic_sel   = make_encoder_btn(mic_sel_label_getter, CTRL_MIC, (Subject*)&cfg_sm.p_mic);
-static button_data_t btn_hmic_gain = make_encoder_btn(h_mic_gain_label_getter, CTRL_HMIC, (Subject*)&cfg_sm.p_hmic);
-static button_data_t btn_imic_hain = make_encoder_btn(i_mic_gain_label_getter, CTRL_IMIC, (Subject*)&cfg_sm.p_imic);
-static button_data_t btn_moni_lvl  = make_encoder_btn(moni_level_label_getter, CTRL_MONI, (Subject*)&cfg_sm.p_moni);
+static button_data_t btn_sql = make_encoder_btn(sql_label_getter, CTRL_SQL, (Subject*)cfg.general.squelch());
+static button_data_t btn_rfg = make_encoder_btn(rfg_label_getter, CTRL_RFG, (Subject*)cfg.general.rfgain());
+static button_data_t btn_tx_pwr = make_encoder_btn(tx_power_label_getter, CTRL_PWR, (Subject*)cfg.general.pwr());
+static button_data_t btn_flt_low  = make_encoder_btn(filter_low_label_getter, CTRL_FILTER_LOW, (Subject*)cfg.filter.low());
+static button_data_t btn_flt_high = make_encoder_btn(filter_high_label_getter, CTRL_FILTER_HIGH, (Subject*)cfg.filter.high());
+static button_data_t btn_flt_bw   = make_encoder_btn(filter_bw_label_getter, CTRL_FILTER_BW, (Subject*)cfg.filter.bw());
+static button_data_t btn_mic_sel   = make_encoder_btn(mic_sel_label_getter, CTRL_MIC, (Subject*)cfg.general.mic());
+static button_data_t btn_hmic_gain = make_encoder_btn(h_mic_gain_label_getter, CTRL_HMIC, (Subject*)cfg.general.hmic());
+static button_data_t btn_imic_hain = make_encoder_btn(i_mic_gain_label_getter, CTRL_IMIC, (Subject*)cfg.general.imic());
+static button_data_t btn_moni_lvl  = make_encoder_btn(moni_level_label_getter, CTRL_MONI, (Subject*)cfg.general.moni());
 
 /* MFK */
 
 static button_data_t btn_zoom      = make_encoder_btn("Spectrum\nZoom", CTRL_SPECTRUM_FACTOR);
 static button_data_t btn_ant       = make_encoder_btn("Antenna", CTRL_ANT);
-static button_data_t btn_rit       = make_encoder_btn(rit_label_getter, CTRL_RIT, (Subject*)&cfg_sm.p_rit);
-static button_data_t btn_xit       = make_encoder_btn(xit_label_getter, CTRL_XIT, (Subject*)&cfg_sm.p_xit);
+static button_data_t btn_rit       = make_encoder_btn(rit_label_getter, CTRL_RIT, (Subject*)cfg.general.rit());
+static button_data_t btn_xit       = make_encoder_btn(xit_label_getter, CTRL_XIT, (Subject*)cfg.general.xit());
 static button_data_t btn_agc_hang  = {.type            = BTN_TEXT_FN,
                                       .label_fn        = agc_hang_label_getter,
                                       .press           = controls_toggle_agc_hang,
                                       .hold            = button_encoder_hold_update_cb,
                                       .ctrl            = CTRL_AGC_HANG,
                                       .encoder_allowed = true,
-                                      .subj            = (Subject*)&cfg_sm.p_agc_hang};
-static button_data_t btn_agc_knee  = make_encoder_btn(agc_knee_label_getter, CTRL_AGC_KNEE, (Subject*)&cfg_sm.p_agc_knee);
-static button_data_t btn_agc_slope = make_encoder_btn(agc_slope_label_getter, CTRL_AGC_SLOPE, (Subject*)&cfg_sm.p_agc_slope);
-static button_data_t btn_comp      = make_encoder_btn(comp_label_getter, CTRL_COMP, (Subject*)&cfg_sm.p_comp);
-static button_data_t btn_if_shift  = make_encoder_btn(if_shift_label_getter, CTRL_IF_SHIFT, (Subject*)&cfg_sm.p_band_if_shift);
+                                      .subj            = (Subject*)cfg.agc.hang()};
+static button_data_t btn_agc_knee  = make_encoder_btn(agc_knee_label_getter, CTRL_AGC_KNEE, (Subject*)cfg.agc.knee());
+static button_data_t btn_agc_slope = make_encoder_btn(agc_slope_label_getter, CTRL_AGC_SLOPE, (Subject*)cfg.agc.slope());
+static button_data_t btn_comp      = make_encoder_btn(comp_label_getter, CTRL_COMP, (Subject*)cfg.dsp.comp());
+static button_data_t btn_if_shift  = make_encoder_btn(if_shift_label_getter, CTRL_IF_SHIFT, (Subject*)cfg.band.if_shift());
 
 /* VOX */
 static button_data_t btn_vox_on    = {.type            = BTN_TEXT_FN,
@@ -205,10 +205,10 @@ static button_data_t btn_vox_on    = {.type            = BTN_TEXT_FN,
                                       .hold            = button_encoder_hold_update_cb,
                                       .ctrl            = CTRL_VOX_ON,
                                       .encoder_allowed = true,
-                                      .subj            = (Subject*)&cfg_sm.p_vox_en};
-static button_data_t btn_vox_gain  = make_encoder_btn(vox_gain_label_getter, CTRL_VOX_GAIN, (Subject*)&cfg_sm.p_vox_gain);
-static button_data_t btn_vox_ag    = make_encoder_btn(vox_ag_label_getter, CTRL_VOX_AG, (Subject*)&cfg_sm.p_vox_ag);
-static button_data_t btn_vox_delay = make_encoder_btn(vox_delay_label_getter, CTRL_VOX_DELAY, (Subject*)&cfg_sm.p_vox_delay);
+                                      .subj            = (Subject*)cfg.vox.on()};
+static button_data_t btn_vox_gain  = make_encoder_btn(vox_gain_label_getter, CTRL_VOX_GAIN, (Subject*)cfg.vox.gain());
+static button_data_t btn_vox_ag    = make_encoder_btn(vox_ag_label_getter, CTRL_VOX_AG, (Subject*)cfg.vox.ag());
+static button_data_t btn_vox_delay = make_encoder_btn(vox_delay_label_getter, CTRL_VOX_DELAY, (Subject*)cfg.vox.delay());
 
 /* MEM */
 
@@ -223,27 +223,27 @@ static button_data_t btn_mem_8 = make_mem_btn("Set 8", 8);
 
 /* CW */
 
-static button_data_t btn_key_speed  = make_encoder_btn(key_speed_label_getter, CTRL_KEY_SPEED, (Subject*)&cfg_sm.p_key_speed);
-static button_data_t btn_key_volume = make_encoder_btn(key_volume_label_getter, CTRL_KEY_VOL, (Subject*)&cfg_sm.p_key_vol);
+static button_data_t btn_key_speed  = make_encoder_btn(key_speed_label_getter, CTRL_KEY_SPEED, (Subject*)cfg.cw.key_speed());
+static button_data_t btn_key_volume = make_encoder_btn(key_volume_label_getter, CTRL_KEY_VOL, (Subject*)cfg.cw.key_vol());
 static button_data_t btn_key_train  = {.type            = BTN_TEXT_FN,
                                        .label_fn        = key_train_label_getter,
                                        .press           = controls_toggle_key_train,
                                        .hold            = button_encoder_hold_update_cb,
                                        .ctrl            = CTRL_KEY_TRAIN,
                                        .encoder_allowed = true,
-                                       .subj            = (Subject*)&cfg_sm.p_key_train};
-static button_data_t btn_key_tone   = make_encoder_btn(key_tone_label_getter, CTRL_KEY_TONE, (Subject*)&cfg_sm.p_key_tone);
+                                       .subj            = (Subject*)cfg.cw.key_train()};
+static button_data_t btn_key_tone   = make_encoder_btn(key_tone_label_getter, CTRL_KEY_TONE, (Subject*)cfg.cw.key_tone());
 
-static button_data_t btn_key_mode        = make_encoder_btn(key_mode_label_getter, CTRL_KEY_MODE, (Subject*)&cfg_sm.p_key_mode);
+static button_data_t btn_key_mode        = make_encoder_btn(key_mode_label_getter, CTRL_KEY_MODE, (Subject*)cfg.cw.key_mode());
 static button_data_t btn_key_iambic_mode = {.type            = BTN_TEXT_FN,
                                             .label_fn        = iambic_mode_label_getter,
                                             .press           = controls_toggle_key_iambic_mode,
                                             .hold            = button_encoder_hold_update_cb,
                                             .ctrl            = CTRL_IAMBIC_MODE,
                                             .encoder_allowed = true,
-                                            .subj            = (Subject*)&cfg_sm.p_iambic_mode};
-static button_data_t btn_key_qsk_time    = make_encoder_btn(qsk_time_label_getter, CTRL_QSK_TIME, (Subject*)&cfg_sm.p_qsk_time);
-static button_data_t btn_key_ratio       = make_encoder_btn(key_ratio_label_getter, CTRL_KEY_RATIO, (Subject*)&cfg_sm.p_key_ratio);
+                                            .subj            = (Subject*)cfg.cw.iambic_mode()};
+static button_data_t btn_key_qsk_time    = make_encoder_btn(qsk_time_label_getter, CTRL_QSK_TIME, (Subject*)cfg.cw.qsk_time());
+static button_data_t btn_key_ratio       = make_encoder_btn(key_ratio_label_getter, CTRL_KEY_RATIO, (Subject*)cfg.cw.key_ratio());
 
 static button_data_t btn_cw_decoder = {.type            = BTN_TEXT_FN,
                                        .label_fn        = cw_decoder_label_getter,
@@ -251,15 +251,15 @@ static button_data_t btn_cw_decoder = {.type            = BTN_TEXT_FN,
                                        .hold            = button_encoder_hold_update_cb,
                                        .ctrl            = CTRL_CW_DECODER,
                                        .encoder_allowed = true,
-                                       .subj            = (Subject*)&cfg_sm.p_cw_decoder};
+                                       .subj            = (Subject*)cfg.cw.decoder()};
 static button_data_t btn_cw_tuner   = {.type            = BTN_TEXT_FN,
                                        .label_fn        = cw_tuner_label_getter,
                                        .press           = controls_toggle_cw_tuner,
                                        .hold            = button_encoder_hold_update_cb,
                                        .ctrl            = CTRL_CW_TUNE,
                                        .encoder_allowed = true,
-                                       .subj            = (Subject*)&cfg_sm.p_cw_tune};
-static button_data_t btn_cw_snr = make_encoder_btn(cw_snr_label_getter, CTRL_CW_DECODER_SNR, (Subject*)&cfg_sm.p_cw_decoder_snr);
+                                       .subj            = (Subject*)cfg.cw.tune()};
+static button_data_t btn_cw_snr = make_encoder_btn(cw_snr_label_getter, CTRL_CW_DECODER_SNR, (Subject*)cfg.cw.decoder_snr());
 
 static button_data_t btn_cw_peak_on = {.type            = BTN_TEXT_FN,
                                        .label_fn        = cw_peak_on_label_getter,
@@ -267,8 +267,8 @@ static button_data_t btn_cw_peak_on = {.type            = BTN_TEXT_FN,
                                        .hold            = button_encoder_hold_update_cb,
                                        .ctrl            = CTRL_CW_PEAK_ON,
                                        .encoder_allowed = true,
-                                       .subj            = (Subject*)&cfg_sm.p_cw_peak_on};
-static button_data_t btn_cw_peak_q = make_encoder_btn(cw_peak_q_label_getter, CTRL_CW_PEAK_Q, (Subject*)&cfg_sm.p_cw_peak_q);
+                                       .subj            = (Subject*)cfg.cw.peak_on()};
+static button_data_t btn_cw_peak_q = make_encoder_btn(cw_peak_q_label_getter, CTRL_CW_PEAK_Q, (Subject*)cfg.cw.peak_q());
 
 static button_data_t btn_cw_zap = {
     .type = BTN_TEXT, .label = "CW\nZAP", .press = controls_cw_zap, .hold = NULL, .ctrl = CTRL_CW_ZAP};
@@ -281,16 +281,16 @@ static button_data_t btn_dnf        = {.type            = BTN_TEXT_FN,
                                        .hold            = button_encoder_hold_update_cb,
                                        .ctrl            = CTRL_DNF,
                                        .encoder_allowed = true,
-                                       .subj            = (Subject*)&cfg_sm.p_dnf};
-static button_data_t btn_dnf_center = make_encoder_btn(dnf_center_label_getter, CTRL_DNF_CENTER, (Subject*)&cfg_sm.p_dnf_center);
-static button_data_t btn_dnf_width  = make_encoder_btn(dnf_width_label_getter, CTRL_DNF_WIDTH, (Subject*)&cfg_sm.p_dnf_width);
+                                       .subj            = (Subject*)cfg.dsp.dnf()};
+static button_data_t btn_dnf_center = make_encoder_btn(dnf_center_label_getter, CTRL_DNF_CENTER, (Subject*)cfg.dsp.dnf_center());
+static button_data_t btn_dnf_width  = make_encoder_btn(dnf_width_label_getter, CTRL_DNF_WIDTH, (Subject*)cfg.dsp.dnf_width());
 static button_data_t btn_dnf_auto   = {.type            = BTN_TEXT_FN,
                                        .label_fn        = dnf_auto_label_getter,
                                        .press           = controls_toggle_dnf_auto,
                                        .hold            = button_encoder_hold_update_cb,
                                        .ctrl            = CTRL_DNF_AUTO,
                                        .encoder_allowed = true,
-                                       .subj            = (Subject*)&cfg_sm.p_dnf_auto};
+                                       .subj            = (Subject*)cfg.dsp.dnf_auto()};
 
 static button_data_t btn_nb       = {.type            = BTN_TEXT_FN,
                                      .label_fn        = nb_label_getter,
@@ -298,9 +298,9 @@ static button_data_t btn_nb       = {.type            = BTN_TEXT_FN,
                                      .hold            = button_encoder_hold_update_cb,
                                      .ctrl            = CTRL_NB,
                                      .encoder_allowed = true,
-                                     .subj            = (Subject*)&cfg_sm.p_nb};
-static button_data_t btn_nb_level = make_encoder_btn(nb_level_label_getter, CTRL_NB_LEVEL, (Subject*)&cfg_sm.p_nb_level);
-static button_data_t btn_nb_width = make_encoder_btn(nb_width_label_getter, CTRL_NB_WIDTH, (Subject*)&cfg_sm.p_nb_width);
+                                     .subj            = (Subject*)cfg.dsp.nb()};
+static button_data_t btn_nb_level = make_encoder_btn(nb_level_label_getter, CTRL_NB_LEVEL, (Subject*)cfg.dsp.nb_level());
+static button_data_t btn_nb_width = make_encoder_btn(nb_width_label_getter, CTRL_NB_WIDTH, (Subject*)cfg.dsp.nb_width());
 
 static button_data_t btn_nr       = {.type            = BTN_TEXT_FN,
                                      .label_fn        = nr_label_getter,
@@ -308,8 +308,8 @@ static button_data_t btn_nr       = {.type            = BTN_TEXT_FN,
                                      .hold            = button_encoder_hold_update_cb,
                                      .ctrl            = CTRL_NR,
                                      .encoder_allowed = true,
-                                     .subj            = (Subject*)&cfg_sm.p_nr};
-static button_data_t btn_nr_level = make_encoder_btn(nr_level_label_getter, CTRL_NR_LEVEL, (Subject*)&cfg_sm.p_nr_level);
+                                     .subj            = (Subject*)cfg.dsp.nr()};
+static button_data_t btn_nr_level = make_encoder_btn(nr_level_label_getter, CTRL_NR_LEVEL, (Subject*)cfg.dsp.nr_level());
 
 /* APP */
 
@@ -592,7 +592,7 @@ void buttons_init(lv_obj_t *parent) {
         disp_btns[i].label = label;
     }
 
-    cfg_sm.p_encoder_bind.subscribe_delayed_and_notify(encoder_binds_change_cb, NULL);
+    cfg.encoder.bind()->subscribe_delayed_and_notify(encoder_binds_change_cb);
 }
 
 void buttons_refresh(button_data_t *data) {
@@ -682,7 +682,7 @@ static void button_encoder_update_cb(button_data_t *data) {
     // set corresponding encoder
     // if already bind - use corresponding encoder. If no - you default
     cfg_ctrl_t ctrl = (cfg_ctrl_t)data->ctrl;
-    std::string binds_str = cfg_sm.p_encoder_bind.get();
+    std::string binds_str = cfg.encoder.bind()->get();
 
     void (*set_fn)(cfg_ctrl_t) = NULL;
     if (binds_str.length() > ctrl){
@@ -713,7 +713,7 @@ static void button_encoder_update_cb(button_data_t *data) {
 
 static void button_encoder_hold_update_cb(button_data_t *data) {
     cfg_ctrl_t ctrl = (cfg_ctrl_t)data->ctrl;
-    std::string binds = cfg_sm.p_encoder_bind.get();
+    std::string binds = cfg.encoder.bind()->get();
     if (binds.length() > ctrl){
         switch (binds[ctrl]) {
             case ENCODER_BIND_NONE:
@@ -736,7 +736,7 @@ static void button_encoder_hold_update_cb(button_data_t *data) {
                 LV_LOG_WARN("Unexpected mode: %c for ctrl %d", binds[ctrl], ctrl);
                 break;
         }
-        cfg_sm.p_encoder_bind.set(binds);
+        cfg.encoder.bind()->set(binds);
     } else {
         LV_LOG_ERROR("Binds is too short (%d) for ctrl %c", binds.length(), binds.c_str());
     }
@@ -805,273 +805,273 @@ buttons_page_t *buttons_get_cur_page() {
 
 static const char * vol_label_getter() {
     static char buf[16];
-    sprintf(buf, "Volume:\n%i", cfg_sm.p_volume.get());
+    sprintf(buf, "Volume:\n%i", cfg.general.volume()->get());
     return buf;
 }
 
 static const char * sql_label_getter() {
     static char buf[16];
-    sprintf(buf, "Squelch:\n%i", cfg_sm.p_squelch.get());
+    sprintf(buf, "Squelch:\n%i", cfg.general.squelch()->get());
     return buf;
 }
 
 static const char * rfg_label_getter() {
     static char buf[16];
-    sprintf(buf, "RF gain:\n%i", cfg_sm.p_rfgain.get());
+    sprintf(buf, "RF gain:\n%i", cfg.general.rfgain()->get());
     return buf;
 }
 
 static const char * tx_power_label_getter() {
     static char buf[20];
-    sprintf(buf, "TX power:\n%0.1f W", cfg_sm.p_pwr.get());
+    sprintf(buf, "TX power:\n%0.1f W", cfg.general.pwr()->get());
     return buf;
 }
 
 static const char * filter_low_label_getter() {
     static char buf[22];
-    sprintf(buf, "Filter low:\n%i Hz", cfg_sm.cp_cur_filter_low.get());
+    sprintf(buf, "Filter low:\n%i Hz", cfg.filter.low()->get());
     return buf;
 }
 static const char * filter_high_label_getter() {
     static char buf[22];
-    sprintf(buf, "Filter high:\n%i Hz", cfg_sm.cp_cur_filter_high.get());
+    sprintf(buf, "Filter high:\n%i Hz", cfg.filter.high()->get());
     return buf;
 }
 
 static const char * filter_bw_label_getter() {
     static char buf[22];
-    sprintf(buf, "Filter BW:\n%i Hz", cfg_sm.cp_cur_filter_bw.get());
+    sprintf(buf, "Filter BW:\n%i Hz", cfg.filter.bw()->get());
     return buf;
 }
 
 
 static const char * mic_sel_label_getter() {
     static char buf[22];
-    sprintf(buf, "MIC Sel:\n%s", params_mic_str_get((x6100_mic_sel_t)cfg_sm.p_mic.get()));
+    sprintf(buf, "MIC Sel:\n%s", params_mic_str_get((x6100_mic_sel_t)cfg.general.mic()->get()));
     return buf;
 }
 
 
 static const char * h_mic_gain_label_getter() {
     static char buf[22];
-    sprintf(buf, "H-Mic gain:\n%i", cfg_sm.p_hmic.get());
+    sprintf(buf, "H-Mic gain:\n%i", cfg.general.hmic()->get());
     return buf;
 }
 
 static const char * i_mic_gain_label_getter() {
     static char buf[22];
-    sprintf(buf, "I-Mic gain:\n%i", cfg_sm.p_imic.get());
+    sprintf(buf, "I-Mic gain:\n%i", cfg.general.imic()->get());
     return buf;
 }
 
 static const char * moni_level_label_getter() {
     static char buf[22];
-    sprintf(buf, "Moni level:\n%i", cfg_sm.p_moni.get());
+    sprintf(buf, "Moni level:\n%i", cfg.general.moni()->get());
     return buf;
 }
 
 
 static const char * rit_label_getter() {
     static char buf[22];
-    sprintf(buf, "RIT:\n%+i", cfg_sm.p_rit.get());
+    sprintf(buf, "RIT:\n%+i", cfg.general.rit()->get());
     return buf;
 }
 
 static const char * xit_label_getter() {
     static char buf[22];
-    sprintf(buf, "XIT:\n%+i", cfg_sm.p_xit.get());
+    sprintf(buf, "XIT:\n%+i", cfg.general.xit()->get());
     return buf;
 }
 
 static const char * agc_hang_label_getter() {
     static char buf[22];
-    sprintf(buf, "AGC hang:\n%s", cfg_sm.p_agc_hang.get() ? "On": "Off");
+    sprintf(buf, "AGC hang:\n%s", cfg.agc.hang()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * agc_knee_label_getter() {
     static char buf[22];
-    sprintf(buf, "AGC knee:\n%i dB", cfg_sm.p_agc_knee.get());
+    sprintf(buf, "AGC knee:\n%i dB", cfg.agc.knee()->get());
     return buf;
 }
 
 static const char * agc_slope_label_getter() {
     static char buf[22];
-    sprintf(buf, "AGC slope:\n%i dB", cfg_sm.p_agc_slope.get());
+    sprintf(buf, "AGC slope:\n%i dB", cfg.agc.slope()->get());
     return buf;
 }
 
 static const char * comp_label_getter() {
     static char buf[22];
-    sprintf(buf, "Comp:\n%s", params_comp_str_get(cfg_sm.p_comp.get()));
+    sprintf(buf, "Comp:\n%s", params_comp_str_get(cfg.dsp.comp()->get()));
     return buf;
 }
 
 static const char * if_shift_label_getter() {
     static char buf[22];
-    sprintf(buf, "IF shift:\n%i", cfg_sm.p_band_if_shift.get());
+    sprintf(buf, "IF shift:\n%i", cfg.band.if_shift()->get());
     return buf;
 }
 
 const char *vox_on_label_getter() {
     static char buf[22];
-    sprintf(buf, "VOX:\n%s", cfg_sm.p_vox_en.get() ? "On": "Off");
+    sprintf(buf, "VOX:\n%s", cfg.vox.on()->get() ? "On": "Off");
     return buf;
 }
 
 const char *vox_gain_label_getter() {
     static char buf[22];
-    sprintf(buf, "VOX gain:\n%i", cfg_sm.p_vox_gain.get());
+    sprintf(buf, "VOX gain:\n%i", cfg.vox.gain()->get());
     return buf;
 }
 
 const char *vox_ag_label_getter() {
     static char buf[22];
-    sprintf(buf, "VOX a-gain:\n%i", cfg_sm.p_vox_ag.get());
+    sprintf(buf, "VOX a-gain:\n%i", cfg.vox.ag()->get());
     return buf;
 }
 
 const char *vox_delay_label_getter() {
     static char buf[22];
-    sprintf(buf, "VOX delay:\n%i ms", cfg_sm.p_vox_delay.get());
+    sprintf(buf, "VOX delay:\n%i ms", cfg.vox.delay()->get());
     return buf;
 }
 
 static const char * key_speed_label_getter() {
     static char buf[22];
-    sprintf(buf, "Speed:\n%i wpm", cfg_sm.p_key_speed.get());
+    sprintf(buf, "Speed:\n%i wpm", cfg.cw.key_speed()->get());
     return buf;
 }
 
 static const char * key_volume_label_getter() {
     static char buf[22];
-    sprintf(buf, "Volume:\n%i", cfg_sm.p_key_vol.get());
+    sprintf(buf, "Volume:\n%i", cfg.cw.key_vol()->get());
     return buf;
 }
 
 static const char * key_train_label_getter() {
     static char buf[22];
-    sprintf(buf, "Train:\n%s", cfg_sm.p_key_train.get() ? "On": "Off");
+    sprintf(buf, "Train:\n%s", cfg.cw.key_train()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * key_tone_label_getter() {
     static char buf[22];
-    sprintf(buf, "Tone:\n%i Hz", cfg_sm.p_key_tone.get());
+    sprintf(buf, "Tone:\n%i Hz", cfg.cw.key_tone()->get());
     return buf;
 }
 
 static const char * key_mode_label_getter() {
     static char buf[22];
-    sprintf(buf, "Mode:\n%s", params_key_mode_str_get((x6100_key_mode_t)cfg_sm.p_key_mode.get()));
+    sprintf(buf, "Mode:\n%s", params_key_mode_str_get((x6100_key_mode_t)cfg.cw.key_mode()->get()));
     return buf;
 }
 
 static const char * iambic_mode_label_getter() {
     static char buf[22];
-    sprintf(buf, "Iambic:\n%s mode", params_iambic_mode_str_ger((x6100_iambic_mode_t)cfg_sm.p_iambic_mode.get()));
+    sprintf(buf, "Iambic:\n%s mode", params_iambic_mode_str_ger((x6100_iambic_mode_t)cfg.cw.iambic_mode()->get()));
     return buf;
 }
 
 static const char * qsk_time_label_getter() {
     static char buf[22];
-    sprintf(buf, "QSK time:\n%i ms", cfg_sm.p_qsk_time.get());
+    sprintf(buf, "QSK time:\n%i ms", cfg.cw.qsk_time()->get());
     return buf;
 }
 
 static const char * key_ratio_label_getter() {
     static char buf[22];
-    sprintf(buf, "Ratio:\n%0.1f", cfg_sm.p_key_ratio.get());
+    sprintf(buf, "Ratio:\n%0.1f", cfg.cw.key_ratio()->get());
     return buf;
 }
 
 static const char * cw_decoder_label_getter() {
     static char buf[22];
-    sprintf(buf, "Decoder:\n%s", cfg_sm.p_cw_decoder.get() ? "On": "Off");
+    sprintf(buf, "Decoder:\n%s", cfg.cw.decoder()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * cw_tuner_label_getter() {
     static char buf[22];
-    sprintf(buf, "Tuner:\n%s", cfg_sm.p_cw_tune.get() ? "On": "Off");
+    sprintf(buf, "Tuner:\n%s", cfg.cw.tune()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * cw_snr_label_getter() {
     static char buf[22];
-    sprintf(buf, "Dec SNR:\n%0.1f dB", cfg_sm.p_cw_decoder_snr.get());
+    sprintf(buf, "Dec SNR:\n%0.1f dB", cfg.cw.decoder_snr()->get());
     return buf;
 }
 
 static const char * cw_peak_on_label_getter() {
     static char buf[22];
-    sprintf(buf, "CW peak:\n%s", cfg_sm.p_cw_peak_on.get() ? "On": "Off");
+    sprintf(buf, "CW peak:\n%s", cfg.cw.peak_on()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * cw_peak_q_label_getter() {
     static char buf[22];
-    sprintf(buf, "CW peak Q:\n%i", cfg_sm.p_cw_peak_q.get());
+    sprintf(buf, "CW peak Q:\n%i", cfg.cw.peak_q()->get());
     return buf;
 }
 
 static const char * dnf_label_getter() {
     static char buf[22];
-    sprintf(buf, "DNF:\n%s", cfg_sm.p_dnf.get() ? "On": "Off");
+    sprintf(buf, "DNF:\n%s", cfg.dsp.dnf()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * dnf_center_label_getter() {
     static char buf[22];
-    sprintf(buf, "DNF freq:\n%i Hz", cfg_sm.p_dnf_center.get());
+    sprintf(buf, "DNF freq:\n%i Hz", cfg.dsp.dnf_center()->get());
     return buf;
 }
 
 static const char * dnf_width_label_getter() {
     static char buf[22];
-    sprintf(buf, "DNF width:\n%i Hz", cfg_sm.p_dnf_width.get());
+    sprintf(buf, "DNF width:\n%i Hz", cfg.dsp.dnf_width()->get());
     return buf;
 }
 
 static const char * dnf_auto_label_getter() {
     static char buf[22];
-    sprintf(buf, "DNF auto:\n%s", cfg_sm.p_dnf_auto.get() ? "On": "Off");
+    sprintf(buf, "DNF auto:\n%s", cfg.dsp.dnf_auto()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * nb_label_getter() {
     static char buf[22];
-    sprintf(buf, "NB:\n%s", cfg_sm.p_nb.get() ? "On": "Off");
+    sprintf(buf, "NB:\n%s", cfg.dsp.nb()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * nb_level_label_getter() {
     static char buf[22];
-    sprintf(buf, "NB level:\n%i", cfg_sm.p_nb_level.get());
+    sprintf(buf, "NB level:\n%i", cfg.dsp.nb_level()->get());
     return buf;
 }
 
 static const char * nb_width_label_getter() {
     static char buf[22];
-    sprintf(buf, "NB width:\n%i Hz", cfg_sm.p_nb_width.get());
+    sprintf(buf, "NB width:\n%i Hz", cfg.dsp.nb_width()->get());
     return buf;
 }
 
 static const char * nr_label_getter() {
     static char buf[22];
-    sprintf(buf, "NR:\n%s", cfg_sm.p_nr.get() ? "On": "Off");
+    sprintf(buf, "NR:\n%s", cfg.dsp.nr()->get() ? "On": "Off");
     return buf;
 }
 
 static const char * nr_level_label_getter() {
     static char buf[22];
-    sprintf(buf, "NR level:\n%i", cfg_sm.p_nr_level.get());
+    sprintf(buf, "NR level:\n%i", cfg.dsp.nr_level()->get());
     return buf;
 }
 
 
 static void encoder_binds_change_cb(Subject *subj, void *user_data) {
-    std::string binds = cfg_sm.p_encoder_bind.get();
+    std::string binds = cfg.encoder.bind()->get();
 
     for (size_t i = 0; i < binds.length(); i++) {
         fast_binds[i] = binds[i];

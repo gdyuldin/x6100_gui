@@ -1,9 +1,8 @@
 #pragma once
 
-// C-compatible API for the SettingsManager's parameters (Stage B). This header
-// is the umbrella entry point for C (and C++) consumers: it aggregates the
-// per-type C-API headers and exposes the opaque extern parameter pointers,
-// filled by cfg_api_init().
+// C-compatible API for the SettingsManager's parameters. This header is the
+// umbrella entry point for C (and C++) consumers: it aggregates the per-type
+// C-API headers and exposes the parameter access tree `cfg`.
 //
 // Per-type APIs (all included here for convenience):
 //   - subject_api.h            generic Subject/SubjectT/Observer helpers
@@ -12,12 +11,14 @@
 //   - atu_api.h                ATU tuner-network cache
 //   - settings_manager_api.h   init, flush, band/VFO switching, freq helpers
 //
-// All accessors route through Parameter<T>::set / SubjectT<T>::get, so
-// validators, deferred-write enqueue and observer notifications all apply.
+// Access is through cfg.<group>.<name>(), which returns the Parameter<T>*
+// handle (opaque in C, concrete in C++). All writes route through
+// Parameter<T>::set, so validators, deferred-write enqueue and observer
+// notifications all apply.
 // Ownership: the parameters (and the SettingsManager singleton) are static and
-// owned by C++ (cfg_api.cpp). C code only receives/holds opaque pointers and
-// must never free them. Observers returned by *_subscribe are borrowed: the
-// Subject owns one reference while the observer stays subscribed; C/UI code
+// owned by C++ (cfg_api.cpp). C code only receives/holds borrowed pointers and
+// must never free them. Observers returned by subject_*_subscribe are borrowed:
+// the Subject owns one reference while the observer stays subscribed; C/UI code
 // releases that reference with param_unsubscribe.
 //
 // cfg_api_init() does NOT open the DB or call cfg_db_init(): the caller owns
@@ -33,146 +34,175 @@
 extern "C" {
 #endif
 
-// --- Opaque extern globals, filled by cfg_api_init() ---
-// Each maps to a concrete public SettingsManager member. Int params map to
-// ParamInt, scaled-float params to ParamFloat, and p_encoder_bind (a string)
-// to ParamText. The extern list is the exhaustive set of C-reachable
-// parameters — every SettingsManager parameter is exposed so migrating C/C++
-// consumers can read/write the same values through one API.
-//
-// Grouped by storage scope: GLOBAL -> BAND -> MODE -> OTHER (Transverter) ->
-// COMPUTED (current operating state, not persisted).
+// --- Parameter access tree ---
+// cfg.<group>.<name>() returns the handle of the matching SettingsManager
+// parameter, grouped for discoverability. Works identically from C and C++; in
+// C++ the returned Parameter<T>* additionally supports ->get()/->set()/
+// ->subscribe(). The member name in SettingsManager is shown in the comment.
 
-// --- GLOBAL params (flat `params` table) ---
-extern ParamInt         *cfg_volume;            // p_volume
-extern ParamInt         *cfg_squelch;           // p_squelch
-extern ParamInt         *cfg_rfgain;            // p_rfgain
-extern ParamInt         *cfg_rit;               // p_rit
-extern ParamInt         *cfg_xit;               // p_xit
-extern ParamFloat       *cfg_pwr;               // p_pwr
-extern ParamInt         *cfg_band_id;           // p_band_id (persisted current band)
-extern ParamInt         *cfg_mic;               // p_mic
-extern ParamInt         *cfg_hmic;              // p_hmic
-extern ParamInt         *cfg_imic;              // p_imic
-extern ParamInt         *cfg_moni;              // p_moni
-extern ParamInt         *cfg_ant_id;            // p_ant_id
-extern ParamInt         *cfg_atu_enabled;       // p_atu_enabled
+typedef struct {
+    ParamInt *(*volume)(void); /* p_volume */
+    ParamInt *(*squelch)(void); /* p_squelch */
+    ParamInt *(*rfgain)(void); /* p_rfgain */
+    ParamInt *(*rit)(void); /* p_rit */
+    ParamInt *(*xit)(void); /* p_xit */
+    ParamFloat *(*pwr)(void); /* p_pwr */
+    ParamInt *(*band_id)(void); /* p_band_id */
+    ParamInt *(*mic)(void); /* p_mic */
+    ParamInt *(*hmic)(void); /* p_hmic */
+    ParamInt *(*imic)(void); /* p_imic */
+    ParamInt *(*moni)(void); /* p_moni */
+    ParamInt *(*ant_id)(void); /* p_ant_id */
+    ParamInt *(*atu_enabled)(void); /* p_atu_enabled */
+    ParamInt *(*cat_baud)(void); /* p_cat_baud */
+    ParamInt *(*display_invert)(void); /* p_display_invert */
+} cfg_general_refs_t;
 
-// UI
-extern ParamInt         *cfg_auto_level_enabled; // p_auto_level_enabled
-extern ParamFloat       *cfg_auto_level_offset;  // p_auto_level_offset
-extern ParamInt         *cfg_knob_info;          // p_knob_info
-extern ParamInt         *cfg_spectrum_use_custom_color; // p_spectrum_use_custom_color
-extern ParamInt         *cfg_spectrum_color;            // p_spectrum_color
-extern ParamText        *cfg_encoder_bind;       // p_encoder_bind
+typedef struct {
+    ParamInt *(*auto_level_enabled)(void); /* p_auto_level_enabled */
+    ParamFloat *(*auto_level_offset)(void); /* p_auto_level_offset */
+    ParamInt *(*knob_info)(void); /* p_knob_info */
+    ParamInt *(*spectrum_use_custom_color)(void); /* p_spectrum_use_custom_color */
+    ParamInt *(*spectrum_color)(void); /* p_spectrum_color */
+} cfg_spectrum_refs_t;
 
-// VOX
-extern ParamInt *cfg_vox_on;   // p_vox_en
-extern ParamInt *cfg_vox_gain; // p_vox_gain
-extern ParamInt *cfg_vox_ag;   // p_vox_ag
-extern ParamInt *cfg_vox_delay; // p_vox_delay
+typedef struct {
+    ParamText *(*bind)(void); /* p_encoder_bind */
+} cfg_encoder_refs_t;
 
-// FT8
-extern ParamInt *cfg_ft8_show_all;   // p_ft8_show_all
-extern ParamInt *cfg_ft8_protocol;   // p_ft8_protocol
-extern ParamInt *cfg_ft8_auto;       // p_ft8_auto
-extern ParamInt *cfg_ft8_hold_freq;  // p_ft8_hold_freq
-extern ParamInt *cfg_ft8_max_repeats; // p_ft8_max_repeats
+typedef struct {
+    ParamInt *(*on)(void); /* p_vox_en */
+    ParamInt *(*gain)(void); /* p_vox_gain */
+    ParamInt *(*ag)(void); /* p_vox_ag */
+    ParamInt *(*delay)(void); /* p_vox_delay */
+} cfg_vox_refs_t;
 
-// SWR scan
-extern ParamInt *cfg_swrscan_linear; // p_swrscan_linear
-extern ParamInt *cfg_swrscan_span;   // p_swrscan_span
+typedef struct {
+    ParamInt *(*show_all)(void); /* p_ft8_show_all */
+    ParamInt *(*protocol)(void); /* p_ft8_protocol */
+    ParamInt *(*auto_mode)(void); /* p_ft8_auto */
+    ParamInt *(*hold_freq)(void); /* p_ft8_hold_freq */
+    ParamInt *(*max_repeats)(void); /* p_ft8_max_repeats */
+} cfg_ft8_refs_t;
 
-// CW
-extern ParamInt   *cfg_key_tone;            // p_key_tone
-extern ParamInt   *cfg_key_speed;           // p_key_speed
-extern ParamInt   *cfg_key_mode;            // p_key_mode
-extern ParamInt   *cfg_iambic_mode;         // p_iambic_mode
-extern ParamInt   *cfg_key_vol;             // p_key_vol
-extern ParamInt   *cfg_key_train;           // p_key_train
-extern ParamInt   *cfg_qsk_time;            // p_qsk_time
-extern ParamFloat *cfg_key_ratio;           // p_key_ratio
-extern ParamInt   *cfg_cw_peak_on;          // p_cw_peak_on
-extern ParamInt   *cfg_cw_peak_q;           // p_cw_peak_q
+typedef struct {
+    ParamInt *(*linear)(void); /* p_swrscan_linear */
+    ParamInt *(*span)(void); /* p_swrscan_span */
+} cfg_swrscan_refs_t;
 
-// CW decoder
-extern ParamInt   *cfg_cw_decoder;         // p_cw_decoder
-extern ParamInt   *cfg_cw_tune;            // p_cw_tune
-extern ParamFloat *cfg_cw_decoder_snr;     // p_cw_decoder_snr
-extern ParamFloat *cfg_cw_decoder_snr_gist; // p_cw_decoder_snr_gist
+typedef struct {
+    ParamInt *(*key_tone)(void); /* p_key_tone */
+    ParamInt *(*key_speed)(void); /* p_key_speed */
+    ParamInt *(*key_mode)(void); /* p_key_mode */
+    ParamInt *(*iambic_mode)(void); /* p_iambic_mode */
+    ParamInt *(*key_vol)(void); /* p_key_vol */
+    ParamInt *(*key_train)(void); /* p_key_train */
+    ParamInt *(*qsk_time)(void); /* p_qsk_time */
+    ParamFloat *(*key_ratio)(void); /* p_key_ratio */
+    ParamInt *(*peak_on)(void); /* p_cw_peak_on */
+    ParamInt *(*peak_q)(void); /* p_cw_peak_q */
+    ParamInt *(*decoder)(void); /* p_cw_decoder */
+    ParamInt *(*tune)(void); /* p_cw_tune */
+    ParamFloat *(*decoder_snr)(void); /* p_cw_decoder_snr */
+    ParamFloat *(*decoder_snr_gist)(void); /* p_cw_decoder_snr_gist */
+} cfg_cw_refs_t;
 
-// AGC
-extern ParamInt *cfg_agc_hang;  // p_agc_hang
-extern ParamInt *cfg_agc_knee;  // p_agc_knee
-extern ParamInt *cfg_agc_slope; // p_agc_slope
+typedef struct {
+    ParamInt *(*hang)(void); /* p_agc_hang */
+    ParamInt *(*knee)(void); /* p_agc_knee */
+    ParamInt *(*slope)(void); /* p_agc_slope */
+} cfg_agc_refs_t;
 
-// DSP
-extern ParamInt *cfg_dnf;        // p_dnf
-extern ParamInt *cfg_dnf_center; // p_dnf_center
-extern ParamInt *cfg_dnf_width;  // p_dnf_width
-extern ParamInt *cfg_dnf_auto;   // p_dnf_auto
-extern ParamInt *cfg_nb;         // p_nb
-extern ParamInt *cfg_nb_level;   // p_nb_level
-extern ParamInt *cfg_nb_width;   // p_nb_width
-extern ParamInt *cfg_nr;         // p_nr
-extern ParamInt *cfg_nr_level;   // p_nr_level
+typedef struct {
+    ParamInt *(*dnf)(void); /* p_dnf */
+    ParamInt *(*dnf_center)(void); /* p_dnf_center */
+    ParamInt *(*dnf_width)(void); /* p_dnf_width */
+    ParamInt *(*dnf_auto)(void); /* p_dnf_auto */
+    ParamInt *(*nb)(void); /* p_nb */
+    ParamInt *(*nb_level)(void); /* p_nb_level */
+    ParamInt *(*nb_width)(void); /* p_nb_width */
+    ParamInt *(*nr)(void); /* p_nr */
+    ParamInt *(*nr_level)(void); /* p_nr_level */
+    ParamFloat *(*output_gain)(void); /* p_output_gain */
+    ParamInt *(*comp)(void); /* p_comp */
+    ParamFloat *(*comp_threshold_offset)(void); /* p_comp_threshold_offset */
+    ParamFloat *(*comp_makeup_offset)(void); /* p_comp_makeup_offset */
+    ParamInt *(*fm_emphasis)(void); /* p_fm_emphasis */
+    ParamInt *(*tx_filter_low)(void); /* p_tx_filter_low */
+    ParamInt *(*tx_filter_high)(void); /* p_tx_filter_high */
+    ParamInt *(*cessb_on)(void); /* p_cessb_on */
+    ParamFloat *(*cessb_power_up)(void); /* p_cessb_power_up */
+} cfg_dsp_refs_t;
 
-// DSP custom
-extern ParamFloat *cfg_output_gain;          // p_output_gain
-extern ParamInt   *cfg_comp;                 // p_comp
-extern ParamFloat *cfg_comp_threshold_offset; // p_comp_threshold_offset
-extern ParamFloat *cfg_comp_makeup_offset;    // p_comp_makeup_offset
-extern ParamInt   *cfg_fm_emphasis;          // p_fm_emphasis
-extern ParamInt   *cfg_tx_filter_low;        // p_tx_filter_low
-extern ParamInt   *cfg_tx_filter_high;       // p_tx_filter_high
-extern ParamInt   *cfg_cessb_on;             // p_cessb_on
-extern ParamFloat *cfg_cessb_power_up;       // p_cessb_power_up
+typedef struct {
+    ParamInt *(*current_vfo)(void); /* p_band_current_vfo */
+    ParamInt *(*if_shift)(void); /* p_band_if_shift */
+    ParamInt *(*vfoa_freq)(void); /* p_band_vfoa_freq */
+    ParamInt *(*vfob_freq)(void); /* p_band_vfob_freq */
+    ParamFloat *(*dac_offset)(void); /* p_band_dac_offset */
+    ParamInt *(*grid_min)(void); /* p_band_grid_min */
+    ParamInt *(*grid_max)(void); /* p_band_grid_max */
+    ParamInt *(*split)(void); /* p_band_split */
+    ParamInt *(*tx_i_offset)(void); /* p_band_tx_i_offset */
+    ParamInt *(*tx_q_offset)(void); /* p_band_tx_q_offset */
+    ParamInt *(*vfoa_mode)(void); /* p_band_vfoa_mode */
+    ParamInt *(*vfob_mode)(void); /* p_band_vfob_mode */
+    ParamInt *(*vfoa_att)(void); /* p_band_vfoa_att */
+    ParamInt *(*vfob_att)(void); /* p_band_vfob_att */
+    ParamInt *(*vfoa_pre)(void); /* p_band_vfoa_pre */
+    ParamInt *(*vfob_pre)(void); /* p_band_vfob_pre */
+    ParamInt *(*vfoa_agc)(void); /* p_band_vfoa_agc */
+    ParamInt *(*vfob_agc)(void); /* p_band_vfob_agc */
+} cfg_band_refs_t;
 
-// --- BAND params ---
-extern ParamInt   *cfg_band_current_vfo;  // p_band_current_vfo
-extern ParamInt   *cfg_band_if_shift;     // p_band_if_shift
-extern ParamInt   *cfg_band_vfoa_freq;    // p_band_vfoa_freq
-extern ParamInt   *cfg_band_vfob_freq;    // p_band_vfob_freq
-extern ParamFloat *cfg_band_dac_offset;   // p_band_dac_offset
-extern ParamInt   *cfg_band_grid_min;     // p_band_grid_min
-extern ParamInt   *cfg_band_grid_max;     // p_band_grid_max
-extern ParamInt   *cfg_band_split;        // p_band_split
-extern ParamInt   *cfg_band_tx_i_offset;  // p_band_tx_i_offset
-extern ParamInt   *cfg_band_tx_q_offset;  // p_band_tx_q_offset
-extern ParamInt   *cfg_band_vfoa_mode;    // p_band_vfoa_mode
-extern ParamInt   *cfg_band_vfob_mode;    // p_band_vfob_mode
-extern ParamInt   *cfg_band_vfoa_att;     // p_band_vfoa_att
-extern ParamInt   *cfg_band_vfob_att;     // p_band_vfob_att
-extern ParamInt   *cfg_band_vfoa_pre;     // p_band_vfoa_pre
-extern ParamInt   *cfg_band_vfob_pre;     // p_band_vfob_pre
-extern ParamInt   *cfg_band_vfoa_agc;     // p_band_vfoa_agc
-extern ParamInt   *cfg_band_vfob_agc;     // p_band_vfob_agc
+typedef struct {
+    ParamInt *(*zoom)(void); /* p_mode_zoom */
+    ParamInt *(*freq_step)(void); /* p_mode_freq_step */
+} cfg_mode_refs_t;
 
-// --- MODE params ---
-extern ParamInt *cfg_mode_squelch;   // p_mode_squelch
-extern ParamInt *cfg_mode_zoom;      // p_mode_zoom ("spectrum_factor")
-extern ParamInt *cfg_mode_freq_step; // p_mode_freq_step
+typedef struct {
+    ComputedParamInt *(*low)(void); /* cp_cur_filter_low */
+    ComputedParamInt *(*high)(void); /* cp_cur_filter_high */
+    ComputedParamInt *(*bw)(void); /* cp_cur_filter_bw */
+} cfg_filter_refs_t;
 
-// --- Transverter params (OTHER storage, fixed HW conversion) ---
-// Values are Hz (p_transverter_{0,1}_{from,to,shift}).
-extern ParamInt *cfg_transverter_0_from;
-extern ParamInt *cfg_transverter_0_to;
-extern ParamInt *cfg_transverter_0_shift;
-extern ParamInt *cfg_transverter_1_from;
-extern ParamInt *cfg_transverter_1_to;
-extern ParamInt *cfg_transverter_1_shift;
+typedef struct {
+    ComputedParamInt *(*fg_freq)(void); /* cp_fg_freq */
+    ComputedParamInt *(*mode)(void); /* cp_cur_mode */
+    ComputedParamInt *(*agc)(void); /* cp_cur_agc */
+    ComputedParamInt *(*att)(void); /* cp_cur_att */
+    ComputedParamInt *(*pre)(void); /* cp_cur_pre */
+    ComputedParamInt *(*bg_freq)(void); /* cp_bg_freq */
+    ComputedParamInt *(*mode_lo_offset)(void); /* cp_mode_lo_offset */
+} cfg_computed_refs_t;
 
-// --- Computed params (current operating state, not persisted) ---
-extern ComputedParamInt *cfg_fg_freq;          // cp_fg_freq
-extern ComputedParamInt *cfg_cur_mode;         // cp_cur_mode
-extern ComputedParamInt *cfg_cur_agc;          // cp_cur_agc
-extern ComputedParamInt *cfg_cur_att;          // cp_cur_att
-extern ComputedParamInt *cfg_cur_pre;          // cp_cur_pre
-extern ComputedParamInt *cfg_bg_freq;          // cp_bg_freq
-extern ComputedParamInt *cfg_cur_filter_low;   // cp_cur_filter_low
-extern ComputedParamInt *cfg_cur_filter_high;  // cp_cur_filter_high
-extern ComputedParamInt *cfg_cur_filter_bw;    // cp_cur_filter_bw
-extern ComputedParamInt *cfg_mode_lo_offset;   // cp_mode_lo_offset
+typedef struct {
+    ParamInt *(*t0_from)(void); /* p_transverter_0_from */
+    ParamInt *(*t0_to)(void); /* p_transverter_0_to */
+    ParamInt *(*t0_shift)(void); /* p_transverter_0_shift */
+    ParamInt *(*t1_from)(void); /* p_transverter_1_from */
+    ParamInt *(*t1_to)(void); /* p_transverter_1_to */
+    ParamInt *(*t1_shift)(void); /* p_transverter_1_shift */
+} cfg_transverter_refs_t;
+
+typedef struct {
+    cfg_general_refs_t general;
+    cfg_spectrum_refs_t spectrum;
+    cfg_encoder_refs_t encoder;
+    cfg_vox_refs_t vox;
+    cfg_ft8_refs_t ft8;
+    cfg_swrscan_refs_t swrscan;
+    cfg_cw_refs_t cw;
+    cfg_agc_refs_t agc;
+    cfg_dsp_refs_t dsp;
+    cfg_band_refs_t band;
+    cfg_mode_refs_t mode;
+    cfg_filter_refs_t filter;
+    cfg_computed_refs_t computed;
+    cfg_transverter_refs_t transverter;
+} cfg_refs_t;
+
+extern const cfg_refs_t cfg;
 
 #ifdef __cplusplus
 } // extern "C"

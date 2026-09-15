@@ -12,7 +12,7 @@
 #include <string>
 
 #include "db.h"
-#include "settings_manager.h"
+#include "settings_internal.h"
 
 namespace {
 

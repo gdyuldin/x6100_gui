@@ -575,6 +575,3 @@ class SettingsManager {
     std::mutex              flush_mutex_;
 };
 
-// Global SettingsManager instance (defined in cfg_api.cpp). Accessed directly
-// by C++ code (e.g. cat.cpp) without going through the C API layer.
-extern SettingsManager cfg_sm;

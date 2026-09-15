@@ -177,7 +177,7 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     lv_obj_align(vswr_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, pad - 2);
     lv_label_set_text(vswr_label, "");
 
-    subject_subscribe((Subject*)cfg_cur_mode, on_cur_mode_change, NULL);
+    subject_subscribe((Subject*)cfg.computed.mode(), on_cur_mode_change, NULL);
 
     lv_timer_create(update_labels_cb, LV_DISP_DEF_REFR_PERIOD * 3, NULL);
 
@@ -222,5 +222,5 @@ bool tx_info_refresh(uint8_t *prev_msg_id, float *alc_p, float *pwr_p, float *vs
 
 
 static void on_cur_mode_change(Subject *subj, void *user_data) {
-    cur_mode = cparam_i_get(cfg_cur_mode);
+    cur_mode = cparam_i_get(cfg.computed.mode());
 }

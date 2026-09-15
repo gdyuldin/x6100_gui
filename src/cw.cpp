@@ -7,7 +7,7 @@
  */
 #include "cw.h"
 
-#include "cfg/settings_manager.h"
+#include "cfg/cfg_api.h"
 
 #include <math.h>
 #include <complex.h>
@@ -61,24 +61,24 @@ static void update_cw_active();
 
 
 void cw_init() {
-    cfg_sm.p_key_tone.subscribe_and_notify(on_key_tone_change);
+    cfg.cw.key_tone()->subscribe_and_notify(on_key_tone_change);
     tone_freq = key_tone;
-    cfg_sm.p_cw_decoder_snr.subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr);
-    cfg_sm.p_cw_decoder_snr_gist.subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr_gist);
-    cfg_sm.p_cw_decoder.subscribe_and_notify(on_val_bool_change, (void*)&cw_decoder);
-    cfg_sm.p_cw_tune.subscribe_and_notify(on_val_bool_change, (void*)&cw_tune);
+    cfg.cw.decoder_snr()->subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr);
+    cfg.cw.decoder_snr_gist()->subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr_gist);
+    cfg.cw.decoder()->subscribe_and_notify(on_val_bool_change, (void*)&cw_decoder);
+    cfg.cw.tune()->subscribe_and_notify(on_val_bool_change, (void*)&cw_tune);
 
-    cfg_sm.cp_cur_mode.subscribe_and_notify(on_cw_mode_change);
+    cfg.computed.mode()->subscribe_and_notify(on_cw_mode_change);
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
         dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, CW_CAPTURE_RATE);
     }
 
     cw_detector = new CWDetector((float)CW_CAPTURE_RATE, 0.01f, 0.8f);
-    cw_detector->set_f0(cfg_sm.p_key_tone.get());
+    cw_detector->set_f0(cfg.cw.key_tone()->get());
 
-    cfg_sm.cp_cur_filter_low.subscribe_and_notify(on_low_filter_change);
-    cfg_sm.cp_cur_filter_high.subscribe_and_notify(on_high_filter_change);
+    cfg.filter.low()->subscribe_and_notify(on_low_filter_change);
+    cfg.filter.high()->subscribe_and_notify(on_high_filter_change);
 
     ready = true;
 }
@@ -160,7 +160,7 @@ float cw_get_tone_freq(void) {
 }
 
 static void on_key_tone_change(Subject *subj, void *user_data) {
-    key_tone = cfg_sm.p_key_tone.get();
+    key_tone = cfg.cw.key_tone()->get();
 }
 
 static void on_val_float_change(Subject *subj, void *user_data) {
@@ -174,11 +174,11 @@ static void on_val_bool_change(Subject *subj, void *user_data) {
 
 
 static void on_low_filter_change(Subject *subj, void *user_data) {
-    filter_low = cfg_sm.cp_cur_filter_low.get();
+    filter_low = cfg.filter.low()->get();
 }
 
 static void on_high_filter_change(Subject *subj, void *user_data) {
-    filter_high = cfg_sm.cp_cur_filter_high.get();
+    filter_high = cfg.filter.high()->get();
 }
 
 static void on_cw_mode_change(Subject *subj, void *user_data) {

@@ -28,7 +28,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "cfg/settings_manager.h"
+#include "cfg/cfg_api.h"
 #include "lvgl/lvgl.h"
 
 #include "common/vector.h"
@@ -796,7 +796,7 @@ static void push_civ_notify_lan(std::string_view resp) {
 
 static void on_fg_freq_change_cb(Subject *s, void *user_data) {
     if (auth_state < ST_CIV_ACTIVE) return;
-    int32_t freq = cfg_sm.cp_fg_freq.get();
+    int32_t freq = cfg.computed.fg_freq()->get();
     scope_streamer_set_center_freq(freq);
     uint8_t buf[16];
     CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
@@ -808,7 +808,7 @@ static void on_mode_change_cb(Subject *s, void *user_data) {
     uint8_t buf[16];
     CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
     push_civ_notify_lan(pack_mode_notify_01(
-        static_cast<x6100_mode_t>(cfg_sm.cp_cur_mode.get()), packer));
+        static_cast<x6100_mode_t>(cfg.computed.mode()->get()), packer));
 }
 
 static void on_vfo_change_cb(Subject *s, void *user_data) {
@@ -816,7 +816,7 @@ static void on_vfo_change_cb(Subject *s, void *user_data) {
     uint8_t buf[16];
     CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
     push_civ_notify_lan(pack_vfo_notify_07(
-        static_cast<x6100_vfo_t>(cfg_sm.p_band_current_vfo.get()), packer));
+        static_cast<x6100_vfo_t>(cfg.band.current_vfo()->get()), packer));
 }
 
 // ---- Thread ---------------------------------------------------------------
@@ -1012,9 +1012,9 @@ int cat_lan_init(void) {
     LV_LOG_INFO("LAN CAT listening on control port %d, CIV port %d, audio port %d",
                 CONTROL_PORT, CIV_PORT, AUDIO_PORT);
 
-    sub_freq = Subscription(cfg_sm.cp_fg_freq.subscribe(on_fg_freq_change_cb, nullptr));
-    sub_mode = Subscription(cfg_sm.cp_cur_mode.subscribe(on_mode_change_cb, nullptr));
-    sub_vfo  = Subscription(cfg_sm.p_band_current_vfo.subscribe(on_vfo_change_cb, nullptr));
+    sub_freq = Subscription(cfg.computed.fg_freq()->subscribe(on_fg_freq_change_cb));
+    sub_mode = Subscription(cfg.computed.mode()->subscribe(on_mode_change_cb));
+    sub_vfo  = Subscription(cfg.band.current_vfo()->subscribe(on_vfo_change_cb));
 
     keep_running = true;
     thread = new std::thread(cat_lan_thread);
