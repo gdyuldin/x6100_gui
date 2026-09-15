@@ -14,11 +14,14 @@
 #include "spectrum.h"
 #include "util.h"
 #include "scheduler.h"
+#include "audio.h"
 #include "widgets/lv_bar_indicator.h"
 
-#define NUM_ITEMS   7
 #define METER_PEAK_HOLD 1500
 #define METER_PEAK_SPEED 20
+
+#define LEVEL_MIN_DB    (-50.0f)
+#define LEVEL_MAX_DB    (0.5f)
 
 static int16_t          min_db = S1;
 static int16_t          max_db = S9_40;
@@ -35,10 +38,17 @@ static bool             pre=false;
 static bool             att=false;
 
 static lv_obj_t         *obj;
-static lv_obj_t         *bar;
+static lv_obj_t         *s_bar;
+static lv_obj_t         *level_bar;
 static lv_obj_t         *db_val_label;
 
-static bar_tick_t s_items[NUM_ITEMS] = {
+static lv_timer_t       *level_timer;
+static float            level_peak = LEVEL_MIN_DB;
+static int64_t          level_peak_time;
+
+static meter_mode_t     meter_mode = METER_MODE_S;
+
+static bar_tick_t s_items[] = {
     { .label = "S1",    .val = S1 },
     { .label = "3",     .val = S3 },
     { .label = "5",     .val = S5 },
@@ -48,14 +58,22 @@ static bar_tick_t s_items[NUM_ITEMS] = {
     { .label = "+40",   .val = S9_40 }
 };
 
+static bar_tick_t level_items[] = {
+    { .label = "0",     .val = 0 },
+    { .label = "-12",   .val = -12 },
+    { .label = "-24",   .val = -24 },
+    { .label = "-36",   .val = -36 },
+    { .label = "-48",   .val = -48 }
+};
+
 static void on_bool_value_change(Subject *subj, void *user_data) {
     *(bool*)user_data = subject_i_get((SubjectInt*)subj);
 }
 
 static void meter_scheduled_refresh(void *unused) {
     (void)unused;
-    lv_bar_indicator_set_value(bar, meter_db);
-    lv_bar_indicator_set_peak_value(bar, meter_peak);
+    lv_bar_indicator_set_value(s_bar, meter_db);
+    lv_bar_indicator_set_peak_value(s_bar, meter_peak);
 }
 
 static void update_db_label_cb(lv_timer_t *t) {
@@ -82,6 +100,37 @@ static lv_color_t meter_color_cb(float val) {
     return style.colors.s_meter.high;
 }
 
+static lv_color_t level_color_cb(float val) {
+    if (val <= -12.0f) {
+        return style.colors.s_meter.low;
+    } else if (val <= -6.0f) {
+        return style.colors.s_meter.mid;
+    }
+    return style.colors.s_meter.high;
+}
+
+static void level_refresh_cb(lv_timer_t *t) {
+    float db = audio_get_peak_db();
+
+    if (db < LEVEL_MIN_DB) {
+        db = LEVEL_MIN_DB;
+    } else if (db > LEVEL_MAX_DB) {
+        db = LEVEL_MAX_DB;
+    }
+
+    int64_t t_now = get_time();
+
+    if (db > level_peak) {
+        level_peak = db;
+        level_peak_time = t_now;
+    } else if (t_now - level_peak_time > METER_PEAK_HOLD) {
+        level_peak -= (t_now - level_peak_time - METER_PEAK_HOLD) * METER_PEAK_SPEED / 1000;
+    }
+
+    lv_bar_indicator_set_value(level_bar, db);
+    lv_bar_indicator_set_peak_value(level_bar, level_peak);
+}
+
 
 lv_obj_t * meter_init(lv_obj_t * parent) {
     obj = lv_obj_create(parent);
@@ -98,19 +147,34 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
     lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
     lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
 
-    bar = lv_bar_indicator_create(obj);
-    lv_obj_set_size(bar, w, h);
-    lv_obj_center(bar);
+    s_bar = lv_bar_indicator_create(obj);
+    lv_obj_set_size(s_bar, w, h);
+    lv_obj_center(s_bar);
 
-    lv_bar_indicator_set_range(bar, S1, S9_40 + 5, 3.0f);
+    lv_bar_indicator_set_range(s_bar, S1, S9_40 + 5, 3.0f);
 
-    lv_bar_indicator_set_ticks(bar, s_items, NUM_ITEMS);
-    lv_bar_indicator_set_font(bar, &sony_22);
-    lv_bar_indicator_set_default_color(bar, style.colors.s_meter.low);
-    lv_bar_indicator_set_color_cb(bar, meter_color_cb);
+    lv_bar_indicator_set_ticks(s_bar, s_items, ARRAY_SIZE(s_items));
+    lv_bar_indicator_set_font(s_bar, &sony_22);
+    lv_bar_indicator_set_default_color(s_bar, style.colors.s_meter.low);
+    lv_bar_indicator_set_color_cb(s_bar, meter_color_cb);
 
-    lv_bar_indicator_set_peak_enable(bar, true);
-    lv_bar_indicator_set_peak_color(bar, style.colors.s_meter.peak);
+    lv_bar_indicator_set_peak_enable(s_bar, true);
+    lv_bar_indicator_set_peak_color(s_bar, style.colors.s_meter.peak);
+
+    level_bar = lv_bar_indicator_create(obj);
+    lv_obj_set_size(level_bar, w, h);
+    lv_obj_center(level_bar);
+    lv_obj_add_flag(level_bar, LV_OBJ_FLAG_HIDDEN);
+
+    lv_bar_indicator_set_range(level_bar, LEVEL_MIN_DB, LEVEL_MAX_DB, 1.0f);
+
+    lv_bar_indicator_set_ticks(level_bar, level_items, ARRAY_SIZE(level_items));
+    lv_bar_indicator_set_font(level_bar, &sony_22);
+    lv_bar_indicator_set_default_color(level_bar, style.colors.s_meter.low);
+    lv_bar_indicator_set_color_cb(level_bar, level_color_cb);
+
+    lv_bar_indicator_set_peak_enable(level_bar, true);
+    lv_bar_indicator_set_peak_color(level_bar, style.colors.s_meter.peak);
 
     subject_subscribe_delayed_and_notify((Subject*)cfg_cur_pre, on_bool_value_change, &pre);
     subject_subscribe_delayed_and_notify((Subject*)cfg_cur_att, on_bool_value_change, &att);
@@ -136,6 +200,36 @@ void meter_set_noise(float val) {
     }
 }
 
+void meter_set_mode(meter_mode_t mode) {
+    if (mode == meter_mode) {
+        return;
+    }
+
+    meter_mode = mode;
+
+    if (meter_mode == METER_MODE_LEVEL) {
+        lv_obj_add_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(db_val_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(level_bar, LV_OBJ_FLAG_HIDDEN);
+
+        level_peak = LEVEL_MIN_DB;
+        level_peak_time = get_time();
+
+        if (level_timer == NULL) {
+            level_timer = lv_timer_create(level_refresh_cb, LV_DISP_DEF_REFR_PERIOD * 2, NULL);
+        }
+    } else {
+        if (level_timer) {
+            lv_timer_del(level_timer);
+            level_timer = NULL;
+        }
+
+        lv_obj_add_flag(level_bar, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(db_val_label, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 void meter_update(float db, float beta) {
     if (att) {
         db += 15.0f;
@@ -157,7 +251,10 @@ void meter_update(float db, float beta) {
         meter_peak -= (now - meter_peak_time - METER_PEAK_HOLD) * METER_PEAK_SPEED / 1000;
     }
     meter_db = meter_db * beta + db * (1.0f - beta);
-    scheduler_put_noargs(meter_scheduled_refresh);
+
+    if (meter_mode == METER_MODE_S) {
+        scheduler_put_noargs(meter_scheduled_refresh);
+    }
 }
 
 int16_t meter_get_raw_db() {

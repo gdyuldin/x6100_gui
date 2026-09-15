@@ -24,14 +24,13 @@
 #include <numeric>
 #include <vector>
 
-#include "dialog_msg_voice.h"
-
 extern "C" {
     #include "audio.h"
     #include "meter.h"
     #include "radio.h"
     #include "spectrum.h"
     #include "waterfall.h"
+    #include "params/params.h"
 
     #include <math.h>
     #include <pthread.h>
@@ -486,29 +485,27 @@ static bool update_waterfall_psd(ChunkedSpgram *wf_sg, uint64_t now) {
 }
 
 static void update_s_meter() {
-    if (dialog_msg_voice_get_state() != MSG_VOICE_RECORD) {
-        int32_t from, to, center;
-        int32_t bw = FULL_BW_HZ;
-        if (fw_decim) {
-            bw /= spectrum_factor;
-        }
-        center = WATERFALL_NFFT / 2;
-        from = center + filter_from * WATERFALL_NFFT / bw;
-        to = center + filter_to * WATERFALL_NFFT / bw;
-        from = LV_MAX(from, 0);
-        to = LV_MIN(to, WATERFALL_NFFT - 1);
-
-        float sum_db, sum;
-        sum = 0.0f;
-
-        for (int32_t i = from; i <= to; i++) {
-            sum += waterfall_psd_lin[i];
-        }
-
-        sum_db = 10.0f * log10f(sum) + DB_OFFSET;
-
-        meter_update(sum_db, params.spectrum_beta.x * 0.01f);
+    int32_t from, to, center;
+    int32_t bw = FULL_BW_HZ;
+    if (fw_decim) {
+        bw /= spectrum_factor;
     }
+    center = WATERFALL_NFFT / 2;
+    from = center + filter_from * WATERFALL_NFFT / bw;
+    to = center + filter_to * WATERFALL_NFFT / bw;
+    from = LV_MAX(from, 0);
+    to = LV_MIN(to, WATERFALL_NFFT - 1);
+
+    float sum_db, sum;
+    sum = 0.0f;
+
+    for (int32_t i = from; i <= to; i++) {
+        sum += waterfall_psd_lin[i];
+    }
+
+    sum_db = 10.0f * log10f(sum) + DB_OFFSET;
+
+    meter_update(sum_db, params.spectrum_beta.x * 0.01f);
 }
 
 void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq, bool vary_freq, uint8_t fft_dec) {

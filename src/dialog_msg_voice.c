@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <math.h>
 #include <sndfile.h>
 #include <dirent.h>
 #include <pthread.h>
@@ -234,7 +233,10 @@ static bool create_file() {
 }
 
 static void close_file() {
-    sf_close(file);
+    if (file) {
+        sf_close(file);
+        file = NULL;
+    }
 }
 
 static const char* get_item() {
@@ -448,6 +450,12 @@ static void destruct_cb() {
         pthread_join(thread, NULL);
     }
 
+    if (state == MSG_VOICE_RECORD) {
+        dsp_audio_set_active(dsp_audio_sub_id, false);
+        close_file();
+    }
+
+    meter_set_mode(METER_MODE_S);
     beacon = VOICE_BEACON_OFF;
     state = MSG_VOICE_OFF;
     textarea_window_close();
@@ -554,6 +562,7 @@ void dialog_msg_voice_rec_cb(button_data_t *btn_data) {
                 dsp_audio_sub_id = dsp_audio_subscribe_raw(dialog_msg_voice_put_audio_samples, true);
             }
             dsp_audio_set_active(dsp_audio_sub_id, true);
+            meter_set_mode(METER_MODE_LEVEL);
 
             buttons_unload_page();
             buttons_load(1, &btn_rec_stop);
@@ -567,6 +576,7 @@ static void rec_stop_cb(button_data_t *btn_data) {
 
     dsp_audio_set_active(dsp_audio_sub_id, false);
     audio_set_play_mode(AUDIO_PLAY_OFF);
+    meter_set_mode(METER_MODE_S);
     state = MSG_VOICE_OFF;
     close_file();
     load_table();
@@ -615,18 +625,6 @@ msg_voice_state_t dialog_msg_voice_get_state() {
 }
 
 void dialog_msg_voice_put_audio_samples(size_t nsamples, int16_t *samples) {
-    int16_t peak = 0;
-
-    for (uint16_t i = 0; i < nsamples; i++) {
-        int16_t x = abs(samples[i]);
-
-        if (x > peak) {
-            peak = x;
-        }
-    }
-
-    peak = S1 + (peak / 32768.0) * (S9_40 - S1);
-    meter_update(peak, 0.25f);
     sf_write_short(file, samples, nsamples);
 }
 
