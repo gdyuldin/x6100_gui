@@ -48,6 +48,11 @@ extern "C" {
 
 #define FULL_BW_HZ 100000
 
+/* Levels used for the TX spectrum/waterfall/scope, matching the existing
+ * S-meter scale (S4 .. S9+20). */
+#define DSP_TX_LEVEL_MIN S4
+#define DSP_TX_LEVEL_MAX S9_20
+
 // Forward declaration
 class ChunkedSpgram;
 
@@ -143,7 +148,8 @@ static AudioSub           subs[MAX_AUDIO_SUBS];
 static std::mutex         subs_mutex;
 static uint32_t           next_sub_id = 1;
 
-static void dsp_update_min_max(float *psd_lin, uint16_t size);
+static void dsp_update_auto_levels(float *psd_lin, uint16_t size);
+static void dsp_resolve_levels(bool tx, float *out_min, float *out_max);
 static void update_zoom(int32_t new_zoom);
 static void on_zoom_change(Subject *subj, void *user_data);
 static void update_filters(Subject *subj, void *user_data);
@@ -422,7 +428,8 @@ static void process_samples(cfloat *buf_samples, uint16_t size, firdecim_crcf sp
     }
 }
 
-static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_t base_freq, uint8_t fft_dec) {
+static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_t base_freq, uint8_t fft_dec, float min,
+                            float max) {
     if ((now - spectrum_time > spectrum_fps_ms) && sp_sg->ready()) {
         sp_sg->get_psd(spectrum_psd);
         liquid_vectorf_addscalar(spectrum_psd, SPECTRUM_NFFT, DB_OFFSET + zoom_level_offset, spectrum_psd);
@@ -454,7 +461,7 @@ static bool update_spectrum(ChunkedSpgram *sp_sg, uint64_t now, bool tx, uint32_
             spectrum_prev_freq = base_freq;
         }
         lpf_block(spectrum_psd_filtered, spectrum_psd, spectrum_beta, SPECTRUM_NFFT);
-        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx, base_freq, fft_dec);
+        spectrum_data(spectrum_psd_filtered, SPECTRUM_NFFT, tx, base_freq, fft_dec, min, max);
         spectrum_time = now;
         return true;
     }
@@ -523,7 +530,9 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
 
     firdecim_crcf sp_decim;
     ChunkedSpgram *sp_sg, *wf_sg;
-    uint64_t      now = get_time();
+    uint64_t      now      = get_time();
+    bool          wf_ready = false;
+    float         level_min, level_max;
 
     if (psd_delay) {
         psd_delay--;
@@ -543,12 +552,23 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
         wf_sg = NULL;
     }
     process_samples(buf_samples, size, sp_decim, sp_sg, wf_sg, tx);
+    if (wf_sg) {
+        wf_ready = update_waterfall_psd(wf_sg, now);
+    }
+    if (wf_ready) {
+        if (tx) {
+            min_max_delay = 2;
+        } else {
+            dsp_update_auto_levels(waterfall_psd_lin, WATERFALL_NFFT);
+        }
+    }
+    dsp_resolve_levels(tx, &level_min, &level_max);
     if (spectrum_enabled.load(std::memory_order_relaxed)) {
-        update_spectrum(sp_sg, now, tx, base_freq, fft_dec);
+        update_spectrum(sp_sg, now, tx, base_freq, fft_dec, level_min, level_max);
     }
     pthread_mutex_unlock(&spectrum_mux);
 
-    if (wf_sg && update_waterfall_psd(wf_sg, now)) {
+    if (wf_ready) {
         /* S-meter runs every PSD refresh regardless of waterfall UI state. */
         update_s_meter();
 
@@ -558,7 +578,7 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
             if (waterfall_fft_decim) {
                 width_hz /= spectrum_factor;
             }
-            waterfall_data(waterfall_psd, WATERFALL_NFFT, tx, base_freq, width_hz);
+            waterfall_data(waterfall_psd, WATERFALL_NFFT, tx, base_freq, width_hz, level_min, level_max);
         }
 
         // CI-V scope streaming (uses same PSD data, independent of waterfall_on)
@@ -567,14 +587,7 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
             if (waterfall_fft_decim) {
                 width_hz /= spectrum_factor;
             }
-            scope_streamer_push_data(waterfall_psd, WATERFALL_NFFT, base_freq, width_hz, auto_min, auto_max);
-        }
-
-        // TODO: skip on disabled auto min/max
-        if (!tx) {
-            dsp_update_min_max(waterfall_psd_lin, WATERFALL_NFFT);
-        } else {
-            min_max_delay = 2;
+            scope_streamer_push_data(waterfall_psd, WATERFALL_NFFT, base_freq, width_hz, level_min, level_max);
         }
     }
 }
@@ -825,7 +838,7 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
     }
 }
 
-static void dsp_update_min_max(float *psd_lin, uint16_t size) {
+static void dsp_update_auto_levels(float *psd_lin, uint16_t size) {
     if (min_max_delay) {
         min_max_delay--;
         return;
@@ -896,13 +909,23 @@ static void dsp_update_min_max(float *psd_lin, uint16_t size) {
     }
     auto_min = min;
     auto_max = auto_min + 48.0f;
+}
 
-
-    spectrum_update_min(auto_min);
-    waterfall_update_min(auto_min);
-
-    spectrum_update_max(auto_max);
-    waterfall_update_max(auto_max);
+/* Resolve the min/max pair passed to the spectrum/waterfall/scope consumers.
+ * Single point of level policy: TX defaults, auto levels + offset, or the
+ * manual grid levels. Called once per frame from dsp_samples(). */
+static void dsp_resolve_levels(bool tx, float *out_min, float *out_max) {
+    if (tx) {
+        *out_min = DSP_TX_LEVEL_MIN;
+        *out_max = DSP_TX_LEVEL_MAX;
+    } else if (cfg_sm.p_auto_level_enabled.get()) {
+        float offset = cfg_sm.p_auto_level_offset.get();
+        *out_min = auto_min - offset;
+        *out_max = auto_max - offset;
+    } else {
+        *out_min = cfg_sm.p_band_grid_min.get();
+        *out_max = cfg_sm.p_band_grid_max.get();
+    }
 }
 
 void dsp_set_waterfall_enabled(bool enabled) {

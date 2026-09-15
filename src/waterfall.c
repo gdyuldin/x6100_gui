@@ -30,8 +30,6 @@
 #include <arm_neon.h>
 #endif
 
-#define DEFAULT_MIN S4
-#define DEFAULT_MAX S9_20
 #define WIDTH SCREEN_WIDTH
 
 typedef struct {
@@ -44,9 +42,6 @@ static lv_obj_t         *obj;
 static bool             ready = false;
 
 static int32_t          width_hz = 100000;
-
-static float            grid_min = DEFAULT_MIN;
-static float            grid_max = DEFAULT_MAX;
 
 static uint8_t          delay = 0;
 
@@ -80,16 +75,12 @@ static void on_zoom_changed(Subject *subj, void *user_data);
 static void on_fg_freq_change(Subject *subj, void *user_data);
 static void on_mode_lo_offset_change(Subject *subj, void *user_data);
 static void on_if_shift_changed(Subject *subj, void *user_data);
-static void on_grid_min_change(Subject *subj, void *user_data);
-static void on_grid_max_change(Subject *subj, void *user_data);
 static void on_dialog_start_cb(void *s, lv_msg_t *m);
 static void on_dialog_stop_cb(void *s, lv_msg_t *m);
 
 lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h) {
     s_wf_x = y;
     s_wf_w = h;
-
-    waterfall_min_max_reset();
 
     wf_rows = calloc(h, sizeof(*wf_rows));
     for (size_t i = 0; i < (size_t)h; i++) {
@@ -113,10 +104,6 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
     subject_subscribe_delayed_and_notify((Subject*)cfg_mode_zoom, on_zoom_changed, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg_band_if_shift, on_if_shift_changed, NULL);
     subject_subscribe_and_notify((Subject*)cfg_mode_lo_offset, on_mode_lo_offset_change, NULL);
-    subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_min_change, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_band_grid_min, on_grid_min_change, NULL);
-    subject_subscribe((Subject*)cfg_auto_level_enabled, on_grid_max_change, NULL);
-    subject_subscribe_and_notify((Subject*)cfg_band_grid_max, on_grid_max_change, NULL);
 
     lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start_cb, NULL);
     lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop_cb, NULL);
@@ -127,7 +114,7 @@ static void scroll_down() {
     last_row_id = (last_row_id + 1) % s_wf_w;
 }
 
-void waterfall_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint32_t width_hz) {
+void waterfall_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint32_t width_hz, float min, float max) {
     if (!ready) {
         return;
     }
@@ -138,14 +125,6 @@ void waterfall_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq,
     }
     scroll_down();
 
-    float min, max;
-    if (tx) {
-        min = DEFAULT_MIN;
-        max = DEFAULT_MAX;
-    } else {
-        min = grid_min;
-        max = grid_max;
-    }
     if (base_freq == 0) {
         base_freq = radio_center_freq + mode_lo_offset;
     } else if (tx) {
@@ -177,28 +156,6 @@ void waterfall_data(float *data_buf, uint16_t size, bool tx, uint32_t base_freq,
     if (refresh_counter >= refresh_period) {
         refresh_counter = 0;
         __atomic_store_n(&s_data_ready, 1, __ATOMIC_RELEASE);
-    }
-}
-
-void waterfall_min_max_reset() {
-    if (param_i_get(cfg_auto_level_enabled)) {
-        grid_min = DEFAULT_MIN;
-        grid_max = DEFAULT_MAX;
-    } else {
-        grid_min = param_i_get(cfg_band_grid_min);
-        grid_max = param_i_get(cfg_band_grid_max);
-    }
-}
-
-void waterfall_update_max(float db) {
-    if (param_i_get(cfg_auto_level_enabled)) {
-        grid_max = db - param_f_get(cfg_auto_level_offset);
-    }
-}
-
-void waterfall_update_min(float db) {
-    if (param_i_get(cfg_auto_level_enabled)) {
-        grid_min = db - param_f_get(cfg_auto_level_offset);
     }
 }
 
@@ -412,17 +369,6 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
 static void on_mode_lo_offset_change(Subject *subj, void *user_data) {
     mode_lo_offset = subject_i_get((SubjectInt*)subj);
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
-}
-
-static void on_grid_min_change(Subject *subj, void *user_data) {
-    if (!param_i_get(cfg_auto_level_enabled)) {
-        grid_min = param_i_get(cfg_band_grid_min);
-    }
-}
-static void on_grid_max_change(Subject *subj, void *user_data) {
-    if (!param_i_get(cfg_auto_level_enabled)) {
-        grid_max = param_i_get(cfg_band_grid_max);
-    }
 }
 
 static void on_dialog_start_cb(void *s, lv_msg_t *m) {

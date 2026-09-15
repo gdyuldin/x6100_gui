@@ -29,8 +29,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DEFAULT_MIN S4
-#define DEFAULT_MAX S9_20
 #define VISOR_HEIGHT_TX (100 - 61)
 #define VISOR_HEIGHT_RX 100
 #define SPECTRUM_SIZE SCREEN_WIDTH
@@ -40,8 +38,11 @@ typedef struct {
     uint64_t time;
 } peak_t;
 
-static float grid_min = DEFAULT_MIN;
-static float grid_max = DEFAULT_MAX;
+/* Display levels for the current frame, resolved by the DSP module (auto /
+ * manual / offset / TX). Written from the DSP thread in spectrum_data() and
+ * read by the render thread. */
+static float spectrum_min = S_MIN;
+static float spectrum_max = S9_40;
 
 static lv_obj_t *obj;
 
@@ -92,8 +93,6 @@ static void update_dnf(Subject *subj, void *user_data);
 static void update_center_line(Subject *subj, void *user_data);
 static void on_mode_lo_offset_change(Subject *subj, void *user_data);
 static void on_if_shift_change(Subject *subj, void *user_data);
-static void on_grid_min_change(Subject *subj, void *user_data);
-static void on_grid_max_change(Subject *subj, void *user_data);
 static void on_fg_freq_change(Subject *subj, void *user_data);
 static void on_rit_change(Subject *subj, void *user_data);
 static void shift_peaks(int32_t df);
@@ -235,8 +234,6 @@ lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     s_spec_x = y;
     s_spec_w = h;
 
-    spectrum_min_max_reset();
-
     for (size_t i = 0; i < SPECTRUM_SIZE; i++) {
         spectrum_peak[i].val = S_MIN;
         spectrum_buf[i]      = S_MIN;
@@ -266,11 +263,6 @@ lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     subject_subscribe_and_notify((Subject *)cfg_mode_lo_offset, on_mode_lo_offset_change, NULL);
     subject_subscribe_and_notify((Subject *)cfg_band_if_shift, on_if_shift_change, NULL);
 
-    subject_subscribe((Subject *)cfg_auto_level_enabled, on_grid_min_change, NULL);
-    subject_subscribe_and_notify((Subject *)cfg_band_grid_min, on_grid_min_change, NULL);
-    subject_subscribe((Subject *)cfg_auto_level_enabled, on_grid_max_change, NULL);
-    subject_subscribe_and_notify((Subject *)cfg_band_grid_max, on_grid_max_change, NULL);
-
     subject_subscribe((Subject *)cfg_cur_mode, update_dnf, NULL);
     subject_subscribe((Subject *)cfg_dnf, update_dnf, NULL);
     subject_subscribe((Subject *)cfg_dnf_auto, update_dnf, NULL);
@@ -283,7 +275,7 @@ lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     return obj;
 }
 
-void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_lo_freq, uint8_t fft_dec) {
+void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_lo_freq, uint8_t fft_dec, float min, float max) {
     uint64_t now = get_time();
 
     if (base_lo_freq != cur_base_lo_freq) {
@@ -292,7 +284,9 @@ void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_lo_fre
         shift_peaks(df);
     }
 
-    spectrum_tx = tx;
+    spectrum_tx  = tx;
+    spectrum_min = min;
+    spectrum_max = max;
     for (uint16_t i = 0; i < size; i++) {
         spectrum_buf[i] = data_buf[i];
 
@@ -315,31 +309,10 @@ void spectrum_data(float *data_buf, uint16_t size, bool tx, uint32_t base_lo_fre
     __atomic_store_n(&s_data_ready, 1, __ATOMIC_RELEASE);
 }
 
-void spectrum_min_max_reset() {
-    if (param_i_get(cfg_auto_level_enabled)) {
-        grid_min = DEFAULT_MIN;
-        grid_max = DEFAULT_MAX;
-    } else {
-        grid_min = param_i_get(cfg_band_grid_min);
-        grid_max = param_i_get(cfg_band_grid_max);
-    }
-}
-
-void spectrum_update_max(float db) {
-    if (param_i_get(cfg_auto_level_enabled)) {
-        grid_max = db - param_f_get(cfg_auto_level_offset);
-    }
-}
-
-void spectrum_update_min(float db) {
-    if (param_i_get(cfg_auto_level_enabled)) {
-        grid_min = db - param_f_get(cfg_auto_level_offset);
-    }
-}
-
 void spectrum_clear() {
-    spectrum_min_max_reset();
-    freq_mod = 0;
+    spectrum_min = S_MIN;
+    spectrum_max = S9_40;
+    freq_mod     = 0;
     uint64_t now = get_time();
 
     for (uint16_t i = 0; i < SPECTRUM_SIZE; i++) {
@@ -433,17 +406,6 @@ static void on_if_shift_change(Subject *subj, void *user_data) {
     if_shift = subject_i_get((SubjectInt*) subj);
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
     lv_obj_invalidate(obj);
-}
-
-static void on_grid_min_change(Subject *subj, void *user_data) {
-    if (!param_i_get(cfg_auto_level_enabled)) {
-        grid_min = param_i_get(cfg_band_grid_min);
-    }
-}
-static void on_grid_max_change(Subject *subj, void *user_data) {
-    if (!param_i_get(cfg_auto_level_enabled)) {
-        grid_max = param_i_get(cfg_band_grid_max);
-    }
 }
 
 static void on_fg_freq_change(Subject *subj, void *user_data) {
@@ -646,14 +608,8 @@ static void spectrum_draw_polyline(uint32_t *buf, int stride, float min, float m
 static void spectrum_render_rotated(uint32_t *buf, int stride) {
     memset(buf, 0, (size_t)stride * SPECTRUM_SIZE * sizeof(uint32_t));
 
-    float min, max;
-    if (spectrum_tx) {
-        min = DEFAULT_MIN;
-        max = DEFAULT_MAX;
-    } else {
-        min = grid_min;
-        max = grid_max;
-    }
+    float min = spectrum_min;
+    float max = spectrum_max;
     if (max <= min) {
         max = min + 1.0f;
     }

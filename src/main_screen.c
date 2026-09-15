@@ -1073,8 +1073,6 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     lv_obj_add_event_cb(spectrum, spectrum_key_cb, LV_EVENT_KEY, NULL);
     lv_obj_add_event_cb(spectrum, spectrum_pressed_cb, LV_EVENT_PRESSED, NULL);
 
-    spectrum_min_max_reset();
-
     y += spectrum_height;
 
     /* Freq boundary (left, right) */

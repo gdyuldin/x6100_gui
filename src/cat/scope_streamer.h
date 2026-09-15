@@ -17,7 +17,9 @@ void scope_streamer_set_notify(scope_notify_cb_t cb);
 // Called from dsp.cpp after update_waterfall_psd() succeeds.
 // Takes float PSD values in dB, downsamples 1024->475, scales to 0-200,
 // formats a CI-V 0x27 0x00 packet, and calls the notify callback.
-// center_freq = base_freq from dsp, width_hz = FULL_BW_HZ / zoom
+// center_freq = base_freq from dsp, width_hz = FULL_BW_HZ / zoom.
+// min/max are already resolved by dsp (auto/manual/offset/tx) - this module
+// applies no level policy of its own.
 void scope_streamer_push_data(const float *psd_db, size_t len,
                                uint32_t center_freq, uint32_t width_hz, float min, float max);
 
