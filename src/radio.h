@@ -55,7 +55,6 @@ bool radio_check_freq(int32_t freq);
 x6100_vfo_t radio_toggle_vfo();
 
 uint16_t radio_change_vol(int16_t df);
-bool radio_change_spmode(int16_t df);
 
 void radio_change_mute();
 
@@ -81,9 +80,6 @@ void radio_swrscan_set_cb(radio_swrscan_cb_t cb);
 void radio_poweroff();
 void radio_set_ptt(bool tx);
 void radio_set_modem(bool tx);
-
-void radio_set_line_in(uint8_t d);
-void radio_set_line_out(uint8_t d);
 
 void radio_set_morse_key(bool on);
 

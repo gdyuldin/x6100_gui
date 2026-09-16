@@ -650,11 +650,11 @@ static uint8_t make_display(uint8_t row) {
 
 static void line_in_out_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
-    void (*fn)(uint8_t) = (void (*)(uint8_t))lv_event_get_user_data(e);
+    ParamInt *param = (ParamInt *)lv_event_get_user_data(e);
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
     int32_t val = lv_slider_get_value(obj);
-    fn(val);
+    param->set(val);
     lv_label_set_text_fmt(slider_label, fmt, val);
 }
 
@@ -675,7 +675,7 @@ static uint8_t make_line_gain(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, (int)cfg.radio.line_in()->get(), 0, 36, 1, SMALL_3 - 30 - 60, "%d", line_in_out_update_cb, (void*)radio_set_line_in);
+    slider_with_text(cell, (int)cfg.radio.line_in()->get(), 0, 36, 1, SMALL_3 - 30 - 60, "%d", line_in_out_update_cb, (void*)cfg.radio.line_in());
 
     cell = lv_obj_create(grid);
 
@@ -685,7 +685,7 @@ static uint8_t make_line_gain(uint8_t row) {
     lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(cell);
 
-    slider_with_text(cell, (int)cfg.radio.line_out()->get(), 0, 36, 1, SMALL_3 - 30 - 60, "%d", line_in_out_update_cb, (void*)radio_set_line_out);
+    slider_with_text(cell, (int)cfg.radio.line_out()->get(), 0, 36, 1, SMALL_3 - 30 - 60, "%d", line_in_out_update_cb, (void*)cfg.radio.line_out());
 
     return row + 1;
 }
@@ -1036,7 +1036,6 @@ static void play_gain_update_cb(lv_event_t * e) {
 
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
-    radio_set_line_in(val);
     lv_label_set_text_fmt(slider_label, fmt, val);
 }
 
@@ -1047,7 +1046,6 @@ static void rec_gain_update_cb(lv_event_t * e) {
     cfg.audio.rec_gain_db()->set(val);
     lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
     char *fmt = (char *)lv_obj_get_user_data(slider_label);
-    radio_set_line_in(val);
     lv_label_set_text_fmt(slider_label, fmt, val);
 }
 
@@ -1521,13 +1519,10 @@ static uint8_t make_display_invert(uint8_t row) {
 static void sp_mode_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
-    if (lv_obj_has_state(obj, LV_STATE_CHECKED)) {
-        voice_say_bool("Speaker mode", false);
-        radio_change_spmode(-1);
-    } else {
-        voice_say_bool("Speaker mode", true);
-        radio_change_spmode(1);
-    }
+    bool on = lv_obj_has_state(obj, LV_STATE_CHECKED);
+
+    voice_say_bool("Speaker mode", on);
+    cfg.radio.spmode()->set(on);
 }
 
 static uint8_t make_sp_mode(uint8_t row) {

@@ -21,6 +21,7 @@
 #include "panel.h"
 #include "main_screen.h"
 #include "msg.h"
+#include "voice.h"
 
 static lv_obj_t *text;
 

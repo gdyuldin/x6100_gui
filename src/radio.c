@@ -304,10 +304,9 @@ void radio_start() {
     x6100_control_bias_drive_set(BIAS_DRIVE_DEFAULT);
     x6100_control_bias_final_set(BIAS_FINAL_DEFAULT);
 
-    x6100_control_spmode_set(param_i_get(cfg.radio.spmode()));
-
-    x6100_control_linein_set(param_i_get(cfg.radio.line_in()));
-    x6100_control_lineout_set(param_i_get(cfg.radio.line_out()));
+    subject_subscribe_and_notify((Subject*)cfg.radio.spmode(), on_change_bool, x6100_control_spmode_set);
+    subject_subscribe_and_notify((Subject*)cfg.radio.line_in(), on_change_uint8, x6100_control_linein_set);
+    subject_subscribe_and_notify((Subject*)cfg.radio.line_out(), on_change_uint8, x6100_control_lineout_set);
 
     if (base_ver.rev >= 8) {
         x6100_control_bf16_flow_set(true);
@@ -374,18 +373,6 @@ uint16_t radio_change_vol(int16_t df) {
 void radio_change_mute() {
     mute = !mute;
     x6100_control_rxvol_set(mute ? 0 : param_i_get(cfg.general.volume()));
-}
-
-bool radio_change_spmode(int16_t df) {
-    if (df == 0) {
-        return param_i_get(cfg.radio.spmode());
-    }
-
-    param_i_set(cfg.radio.spmode(), df > 0);
-
-    WITH_RADIO_LOCK(x6100_control_spmode_set(param_i_get(cfg.radio.spmode())));
-
-    return param_i_get(cfg.radio.spmode());
 }
 
 void radio_start_atu() {
@@ -456,16 +443,6 @@ void radio_set_ptt(bool tx) {
 
 void radio_set_modem(bool tx) {
     WITH_RADIO_LOCK(x6100_control_modem_set(tx));
-}
-
-void radio_set_line_in(uint8_t d) {
-    param_i_set(cfg.radio.line_in(), d);
-    WITH_RADIO_LOCK(x6100_control_linein_set(d));
-}
-
-void radio_set_line_out(uint8_t d) {
-    param_i_set(cfg.radio.line_out(), d);
-    WITH_RADIO_LOCK(x6100_control_lineout_set(d));
 }
 
 void radio_set_morse_key(bool on) {
