@@ -9,6 +9,10 @@ add_library(ft8_core STATIC
 
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/..")
 
+# audio_worker.c includes common/time.h, which needs POSIX declarations hidden
+# by the strict -std=c11 mode (__STRICT_ANSI__).
+target_compile_definitions(ft8_core PRIVATE _GNU_SOURCE)
+
 target_link_libraries(ft8_core PUBLIC lvgl)
 
 # FT8 TX glue. Application-level: drives the audio/radio ports and reads config.

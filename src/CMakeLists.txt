@@ -6,6 +6,13 @@ add_executable(${PROJECT_NAME})
 target_compile_options(${PROJECT_NAME} PRIVATE
     $<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>)
 
+# Expose POSIX declarations (clock_gettime, CLOCK_MONOTONIC, ...) hidden by the
+# strict -std=c11 mode (__STRICT_ANSI__). _GNU_SOURCE also keeps the glibc
+# default extensions (M_PI, usleep, ...) that _POSIX_C_SOURCE alone disables.
+# Must be defined for every translation unit before any system header, hence a
+# target-level definition.
+target_compile_definitions(${PROJECT_NAME} PRIVATE _GNU_SOURCE)
+
 target_sources(${PROJECT_NAME} PUBLIC
     main.c main_screen.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
