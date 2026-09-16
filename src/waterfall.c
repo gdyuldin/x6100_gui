@@ -146,7 +146,7 @@ void waterfall_data(const float *data_buf, uint16_t size, bool tx, uint32_t base
     wf_rows[last_row_id].width = width_hz;
 
     float temp_buf[size];
-    liquid_vectorf_addscalar(data_buf, size, -min, temp_buf);
+    liquid_vectorf_addscalar((float *)data_buf, size, -min, temp_buf);
     liquid_vectorf_mulscalar(temp_buf, size, 255.0f / (max - min), temp_buf);
     for (uint16_t x = 0; x < size; x++) {
         float   v = temp_buf[x];

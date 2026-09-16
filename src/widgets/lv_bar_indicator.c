@@ -285,7 +285,7 @@ static void lv_bar_indicator_event(const lv_obj_class_t *class_p, lv_event_t *e)
 
         float v = bar->range_min;
         uint32_t i = 0;
-        while (v <= bar->value) {
+        while ((v <= bar->value) && (v <= bar->range_max)) {
             lv_draw_rect_dsc_t dsc = bar->rect_dsc_tmpl;
             if (bar->color_cb) {
                 dsc.bg_color = bar->color_cb(v);
