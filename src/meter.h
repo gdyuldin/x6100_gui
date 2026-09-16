@@ -32,5 +32,4 @@ typedef enum {
 lv_obj_t * meter_init(lv_obj_t * parent);
 void meter_update(float db, float beta);
 void meter_set_noise(float val);
-int16_t meter_get_raw_db();
 void meter_set_mode(meter_mode_t mode);

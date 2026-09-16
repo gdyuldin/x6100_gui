@@ -631,7 +631,7 @@ std::string_view handle_rd_sqsm_x15(const CivPacketView &request, CivTxPacker &r
         switch (request.get_subcommand()) {
             case 0x02: // Get S-Meter
                 {
-                    int16_t db = g_ports->telemetry->meter_get_raw_db();
+                    float db = g_ports->telemetry->s_meter_get_raw_db();
                     val        = db * 0.75f + 96;
                     to_bcd_be(bcd, val, 3);
                     return resp.set_command(request.get_command())

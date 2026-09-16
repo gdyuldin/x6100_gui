@@ -27,7 +27,7 @@ bool fake_tx_info_refresh(uint8_t *, float *alc, float *pwr, float *vswr) {
     return false;
 }
 
-int16_t fake_meter_get_raw_db() { return 0; }
+float fake_s_meter_get_raw_db() { return -73.0f; }
 bool    fake_is_rx() { return true; }
 void    fake_set_ptt(bool) {}
 
@@ -41,7 +41,7 @@ const radio_port_t test_radio_port = {
 
 const telemetry_port_t test_telemetry_port = {
     .tx_info_refresh = &fake_tx_info_refresh,
-    .meter_get_raw_db = &fake_meter_get_raw_db,
+    .s_meter_get_raw_db = &fake_s_meter_get_raw_db,
 };
 
 const app_ports_t test_ports = {
@@ -561,9 +561,9 @@ TEST_CASE("C_RD_SQSM s-meter returns 3 bytes with stub meter == 0", "[cat]") {
     CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
     auto sv = process_civ_message(req, packer);
 
-    // meter stub returns 0 -> val = 0*0.75 + 96 = 96 -> BE BCD 0x00 0x96
+    // meter stub returns -73.0f -> val = -73.0 * 0.75 + 96 = 41 -> BE BCD 0x00 0x41
     REQUIRE(to_bytes(sv) == std::vector<uint8_t>({
-        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_RD_SQSM, 0x02, 0x00, 0x96, 0xFD
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_RD_SQSM, 0x02, 0x00, 0x41, 0xFD
     }));
 }
 

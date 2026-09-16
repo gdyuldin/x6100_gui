@@ -48,6 +48,9 @@ extern "C" {
 #define DSP_TX_LEVEL_MIN S4
 #define DSP_TX_LEVEL_MAX S9_20
 
+#define DSP_ATT_DB -15.0f
+#define DSP_PRE_DB 19.0f
+
 // Forward declaration
 class ChunkedSpgram;
 
@@ -105,6 +108,13 @@ static int32_t filter_from = 0;
 static int32_t filter_to   = 3000;
 static x6100_mode_t cur_mode;
 static float noise_level = S_MIN;
+
+/* S-meter raw value ownership: DSP computes, corrects (att/pre) and clamps the
+ * value. meter.c consumes it for display (and applies its own clamp for the
+ * smoothed value), CAT reads it via dsp_get_s_meter_db(). */
+static std::atomic<bool>  s_meter_pre{false};
+static std::atomic<bool>  s_meter_att{false};
+static std::atomic<float> s_meter_db_raw{S1};
 
 /* Audio subscriptions for audio from BASE */
 
@@ -183,6 +193,7 @@ static void on_zoom_change(Subject *subj, void *user_data);
 static void update_filters(Subject *subj, void *user_data);
 static void update_cur_mode(Subject *subj, void *user_data);
 static void on_cur_freq_change(Subject *subj, void *user_data);
+static void on_pre_att_change(Subject *subj, void *user_data);
 
 
 class ChunkedSpgram {
@@ -405,6 +416,9 @@ void dsp_init() {
 
     cfg.computed.mode()->subscribe_and_notify(update_cur_mode);
 
+    cfg.computed.pre()->subscribe_and_notify(on_pre_att_change, &s_meter_pre);
+    cfg.computed.att()->subscribe_and_notify(on_pre_att_change, &s_meter_att);
+
     cfg.computed.fg_freq()->subscribe(on_cur_freq_change);
     ready = true;
 }
@@ -543,6 +557,14 @@ static void update_s_meter() {
     }
 
     sum_db = 10.0f * log10f(sum) + DB_OFFSET;
+
+    if (s_meter_att.load()) {
+        sum_db -= DSP_ATT_DB;
+    }
+    if (s_meter_pre.load()) {
+        sum_db -= DSP_PRE_DB;
+    }
+    s_meter_db_raw.store(sum_db);
 
     // TODO: use subscription
     meter_update(sum_db, param_i_get(cfg.spectrum.beta()) * 0.01f);
@@ -713,6 +735,11 @@ static void update_cur_mode(Subject *subj, void *user_data) {
     cur_mode = (x6100_mode_t)cfg.computed.mode()->get();
 }
 
+static void on_pre_att_change(Subject *subj, void *user_data) {
+    std::atomic<bool> *flag = static_cast<std::atomic<bool> *>(user_data);
+    flag->store(subject_i_get((SubjectInt *)subj) != 0);
+}
+
 static void on_cur_freq_change(Subject *subj, void *user_data) {
     int32_t new_freq = static_cast<SubjectT<int32_t> *>(subj)->get();
     if (base_ver.rev < 8) {
@@ -729,6 +756,10 @@ float dsp_get_spectrum_beta() {
 
 void dsp_set_spectrum_beta(float x) {
     spectrum_beta = x;
+}
+
+float dsp_get_s_meter_db() {
+    return s_meter_db_raw.load();
 }
 
 static uint32_t alloc_sub_id() {
@@ -1001,7 +1032,14 @@ static void dsp_update_auto_levels(float *psd_lin, uint16_t size) {
     min = noise_level;
     // Use win size for min/max and bandwidth for noise level on S-meter
     float noise_bw_offset = 10.0f * log10f(((float)filter_to - filter_from) / win_size_hz);
-    meter_set_noise(min + noise_bw_offset);
+    float noise_db = min + noise_bw_offset;
+    if (s_meter_att.load()) {
+        noise_db -= DSP_ATT_DB;
+    }
+    if (s_meter_pre.load()) {
+        noise_db -= DSP_PRE_DB;
+    }
+    meter_set_noise(noise_db);
 
     min -= 19.0f;
 

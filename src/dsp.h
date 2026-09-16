@@ -44,6 +44,7 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
 void dsp_reset();
 
 float dsp_get_spectrum_beta();
+float dsp_get_s_meter_db();
 void dsp_set_waterfall_enabled(bool enabled);
 void dsp_set_spectrum_enabled(bool enabled);
 void dsp_set_spectrum_beta(float x);

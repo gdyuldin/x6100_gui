@@ -10,5 +10,5 @@ typedef struct {
     // Refresh TX telemetry. Returns true when new data was available.
     bool (*tx_info_refresh)(uint8_t *prev_msg_id, float *alc, float *pwr, float *vswr);
     // Current S-meter reading in raw dB units.
-    int16_t (*meter_get_raw_db)(void);
+    float (*s_meter_get_raw_db)(void);
 } telemetry_port_t;

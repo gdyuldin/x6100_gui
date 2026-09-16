@@ -18,7 +18,6 @@
 
 extern "C" {
 #include "audio.h"
-#include "meter.h"
 #include "radio.h"
 #include "tx_info.h"
 }
@@ -37,7 +36,7 @@ static bool port_tx_info_refresh(uint8_t *prev_msg_id, float *alc, float *pwr, f
     return tx_info_refresh(prev_msg_id, alc, pwr, vswr);
 }
 
-static int16_t port_meter_get_raw_db(void) { return meter_get_raw_db(); }
+static float port_s_meter_get_raw_db(void) { return dsp_get_s_meter_db(); }
 
 /* Audio */
 
@@ -153,7 +152,7 @@ static const radio_port_t radio_port = {
 
 static const telemetry_port_t telemetry_port = {
     .tx_info_refresh = &port_tx_info_refresh,
-    .meter_get_raw_db = &port_meter_get_raw_db,
+    .s_meter_get_raw_db = &port_s_meter_get_raw_db,
 };
 
 static const audio_port_t audio_port = {
