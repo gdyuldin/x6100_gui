@@ -204,7 +204,6 @@ extern "C" const cfg_refs_t cfg = {
         .ant_id = &cfg_ant_id,
         .atu_enabled = &cfg_atu_enabled,
         .cat_baud = &cfg_cat_baud,
-        .display_invert = &cfg_display_invert,
     },
     .spectrum = {
         .auto_level_enabled = &cfg_auto_level_enabled,
@@ -330,6 +329,7 @@ extern "C" const cfg_refs_t cfg = {
         .t1_shift = &cfg_transverter_1_shift,
     },
     .display = {
+        .invert = &cfg_display_invert,
         .brightness_normal = &cfg_brightness_normal,
         .brightness_idle = &cfg_brightness_idle,
         .brightness_timeout = &cfg_brightness_timeout,

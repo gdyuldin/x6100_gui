@@ -36,7 +36,7 @@ static lv_timer_t   *timer = NULL;
 static Subscription display_invert_obs_;
 
 static void on_display_invert_change(Subject * /*subj*/, void * /*user_data*/) {
-    display_invert(cfg.general.display_invert()->get() != 0);
+    display_invert(cfg.display.invert()->get() != 0);
 }
 
 static void display_timer(lv_timer_t *t) {
@@ -70,8 +70,8 @@ void display_init() {
 
     display_tick();
 
-    display_invert(cfg.general.display_invert()->get() != 0);
-    display_invert_obs_ = Subscription(cfg.general.display_invert()->subscribe(on_display_invert_change));
+    display_invert(cfg.display.invert()->get() != 0);
+    display_invert_obs_ = Subscription(cfg.display.invert()->subscribe(on_display_invert_change));
 }
 
 void display_tick() {

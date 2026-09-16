@@ -109,7 +109,7 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<float, int32_t, 2> p_auto_level_offset{"auto_level_offset", 0.0f, {},
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
-    Parameter<int32_t> p_display_invert{"display_invert", false, 0, 1,
+    Parameter<int32_t> p_display_invert{"invert", false, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_knob_info{"knob_info", true, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};

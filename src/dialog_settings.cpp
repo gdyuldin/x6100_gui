@@ -1497,7 +1497,7 @@ static uint8_t make_display_invert(uint8_t row) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_center(obj);
 
-    obj = switch_bool(obj, *cfg.general.display_invert());
+    obj = switch_bool(obj, *cfg.display.invert());
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 

@@ -55,7 +55,6 @@ typedef struct {
     ParamInt *(*ant_id)(void); /* p_ant_id */
     ParamInt *(*atu_enabled)(void); /* p_atu_enabled */
     ParamInt *(*cat_baud)(void); /* p_cat_baud */
-    ParamInt *(*display_invert)(void); /* p_display_invert */
 } cfg_general_refs_t;
 
 typedef struct {
@@ -72,6 +71,7 @@ typedef struct {
 } cfg_spectrum_refs_t;
 
 typedef struct {
+    ParamInt *(*invert)(void); /* p_display_invert */
     ParamInt *(*brightness_normal)(void); /* p_brightness_normal */
     ParamInt *(*brightness_idle)(void); /* p_brightness_idle */
     ParamInt *(*brightness_timeout)(void); /* p_brightness_timeout */

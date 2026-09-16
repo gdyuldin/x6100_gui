@@ -5,7 +5,9 @@
  *
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <unistd.h>
 #include <stdio.h>
