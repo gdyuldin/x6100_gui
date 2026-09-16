@@ -8,6 +8,7 @@
 
 #include "clock.h"
 
+#include "settings_types.h"
 #include "cfg/cfg_api.h"
 
 #include "styles.h"
@@ -150,6 +151,10 @@ static void clock_power_cb(const radio_power_t *power) {
     pthread_mutex_unlock(&power_mux);
 }
 
+static void on_clock_param_change(Subject *subj, void *user_data) {
+    timeout = get_time();
+}
+
 lv_obj_t * clock_init(lv_obj_t * parent) {
     pthread_mutex_init(&power_mux, NULL);
     radio_power_set_cb(clock_power_cb);
@@ -170,26 +175,11 @@ lv_obj_t * clock_init(lv_obj_t * parent) {
 
     last_time_sync = get_last_sync_time();
     timer_time_sync = lv_timer_create(check_time_sync_cb, 200, NULL);
-}
 
-void clock_set_view(clock_view_t x) {
-    param_i_set(cfg.clock.view(), (int32_t)x);
-    timeout = get_time();
-}
-
-void clock_set_time_timeout(uint8_t sec) {
-    param_i_set(cfg.clock.time_timeout(), sec);
-    timeout = get_time();
-}
-
-void clock_set_power_timeout(uint8_t sec) {
-    param_i_set(cfg.clock.power_timeout(), sec);
-    timeout = get_time();
-}
-
-void clock_set_tx_timeout(uint8_t sec) {
-    param_i_set(cfg.clock.tx_timeout(), sec);
-    timeout = get_time();
+    subject_subscribe_delayed((Subject *)cfg.clock.view(), on_clock_param_change, NULL);
+    subject_subscribe_delayed((Subject *)cfg.clock.time_timeout(), on_clock_param_change, NULL);
+    subject_subscribe_delayed((Subject *)cfg.clock.power_timeout(), on_clock_param_change, NULL);
+    subject_subscribe_delayed((Subject *)cfg.clock.tx_timeout(), on_clock_param_change, NULL);
 }
 
 void clock_say_bat_info() {

@@ -751,25 +751,25 @@ static uint8_t make_mag(uint8_t row) {
 static void clock_view_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
-    clock_set_view((clock_view_t)lv_dropdown_get_selected(obj));
+    cfg.clock.view()->set(lv_dropdown_get_selected(obj));
 }
 
 static void clock_time_timeout_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
-    clock_set_time_timeout(lv_spinbox_get_value(obj));
+    cfg.clock.time_timeout()->set(lv_spinbox_get_value(obj));
 }
 
 static void clock_power_timeout_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
-    clock_set_power_timeout(lv_spinbox_get_value(obj));
+    cfg.clock.power_timeout()->set(lv_spinbox_get_value(obj));
 }
 
 static void clock_tx_timeout_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
-    clock_set_tx_timeout(lv_spinbox_get_value(obj));
+    cfg.clock.tx_timeout()->set(lv_spinbox_get_value(obj));
 }
 
 static uint8_t make_clock(uint8_t row) {
