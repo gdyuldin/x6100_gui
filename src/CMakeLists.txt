@@ -3,7 +3,8 @@ add_executable(${PROJECT_NAME})
 # Regression gate: an implicit function declaration is latent UB (the compiler
 # assumes int() and default argument promotions), so treat it as an error for
 # the application sources only. External libraries/submodules are not affected.
-target_compile_options(${PROJECT_NAME} PRIVATE -Werror=implicit-function-declaration)
+target_compile_options(${PROJECT_NAME} PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>)
 
 target_sources(${PROJECT_NAME} PUBLIC
     main.c main_screen.c
