@@ -11,7 +11,6 @@
 #include "styles.h"
 #include "radio.h"
 #include "events.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "band_info.h"
 #include "meter.h"
@@ -297,7 +296,7 @@ static void draw_additive_row(uint32_t *line, uint32_t n, uint8_t fr, uint8_t fg
 static void waterfall_render_rotated(uint32_t *buf, int stride) {
     uint32_t bandwidth = width_hz;
 
-    if (params.waterfall_zoom.x) {
+    if (param_i_get(cfg.waterfall.zoom())) {
         bandwidth /= zoom;
     }
 
@@ -315,7 +314,7 @@ static void waterfall_render_rotated(uint32_t *buf, int stride) {
     lv_style_get_prop(&style.waterfall_middle_line, LV_STYLE_LINE_OPA, &style_val);
     lv_opa_t line_opa = (lv_opa_t)style_val.num;
 
-    bool line_visible = params.waterfall_center_line.x;
+    bool line_visible = param_i_get(cfg.waterfall.center_line());
     lv_coord_t line_width = LV_MAX(zoom / 2 + 2, style_width);
 
     if (line_visible && line_opa > LV_OPA_MIN) {

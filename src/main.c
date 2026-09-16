@@ -15,6 +15,7 @@
 #include "lv_drivers/display/drm.h"
 
 #include "globals.h"
+#include "cfg/cfg_api.h"
 #include "cfg/settings_manager_api.h"
 #include "cfg/subject_api.h"
 #include "cfg/db.h"
@@ -29,7 +30,6 @@
 #include "spectrum.h"
 #include "waterfall.h"
 #include "keypad.h"
-#include "params/params.h"
 #include "audio.h"
 #include "cw.h"
 #include "panel.h"
@@ -148,12 +148,12 @@ int main(void) {
     vol->right[VOL_STATE_SELECT] = KEY_VOL_RIGHT_SELECT;
     vol->state = VOL_STATE_EDIT;
 
-    params_init();
-    audio_set_play_vol(params.play_gain_db_f.x);
-    audio_set_rec_vol(params.rec_gain_db_f.x);
+    cfg_init();
+    audio_set_play_vol(param_f_get(cfg.audio.play_gain_db()));
+    audio_set_rec_vol(param_f_get(cfg.audio.rec_gain_db()));
     mfk_init();
     vol_init();
-    styles_init(params.theme.x);
+    styles_init((themes_t)param_i_get(cfg.appearance.theme()));
 
     radio_init();
     audio_mixer_setup(x6100_control_get_base_ver());

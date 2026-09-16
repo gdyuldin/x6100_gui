@@ -11,6 +11,8 @@
  */
 #include "db.h"
 
+#include "migrations.h"
+
 #include "../lvgl/lvgl.h"
 #include <pthread.h>
 #include <stdlib.h>
@@ -1005,6 +1007,50 @@ int AtuTable::LoadAll(int32_t ant, std::vector<AtuEntry> &out) {
 // ---------------------------------------------------------------------------
 // Global database entry points
 // ---------------------------------------------------------------------------
+
+// Process-wide settings connection (owned by cfg, never closed until exit).
+static sqlite3 *g_db = nullptr;
+
+static void db_log_callback(void * /*pArg*/, int err_code, const char *msg) {
+    LV_LOG_ERROR("(%d) %s\n", err_code, msg);
+}
+
+extern "C" bool cfg_db_open(const char *path) {
+    if (g_db) {
+        LV_LOG_ERROR("Repeated cfg_db_open");
+        return false;
+    }
+
+    sqlite3_config(SQLITE_CONFIG_LOG, db_log_callback, NULL);
+    sqlite3_config(SQLITE_CONFIG_SERIALIZED);
+
+    int rc = sqlite3_open(path, &g_db);
+    if (rc != SQLITE_OK) {
+        LV_LOG_ERROR("Can't open params.db: %s", g_db ? sqlite3_errmsg(g_db) : "out of memory");
+        if (g_db) {
+            sqlite3_close(g_db);
+            g_db = nullptr;
+        }
+        return false;
+    }
+
+    if (migrations_apply() != 0) {
+        LV_LOG_ERROR("Can't apply DB migrations");
+        sqlite3_close(g_db);
+        g_db = nullptr;
+        return false;
+    }
+
+    // Some optimizations
+    sqlite3_exec(g_db, "PRAGMA synchronous = OFF;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "PRAGMA journal_mode = WAL;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "PRAGMA cache_size = -4096;", NULL, NULL, NULL);
+    return true;
+}
+
+extern "C" sqlite3 *cfg_db_get(void) {
+    return g_db;
+}
 
 extern "C" void cfg_db_init(sqlite3 *database) {
     bool ok;

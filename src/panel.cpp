@@ -16,7 +16,6 @@ extern "C" {
     #include "rtty.h"
     #include "styles.h"
     #include "radio.h"
-    #include "params/params.h"
 }
 
 static lv_obj_t    *obj;

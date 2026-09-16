@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sqlite3.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 #include <array>
@@ -705,7 +706,24 @@ class AtuTable {
 extern "C" {
 #endif
 
+// Path of the application settings database. The legacy file name is kept so
+// existing user configurations are not reset (the rootfs installs the seed
+// database as /usr/share/x6100/params.default.db and copies it here on first
+// boot).
+#define CFG_DB_PATH "/mnt/params.db"
+
 // Global database entry points.
+//
+// cfg_db_open() opens the SQLite settings database, applies pending schema
+// migrations and runs the performance PRAGMAs. The connection is owned by cfg
+// for the whole program and shared by cfg_db_init()'s prepared statements and
+// by out-of-band stores (msg_cw) through cfg_db_get(). Returns false if the
+// database cannot be opened or migrated.
+bool     cfg_db_open(const char *path);
+
+// The process-wide settings connection opened by cfg_db_open(), or NULL.
+sqlite3 *cfg_db_get(void);
+
 void cfg_db_init(sqlite3 *database);
 void cfg_db_shutdown();
 

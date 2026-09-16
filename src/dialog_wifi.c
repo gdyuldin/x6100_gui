@@ -18,7 +18,7 @@
 #include "events.h"
 #include "keyboard.h"
 #include "msg.h"
-#include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "pubsub_ids.h"
 #include "radio.h"
 #include "textarea_window.h"
@@ -133,7 +133,7 @@ dialog_t *dialog_wifi = &dialog;
 static void construct_cb(lv_obj_t *parent) {
     dialog.obj = dialog_init(parent);
 
-    if (params.wifi_enabled.x) {
+    if (param_i_get(cfg.network.wifi_enabled())) {
         start_refresh_ap_list();
     }
 
@@ -274,7 +274,7 @@ static void cell_selected_cb(lv_event_t *e) {
 static void wifi_bt_toggle_cb(button_data_t *btn_data) {
     if (disable_buttons)
         return;
-    if (params.wifi_enabled.x) {
+    if (param_i_get(cfg.network.wifi_enabled())) {
         stop_refresh_ap_list();
         wifi_power_off();
         // clear table
@@ -456,7 +456,7 @@ static void update_aps_table_cb(lv_timer_t *t) {
     uint16_t      row;
     bool          first_known = true;
 
-    if (!params.wifi_enabled.x) {
+    if (!param_i_get(cfg.network.wifi_enabled())) {
         stop_refresh_ap_list();
     }
 

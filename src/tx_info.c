@@ -12,7 +12,6 @@
 
 #include "events.h"
 #include "msg_tiny.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "scheduler.h"
 #include "styles.h"
@@ -87,11 +86,11 @@ static void update_tx_info(void *arg) {
     lv_bar_indicator_set_value(pwr_bar, pwr);
     lv_bar_indicator_set_value(swr_bar, vswr);
 
-    if (params.mag_alc.x) {
+    if (param_i_get(cfg.view.mag_alc())) {
         lv_obj_add_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
         msg_tiny_set_text_fmt("ALC: %.1f", alc);
     }
-    if (dialog_run || !params.mag_alc.x) {
+    if (dialog_run || !param_i_get(cfg.view.mag_alc())) {
         lv_obj_clear_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(vswr_label, LV_OBJ_FLAG_HIDDEN);
     } else {
@@ -119,7 +118,7 @@ static void on_dialog_stop(void *s, lv_msg_t *msg) {
 
 static lv_color_t swr_bar_color_cb(float val) {
     if (val <= 2.0f) {
-        return params.swr_color.x == SWR_GRAY ? lv_color_hex(0xAAAAAA) : lv_color_hex(0x00CC00);
+        return param_i_get(cfg.appearance.swr_color()) == SWR_GRAY ? lv_color_hex(0xAAAAAA) : lv_color_hex(0x00CC00);
     } else if (val <= 3.0f) {
         return lv_color_hex(0xAAAA00);
     } else {

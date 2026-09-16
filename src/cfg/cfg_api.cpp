@@ -120,6 +120,63 @@ static ParamInt *cfg_transverter_1_from(void) { return &cfg_instance().p_transve
 static ParamInt *cfg_transverter_1_to(void) { return &cfg_instance().p_transverter_1_to; }
 static ParamInt *cfg_transverter_1_shift(void) { return &cfg_instance().p_transverter_1_shift; }
 
+// --- Stage 8.2: legacy params migrated to cfg ---
+static ParamInt *cfg_brightness_normal(void) { return &cfg_instance().p_brightness_normal; }
+static ParamInt *cfg_brightness_idle(void) { return &cfg_instance().p_brightness_idle; }
+static ParamInt *cfg_brightness_timeout(void) { return &cfg_instance().p_brightness_timeout; }
+static ParamInt *cfg_brightness_buttons(void) { return &cfg_instance().p_brightness_buttons; }
+static ParamInt *cfg_clock_view(void) { return &cfg_instance().p_clock_view; }
+static ParamInt *cfg_clock_time_timeout(void) { return &cfg_instance().p_clock_time_timeout; }
+static ParamInt *cfg_clock_power_timeout(void) { return &cfg_instance().p_clock_power_timeout; }
+static ParamInt *cfg_clock_tx_timeout(void) { return &cfg_instance().p_clock_tx_timeout; }
+static ParamInt *cfg_spectrum_beta(void) { return &cfg_instance().p_spectrum_beta; }
+static ParamInt *cfg_spectrum_peak(void) { return &cfg_instance().p_spectrum_peak; }
+static ParamInt *cfg_spectrum_peak_hold(void) { return &cfg_instance().p_spectrum_peak_hold; }
+static ParamInt *cfg_spectrum_peak_speed(void) { return &cfg_instance().p_spectrum_peak_speed; }
+static ParamInt *cfg_spectrum_filled(void) { return &cfg_instance().p_spectrum_filled; }
+static ParamInt *cfg_waterfall_center_line(void) { return &cfg_instance().p_waterfall_center_line; }
+static ParamInt *cfg_waterfall_zoom(void) { return &cfg_instance().p_waterfall_zoom; }
+static ParamInt *cfg_mag_freq(void) { return &cfg_instance().p_mag_freq; }
+static ParamInt *cfg_mag_info(void) { return &cfg_instance().p_mag_info; }
+static ParamInt *cfg_mag_alc(void) { return &cfg_instance().p_mag_alc; }
+static ParamInt *cfg_voice_mode(void) { return &cfg_instance().p_voice_mode; }
+static ParamInt *cfg_voice_lang(void) { return &cfg_instance().p_voice_lang; }
+static ParamInt *cfg_voice_rate(void) { return &cfg_instance().p_voice_rate; }
+static ParamInt *cfg_voice_pitch(void) { return &cfg_instance().p_voice_pitch; }
+static ParamInt *cfg_voice_volume(void) { return &cfg_instance().p_voice_volume; }
+static ParamInt *cfg_voice_msg_period(void) { return &cfg_instance().p_voice_msg_period; }
+static ParamFloat *cfg_play_gain_db(void) { return &cfg_instance().p_play_gain_db; }
+static ParamFloat *cfg_rec_gain_db(void) { return &cfg_instance().p_rec_gain_db; }
+static ParamInt *cfg_rtty_center(void) { return &cfg_instance().p_rtty_center; }
+static ParamInt *cfg_rtty_shift(void) { return &cfg_instance().p_rtty_shift; }
+static ParamInt *cfg_rtty_rate(void) { return &cfg_instance().p_rtty_rate; }
+static ParamInt *cfg_rtty_reverse(void) { return &cfg_instance().p_rtty_reverse; }
+static ParamInt *cfg_cw_encoder_period(void) { return &cfg_instance().p_cw_encoder_period; }
+static ParamInt *cfg_ft8_tx_freq(void) { return &cfg_instance().p_ft8_tx_freq; }
+static ParamFloat *cfg_ft8_output_gain_offset(void) { return &cfg_instance().p_ft8_output_gain_offset; }
+static ParamText *cfg_ft8_cq_modifier(void) { return &cfg_instance().p_ft8_cq_modifier; }
+static ParamText *cfg_qth(void) { return &cfg_instance().p_qth; }
+static ParamText *cfg_callsign(void) { return &cfg_instance().p_callsign; }
+static ParamInt *cfg_wifi_enabled(void) { return &cfg_instance().p_wifi_enabled; }
+static ParamInt *cfg_long_gen(void) { return &cfg_instance().p_long_gen; }
+static ParamInt *cfg_long_app(void) { return &cfg_instance().p_long_app; }
+static ParamInt *cfg_long_key(void) { return &cfg_instance().p_long_key; }
+static ParamInt *cfg_long_msg(void) { return &cfg_instance().p_long_msg; }
+static ParamInt *cfg_long_dfn(void) { return &cfg_instance().p_long_dfn; }
+static ParamInt *cfg_long_dfl(void) { return &cfg_instance().p_long_dfl; }
+static ParamInt *cfg_press_f1(void) { return &cfg_instance().p_press_f1; }
+static ParamInt *cfg_press_f2(void) { return &cfg_instance().p_press_f2; }
+static ParamInt *cfg_long_f1(void) { return &cfg_instance().p_long_f1; }
+static ParamInt *cfg_long_f2(void) { return &cfg_instance().p_long_f2; }
+static ParamInt *cfg_charger(void) { return &cfg_instance().p_charger; }
+static ParamInt *cfg_line_in(void) { return &cfg_instance().p_line_in; }
+static ParamInt *cfg_line_out(void) { return &cfg_instance().p_line_out; }
+static ParamInt *cfg_spmode(void) { return &cfg_instance().p_spmode; }
+static ParamInt *cfg_freq_accel(void) { return &cfg_instance().p_freq_accel; }
+static ParamInt *cfg_theme(void) { return &cfg_instance().p_theme; }
+static ParamInt *cfg_meter_color(void) { return &cfg_instance().p_meter_color; }
+static ParamInt *cfg_swr_color(void) { return &cfg_instance().p_swr_color; }
+
 // --- Computed params (current operating state, not persisted) ---
 static ComputedParamInt *cfg_fg_freq(void) { return &cfg_instance().cp_fg_freq; }
 static ComputedParamInt *cfg_cur_mode(void) { return &cfg_instance().cp_cur_mode; }
@@ -156,6 +213,11 @@ extern "C" const cfg_refs_t cfg = {
         .knob_info = &cfg_knob_info,
         .spectrum_use_custom_color = &cfg_spectrum_use_custom_color,
         .spectrum_color = &cfg_spectrum_color,
+        .beta = &cfg_spectrum_beta,
+        .peak = &cfg_spectrum_peak,
+        .peak_hold = &cfg_spectrum_peak_hold,
+        .peak_speed = &cfg_spectrum_peak_speed,
+        .filled = &cfg_spectrum_filled,
     },
     .encoder = {
         .bind = &cfg_encoder_bind,
@@ -172,6 +234,9 @@ extern "C" const cfg_refs_t cfg = {
         .auto_mode = &cfg_ft8_auto,
         .hold_freq = &cfg_ft8_hold_freq,
         .max_repeats = &cfg_ft8_max_repeats,
+        .tx_freq = &cfg_ft8_tx_freq,
+        .output_gain_offset = &cfg_ft8_output_gain_offset,
+        .cq_modifier = &cfg_ft8_cq_modifier,
     },
     .swrscan = {
         .linear = &cfg_swrscan_linear,
@@ -192,6 +257,7 @@ extern "C" const cfg_refs_t cfg = {
         .tune = &cfg_cw_tune,
         .decoder_snr = &cfg_cw_decoder_snr,
         .decoder_snr_gist = &cfg_cw_decoder_snr_gist,
+        .encoder_period = &cfg_cw_encoder_period,
     },
     .agc = {
         .hang = &cfg_agc_hang,
@@ -263,6 +329,76 @@ extern "C" const cfg_refs_t cfg = {
         .t1_from = &cfg_transverter_1_from,
         .t1_to = &cfg_transverter_1_to,
         .t1_shift = &cfg_transverter_1_shift,
+    },
+    .display = {
+        .brightness_normal = &cfg_brightness_normal,
+        .brightness_idle = &cfg_brightness_idle,
+        .brightness_timeout = &cfg_brightness_timeout,
+        .brightness_buttons = &cfg_brightness_buttons,
+    },
+    .clock = {
+        .view = &cfg_clock_view,
+        .time_timeout = &cfg_clock_time_timeout,
+        .power_timeout = &cfg_clock_power_timeout,
+        .tx_timeout = &cfg_clock_tx_timeout,
+    },
+    .waterfall = {
+        .center_line = &cfg_waterfall_center_line,
+        .zoom = &cfg_waterfall_zoom,
+    },
+    .view = {
+        .mag_freq = &cfg_mag_freq,
+        .mag_info = &cfg_mag_info,
+        .mag_alc = &cfg_mag_alc,
+    },
+    .voice = {
+        .mode = &cfg_voice_mode,
+        .lang = &cfg_voice_lang,
+        .rate = &cfg_voice_rate,
+        .pitch = &cfg_voice_pitch,
+        .volume = &cfg_voice_volume,
+        .msg_period = &cfg_voice_msg_period,
+    },
+    .audio = {
+        .play_gain_db = &cfg_play_gain_db,
+        .rec_gain_db = &cfg_rec_gain_db,
+    },
+    .rtty = {
+        .center = &cfg_rtty_center,
+        .shift = &cfg_rtty_shift,
+        .rate = &cfg_rtty_rate,
+        .reverse = &cfg_rtty_reverse,
+    },
+    .station = {
+        .qth = &cfg_qth,
+        .callsign = &cfg_callsign,
+    },
+    .network = {
+        .wifi_enabled = &cfg_wifi_enabled,
+    },
+    .keys = {
+        .long_gen = &cfg_long_gen,
+        .long_app = &cfg_long_app,
+        .long_key = &cfg_long_key,
+        .long_msg = &cfg_long_msg,
+        .long_dfn = &cfg_long_dfn,
+        .long_dfl = &cfg_long_dfl,
+        .press_f1 = &cfg_press_f1,
+        .press_f2 = &cfg_press_f2,
+        .long_f1 = &cfg_long_f1,
+        .long_f2 = &cfg_long_f2,
+    },
+    .radio = {
+        .charger = &cfg_charger,
+        .line_in = &cfg_line_in,
+        .line_out = &cfg_line_out,
+        .spmode = &cfg_spmode,
+        .freq_accel = &cfg_freq_accel,
+    },
+    .appearance = {
+        .theme = &cfg_theme,
+        .meter_color = &cfg_meter_color,
+        .swr_color = &cfg_swr_color,
     },
 };
 

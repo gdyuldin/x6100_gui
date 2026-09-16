@@ -7,6 +7,7 @@
 #include "util.h"
 #include "cw.h"
 #include "voice.h"
+#include "format.h"
 
 
 extern "C" {
@@ -123,7 +124,7 @@ void controls_toggle_key_train(button_data_t *data) {
 void controls_toggle_key_iambic_mode(button_data_t *data) {
     x6100_iambic_mode_t new_mode = cfg.cw.iambic_mode()->get() == x6100_iambic_a ? x6100_iambic_b : x6100_iambic_a;
     cfg.cw.iambic_mode()->set( new_mode);
-    char *str = params_iambic_mode_str_ger(new_mode);
+    char *str = format_iambic_mode_str_get(new_mode);
     voice_say_text("Iambic mode", str);
 }
 
@@ -276,7 +277,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             // i range should be 0..2
             i = (i + diff + 3) % 3;
             cfg.general.mic()->set(i);
-            s = params_mic_str_get((x6100_mic_sel_t)i);
+            s = format_mic_str_get((x6100_mic_sel_t)i);
             snprintf(msg.data(), msg.capacity(), "MIC: %s", s);
 
             if (diff) {
@@ -331,7 +332,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
 
         case CTRL_COMP:
             i = update_param(*cfg.dsp.comp(), diff);
-            snprintf(msg.data(), msg.capacity(), "Compressor ratio: %s", params_comp_str_get(i));
+            snprintf(msg.data(), msg.capacity(), "Compressor ratio: %s", format_comp_str_get(i));
 
             if (diff) {
                 if (i > 1) {
@@ -396,7 +397,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
                 i = loop_items({x6100_key_manual, x6100_key_auto_left, x6100_key_auto_right}, (x6100_key_mode_t)i, diff > 0);
                 cfg.cw.key_mode()->set(i);
             }
-            s = params_key_mode_str_get((x6100_key_mode_t)i);
+            s = format_key_mode_str_get((x6100_key_mode_t)i);
             snprintf(msg.data(), msg.capacity(), "Key mode: %s", s);
 
             if (diff) {
@@ -410,7 +411,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
                 i = loop_items({x6100_iambic_a, x6100_iambic_b}, (x6100_iambic_mode_t)i, diff > 0);
                 cfg.cw.iambic_mode()->set(i);
             }
-            s = params_iambic_mode_str_ger((x6100_iambic_mode_t)i);
+            s = format_iambic_mode_str_get((x6100_iambic_mode_t)i);
             snprintf(msg.data(), msg.capacity(), "Iambic mode: %s", s);
 
             if (diff) {

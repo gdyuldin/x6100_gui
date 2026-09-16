@@ -8,6 +8,8 @@
 
 extern "C" {
     #include "styles.h"
+
+    #include <aether_radio/x6100_control/control.h>
 }
 
 #define SEP_WIDTH 4

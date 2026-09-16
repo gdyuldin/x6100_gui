@@ -7,6 +7,22 @@
 // cfg_api.cpp (it also fills the extern parameter pointers); these are the
 // pure manager operations that mostly touch only cfg_sm.
 
+void cfg_init(void) {
+    if (!cfg_db_open(CFG_DB_PATH)) {
+        LV_LOG_ERROR("Can't initialise settings database");
+        return;
+    }
+
+    // Prepare the table statements against the freshly opened connection.
+    cfg_db_init(cfg_db_get());
+
+    // Load global/band/mode params into the SettingsManager.
+    cfg_api_init(NULL);
+
+    // Background deferred-save thread for the managed params.
+    cfg_api_start_flush_thread();
+}
+
 int32_t cfg_transverter_shift_for(int32_t freq) {
     return cfg_sm.transverter_shift_for(freq);
 }

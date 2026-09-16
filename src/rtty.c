@@ -10,7 +10,6 @@
 #include "dsp.h"
 #include "audio.h"
 #include "panel.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "util.h"
 
@@ -26,6 +25,10 @@
 
 #define RTTY_SYMBOL_CODE (0b11011)
 #define RTTY_LETTER_CODE (0b11111)
+
+/* Baudot data bits per character and mark/space power threshold (fixed). */
+#define RTTY_BITS 5
+#define RTTY_SNR  3.0f
 
 #define CAPTURE_RATE_F ((float)RTTY_CAPTURE_RATE)
 
@@ -76,14 +79,14 @@ static const char rtty_symbols[32] = {'\0', '3', '\n', '-', ' ', '\0', '8', '7',
 static void on_cur_mode_change(Subject *subj, void *user_data);
 
 static void update_nco() {
-    float radians = 2.0f * M_PI * params.rtty_center / CAPTURE_RATE_F;
+    float radians = 2.0f * M_PI * param_i_get(cfg.rtty.center()) / CAPTURE_RATE_F;
 
     nco_crcf_set_phase(nco, 0.0f);
     nco_crcf_set_frequency(nco, radians);
 }
 
 static void init() {
-    symbol_samples = CAPTURE_RATE_F / ((float)params.rtty_rate / 100.0f) / (float)SYMBOL_FACTOR + 0.5f;
+    symbol_samples = CAPTURE_RATE_F / ((float)param_i_get(cfg.rtty.rate()) / 100.0f) / (float)SYMBOL_FACTOR + 0.5f;
     symbol_over    = symbol_samples / SYMBOL_OVER;
 
     hilb = firhilbf_create(41, 60.0f);
@@ -94,7 +97,7 @@ static void init() {
 
     /* RX */
 
-    demod  = fskdem_create(1, symbol_samples, (float)params.rtty_shift / CAPTURE_RATE_F / 2.0f);
+    demod  = fskdem_create(1, symbol_samples, (float)param_i_get(cfg.rtty.shift()) / CAPTURE_RATE_F / 2.0f);
     rx_buf = cbuffercf_create(symbol_samples * 50);
 
     rx_window = malloc(symbol_samples * sizeof(complex float));
@@ -203,11 +206,11 @@ static void add_symbol(float pwr) {
     p_avr /= (float)p_num;
 
     if (rx_symbol_cur == 0) {
-        if (p_avr > params.rtty_snr) {
+        if (p_avr > RTTY_SNR) {
             rx_symbol_cur = 1;
         }
     } else {
-        if (p_avr < -params.rtty_snr) {
+        if (p_avr < -RTTY_SNR) {
             rx_symbol_cur = 0;
         }
     }
@@ -245,7 +248,7 @@ static void add_symbol(float pwr) {
                 rx_counter = SYMBOL_LEN;
             }
 
-            if (rx_bitcntr == params.rtty_bits)
+            if (rx_bitcntr == RTTY_BITS)
                 rx_state = RX_STATE_STOP;
             break;
 
@@ -297,8 +300,8 @@ void rtty_put_audio_samples(size_t n, float *samples) {
         float pwr1 = 10.0f * log10f(fskdem_get_symbol_energy(demod, 1, 1));
         float pwr  = pwr0 - pwr1;
 
-        if (((cur_mode == x6100_mode_usb || cur_mode == x6100_mode_usb_dig) && !params.rtty_reverse) ||
-            ((cur_mode == x6100_mode_lsb || cur_mode == x6100_mode_lsb_dig) && params.rtty_reverse)) {
+        if (((cur_mode == x6100_mode_usb || cur_mode == x6100_mode_usb_dig) && !param_i_get(cfg.rtty.reverse())) ||
+            ((cur_mode == x6100_mode_lsb || cur_mode == x6100_mode_lsb_dig) && param_i_get(cfg.rtty.reverse()))) {
             pwr = -pwr;
         }
 
@@ -321,116 +324,73 @@ rtty_state_t rtty_get_state() {
 
 float rtty_change_rate(int16_t df) {
     if (df == 0) {
-        return (float)params.rtty_rate / 100.0f;
+        return (float)param_i_get(cfg.rtty.rate()) / 100.0f;
     }
 
-    params_lock();
+    int32_t rate;
 
-    switch (params.rtty_rate) {
-        case 4500:
-            params.rtty_rate = df > 0 ? 4545 : 15000;
-            break;
-
-        case 4545:
-            params.rtty_rate = df > 0 ? 5000 : 4500;
-            break;
-
-        case 5000:
-            params.rtty_rate = df > 0 ? 5600 : 4545;
-            break;
-
-        case 5600:
-            params.rtty_rate = df > 0 ? 7500 : 5000;
-            break;
-
-        case 7500:
-            params.rtty_rate = df > 0 ? 10000 : 5600;
-            break;
-
-        case 10000:
-            params.rtty_rate = df > 0 ? 11000 : 7500;
-            break;
-
-        case 11000:
-            params.rtty_rate = df > 0 ? 15000 : 10000;
-            break;
-
-        case 15000:
-            params.rtty_rate = df > 0 ? 4500 : 11000;
-            break;
-
-        default:
-            params.rtty_rate = 4500;
-            break;
+    switch (param_i_get(cfg.rtty.rate())) {
+        case 4500:  rate = df > 0 ? 4545 : 15000;  break;
+        case 4545:  rate = df > 0 ? 5000 : 4500;   break;
+        case 5000:  rate = df > 0 ? 5600 : 4545;   break;
+        case 5600:  rate = df > 0 ? 7500 : 5000;   break;
+        case 7500:  rate = df > 0 ? 10000 : 5600;  break;
+        case 10000: rate = df > 0 ? 11000 : 7500;  break;
+        case 11000: rate = df > 0 ? 15000 : 10000; break;
+        case 15000: rate = df > 0 ? 4500 : 11000;  break;
+        default:    rate = 4500;                   break;
     }
 
-    params_unlock(&params.dirty.rtty_rate);
+    param_i_set(cfg.rtty.rate(), rate);
     update();
 
-    return (float)params.rtty_rate / 100.0f;
+    return (float)param_i_get(cfg.rtty.rate()) / 100.0f;
 }
 
 uint16_t rtty_change_shift(int16_t df) {
     if (df == 0) {
-        return params.rtty_shift;
+        return param_i_get(cfg.rtty.shift());
     }
 
-    params_lock();
+    int32_t shift;
 
-    switch (params.rtty_shift) {
-        case 170:
-            params.rtty_shift = df > 0 ? 425 : 850;
-            break;
-
-        case 425:
-            params.rtty_shift = df > 0 ? 450 : 170;
-            break;
-
-        case 450:
-            params.rtty_shift = df > 0 ? 850 : 425;
-            break;
-
-        case 850:
-            params.rtty_shift = df > 0 ? 170 : 450;
-            break;
-
-        default:
-            params.rtty_shift = 170;
-            break;
+    switch (param_i_get(cfg.rtty.shift())) {
+        case 170: shift = df > 0 ? 425 : 850; break;
+        case 425: shift = df > 0 ? 450 : 170; break;
+        case 450: shift = df > 0 ? 850 : 425; break;
+        case 850: shift = df > 0 ? 170 : 450; break;
+        default:  shift = 170;                break;
     }
 
-    params_unlock(&params.dirty.rtty_shift);
+    param_i_set(cfg.rtty.shift(), shift);
     update();
 
-    return params.rtty_shift;
+    return param_i_get(cfg.rtty.shift());
 }
 
 uint16_t rtty_change_center(int16_t df) {
     if (df == 0) {
-        return params.rtty_center;
+        return param_i_get(cfg.rtty.center());
     }
 
-    params_lock();
-    params.rtty_center = limit(align_int(params.rtty_center + df * 10, 10), 800, 1600);
-    params_unlock(&params.dirty.rtty_center);
+    int32_t center = limit(align_int(param_i_get(cfg.rtty.center()) + df * 10, 10), 800, 1600);
+    param_i_set(cfg.rtty.center(), center);
 
     pthread_mutex_lock(&rtty_mux);
     update_nco();
     pthread_mutex_unlock(&rtty_mux);
 
-    return params.rtty_center;
+    return param_i_get(cfg.rtty.center());
 }
 
 bool rtty_change_reverse(int16_t df) {
     if (df == 0) {
-        return params.rtty_reverse;
+        return param_i_get(cfg.rtty.reverse());
     }
 
-    params_lock();
-    params.rtty_reverse = !params.rtty_reverse;
-    params_unlock(&params.dirty.rtty_reverse);
+    param_i_set(cfg.rtty.reverse(), !param_i_get(cfg.rtty.reverse()));
 
-    return params.rtty_reverse;
+    return param_i_get(cfg.rtty.reverse());
 }
 
 static void on_cur_mode_change(Subject *subj, void *user_data) {

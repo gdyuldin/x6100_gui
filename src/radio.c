@@ -24,7 +24,6 @@
 #include "globals.h"
 #include "util.h"
 #include "dsp.h"
-#include "params/params.h"
 #include "hkey.h"
 #include "tx_info.h"
 #include "cw.h"
@@ -38,6 +37,10 @@
 #define FLOW_RESTART_TIMEOUT 300
 #define IDLE_TIMEOUT        (3 * 1000)
 
+/* Fixed PA bias DAC values applied once at radio_init (not user settings). */
+#define BIAS_DRIVE_DEFAULT 450
+#define BIAS_FINAL_DEFAULT 650
+
 #define FILTER_2_OFFSET 60
 #define FILTER_2_OFFSET_IN 20
 #define FILTER_2_OFFSET_OUT (FILTER_2_OFFSET - FILTER_2_OFFSET_IN)
@@ -47,16 +50,6 @@
  **********************/
 
 #define WITH_RADIO_LOCK(fn) radio_lock(); fn; radio_unlock();
-
-#define CHANGE_PARAM(new_val, val, dirty, radio_fn) \
-    if (new_val != val) { \
-        params_lock(); \
-        val = new_val; \
-        params_unlock(&dirty); \
-        radio_lock(); \
-        radio_fn(val); \
-        radio_unlock(); \
-    }
 
 /**********************
  *      TYPEDEFS
@@ -307,14 +300,14 @@ void radio_start() {
         subject_subscribe_and_notify((Subject*)cfg.mode.zoom(), on_fw_zoom_change, NULL);
     }
 
-    x6100_control_charger_set(params.charger.x == RADIO_CHARGER_ON);
-    x6100_control_bias_drive_set(params.bias_drive);
-    x6100_control_bias_final_set(params.bias_final);
+    x6100_control_charger_set(param_i_get(cfg.radio.charger()) == RADIO_CHARGER_ON);
+    x6100_control_bias_drive_set(BIAS_DRIVE_DEFAULT);
+    x6100_control_bias_final_set(BIAS_FINAL_DEFAULT);
 
-    x6100_control_spmode_set(params.spmode.x);
+    x6100_control_spmode_set(param_i_get(cfg.radio.spmode()));
 
-    x6100_control_linein_set(params.line_in);
-    x6100_control_lineout_set(params.line_out);
+    x6100_control_linein_set(param_i_get(cfg.radio.line_in()));
+    x6100_control_lineout_set(param_i_get(cfg.radio.line_out()));
 
     if (base_ver.rev >= 8) {
         x6100_control_bf16_flow_set(true);
@@ -385,14 +378,14 @@ void radio_change_mute() {
 
 bool radio_change_spmode(int16_t df) {
     if (df == 0) {
-        return params.spmode.x;
+        return param_i_get(cfg.radio.spmode());
     }
 
-    params_bool_set(&params.spmode, df > 0);
+    param_i_set(cfg.radio.spmode(), df > 0);
 
-    WITH_RADIO_LOCK(x6100_control_spmode_set(params.spmode.x));
+    WITH_RADIO_LOCK(x6100_control_spmode_set(param_i_get(cfg.radio.spmode())));
 
-    return params.spmode.x;
+    return param_i_get(cfg.radio.spmode());
 }
 
 void radio_start_atu() {
@@ -447,7 +440,7 @@ x6100_vfo_t radio_toggle_vfo() {
 }
 
 void radio_poweroff() {
-    if (params.charger.x == RADIO_CHARGER_SHADOW) {
+    if (param_i_get(cfg.radio.charger()) == RADIO_CHARGER_SHADOW) {
         WITH_RADIO_LOCK(x6100_control_charger_set(true));
     }
     state = RADIO_POWEROFF;
@@ -466,11 +459,13 @@ void radio_set_modem(bool tx) {
 }
 
 void radio_set_line_in(uint8_t d) {
-    CHANGE_PARAM(d, params.line_in, params.dirty.line_in, x6100_control_linein_set);
+    param_i_set(cfg.radio.line_in(), d);
+    WITH_RADIO_LOCK(x6100_control_linein_set(d));
 }
 
 void radio_set_line_out(uint8_t d) {
-    CHANGE_PARAM(d, params.line_out, params.dirty.line_out, x6100_control_lineout_set);
+    param_i_set(cfg.radio.line_out(), d);
+    WITH_RADIO_LOCK(x6100_control_lineout_set(d));
 }
 
 void radio_set_morse_key(bool on) {

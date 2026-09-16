@@ -14,7 +14,6 @@
 #include "recorder.h"
 #include "dsp.h"
 #include "msg.h"
-#include "params/params.h"
 #include "scheduler.h"
 
 char            *recorder_path = "/mnt/rec";

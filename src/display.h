@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "params/params.h"
+#include "settings_types.h"
 
 #ifdef __cplusplus
 extern "C" {

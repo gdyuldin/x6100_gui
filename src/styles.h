@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "params/params.h"
+#include "settings_types.h"
 #include "globals.h"
 
 #include <unistd.h>

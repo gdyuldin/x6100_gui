@@ -15,7 +15,6 @@
 #include "lvgl/lvgl.h"
 #include "dialog.h"
 #include "styles.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "cfg/digital_modes.h"
 #include "radio.h"
@@ -208,11 +207,11 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
 
     char * canonized_call = util_canonize_callsign(remote_callsign, false);
     qso_log_record_t qso = qso_log_record_create(
-        params.callsign.x,
+        param_t_get(cfg.station.callsign()),
         canonized_call,
         now, param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
         s_snr, r_snr, cparam_i_get(cfg.computed.fg_freq()), NULL, NULL,
-        params.qth.x, remote_grid
+        param_t_get(cfg.station.qth()), remote_grid
     );
     free(canonized_call);
 
@@ -234,7 +233,7 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
 }
 
 static void worker_init() {
-    qso_processor = ftx_qso_processor_init(params.callsign.x, params.qth.x,
+    qso_processor = ftx_qso_processor_init(param_t_get(cfg.station.callsign()), param_t_get(cfg.station.qth()),
                                            save_qso,
                                            param_i_get(cfg.ft8.max_repeats()));
 
@@ -386,7 +385,7 @@ static void set_freq(uint32_t freq) {
         freq = filter_low;
     }
 
-    params_uint16_set(&params.ft8_tx_freq, freq);
+    param_i_set(cfg.ft8.tx_freq(), freq);
 
     lv_finder_set_value(finder, freq);
     lv_obj_invalidate(finder);
@@ -397,7 +396,7 @@ static void rotary_cb(int32_t diff) {
     if (abs_diff > 3) {
         diff *= (abs_diff < 6) ? 5 : 10;
     }
-    uint32_t f = params.ft8_tx_freq.x + diff;
+    uint32_t f = param_i_get(cfg.ft8.tx_freq()) + diff;
     f = limit(f, filter_low, filter_high - (param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? FT8_WIDTH_HZ : FT4_WIDTH_HZ));
 
     set_freq(f);
@@ -468,7 +467,7 @@ static void construct_cb(lv_obj_t *parent) {
     finder = lv_finder_create(waterfall);
 
     lv_finder_set_width(finder, 50);
-    lv_finder_set_value(finder, params.ft8_tx_freq.x);
+    lv_finder_set_value(finder, param_i_get(cfg.ft8.tx_freq()));
 
     lv_obj_set_size(finder, WIDTH, 325);
     lv_obj_set_pos(finder, 0, 0);
@@ -515,7 +514,7 @@ static void construct_cb(lv_obj_t *parent) {
 
     lv_finder_set_range(finder, filter_low, filter_high);
 
-    qth_str_to_pos(params.qth.x, &cur_lat, &cur_lon);
+    qth_str_to_pos(param_t_get(cfg.station.qth()), &cur_lat, &cur_lon);
 
     lm_set_ab(true);
     lm_set_mode(true);
@@ -627,14 +626,14 @@ static void tx_cq_en_dis_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
 
     if (!subject_i_get(cq_enabled)){
-        if (strlen(params.callsign.x) == 0) {
+        if (strlen(param_t_get(cfg.station.callsign())) == 0) {
             msg_schedule_text_fmt("Call sign required");
             return;
         }
         subject_i_set(cq_enabled, true);
         subject_i_set(tx_enabled, true);
 
-        cq_make_message(params.callsign.x, params.qth.x, params.ft8_cq_modifier.x, tx_msg.msg);
+        cq_make_message(param_t_get(cfg.station.callsign()), param_t_get(cfg.station.qth()), param_t_get(cfg.ft8.cq_modifier()), tx_msg.msg);
 
         struct timespec now;
         clock_gettime(CLOCK_REALTIME, &now);
@@ -666,7 +665,7 @@ static void tx_call_en_dis_cb(struct button_data_t *btn_data) {
         return;
 
     if (!subject_i_get(tx_enabled)) {
-        if (strlen(params.callsign.x) == 0) {
+        if (strlen(param_t_get(cfg.station.callsign())) == 0) {
             msg_schedule_text_fmt("Call sign required");
             return;
         }
@@ -779,8 +778,8 @@ static void keyboard_open() {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     );
 
-    if (strlen(params.ft8_cq_modifier.x) > 0) {
-        textarea_window_set(params.ft8_cq_modifier.x);
+    if (strlen(param_t_get(cfg.ft8.cq_modifier())) > 0) {
+        textarea_window_set(param_t_get(cfg.ft8.cq_modifier()));
     } else {
         lv_obj_t *text = textarea_window_text();
         lv_textarea_set_placeholder_text(text, " CQ modifier");
@@ -806,7 +805,7 @@ static bool keyboard_ok_cb() {
         msg_schedule_text_fmt("Unsupported CQ modifier");
         return false;
     }
-    params_str_set(&params.ft8_cq_modifier, cq_mod);
+    param_t_set(cfg.ft8.cq_modifier(), cq_mod);
     keyboard_close();
     return true;
 }
@@ -923,7 +922,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
     cell_data.meta = meta;
     cell_data.odd = s_info->odd;
-    if (params.qth.x[0] != 0) {
+    if (param_t_get(cfg.station.qth())[0] != 0) {
         if (strlen(meta.grid) > 0) {
             double lat, lon;
             qth_str_to_pos(meta.grid, &lat, &lon);

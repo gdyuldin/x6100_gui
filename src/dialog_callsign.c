@@ -14,13 +14,13 @@
 
 #include "radio.h"
 #include "textarea_window.h"
-#include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "main_screen.h"
 #include "dialog.h"
 #include "events.h"
 #include "msg.h"
 
-
+#define CALLSIGN_MAX_LEN 15
 
 static void construct_cb(lv_obj_t *parent);
 static void destruct_cb();
@@ -67,7 +67,7 @@ static bool edit_ok() {
             msg_schedule_text_fmt("Callsign is long, QTH will be omitted");
         }
     }
-    params_str_set(&params.callsign, callsign);
+    param_t_set(cfg.station.callsign(), callsign);
     dialog_destruct(&dialog);
     return true;
 }
@@ -87,11 +87,11 @@ static void construct_cb(lv_obj_t *parent) {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     );
 
-    lv_textarea_set_max_length(text, sizeof(params.callsign.x) - 1);
+    lv_textarea_set_max_length(text, CALLSIGN_MAX_LEN);
     lv_textarea_set_placeholder_text(text, "Callsign");
     lv_obj_add_event_cb(text, key_cb, LV_EVENT_KEY, NULL);
 
-    textarea_window_set(params.callsign.x);
+    textarea_window_set(param_t_get(cfg.station.callsign()));
 }
 
 static void destruct_cb() {

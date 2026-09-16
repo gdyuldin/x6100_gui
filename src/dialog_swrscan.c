@@ -10,7 +10,6 @@
 
 #include "dialog.h"
 #include "styles.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "radio.h"
 #include "events.h"

@@ -384,7 +384,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 cparam_i_set(cfg.computed.pre(), pre);
                 voice_say_text_fmt("Preamplifier %s", pre ? "On" : "Off");
 
-                if (params.mag_info.x) {
+                if (param_i_get(cfg.view.mag_info())) {
                     msg_tiny_set_text_fmt("Pre: %s", pre ? "On" : "Off");
                 }
             } else if (keypad->state == KEYPAD_LONG) {
@@ -392,7 +392,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 cparam_i_set(cfg.computed.att(), att);
                 voice_say_text_fmt("Attenuator %s", att ? "On" : "Off");
 
-                if (params.mag_info.x) {
+                if (param_i_get(cfg.view.mag_info())) {
                     msg_tiny_set_text_fmt("Att: %s", att ? "On" : "Off");
                 }
             }
@@ -455,7 +455,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 }
                 cparam_i_set(cfg.computed.agc(), agc);
 
-                if (params.mag_info.x) {
+                if (param_i_get(cfg.view.mag_info())) {
                     msg_tiny_set_text_fmt(msg_text);
                 }
             } else if (keypad->state == KEYPAD_LONG) {
@@ -465,7 +465,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
                 spectrum_clear();
 
-                if (params.mag_info.x) {
+                if (param_i_get(cfg.view.mag_info())) {
                     msg_tiny_set_text_fmt("Split: %s", new_split ? "On" : "Off");
                 }
             }
@@ -483,7 +483,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
             if (keypad->state == KEYPAD_RELEASE) {
                 toggle_atu_enabled();
 
-                if (params.mag_info.x) {
+                if (param_i_get(cfg.view.mag_info())) {
                     msg_tiny_set_text_fmt("ATU: %s", param_i_get(cfg.general.atu_enabled()) ? "On" : "Off");
                 }
             } else if (keypad->state == KEYPAD_LONG) {
@@ -536,7 +536,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 apps_disable();
                 buttons_load_page_group(buttons_group_gen);
             } else if (keypad->state == KEYPAD_LONG) {
-                main_screen_action(params.long_gen);
+                main_screen_action(param_i_get(cfg.keys.long_gen()));
             }
             break;
 
@@ -545,7 +545,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 apps_disable();
                 buttons_load_page_group(buttons_group_app);
             } else if (keypad->state == KEYPAD_LONG) {
-                main_screen_action(params.long_app);
+                main_screen_action(param_i_get(cfg.keys.long_app()));
             }
             break;
 
@@ -554,7 +554,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 apps_disable();
                 buttons_load_page_group(buttons_group_key);
             } else if (keypad->state == KEYPAD_LONG) {
-                main_screen_action(params.long_key);
+                main_screen_action(param_i_get(cfg.keys.long_key()));
             }
             break;
 
@@ -590,7 +590,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                         break;
                 }
             } else if (keypad->state == KEYPAD_LONG) {
-                main_screen_action(params.long_msg);
+                main_screen_action(param_i_get(cfg.keys.long_msg()));
             }
             break;
 
@@ -599,7 +599,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 apps_disable();
                 buttons_load_page_group(buttons_group_dfn);
             } else if (keypad->state == KEYPAD_LONG) {
-                main_screen_action(params.long_dfn);
+                main_screen_action(param_i_get(cfg.keys.long_dfn()));
             }
             break;
 
@@ -609,7 +609,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 buttons_load_page_group(buttons_group_dfl);
                 voice_say_text_fmt("DFL parameters");
             } else if (keypad->state == KEYPAD_LONG) {
-                main_screen_action(params.long_dfl);
+                main_screen_action(param_i_get(cfg.keys.long_dfl()));
             }
             break;
 
@@ -620,7 +620,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
 
                     spectrum_clear();
 
-                    if (params.mag_info.x) {
+                    if (param_i_get(cfg.view.mag_info())) {
                         const char *prefix = param_i_get(cfg.band.split()) ? "SPL" : "VFO";
                         const char *vfo_id_str = new_vfo == X6100_VFO_A ? "A": "B";
                         msg_tiny_set_text_fmt("%s: %s", prefix, vfo_id_str);
@@ -771,17 +771,17 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_F1:
             if (hkey->state == HKEY_RELEASE) {
-                main_screen_action(params.press_f1);
+                main_screen_action(param_i_get(cfg.keys.press_f1()));
             } else if (hkey->state == HKEY_LONG) {
-                main_screen_action(params.long_f1);
+                main_screen_action(param_i_get(cfg.keys.long_f1()));
             }
             break;
 
         case HKEY_F2:
             if (hkey->state == HKEY_RELEASE) {
-                main_screen_action(params.press_f2);
+                main_screen_action(param_i_get(cfg.keys.press_f2()));
             } else if (hkey->state == HKEY_LONG) {
-                main_screen_action(params.long_f2);
+                main_screen_action(param_i_get(cfg.keys.long_f2()));
             }
             break;
 
@@ -840,7 +840,7 @@ static uint16_t freq_accel(uint16_t dt) {
 
     float speed;
 
-    switch (params.freq_accel.x) {
+    switch (param_i_get(cfg.radio.freq_accel())) {
         case FREQ_ACCEL_NONE:
             return 1;
 
@@ -1154,7 +1154,7 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
 }
 
 static void on_fg_freq_change(Subject *subj, void *user_data) {
-    if (params.mag_freq.x) {
+    if (param_i_get(cfg.view.mag_freq())) {
         int32_t f = subject_i_get(radio_fg_freq_subj);
 
         uint16_t mhz, khz, hz;
@@ -1177,7 +1177,7 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
 
     int32_t zoom = param_i_get(cfg.mode.zoom());
 
-    if (params.waterfall_zoom.x) {
+    if (param_i_get(cfg.waterfall.zoom())) {
         half_width /= zoom;
     }
 

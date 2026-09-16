@@ -11,7 +11,7 @@
 #include "migrations.h"
 
 #include "db.h"
-#include "../cfg/digital_modes.h"
+#include "digital_modes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,13 +19,12 @@
 
 #define SIZEOF_ARRAY(arr) (sizeof(arr) > 0 ? sizeof(arr) / sizeof(arr[0]) : 0)
 
-static sqlite3_stmt *update_ver_stmt;
-
 static int get_current_version(int * ver);
 static int set_current_version(int ver);
 
 /* Migrations functions */
 static int _0_init_migrations() {
+    sqlite3 *db = cfg_db_get();
     int rc;
     rc = sqlite3_exec(db, "INSERT INTO version(id) VALUES(0)", NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
@@ -36,6 +35,7 @@ static int _0_init_migrations() {
 }
 
 static int _1_create_ftx_table() {
+    sqlite3 *db = cfg_db_get();
     int rc;
     char *query;
     rc = asprintf(&query,
@@ -79,6 +79,7 @@ static int _1_create_ftx_table() {
 }
 
 static int _2_update_atu_freq() {
+    sqlite3 *db = cfg_db_get();
     int rc;
     rc = sqlite3_exec(db, "UPDATE atu SET freq=freq * 50000 + 25000 WHERE freq < 500000", NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
@@ -89,6 +90,7 @@ static int _2_update_atu_freq() {
 }
 
 static int _3_update_spectrum_peak_hold() {
+    sqlite3 *db = cfg_db_get();
     int rc;
     // spectrum peak hold from 1ms to 1s
     rc = sqlite3_exec(db, "UPDATE params SET val = val / 1000 WHERE name = 'spectrum_peak_hold'", NULL, NULL, NULL);
@@ -110,7 +112,7 @@ static int (*migrations[])() = {
 int migrations_apply(void) {
     int rc = 0;
     int ver;
-    if (db == NULL) {
+    if (cfg_db_get() == NULL) {
         printf("Database is not opened\n");
         return 1;
     }
@@ -134,6 +136,7 @@ int migrations_apply(void) {
 
 
 static int get_current_version(int * ver) {
+    sqlite3 *db = cfg_db_get();
     int rc;
     sqlite3_stmt *stmt;
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS version(id INT NOT NULL DEFAULT 0)", NULL, NULL, NULL);
@@ -158,6 +161,7 @@ static int get_current_version(int * ver) {
 }
 
 static int set_current_version(int ver) {
+    sqlite3 *db = cfg_db_get();
     int rc;
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, "UPDATE version SET id=?", -1, &stmt, 0);

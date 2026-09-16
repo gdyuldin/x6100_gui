@@ -27,7 +27,6 @@ extern "C" {
     #include "audio.h"
     #include "meter.h"
     #include "radio.h"
-    #include "params/params.h"
 
     #include <math.h>
     #include <pthread.h>
@@ -343,7 +342,6 @@ class ChunkedSpgram {
             psd[i]     = LV_MAX(LIQUID_SPGRAM_PSD_MIN, psd_[k]) * scale;
         }
         if (accumulate_) {
-            printf("num_transforms: %u\n", num_transforms_);
             clear();
         }
     };
@@ -546,7 +544,8 @@ static void update_s_meter() {
 
     sum_db = 10.0f * log10f(sum) + DB_OFFSET;
 
-    meter_update(sum_db, params.spectrum_beta.x * 0.01f);
+    // TODO: use subscription
+    meter_update(sum_db, param_i_get(cfg.spectrum.beta()) * 0.01f);
 }
 
 void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq, bool vary_freq, uint8_t fft_dec) {

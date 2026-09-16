@@ -24,7 +24,10 @@
 
 #include <ft8lib/constants.h>
 
+#include "../clock.h"
 #include "../common/math.h"
+#include "../settings_types.h"
+#include "../voice.h"
 #include "computed_parameter.h"
 #include "encoder_bind_types.h"
 #include "parameter.h"
@@ -228,6 +231,149 @@ class SettingsManager {
     Parameter<int32_t>            p_cessb_on{"cessb_on", false, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<float, int32_t, 10> p_cessb_power_up{"cessb_power_up", 3.7f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // --- GLOBAL params migrated from the legacy params module (stage 8.2) ---
+    // DB keys are 1:1 with the legacy field names.
+
+    // Display / backlight
+    Parameter<int32_t> p_brightness_normal{"brightness_normal", 9, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_brightness_idle{"brightness_idle", 1, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_brightness_timeout{"brightness_timeout", 10, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_brightness_buttons{"brightness_buttons", BUTTONS_TEMPORARILY, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // Clock
+    Parameter<int32_t> p_clock_view{"clock_view", CLOCK_TIME_POWER, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_clock_time_timeout{"clock_time_timeout", 5, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_clock_power_timeout{"clock_power_timeout", 3, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_clock_tx_timeout{"clock_tx_timeout", 1, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // Spectrum (migrated legacy fields)
+    Parameter<int32_t> p_spectrum_beta{"spectrum_beta", 70, 0, 90,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_spectrum_peak{"spectrum_peak", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_spectrum_peak_hold{"spectrum_peak_hold", 5, 1, 10,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_spectrum_peak_speed{"spectrum_peak_speed", 5, 1, 30,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_spectrum_filled{"spectrum_filled", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+
+    // Waterfall
+    Parameter<int32_t> p_waterfall_center_line{"waterfall_center_line", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_waterfall_zoom{"waterfall_zoom", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+
+    // Main screen magnification
+    Parameter<int32_t> p_mag_freq{"mag_freq", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_mag_info{"mag_info", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_mag_alc{"mag_alc", true, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+
+    // Voice
+    Parameter<int32_t> p_voice_mode{"voice_mode", VOICE_LCD, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_voice_lang{"voice_lang", 0, 0, VOICES_NUM - 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_voice_rate{"voice_rate", 100, 50, 150,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_voice_pitch{"voice_pitch", 100, 50, 150,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_voice_volume{"voice_volume", 100, 50, 150,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_voice_msg_period{"voice_msg_period", 10, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // Audio play/record gain (REAL in the DB, no scaling: matches legacy)
+    Parameter<float> p_play_gain_db{"play_gain_db_f", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<float> p_rec_gain_db{"rec_gain_db_f", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // RTTY
+    Parameter<int32_t> p_rtty_center{"rtty_center", 800, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_rtty_shift{"rtty_shift", 170, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_rtty_rate{"rtty_rate", 4545, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_rtty_reverse{"rtty_reverse", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+
+    // CW beacon period (legacy cw field; CW group lives below)
+    Parameter<int32_t> p_cw_encoder_period{"cw_encoder_period", 10, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // FT8 (legacy fields)
+    Parameter<int32_t>    p_ft8_tx_freq{"ft8_tx_freq", 1325, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<float>      p_ft8_output_gain_offset{"ft8_output_gain_offset", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<std::string> p_ft8_cq_modifier{"ft8_cq_modifier", "", {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // Station identity
+    Parameter<std::string> p_qth{"qth", "", {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<std::string> p_callsign{"callsign", "", {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // Network
+    Parameter<int32_t> p_wifi_enabled{"wifi_enabled", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+
+    // Long-press / HMic action bindings
+    Parameter<int32_t> p_long_gen{"long_gen", ACTION_SCREENSHOT, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_long_app{"long_app", ACTION_APP_RECORDER, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_long_key{"long_key", ACTION_NONE, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_long_msg{"long_msg", ACTION_RECORDER, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_long_dfn{"long_dfn", ACTION_VOICE_MODE, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_long_dfl{"long_dfl", ACTION_BAT_INFO, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_press_f1{"press_f1", ACTION_STEP_UP, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_press_f2{"press_f2", ACTION_NONE, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_long_f1{"long_f1", ACTION_STEP_DOWN, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_long_f2{"long_f2", ACTION_NONE, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // Radio hardware settings
+    Parameter<int32_t> p_charger{"charger", 1, 0, 2,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_line_in{"line_in", 10, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_line_out{"line_out", 10, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_spmode{"spmode", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_freq_accel{"freq_accel", FREQ_ACCEL_LITE, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+
+    // Appearance
+    Parameter<int32_t> p_theme{"theme", THEME_SIMPLE, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_meter_color{"meter_color", METER_GRAY, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_swr_color{"swr_color", SWR_GRAY, {},
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
 
     // --- BAND params (`band_params` table) ---

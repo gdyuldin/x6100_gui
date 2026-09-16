@@ -9,7 +9,6 @@
 #include "meter.h"
 #include "styles.h"
 #include "events.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "spectrum.h"
 #include "util.h"

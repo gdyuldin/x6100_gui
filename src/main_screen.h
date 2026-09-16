@@ -9,7 +9,7 @@
 #pragma once
 
 #include "lvgl/lvgl.h"
-#include "params/params.h"
+#include "settings_types.h"
 
 #define MEM_HKEY_MAX_ID         9
 

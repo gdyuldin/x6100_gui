@@ -16,7 +16,6 @@
 #include "lvgl/lvgl.h"
 
 #include "../cfg/cfg_api.h"
-#include "../params/params.h"
 #include "worker.h"
 
 /* FT8 audio tone offset inside the radio passband. */
@@ -73,12 +72,12 @@ bool tx_worker_run(const char *tx_text, float base_gain_offset, tx_abort_fn_t ab
         g_ports->radio->set_pwr(MAX_PWR_W);
     }
 
-    float gain_offset      = base_gain_offset + params.ft8_output_gain_offset.x;
+    float gain_offset      = base_gain_offset + param_f_get(cfg.ft8.output_gain_offset());
     float play_gain_offset = g_ports->audio->set_play_vol(gain_offset + 6.0f);
     gain_offset           -= play_gain_offset;
 
     uint64_t radio_freq = cparam_i_get(cfg.computed.fg_freq());
-    g_ports->radio->set_freq((int32_t)radio_freq + (int32_t)params.ft8_tx_freq.x - SIGNAL_FREQ_HZ);
+    g_ports->radio->set_freq((int32_t)radio_freq + (int32_t)param_i_get(cfg.ft8.tx_freq()) - SIGNAL_FREQ_HZ);
     g_ports->radio->set_modem(true);
 
     float    prev_gain_offset = gain_offset;
@@ -118,13 +117,12 @@ bool tx_worker_run(const char *tx_text, float base_gain_offset, tx_abort_fn_t ab
         counter++;
     }
 
-    params_float_set(&params.ft8_output_gain_offset,
-                     gain_offset - base_gain_offset + play_gain_offset);
+    param_f_set(cfg.ft8.output_gain_offset(), gain_offset - base_gain_offset + play_gain_offset);
     g_ports->audio->player_wait(player);
     g_ports->radio->set_modem(false);
     g_ports->radio->set_freq((int32_t)radio_freq);
     free(samples);
-    g_ports->audio->set_play_vol(params.play_gain_db_f.x);
+    g_ports->audio->set_play_vol(param_f_get(cfg.audio.play_gain_db()));
 
     return !aborted;
 }

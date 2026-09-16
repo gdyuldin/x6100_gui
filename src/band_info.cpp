@@ -22,8 +22,6 @@ extern "C" {
 #include "cfg/db.h"
 #include "cfg/subject.h"
 
-// For params.waterfall_zoom.x (params.h already has its own extern "C" guards)
-#include "params/params.h"
 
 #include <memory>
 #include <vector>
@@ -66,7 +64,7 @@ static void band_info_draw_cb(lv_event_t *e) {
     }
 
     uint8_t current_zoom = 1;
-    if (params.waterfall_zoom.x) {
+    if (param_i_get(cfg.waterfall.zoom())) {
         current_zoom = zoom;
     }
 

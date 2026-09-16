@@ -24,7 +24,7 @@
 #include "dialog_msg_voice.h"
 #include "dsp.h"
 #include "styles.h"
-#include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "events.h"
 #include "util.h"
 #include "panel.h"
@@ -341,8 +341,8 @@ static void * beacon_thread(void *arg) {
                 break;
 
             case VOICE_BEACON_IDLE:
-                msg_update_text_fmt("Beacon pause: %i s", params.voice_msg_period);
-                sleep(params.voice_msg_period);
+                msg_update_text_fmt("Beacon pause: %i s", param_i_get(cfg.voice.msg_period()));
+                sleep(param_i_get(cfg.voice.msg_period()));
                 break;
         }
 
@@ -528,28 +528,18 @@ static void beacon_stop_cb(button_data_t *btn_data) {
 }
 
 void dialog_msg_voice_period_cb(button_data_t *btn_data) {
-    params_lock();
+    int32_t period;
 
-    switch (params.voice_msg_period) {
-        case 10:
-            params.voice_msg_period = 30;
-            break;
-
-        case 30:
-            params.voice_msg_period = 60;
-            break;
-
-        case 60:
-            params.voice_msg_period = 120;
-            break;
-
-        case 120:
-            params.voice_msg_period = 10;
-            break;
+    switch (param_i_get(cfg.voice.msg_period())) {
+        case 10:  period = 30;  break;
+        case 30:  period = 60;  break;
+        case 60:  period = 120; break;
+        case 120: period = 10;  break;
+        default:  period = 10;  break;
     }
 
-    params_unlock(&params.dirty.voice_msg_period);
-    msg_update_text_fmt("Beacon period: %i s", params.voice_msg_period);
+    param_i_set(cfg.voice.msg_period(), period);
+    msg_update_text_fmt("Beacon period: %i s", param_i_get(cfg.voice.msg_period()));
 }
 
 void dialog_msg_voice_rec_cb(button_data_t *btn_data) {

@@ -10,11 +10,12 @@
 
 #include "events.h"
 #include "styles.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "pubsub_ids.h"
 
 #include <math.h>
+
+#include <aether_radio/x6100_control/control.h>
 
 #define BLOCK_W 5
 #define SPACING 4

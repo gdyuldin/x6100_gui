@@ -12,6 +12,12 @@
 extern "C" {
 #endif
 
+// Single process-wide settings entry point: opens CFG_DB_PATH, applies
+// migrations, initialises the DB tables, loads the manager params through
+// cfg_api_init() and starts the deferred-save flush thread. Idempotency is not
+// guaranteed; call once from main() before any settings consumer.
+void cfg_init(void);
+
 // Initialise the manager (loads global/band/mode params). Parameter handles
 // are accessor functions in cfg_api.h and need no wiring. The caller owns the
 // sqlite3 connection/table init (cfg_api_init is not handed a db handle).

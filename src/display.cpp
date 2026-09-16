@@ -40,8 +40,8 @@ static void on_display_invert_change(Subject * /*subj*/, void * /*user_data*/) {
 }
 
 static void display_timer(lv_timer_t *t) {
-    display_set_brightness(params.brightness_idle);
-    x6100_gpio_set(x6100_pin_light, params.brightness_buttons == BUTTONS_LIGHT ? 1 : 0);
+    display_set_brightness(cfg.display.brightness_idle()->get());
+    x6100_gpio_set(x6100_pin_light, cfg.display.brightness_buttons()->get() == BUTTONS_LIGHT ? 1 : 0);
     timer = NULL;
 }
 
@@ -76,14 +76,14 @@ void display_init() {
 
 void display_tick() {
     if (timer) {
-        lv_timer_set_period(timer, params.brightness_timeout * 1000);
+        lv_timer_set_period(timer, cfg.display.brightness_timeout()->get() * 1000);
         lv_timer_reset(timer);
     } else {
-        timer = lv_timer_create(display_timer, params.brightness_timeout * 1000, NULL);
+        timer = lv_timer_create(display_timer, cfg.display.brightness_timeout()->get() * 1000, NULL);
         lv_timer_set_repeat_count(timer, 1);
 
-        display_set_brightness(params.brightness_normal);
-        x6100_gpio_set(x6100_pin_light, params.brightness_buttons == BUTTONS_DARK ? 0 : 1);
+        display_set_brightness(cfg.display.brightness_normal()->get());
+        x6100_gpio_set(x6100_pin_light, cfg.display.brightness_buttons()->get() == BUTTONS_DARK ? 0 : 1);
     }
 }
 
@@ -102,9 +102,7 @@ void display_set_brightness(int16_t value) {
 }
 
 void display_set_buttons_backlight(buttons_light_t value) {
-    params_lock();
-    params.brightness_buttons = value;
-    params_unlock(&params.dirty.brightness_buttons);
+    cfg.display.brightness_buttons()->set(value);
 
     x6100_gpio_set(x6100_pin_light, value == BUTTONS_DARK ? 0 : 1);
 }
@@ -121,8 +119,8 @@ void display_power_toggle() {
     } else {
         lv_disp_enable_invalidation(lv_disp_get_default(), true);
         set_power(true);
-        set_brightness(params.brightness_normal);
-        x6100_gpio_set(x6100_pin_light, params.brightness_buttons == BUTTONS_DARK ? 0 : 1);
+        set_brightness(cfg.display.brightness_normal()->get());
+        x6100_gpio_set(x6100_pin_light, cfg.display.brightness_buttons()->get() == BUTTONS_DARK ? 0 : 1);
 
         voice_say_text_fmt("Display on");
         on = true;

@@ -7,7 +7,6 @@
 #include "cfg/cfg_api.h"
 #include "radio.h"
 #include "styles.h"
-#include "params/params.h"
 #include "pubsub_ids.h"
 #include "util.h"
 #include "lock_manager.h"

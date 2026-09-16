@@ -19,6 +19,7 @@
 #include "globals.h"
 #include "buttons.h"
 #include "cfg/cfg_api.h"
+#include "format.h"
 #include "pubsub_ids.h"
 
 extern "C" {
@@ -117,7 +118,7 @@ struct ControlSubjOnOff : public ControlSubjChoices {
 
 struct ControlComp : public ControlSubjBase<int32_t> {
     using ControlSubjBase<int32_t>::ControlSubjBase;
-    std::string to_str() { return std::string(params_comp_str_get(subj->get())); }
+    std::string to_str() { return std::string(format_comp_str_get(subj->get())); }
 };
 
 
@@ -236,10 +237,10 @@ static std::map<int, std::unique_ptr<Control>> make_controls() {
     add(CTRL_CW_DECODER_SNR, new ControlSubjFloat("CW decoded snr", cfg.cw.decoder_snr()));
     add(CTRL_CW_PEAK_ON, new ControlSubjOnOff("CW peak", cfg.cw.peak_on()));
     add(CTRL_CW_PEAK_Q, new ControlSubjInt("CW peak Q", cfg.cw.peak_q()));
-    // add(MFK_RTTY_RATE, Control("RTTY rate", []() { return to_str((float)params.rtty_rate / 100.0f, "%0.2f"); }));
-    // add(MFK_RTTY_SHIFT, Control("RTTY shift", []() { return std::to_string(params.rtty_shift); }));
-    // add(MFK_RTTY_CENTER, Control("RTTY center", []() { return std::to_string(params.rtty_center); }));
-    // add(MFK_RTTY_REVERSE, Control("RTTY reverse", []() { return std::string(params.rtty_reverse ? "On" : "Off"); }));
+    // add(MFK_RTTY_RATE, Control("RTTY rate", []() { return to_str((float)param_i_get(cfg.rtty.rate()) / 100.0f, "%0.2f"); }));
+    // add(MFK_RTTY_SHIFT, Control("RTTY shift", []() { return std::to_string(param_i_get(cfg.rtty.shift())); }));
+    // add(MFK_RTTY_CENTER, Control("RTTY center", []() { return std::to_string(param_i_get(cfg.rtty.center())); }));
+    // add(MFK_RTTY_REVERSE, Control("RTTY reverse", []() { return std::string(param_i_get(cfg.rtty.reverse()) ? "On" : "Off"); }));
 
     return controls;
 }

@@ -10,6 +10,7 @@
 #include "globals.h"
 #include "controls.h"
 #include "util.h"
+#include "format.h"
 #include "cfg/cfg_api.h"
 #include "cfg/encoder_defaults.h"
 
@@ -25,7 +26,6 @@ extern "C" {
     #include "vol.h"
     #include "msg.h"
     #include "panel.h"
-    #include "params/params.h"
     #include "voice.h"
     #include "pubsub_ids.h"
 }
@@ -847,7 +847,7 @@ static const char * filter_bw_label_getter() {
 
 static const char * mic_sel_label_getter() {
     static char buf[22];
-    sprintf(buf, "MIC Sel:\n%s", params_mic_str_get((x6100_mic_sel_t)cfg.general.mic()->get()));
+    sprintf(buf, "MIC Sel:\n%s", format_mic_str_get((x6100_mic_sel_t)cfg.general.mic()->get()));
     return buf;
 }
 
@@ -903,7 +903,7 @@ static const char * agc_slope_label_getter() {
 
 static const char * comp_label_getter() {
     static char buf[22];
-    sprintf(buf, "Comp:\n%s", params_comp_str_get(cfg.dsp.comp()->get()));
+    sprintf(buf, "Comp:\n%s", format_comp_str_get(cfg.dsp.comp()->get()));
     return buf;
 }
 
@@ -963,13 +963,13 @@ static const char * key_tone_label_getter() {
 
 static const char * key_mode_label_getter() {
     static char buf[22];
-    sprintf(buf, "Mode:\n%s", params_key_mode_str_get((x6100_key_mode_t)cfg.cw.key_mode()->get()));
+    sprintf(buf, "Mode:\n%s", format_key_mode_str_get((x6100_key_mode_t)cfg.cw.key_mode()->get()));
     return buf;
 }
 
 static const char * iambic_mode_label_getter() {
     static char buf[22];
-    sprintf(buf, "Iambic:\n%s mode", params_iambic_mode_str_ger((x6100_iambic_mode_t)cfg.cw.iambic_mode()->get()));
+    sprintf(buf, "Iambic:\n%s mode", format_iambic_mode_str_get((x6100_iambic_mode_t)cfg.cw.iambic_mode()->get()));
     return buf;
 }
 

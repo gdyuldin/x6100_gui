@@ -18,7 +18,6 @@
 #include "events.h"
 #include "util.h"
 #include "keyboard.h"
-#include "params/params.h"
 #include "panel.h"
 #include "main_screen.h"
 #include "msg.h"

@@ -15,7 +15,7 @@
 #include "radio.h"
 #include "keyboard.h"
 #include "qth/qth.h"
-#include "params/params.h"
+#include "cfg/cfg_api.h"
 #include "msg.h"
 #include "lvgl/lvgl.h"
 
@@ -193,10 +193,10 @@ static void gps_cb(void *s, lv_msg_t *m) {
         qth_pos_to_str(data.fix.latitude, data.fix.longitude, qth_val);
         lv_label_set_text(qth, qth_val);
 
-        int saved_qth_len = strlen(params.qth.x);
-        if ((saved_qth_len == 0) || (strncmp(qth_val, params.qth.x, saved_qth_len) != 0)) {
-            params_str_set(&params.qth, qth_val);
-            msg_schedule_text_fmt("QTH updated: %s", params.qth.x);
+        const char *saved_qth = param_t_get(cfg.station.qth());
+        if ((strlen(saved_qth) == 0) || (strncmp(qth_val, saved_qth, strlen(saved_qth)) != 0)) {
+            param_t_set(cfg.station.qth(), qth_val);
+            msg_schedule_text_fmt("QTH updated: %s", param_t_get(cfg.station.qth()));
         }
     } else {
         lv_label_set_text(lat, "N/A");

@@ -16,6 +16,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
     textarea_window.c cw_encoder.c buttons.cpp vol.cpp recorder.c
     voice.cpp cw_tune_ui.c adif.c qso_log.c scheduler.cpp
+    format.c msg_cw_store.c
     dialog_wifi.c wifi.cpp controls.cpp usb_devices.cpp
     knobs.cpp lock_manager.c indicators.cpp freq_info.cpp
 )
@@ -23,7 +24,6 @@ target_sources(${PROJECT_NAME} PUBLIC
 add_subdirectory(fonts)
 add_subdirectory(ft8)
 add_subdirectory(widgets)
-add_subdirectory(params)
 add_subdirectory(qth)
 add_subdirectory(cfg)
 add_subdirectory(cat)

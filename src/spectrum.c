@@ -12,7 +12,6 @@
 #include "dsp.h"
 #include "events.h"
 #include "meter.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "pubsub_ids.h"
 #include "radio.h"
@@ -191,8 +190,8 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     if (rtty_get_state() != RTTY_OFF) {
         int32_t from, to;
 
-        from = sign_from * (params.rtty_center - params.rtty_shift / 2);
-        to   = sign_to * (params.rtty_center + params.rtty_shift / 2);
+        from = sign_from * (param_i_get(cfg.rtty.center()) - param_i_get(cfg.rtty.shift()) / 2);
+        to   = sign_to * (param_i_get(cfg.rtty.center()) + param_i_get(cfg.rtty.shift()) / 2);
 
         f1 = (int64_t)(w * from) / w_hz;
         f2 = (int64_t)(w * to) / w_hz;
@@ -301,7 +300,7 @@ void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_
     for (uint16_t i = 0; i < size; i++) {
         spectrum_buf[i] = data_buf[i];
 
-        if (params.spectrum_peak.x && !tx) {
+        if (param_i_get(cfg.spectrum.peak()) && !tx) {
             float   v    = spectrum_buf[i];
             peak_t *peak = &spectrum_peak[i];
 
@@ -309,8 +308,8 @@ void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_
                 peak->time = now;
                 peak->val  = v;
             } else {
-                if (now - peak->time > (int)params.spectrum_peak_hold.x * 1000) {
-                    peak->val -= params.spectrum_peak_speed.x * 0.1f;
+                if (now - peak->time > (int)param_i_get(cfg.spectrum.peak_hold()) * 1000) {
+                    peak->val -= param_i_get(cfg.spectrum.peak_speed()) * 0.1f;
                 }
             }
         }
@@ -628,11 +627,11 @@ static void spectrum_render_rotated(uint32_t *buf, int stride) {
     spectrum_update_colors();
     int32_t offset = spectrum_compute_offset();
 
-    if (params.spectrum_peak.x && !spectrum_tx) {
+    if (param_i_get(cfg.spectrum.peak()) && !spectrum_tx) {
         spectrum_draw_polyline(buf, stride, min, max, offset, true, s_peak_color);
     }
 
-    if (params.spectrum_filled.x) {
+    if (param_i_get(cfg.spectrum.filled())) {
         lv_grad_t * cached_grad = lv_gradient_get(&grad_dsc, stride, 1);
         for (int i = 0; i < SPECTRUM_SIZE; i++) {
             int row = SPECTRUM_SIZE - 1 - offset - i;

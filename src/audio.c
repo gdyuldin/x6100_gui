@@ -21,7 +21,6 @@
 #include "audio.h"
 #include "meter.h"
 #include "dsp.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 
 #define AUDIO_RATE_MS   30

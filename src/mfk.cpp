@@ -20,7 +20,6 @@
 
 
 extern "C" {
-    #include "params/params.h"
     #include "spectrum.h"
     #include "waterfall.h"
     #include "msg.h"

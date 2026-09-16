@@ -12,7 +12,6 @@
 #include "recorder.h"
 #include "dialog.h"
 #include "styles.h"
-#include "params/params.h"
 #include "events.h"
 #include "util.h"
 #include "panel.h"

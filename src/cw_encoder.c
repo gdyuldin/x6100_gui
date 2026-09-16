@@ -8,7 +8,6 @@
 #include "cw_encoder.h"
 
 #include "cw_decoder.h"
-#include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "radio.h"
 #include "msg.h"
@@ -117,8 +116,9 @@ static void * endecode_thread(void *arg) {
                 break;
             } else {
                 state = CW_ENCODER_BEACON_IDLE;
-                msg_update_text_fmt("Beacon pause: %i s", params.cw_encoder_period);
-                sleep(params.cw_encoder_period);
+                int32_t period = param_i_get(cfg.cw.encoder_period());
+                msg_update_text_fmt("Beacon pause: %i s", period);
+                sleep(period);
 
                 state = CW_ENCODER_BEACON;
                 current_char = current_msg;

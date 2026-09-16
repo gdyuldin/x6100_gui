@@ -17,7 +17,6 @@
 
 #ifdef __cplusplus
 
-#include "params/params.h"
 
 extern "C" {
 #endif
