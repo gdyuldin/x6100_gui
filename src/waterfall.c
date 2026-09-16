@@ -294,11 +294,7 @@ static void draw_additive_row(uint32_t *line, uint32_t n, uint8_t fr, uint8_t fg
 }
 
 static void waterfall_render_rotated(uint32_t *buf, int stride) {
-    uint32_t bandwidth = width_hz;
-
-    if (param_i_get(cfg.waterfall.zoom())) {
-        bandwidth /= zoom;
-    }
+    uint32_t bandwidth = width_hz / zoom;
 
     // circular history oldest->newest; newest (last_row_id) -> column 0 (logical top)
     for (uint16_t src_y = 0; src_y < s_wf_w; src_y++) {

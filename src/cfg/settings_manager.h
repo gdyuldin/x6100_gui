@@ -269,8 +269,6 @@ class SettingsManager {
     // Waterfall
     Parameter<int32_t> p_waterfall_center_line{"waterfall_center_line", true, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<int32_t> p_waterfall_zoom{"waterfall_zoom", true, 0, 1,
-        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // Main screen magnification
     Parameter<int32_t> p_mag_freq{"mag_freq", false, 0, 1,

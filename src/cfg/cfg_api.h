@@ -87,7 +87,6 @@ typedef struct {
 
 typedef struct {
     ParamInt *(*center_line)(void); /* p_waterfall_center_line */
-    ParamInt *(*zoom)(void); /* p_waterfall_zoom */
 } cfg_waterfall_refs_t;
 
 typedef struct {

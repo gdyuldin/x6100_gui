@@ -1174,13 +1174,9 @@ static void update_freq_boundaries(Subject *subj, void *user_data) {
     int32_t f = subject_i_get(radio_fg_freq_subj);
 
     uint16_t mhz, khz, hz;
-    uint32_t half_width = 50000;
 
     int32_t zoom = param_i_get(cfg.mode.zoom());
-
-    if (param_i_get(cfg.waterfall.zoom())) {
-        half_width /= zoom;
-    }
+    uint32_t half_width = 50000 / zoom;
 
     split_freq(f - half_width, &mhz, &khz, &hz);
     lv_label_set_text_fmt(freq_bounds[0], "%i.%03i", mhz, khz);

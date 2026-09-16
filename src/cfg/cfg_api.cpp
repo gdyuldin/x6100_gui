@@ -135,7 +135,6 @@ static ParamInt *cfg_spectrum_peak_hold(void) { return &cfg_instance().p_spectru
 static ParamInt *cfg_spectrum_peak_speed(void) { return &cfg_instance().p_spectrum_peak_speed; }
 static ParamInt *cfg_spectrum_filled(void) { return &cfg_instance().p_spectrum_filled; }
 static ParamInt *cfg_waterfall_center_line(void) { return &cfg_instance().p_waterfall_center_line; }
-static ParamInt *cfg_waterfall_zoom(void) { return &cfg_instance().p_waterfall_zoom; }
 static ParamInt *cfg_mag_freq(void) { return &cfg_instance().p_mag_freq; }
 static ParamInt *cfg_mag_info(void) { return &cfg_instance().p_mag_info; }
 static ParamInt *cfg_mag_alc(void) { return &cfg_instance().p_mag_alc; }
@@ -344,7 +343,6 @@ extern "C" const cfg_refs_t cfg = {
     },
     .waterfall = {
         .center_line = &cfg_waterfall_center_line,
-        .zoom = &cfg_waterfall_zoom,
     },
     .view = {
         .mag_freq = &cfg_mag_freq,

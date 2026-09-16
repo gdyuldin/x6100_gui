@@ -63,10 +63,7 @@ static void band_info_draw_cb(lv_event_t *e) {
         return;
     }
 
-    uint8_t current_zoom = 1;
-    if (param_i_get(cfg.waterfall.zoom())) {
-        current_zoom = zoom;
-    }
+    uint8_t current_zoom = zoom;
 
     lv_coord_t x1 = obj->coords.x1;
     lv_coord_t y1 = obj->coords.y1;
