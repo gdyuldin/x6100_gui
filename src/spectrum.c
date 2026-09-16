@@ -43,6 +43,13 @@ typedef struct {
 static float spectrum_min = S_MIN;
 static float spectrum_max = S9_40;
 
+/* Peak config cached from cfg via subscription and read by the DSP thread in
+ * spectrum_data(). Atomic so the per-bin loop avoids a Subject mutex lock per
+ * bin; defaults match p_spectrum_peak / peak_hold / peak_speed. */
+static int s_peak_enabled = 1;
+static int s_peak_hold    = 5;
+static int s_peak_speed   = 5;
+
 static lv_obj_t *obj;
 
 static int32_t width_hz     = 100000;
@@ -94,6 +101,9 @@ static void on_mode_lo_offset_change(Subject *subj, void *user_data);
 static void on_if_shift_change(Subject *subj, void *user_data);
 static void on_fg_freq_change(Subject *subj, void *user_data);
 static void on_rit_change(Subject *subj, void *user_data);
+static void on_peak_changed(Subject *subj, void *user_data);
+static void on_peak_hold_changed(Subject *subj, void *user_data);
+static void on_peak_speed_changed(Subject *subj, void *user_data);
 static void shift_peaks(int32_t df);
 
 static void spectrum_render_rotated(uint32_t *buf, int stride);
@@ -275,6 +285,10 @@ lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     subject_subscribe((Subject *)cfg.dsp.dnf_center(), update_dnf, NULL);
     subject_subscribe_and_notify((Subject *)cfg.dsp.dnf_width(), update_dnf, NULL);
 
+    subject_subscribe_and_notify((Subject *)cfg.spectrum.peak(), on_peak_changed, NULL);
+    subject_subscribe_and_notify((Subject *)cfg.spectrum.peak_hold(), on_peak_hold_changed, NULL);
+    subject_subscribe_and_notify((Subject *)cfg.spectrum.peak_speed(), on_peak_speed_changed, NULL);
+
     subject_subscribe_and_notify((Subject *)cfg.computed.fg_freq(), on_fg_freq_change, NULL);
     subject_subscribe_and_notify((Subject *)cfg.general.rit(), on_rit_change, NULL);
 
@@ -297,10 +311,15 @@ void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_
     spectrum_tx  = tx;
     spectrum_min = min;
     spectrum_max = max;
+
+    const bool  peak_enabled = __atomic_load_n(&s_peak_enabled, __ATOMIC_ACQUIRE);
+    const int   peak_hold    = __atomic_load_n(&s_peak_hold, __ATOMIC_ACQUIRE);
+    const float peak_speed   = __atomic_load_n(&s_peak_speed, __ATOMIC_ACQUIRE) * 0.1f;
+
     for (uint16_t i = 0; i < size; i++) {
         spectrum_buf[i] = data_buf[i];
 
-        if (param_i_get(cfg.spectrum.peak()) && !tx) {
+        if (peak_enabled && !tx) {
             float   v    = spectrum_buf[i];
             peak_t *peak = &spectrum_peak[i];
 
@@ -308,8 +327,8 @@ void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_
                 peak->time = now;
                 peak->val  = v;
             } else {
-                if (now - peak->time > (int)param_i_get(cfg.spectrum.peak_hold()) * 1000) {
-                    peak->val -= param_i_get(cfg.spectrum.peak_speed()) * 0.1f;
+                if (now - peak->time > (int)peak_hold * 1000) {
+                    peak->val -= peak_speed;
                 }
             }
         }
@@ -425,6 +444,18 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
 
 static void on_rit_change(Subject *subj, void *user_data) {
     rit = param_i_get(cfg.general.rit());
+}
+
+static void on_peak_changed(Subject *subj, void *user_data) {
+    __atomic_store_n(&s_peak_enabled, subject_i_get((SubjectInt *)subj), __ATOMIC_RELEASE);
+}
+
+static void on_peak_hold_changed(Subject *subj, void *user_data) {
+    __atomic_store_n(&s_peak_hold, subject_i_get((SubjectInt *)subj), __ATOMIC_RELEASE);
+}
+
+static void on_peak_speed_changed(Subject *subj, void *user_data) {
+    __atomic_store_n(&s_peak_speed, subject_i_get((SubjectInt *)subj), __ATOMIC_RELEASE);
 }
 
 static void shift_peaks(int32_t df) {
