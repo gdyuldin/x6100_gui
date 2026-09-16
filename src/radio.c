@@ -13,6 +13,7 @@
 
 #include <unistd.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <pthread.h>
 #include <string.h>
 
@@ -45,6 +46,11 @@
 #define FILTER_2_OFFSET 60
 #define FILTER_2_OFFSET_IN 20
 #define FILTER_2_OFFSET_OUT (FILTER_2_OFFSET - FILTER_2_OFFSET_IN)
+
+/* Battery voltage in 0.1 V units; LOW + HYSTERESIS = HIGH. */
+#define LOW_BATTERY_VBAT_LOW     60
+#define LOW_BATTERY_HYSTERESIS   2
+#define LOW_BATTERY_VBAT_HIGH    (LOW_BATTERY_VBAT_LOW + LOW_BATTERY_HYSTERESIS)
 
 /**********************
  *      MACROS
@@ -757,9 +763,16 @@ static bool radio_tick() {
             }
             pthread_mutex_unlock(&power_cb_mux);
 
-            if (low_power != (!pack->flag.vext && (pack->vbat <= 60))) {
-                low_power = !low_power;
-                scheduler_msg_send(MSG_LOW_POWER, (void*)low_power);
+            bool no_vext    = !pack->flag.vext;
+            bool enter_low  = no_vext && (pack->vbat <= LOW_BATTERY_VBAT_LOW);
+            bool leave_low  = pack->flag.vext || (pack->vbat >= LOW_BATTERY_VBAT_HIGH);
+
+            if (!low_power && enter_low) {
+                low_power = true;
+                scheduler_msg_send(MSG_LOW_POWER, (void*)(uintptr_t)low_power);
+            } else if (low_power && leave_low) {
+                low_power = false;
+                scheduler_msg_send(MSG_LOW_POWER, (void*)(uintptr_t)low_power);
             }
         }
         flow_info_t flow_info = pack->flow_info;

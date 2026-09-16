@@ -109,6 +109,7 @@ void mem_save(uint16_t id) {
 }
 
 static void low_power_timer_cb(lv_timer_t * timer) {
+    low_power_timer = NULL;
     msg_update_text_fmt("Power off");
     radio_set_charger(true);
     radio_poweroff();
@@ -802,7 +803,7 @@ static void tx_cb(void * s, lv_msg_t * msg) {
 }
 
 static void low_power_cb(void * s, lv_msg_t * msg) {
-    bool is_low = *(bool*)lv_msg_get_payload(msg);
+    bool is_low = (bool)(uintptr_t)lv_msg_get_payload(msg);
     if (is_low) {
         if (!low_power_timer) {
             low_power_timer = lv_timer_create(low_power_timer_cb, 30000, NULL);
