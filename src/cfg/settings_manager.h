@@ -24,10 +24,8 @@
 
 #include <ft8lib/constants.h>
 
-#include "../clock.h"
 #include "../common/math.h"
 #include "../settings_types.h"
-#include "../voice.h"
 #include "computed_parameter.h"
 #include "encoder_bind_types.h"
 #include "parameter.h"

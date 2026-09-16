@@ -65,3 +65,19 @@ typedef enum {
     SWR_GRAY,
     SWR_COLORED,
 } swr_color_t;
+
+/* Clock view */
+typedef enum {
+    CLOCK_TIME_ALLWAYS = 0,
+    CLOCK_TIME_POWER,
+    CLOCK_POWER_ALLWAYS
+} clock_view_t;
+
+/* Voice */
+#define VOICES_NUM 4
+
+typedef enum {
+    VOICE_OFF = 0,
+    VOICE_LCD,
+    VOICE_ALWAYS
+} voice_mode_t;

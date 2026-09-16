@@ -77,6 +77,30 @@ void radio_stop_swrscan();
 typedef void (*radio_swrscan_cb_t)(float vswr);
 void radio_swrscan_set_cb(radio_swrscan_cb_t cb);
 
+/**
+ * Power telemetry published by the radio thread (external/battery voltage,
+ * battery capacity and charging flag). Consumers (e.g. the clock widget)
+ * register a callback via radio_power_set_cb() and copy the scalars into their
+ * own state; they must not do UI work in the callback, it runs on the radio
+ * thread.
+ */
+typedef struct {
+    float   vext;
+    float   vbat;
+    uint8_t cap;
+    bool    charging;
+} radio_power_t;
+
+typedef void (*radio_power_cb_t)(const radio_power_t *power);
+
+/**
+ * Register the power-telemetry callback. The callback must return quickly and
+ * must not take the radio lock. Registering NULL unregisters; the call waits
+ * for any in-flight callback to finish, so the consumer's state is guaranteed
+ * to be unused once radio_power_set_cb(NULL) returns.
+ */
+void radio_power_set_cb(radio_power_cb_t cb);
+
 void radio_poweroff();
 void radio_set_ptt(bool tx);
 void radio_set_modem(bool tx);

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "settings_types.h"
+
 #ifdef __cplusplus
 
 #include <cstdarg>
@@ -16,19 +18,11 @@ extern "C" {
 #include <stdint.h>
 #endif
 
-#define VOICES_NUM 4
-
 typedef struct {
     const char *name;
     const char *label;
     const char *welcome;
 } voice_item_t;
-
-typedef enum {
-    VOICE_OFF = 0,
-    VOICE_LCD,
-    VOICE_ALWAYS
-} voice_mode_t;
 
 extern voice_item_t voice_item[VOICES_NUM];
 

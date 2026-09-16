@@ -12,14 +12,9 @@
 
 #include <stdint.h>
 
-typedef enum {
-    CLOCK_TIME_ALLWAYS = 0,
-    CLOCK_TIME_POWER,
-    CLOCK_POWER_ALLWAYS
-} clock_view_t;
+#include "settings_types.h"
 
 lv_obj_t * clock_init(lv_obj_t * parent);
-void clock_update_power(float ext, float bat, uint8_t cap, bool charge);
 
 void clock_set_view(clock_view_t x);
 void clock_set_time_timeout(uint8_t sec);

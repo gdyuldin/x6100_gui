@@ -23,6 +23,7 @@
 #include "cfg/db.h"
 #include "globals.h"
 #include "util.h"
+#include "voice.h"
 #include "dsp.h"
 #include "hkey.h"
 #include "tx_info.h"
@@ -119,6 +120,9 @@ static bool             low_power = false;
 
 static pthread_mutex_t  swrscan_cb_mux = PTHREAD_MUTEX_INITIALIZER;
 static radio_swrscan_cb_t swrscan_cb = NULL;
+
+static pthread_mutex_t  power_cb_mux = PTHREAD_MUTEX_INITIALIZER;
+static radio_power_cb_t power_cb = NULL;
 
 static cfloat           samples_buf[RADIO_SAMPLES*2];
 
@@ -410,6 +414,12 @@ void radio_swrscan_set_cb(radio_swrscan_cb_t cb) {
     pthread_mutex_lock(&swrscan_cb_mux);
     swrscan_cb = cb;
     pthread_mutex_unlock(&swrscan_cb_mux);
+}
+
+void radio_power_set_cb(radio_power_cb_t cb) {
+    pthread_mutex_lock(&power_cb_mux);
+    power_cb = cb;
+    pthread_mutex_unlock(&power_cb_mux);
 }
 
 void radio_set_pwr(float d) {
@@ -734,7 +744,18 @@ static bool radio_tick() {
 
         if (delay++ > 10) {
             delay = 0;
-            clock_update_power(pack->vext * 0.1f, pack->vbat*0.1f, pack->batcap, pack->flag.charging);
+
+            pthread_mutex_lock(&power_cb_mux);
+            if (power_cb) {
+                radio_power_t power = {
+                    .vext     = pack->vext * 0.1f,
+                    .vbat     = pack->vbat * 0.1f,
+                    .cap      = pack->batcap,
+                    .charging = pack->flag.charging,
+                };
+                power_cb(&power);
+            }
+            pthread_mutex_unlock(&power_cb_mux);
 
             if (low_power != (!pack->flag.vext && (pack->vbat <= 60))) {
                 low_power = !low_power;

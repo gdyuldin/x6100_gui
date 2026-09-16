@@ -141,8 +141,18 @@ static void show_time() {
     lv_label_set_text(obj, str);
 }
 
+static void clock_power_cb(const radio_power_t *power) {
+    pthread_mutex_lock(&power_mux);
+    v_ext = power->vext;
+    v_bat = power->vbat;
+    cap_bat = power->cap;
+    charging = power->charging;
+    pthread_mutex_unlock(&power_mux);
+}
+
 lv_obj_t * clock_init(lv_obj_t * parent) {
     pthread_mutex_init(&power_mux, NULL);
+    radio_power_set_cb(clock_power_cb);
 
     lv_obj_t * container = lv_obj_create(parent);
     lv_obj_remove_style_all(container);
@@ -160,15 +170,6 @@ lv_obj_t * clock_init(lv_obj_t * parent) {
 
     last_time_sync = get_last_sync_time();
     timer_time_sync = lv_timer_create(check_time_sync_cb, 200, NULL);
-}
-
-void clock_update_power(float ext, float bat, uint8_t cap, bool charge_flag) {
-    pthread_mutex_lock(&power_mux);
-    v_ext = ext;
-    v_bat = bat;
-    cap_bat = cap;
-    charging = charge_flag;
-    pthread_mutex_unlock(&power_mux);
 }
 
 void clock_set_view(clock_view_t x) {
