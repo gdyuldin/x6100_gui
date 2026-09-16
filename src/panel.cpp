@@ -99,6 +99,7 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
     lv_obj_add_style(obj, &style.panels.base, 0);
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     panel_hide();
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
     update_line_count();
 

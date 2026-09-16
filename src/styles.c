@@ -47,7 +47,7 @@ typedef struct {
         void *dialog;
     } bg_img;
 
-    // Background colors (RGBA)
+    // Background colors (RGBA). Alpha 0 can be used to disable.
     struct {
         lv_color_t btn;
         lv_color_t s_meter;
@@ -147,23 +147,26 @@ void styles_init(themes_t theme) {
     /* Panel */
     lv_style_init(&style.panels.base);
     lv_style_set_text_font(&style.panels.base, &sony_38);
+    // TODO: dynamic
     lv_style_set_width(&style.panels.base, 795);
     lv_style_set_height(&style.panels.base, 182);
     lv_style_set_x(&style.panels.base, SCREEN_WIDTH / 2 - (795 / 2));
-    lv_style_set_y(&style.panels.base, 230);
+    lv_style_set_y(&style.panels.base, 225);
     lv_style_set_pad_ver(&style.panels.base, 10);
     lv_style_set_pad_hor(&style.panels.base, 10);
     lv_style_set_radius(&style.panels.base, 0);
     lv_style_set_bg_img_opa(&style.panels.base, LV_OPA_COVER);
 
     lv_style_init(&style.panels.info);
-    // lv_style_set_align(&style.panels.info, LV_ALIGN_OUT_TOP_LEFT);
-    lv_style_set_align(&style.panels.info, LV_ALIGN_BOTTOM_RIGHT);
+    lv_style_set_align(&style.panels.info, LV_ALIGN_BOTTOM_LEFT);
+    lv_style_set_x(&style.panels.info, 10);
+    lv_style_set_y(&style.panels.info, 18);
+    // lv_style_set_align(&style.panels.info, LV_ALIGN_BOTTOM_RIGHT);
     // lv_style_set_x(&style.panels.info, -38);
     // lv_style_set_tr(&style.panels.info,  0);
-    lv_style_set_text_font(&style.panels.info, &sony_30);
+    lv_style_set_text_font(&style.panels.info, &sony_24);
     lv_style_set_text_color(&style.panels.info, lv_color_hex(0x808080));
-    lv_style_set_blend_mode(&style.panels.info, LV_BLEND_MODE_ADDITIVE);
+    // lv_style_set_blend_mode(&style.panels.info, LV_BLEND_MODE_ADDITIVE);
 
     lv_style_init(&style.dialog.base);
     lv_style_set_text_font(&style.dialog.base, &sony_36);
@@ -217,7 +220,7 @@ void styles_init(themes_t theme) {
     lv_style_set_pad_hor(&style.knobs, 5);
     lv_style_set_pad_ver(&style.knobs, 3);
 
-    /* Left info */
+    /* Freq info */
     lv_style_init(&style.freq_info);
     // lv_style_set_align(&style.freq_info, LV_ALIGN_TOP_LEFT);
     lv_style_set_pad_all(&style.freq_info, 0);
@@ -906,7 +909,7 @@ static void set_skin(skin_t *skin) {
     update_spectrum_color(skin);
 
     /* S-meter */
-    styles_update_meter_colors(params.meter_color.x);
+    styles_update_meter_colors((meter_color_t)param_i_get(cfg.appearance.meter_color()));
 
     /* Waterfall */
     lv_style_set_line_color(&style.waterfall_middle_line, skin->wf_middle_line_color);
