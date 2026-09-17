@@ -551,7 +551,14 @@ void SettingsManager::cur_filter_high_reverse(int32_t v) {
             p_mode_filter_high.set(v);
             break;
         case FilterMode::CW:
-            p_mode_filter_high.set(2 * (v - p_key_tone.get()));
+            {
+                int32_t expected_low = 2 * p_key_tone.get() - v;
+                int32_t p_high_val = 2 * (v - p_key_tone.get());
+                if (expected_low < 0) {
+                    p_high_val = v;
+                }
+                p_mode_filter_high.set(p_high_val);
+            }
             break;
     }
 }

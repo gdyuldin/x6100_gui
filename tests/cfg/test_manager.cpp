@@ -1014,6 +1014,24 @@ TEST_CASE("cp_cur_filter_low/high.set reverse into MODE filter params", "[manage
         REQUIRE(mgr.cp_cur_filter_high.get() == 900);
         REQUIRE(mgr.cp_cur_filter_low.get() == 700);
     }
+    // CW: check, when half bw > key tone
+    {
+        SettingsManager mgr;
+        init_filter_manager(mgr, db, x6100_mode_cw, MODE_GROUP_CW, 100, 300);
+        mgr.p_key_tone.set(600);
+        mgr.cp_cur_filter_high.set(1400);
+        REQUIRE(mgr.cp_cur_filter_low.get() == 0);
+        REQUIRE(mgr.cp_cur_filter_high.get() == 1400);
+        REQUIRE(mgr.cp_cur_filter_bw.get() == 1400);
+
+        mgr.cp_cur_filter_high.set(1300);
+        REQUIRE(mgr.cp_cur_filter_high.get() == 1300);
+        REQUIRE(mgr.cp_cur_filter_low.get() == 0);
+
+        mgr.cp_cur_filter_low.set(100);
+        REQUIRE(mgr.cp_cur_filter_high.get() == 1100);
+        REQUIRE(mgr.cp_cur_filter_low.get() == 100);
+    }
 }
 
 TEST_CASE("cp_cur_filter_bw.set reverse per category", "[manager]") {
