@@ -719,6 +719,66 @@ TEST_CASE("C_CTL_SCP sub 0x10 returns scope available", "[cat]") {
     }));
 }
 
+TEST_CASE("C_CTL_SCP sub 0x1A sweep speed write/read round-trip", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    cfg_set_instance(&mgr);
+
+    auto send = [](const std::vector<uint8_t> &payload) {
+        auto raw = ci_v_frame(C_CTL_SCP, payload);
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        return to_bytes(process_civ_message(req, packer));
+    };
+
+    // Write MID (0x01)
+    REQUIRE(send({0x1A, 0x00, 0x01}) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+    }));
+    // Read back MID
+    REQUIRE(send({0x1A, 0x00}) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_SCP, 0x1A, 0x00, 0x01, 0xFD
+    }));
+
+    // Write SLOW (0x02)
+    REQUIRE(send({0x1A, 0x00, 0x02}) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+    }));
+    // Read back SLOW
+    REQUIRE(send({0x1A, 0x00}) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_SCP, 0x1A, 0x00, 0x02, 0xFD
+    }));
+}
+
+TEST_CASE("C_CTL_SCP sub 0x1A invalid sweep speed is ignored", "[cat]") {
+    TestDbGuard db;
+    SettingsManager mgr;
+    init_band_5(db, mgr);
+    cfg_set_instance(&mgr);
+
+    auto send = [](const std::vector<uint8_t> &payload) {
+        auto raw = ci_v_frame(C_CTL_SCP, payload);
+        CivPacketView req(raw.data(), raw.size());
+        uint8_t txBuf[256];
+        CivTxPacker packer(txBuf, 0xE0, LOCAL_ADDRESS);
+        return to_bytes(process_civ_message(req, packer));
+    };
+
+    // Establish a known state
+    REQUIRE(send({0x1A, 0x00, 0x02}) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+    }));
+    // Out-of-range value: acknowledged but ignored
+    REQUIRE(send({0x1A, 0x00, 0x05}) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, CODE_OK, 0xFD
+    }));
+    REQUIRE(send({0x1A, 0x00}) == std::vector<uint8_t>({
+        0xFE, 0xFE, 0xE0, LOCAL_ADDRESS, C_CTL_SCP, 0x1A, 0x00, 0x02, 0xFD
+    }));
+}
+
 // ---- cleanup ---------------------------------------------------------------
 
 TEST_CASE("cfg_set_instance(nullptr) restores production global", "[cat]") {

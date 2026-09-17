@@ -951,6 +951,24 @@ void dsp_frame_set_active(uint32_t id, bool active) {
     }
 }
 
+void dsp_frame_set_chunks_per_frame(uint32_t id, uint16_t chunks_per_frame) {
+    if (id == DSP_FRAME_SUB_INVALID || chunks_per_frame == 0) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(frame_subs_mutex);
+
+    for (size_t i = 0; i < MAX_FRAME_SUBS; i++) {
+        if (frame_subs[i].used && frame_subs[i].id == id) {
+            /* The accumulation window is intentionally left as is: already
+             * accumulated samples are valid, only the averaging interval
+             * changes, so the next frame is assembled against the new count. */
+            frame_subs[i].chunks_per_frame = chunks_per_frame;
+            return;
+        }
+    }
+}
+
 void dsp_frame_unsubscribe(uint32_t id) {
     if (id == DSP_FRAME_SUB_INVALID) {
         return;

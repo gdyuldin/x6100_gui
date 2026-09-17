@@ -21,5 +21,6 @@ typedef struct {
      * (counted in BASE chunks, not milliseconds; 0 is rejected). */
     uint32_t (*subscribe)(psd_frame_cb_t cb, uint16_t size, uint16_t chunks_per_frame, void *user_data);
     void     (*set_active)(uint32_t id, bool active);
+    void     (*set_chunks_per_frame)(uint32_t id, uint16_t chunks_per_frame);
     void     (*unsubscribe)(uint32_t id);
 } psd_port_t;

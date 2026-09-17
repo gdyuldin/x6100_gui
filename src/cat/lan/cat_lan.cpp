@@ -124,6 +124,12 @@ static void scope_active_cb(bool active) {
     }
 }
 
+static void scope_cadence_cb(uint16_t chunks_per_frame) {
+    if (g_ports && scope_psd_sub_id != PSD_SUB_INVALID) {
+        g_ports->psd->set_chunks_per_frame(scope_psd_sub_id, chunks_per_frame);
+    }
+}
+
 static bool udp_send(int fd, const void *data, size_t len, const sockaddr_in *dst);
 static bool send_control(int fd, uint16_t type, uint16_t seq, bool tracked, const sockaddr_in *dst);
 static bool civ_data_send(const uint8_t *civ_data, size_t civ_len);
@@ -957,6 +963,7 @@ int cat_lan_init(const app_ports_t *ports) {
     if (scope_psd_sub_id == PSD_SUB_INVALID) {
         scope_psd_sub_id = g_ports->psd->subscribe(scope_psd_cb, SCOPE_NBINS, DSP_FRAME_DEFAULT_CHUNKS, nullptr);
         scope_streamer_set_active_cb(scope_active_cb);
+        scope_streamer_set_cadence_cb(scope_cadence_cb);
     }
 
     if (fd_control >= 0) {
@@ -1051,6 +1058,7 @@ int cat_lan_init(const app_ports_t *ports) {
 void cat_lan_destruct(void) {
     scope_streamer_set_notify(nullptr);
     scope_streamer_set_active_cb(nullptr);
+    scope_streamer_set_cadence_cb(nullptr);
 
     if (g_ports && scope_psd_sub_id != PSD_SUB_INVALID) {
         g_ports->psd->unsubscribe(scope_psd_sub_id);

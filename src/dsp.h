@@ -76,8 +76,8 @@ void dsp_audio_unsubscribe(uint32_t id);
  * The DSP thread produces a single PSD pipeline and delivers frames to every
  * subscriber, so dsp.cpp never knows which consumer it feeds. Callbacks run on
  * the DSP thread; they must not block, allocate, or call
- * dsp_frame_subscribe()/dsp_frame_unsubscribe()/dsp_frame_set_active()
- * (non-recursive mutex -> deadlock).
+ * dsp_frame_subscribe()/dsp_frame_unsubscribe()/dsp_frame_set_active()/
+ * dsp_frame_set_chunks_per_frame() (non-recursive mutex -> deadlock).
  *
  * nfft is the number of bins the subscriber wants (no default): the DSP runs
  * one FFT of DSP_MAX_NFFT per direction and decimates the accumulated power
@@ -86,7 +86,10 @@ void dsp_audio_unsubscribe(uint32_t id);
  * chunks_per_frame is how many BASE chunks to accumulate before delivering a
  * frame. Cadence is counted in chunks, not milliseconds, because the radio
  * flow is quantized to chunks (~27/s) and a millisecond timer would drift;
- * chunks_per_frame == 0 is rejected.
+ * chunks_per_frame == 0 is rejected. The cadence of a live subscription can be
+ * changed with dsp_frame_set_chunks_per_frame() (also in BASE chunks); it takes
+ * the same non-recursive mutex as the subscribe/active calls, so it must not be
+ * called from a DSP callback either.
  *
  * allow_vary_freq: when false, transforms collected while the base frequency
  * is changing are dropped instead of delivered.
@@ -118,6 +121,7 @@ typedef void (*dsp_frame_cb_t)(const dsp_frame_t *frame, void *user_data);
 
 uint32_t dsp_frame_subscribe(const dsp_frame_cfg_t *cfg, dsp_frame_cb_t cb, void *user_data);
 void     dsp_frame_set_active(uint32_t id, bool active);
+void     dsp_frame_set_chunks_per_frame(uint32_t id, uint16_t chunks_per_frame);
 void     dsp_frame_unsubscribe(uint32_t id);
 
 #ifdef __cplusplus

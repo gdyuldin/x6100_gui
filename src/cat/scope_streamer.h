@@ -21,12 +21,22 @@ using scope_notify_cb_t = void (*)(std::string_view);
 // psd->set_active(), so a paused scope does not accumulate frames.
 using scope_active_cb_t = void (*)(bool active);
 
+// Cadence callback type: how many BASE chunks must accumulate into one scope
+// frame. Registered by the owner of the PSD subscription (cat_lan); it is
+// invoked immediately with the current value on registration and on every
+// sweep-speed change.
+using scope_cadence_cb_t = void (*)(uint16_t chunks_per_frame);
+
 // Register the active notify callback. Only one path (LAN or serial) is active.
 void scope_streamer_set_notify(scope_notify_cb_t cb);
 
 // Register the active-state callback. It is invoked immediately with the
 // current state so the caller can sync.
 void scope_streamer_set_active_cb(scope_active_cb_t cb);
+
+// Register the cadence callback. It is invoked immediately with the current
+// cadence so the caller can sync the live PSD subscription.
+void scope_streamer_set_cadence_cb(scope_cadence_cb_t cb);
 
 // Called from the DSP PSD subscription handler.
 // Takes exactly SCOPE_NBINS float PSD values in dB (already decimated by dsp),

@@ -130,6 +130,10 @@ static uint32_t port_psd_subscribe(psd_frame_cb_t cb, uint16_t nfft, uint16_t ch
 
 static void port_psd_set_active(uint32_t id, bool active) { dsp_frame_set_active(id, active); }
 
+static void port_psd_set_chunks_per_frame(uint32_t id, uint16_t chunks_per_frame) {
+    dsp_frame_set_chunks_per_frame(id, chunks_per_frame);
+}
+
 static void port_psd_unsubscribe(uint32_t id) {
     if (id == PSD_SUB_INVALID) {
         return;
@@ -180,6 +184,7 @@ static const dsp_audio_port_t dsp_audio_port = {
 static const psd_port_t psd_port = {
     .subscribe = &port_psd_subscribe,
     .set_active = &port_psd_set_active,
+    .set_chunks_per_frame = &port_psd_set_chunks_per_frame,
     .unsubscribe = &port_psd_unsubscribe,
 };
 

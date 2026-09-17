@@ -24,9 +24,18 @@ int32_t                 scope_edge_end_hz    = 0;
 float                   scope_ref_level_dB   = 0.0f;
 int32_t                 scope_center_freq_hz = 0;
 uint16_t                scope_edge_num       = 1;      // 1-4
+uint8_t                 scope_sweep_speed    = 0;      // 0=FAST, 1=MID, 2=SLOW
 
-std::atomic<scope_notify_cb_t> notify_cb{nullptr};
-std::atomic<scope_active_cb_t> active_cb{nullptr};
+// sweep speed -> PSD cadence in BASE chunks (FAST == DSP_FRAME_DEFAULT_CHUNKS).
+constexpr uint16_t SWEEP_CHUNKS_FAST = 2;
+constexpr uint16_t SWEEP_CHUNKS_MID  = 4;
+constexpr uint16_t SWEEP_CHUNKS_SLOW = 8;
+constexpr uint16_t SWEEP_CHUNKS[]    = {SWEEP_CHUNKS_FAST, SWEEP_CHUNKS_MID, SWEEP_CHUNKS_SLOW};
+constexpr uint8_t  SWEEP_SPEED_MAX   = 2;
+
+std::atomic<scope_notify_cb_t>  notify_cb{nullptr};
+std::atomic<scope_active_cb_t>  active_cb{nullptr};
+std::atomic<scope_cadence_cb_t> cadence_cb{nullptr};
 
 // The scope needs PSD data only when data output is enabled and a transport has
 // registered a notify callback.
@@ -38,6 +47,13 @@ void notify_active_change() {
     scope_active_cb_t cb = active_cb.load(std::memory_order_acquire);
     if (cb) {
         cb(scope_is_active());
+    }
+}
+
+void notify_cadence_change() {
+    scope_cadence_cb_t cb = cadence_cb.load(std::memory_order_acquire);
+    if (cb) {
+        cb(SWEEP_CHUNKS[scope_sweep_speed]);
     }
 }
 
@@ -123,6 +139,11 @@ void scope_streamer_set_notify(scope_notify_cb_t cb) {
 void scope_streamer_set_active_cb(scope_active_cb_t cb) {
     active_cb.store(cb, std::memory_order_release);
     notify_active_change();
+}
+
+void scope_streamer_set_cadence_cb(scope_cadence_cb_t cb) {
+    cadence_cb.store(cb, std::memory_order_release);
+    notify_cadence_change();
 }
 
 void scope_streamer_set_center_freq(int32_t freq_hz) {
@@ -291,8 +312,22 @@ std::string_view scope_streamer_handle_27(const CivPacketView &req, CivTxPacker 
                 return resp.set_ok().get_packet();
             }
 
-        case 0x1A: // Sweep speed setting (0000=FAST, 0001=MID, 0002=SLOW)
-            return resp.set_ng().get_packet();
+        case 0x1A: // Sweep speed (0=FAST, 1=MID, 2=SLOW), wire: <receiver> <speed>
+            if (data_size == 2) { // Read
+                return resp.set_command(req.get_command())
+                    .set_subcommand(subcmd)
+                    .append_byte(0x00) // receiver
+                    .append_byte(scope_sweep_speed)
+                    .get_packet();
+            }
+            if (data_size >= 3) { // Write
+                uint8_t val = static_cast<uint8_t>(req.get_subcommand_data()[1]);
+                if (val <= SWEEP_SPEED_MAX && val != scope_sweep_speed) {
+                    scope_sweep_speed = val;
+                    notify_cadence_change();
+                }
+            }
+            return resp.set_ok().get_packet();
 
         case 0x1E:
             {
