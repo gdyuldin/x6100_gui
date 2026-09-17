@@ -30,7 +30,6 @@
 
 #define VISOR_HEIGHT_TX (100 - 61)
 #define VISOR_HEIGHT_RX 100
-#define SPECTRUM_SIZE SCREEN_WIDTH
 
 typedef struct {
     float    val;
@@ -52,11 +51,17 @@ static int s_peak_speed   = 5;
 
 static lv_obj_t *obj;
 
-static int32_t width_hz     = 100000;
+static int32_t width_hz     = FULL_BW_HZ;
 
-static float   spectrum_buf[SPECTRUM_SIZE];
-static peak_t  spectrum_peak[SPECTRUM_SIZE];
+/* Render-thread snapshot: the DSP thread copies the smoothed trace here so the
+ * renderer never reads a buffer the DSP is updating. */
+static float   spectrum_buf[SPECTRUM_NFFT];
+/* Persistent low-pass filtered spectrum, owned by the DSP thread. The raw frame
+ * from dsp is blended in here (spectrum_beta) after the frequency pan shift. */
+static float   spectrum_smoothed[SPECTRUM_NFFT];
+static peak_t  spectrum_peak[SPECTRUM_NFFT];
 static uint8_t zoom_factor = 1;
+static uint32_t spectrum_pan_prev_freq;
 
 static bool spectrum_tx = false;
 
@@ -80,7 +85,7 @@ static int16_t freq_mod;
 /* Direct-render state. At render time the actual physical geometry (x offset in columns, strip width) is derived from the spectrum object's logical coords:
  *   s_spec_x  = obj->coords.y1          (logical y  → physical x)
  *   s_spec_w  = lv_obj_get_height(obj)  (logical h  → physical width)
- *   s_spec_h  = SPECTRUM_SIZE           (logical w  → physical height) */
+ *   s_spec_h  = SPECTRUM_NFFT           (logical w  → physical height) */
 static int16_t   s_spec_x;
 static int16_t   s_spec_w;
 
@@ -116,7 +121,7 @@ static void spectrum_blend_px(uint32_t *buf, int stride, int x, int y, float bri
 
 
 static lv_coord_t spectrum_markers_offset(void) {
-    return ((mode_lo_offset + if_shift) * zoom_factor * SPECTRUM_SIZE + width_hz / 2) / width_hz;
+    return ((mode_lo_offset + if_shift) * zoom_factor * SPECTRUM_NFFT + width_hz / 2) / width_hz;
 }
 
 static void spectrum_overlay_draw_cb(lv_event_t *e) {
@@ -250,16 +255,17 @@ lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     s_spec_x = y;
     s_spec_w = h;
 
-    for (size_t i = 0; i < SPECTRUM_SIZE; i++) {
+    for (size_t i = 0; i < SPECTRUM_NFFT; i++) {
         spectrum_peak[i].val = S_MIN;
         spectrum_buf[i]      = S_MIN;
+        spectrum_smoothed[i] = S_MIN;
     }
 
     obj = lv_obj_create(overlay_parent);
     lv_obj_remove_style_all(obj);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, 0);
     lv_obj_set_pos(obj, 0, y);
-    lv_obj_set_size(obj, SPECTRUM_SIZE, h);
+    lv_obj_set_size(obj, SPECTRUM_NFFT, h);
     lv_obj_add_event_cb(obj, spectrum_overlay_draw_cb, LV_EVENT_DRAW_MAIN_END, NULL);
 
     // Setup spectrum gradient
@@ -293,10 +299,19 @@ lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     subject_subscribe_and_notify((Subject *)cfg.general.rit(), on_rit_change, NULL);
 
     if (spectrum_sub_id == DSP_FRAME_SUB_INVALID) {
-        spectrum_sub_id = dsp_frame_subscribe(DSP_FRAME_SPECTRUM, spectrum_frame_cb, NULL);
+        const dsp_frame_cfg_t sub_cfg = {
+            .nfft             = SPECTRUM_NFFT,
+            .chunks_per_frame = DSP_FRAME_DEFAULT_CHUNKS,
+            .allow_vary_freq  = true,
+        };
+        spectrum_sub_id = dsp_frame_subscribe(&sub_cfg, spectrum_frame_cb, NULL);
     }
 
     return obj;
+}
+
+void spectrum_set_enabled(bool enabled) {
+    dsp_frame_set_active(spectrum_sub_id, enabled);
 }
 
 void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_lo_freq, uint8_t fft_dec, float min, float max) {
@@ -312,12 +327,46 @@ void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_
     spectrum_min = min;
     spectrum_max = max;
 
+    if (size != SPECTRUM_NFFT) {
+        return;
+    }
+
+    /* Frequency pan: frame-to-frame the base frequency may have moved, so the
+     * already-smoothed trace is scrolled to follow it before blending. */
+    if (base_lo_freq != spectrum_pan_prev_freq) {
+        int32_t shift = ((int64_t)base_lo_freq - spectrum_pan_prev_freq) * (zoom_factor * SPECTRUM_NFFT) / FULL_BW_HZ;
+        float  *src          = spectrum_smoothed;
+        float  *dst          = spectrum_smoothed;
+        float  *to_clear_p   = NULL;
+        int32_t copy_size    = 0;
+
+        if (shift > 0) {
+            src        = spectrum_smoothed + shift;
+            copy_size  = SPECTRUM_NFFT - shift;
+            to_clear_p = spectrum_smoothed + copy_size;
+        } else if (shift < 0) {
+            dst        = spectrum_smoothed - shift;
+            copy_size  = SPECTRUM_NFFT + shift;
+            to_clear_p = spectrum_smoothed;
+        }
+        if (copy_size > 0) {
+            memmove(dst, src, copy_size * sizeof(*src));
+            float *stop = to_clear_p + LV_ABS(shift);
+            do {
+                *to_clear_p++ = S_MIN;
+            } while (to_clear_p < stop);
+        }
+        spectrum_pan_prev_freq = base_lo_freq;
+    }
+
+    lpf_block(spectrum_smoothed, data_buf, param_i_get(cfg.spectrum.beta()) * 0.01f, SPECTRUM_NFFT);
+
     const bool  peak_enabled = __atomic_load_n(&s_peak_enabled, __ATOMIC_ACQUIRE);
     const int   peak_hold    = __atomic_load_n(&s_peak_hold, __ATOMIC_ACQUIRE);
     const float peak_speed   = __atomic_load_n(&s_peak_speed, __ATOMIC_ACQUIRE) * 0.1f;
 
     for (uint16_t i = 0; i < size; i++) {
-        spectrum_buf[i] = data_buf[i];
+        spectrum_buf[i] = spectrum_smoothed[i];
 
         if (peak_enabled && !tx) {
             float   v    = spectrum_buf[i];
@@ -341,11 +390,13 @@ void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_
 void spectrum_clear() {
     spectrum_min = S_MIN;
     spectrum_max = S9_40;
-    freq_mod     = 0;
-    uint64_t now = get_time();
+    freq_mod            = 0;
+    spectrum_pan_prev_freq = 0;
+    uint64_t now        = get_time();
 
-    for (uint16_t i = 0; i < SPECTRUM_SIZE; i++) {
+    for (uint16_t i = 0; i < SPECTRUM_NFFT; i++) {
         spectrum_buf[i]       = S_MIN;
+        spectrum_smoothed[i]  = S_MIN;
         spectrum_peak[i].val  = S_MIN;
         spectrum_peak[i].time = now;
     }
@@ -462,7 +513,7 @@ static void shift_peaks(int32_t df) {
     df += freq_mod;
     uint64_t time = get_time();
 
-    uint16_t div     = width_hz / SPECTRUM_SIZE / zoom_factor;
+    uint16_t div     = width_hz / SPECTRUM_NFFT / zoom_factor;
     int32_t  delta   = (df + div / 2) / div;
     freq_mod = df - delta * div;
 
@@ -470,11 +521,11 @@ static void shift_peaks(int32_t df) {
         return;
     }
     peak_t  *to;
-    for (int16_t i = 0; i < SPECTRUM_SIZE; i++) {
-        int16_t dst_id = delta > 0 ? i : SPECTRUM_SIZE - i - 1;
+    for (int16_t i = 0; i < SPECTRUM_NFFT; i++) {
+        int16_t dst_id = delta > 0 ? i : SPECTRUM_NFFT - i - 1;
         to = &spectrum_peak[dst_id];
         int16_t src_id = dst_id + delta;
-        if ((src_id < 0) || (src_id >= SPECTRUM_SIZE)) {
+        if ((src_id < 0) || (src_id >= SPECTRUM_NFFT)) {
             to->val = S_MIN;
             to->time = time;
         } else {
@@ -496,7 +547,7 @@ static void spectrum_update_colors(void) {
 
 /* Replicate the spectrum_offset calculation from spectrum_draw_cb(). */
 static int32_t spectrum_compute_offset(void) {
-    int32_t w = SPECTRUM_SIZE;
+    int32_t w = SPECTRUM_NFFT;
 
     if (spectrum_tx) {
         return ((mode_lo_offset + if_shift) * zoom_factor * w + width_hz / 2) / width_hz;
@@ -529,7 +580,7 @@ static inline uint32_t spectrum_blend_xrgb(uint32_t dst, uint32_t src, uint8_t a
 }
 
 static void spectrum_blend_px(uint32_t *buf, int stride, int x, int y, float brightness, lv_color_t color) {
-    if (x < 0 || x >= stride || y < 0 || y >= SPECTRUM_SIZE) {
+    if (x < 0 || x >= stride || y < 0 || y >= SPECTRUM_NFFT) {
         return;
     }
     int a = (int)(brightness * 255.0f + 0.5f);
@@ -625,9 +676,9 @@ static void spectrum_wu_line(uint32_t *buf, int stride, float x0, float y0, floa
  * peak_b/main_b in spectrum_draw_cb(). */
 static void spectrum_draw_polyline(uint32_t *buf, int stride, float min, float max, int32_t offset, bool is_peak, lv_color_t color) {
     float prev_x = (float)stride;
-    float prev_y = (float)(SPECTRUM_SIZE - 1);
+    float prev_y = (float)(SPECTRUM_NFFT - 1);
 
-    for (int i = 0; i < SPECTRUM_SIZE; i++) {
+    for (int i = 0; i < SPECTRUM_NFFT; i++) {
         float v = is_peak ? (spectrum_peak[i].val - min) / (max - min) : (spectrum_buf[i] - min) / (max - min);
         if (v < 0.0f) {
             v = 0.0f;
@@ -637,7 +688,7 @@ static void spectrum_draw_polyline(uint32_t *buf, int stride, float min, float m
         }
 
         float cur_x = (1.0f - v) * stride;
-        float cur_y = (float)(SPECTRUM_SIZE - 1 - offset - i);
+        float cur_y = (float)(SPECTRUM_NFFT - 1 - offset - i);
 
         spectrum_wu_line(buf, stride, prev_x, prev_y, cur_x, cur_y, color);
 
@@ -647,7 +698,7 @@ static void spectrum_draw_polyline(uint32_t *buf, int stride, float min, float m
 }
 
 static void spectrum_render_rotated(uint32_t *buf, int stride) {
-    memset(buf, 0, (size_t)stride * SPECTRUM_SIZE * sizeof(uint32_t));
+    memset(buf, 0, (size_t)stride * SPECTRUM_NFFT * sizeof(uint32_t));
 
     float min = spectrum_min;
     float max = spectrum_max;
@@ -664,9 +715,9 @@ static void spectrum_render_rotated(uint32_t *buf, int stride) {
 
     if (param_i_get(cfg.spectrum.filled())) {
         lv_grad_t * cached_grad = lv_gradient_get(&grad_dsc, stride, 1);
-        for (int i = 0; i < SPECTRUM_SIZE; i++) {
-            int row = SPECTRUM_SIZE - 1 - offset - i;
-            if (row < 0 || row >= SPECTRUM_SIZE) {
+        for (int i = 0; i < SPECTRUM_NFFT; i++) {
+            int row = SPECTRUM_NFFT - 1 - offset - i;
+            if (row < 0 || row >= SPECTRUM_NFFT) {
                 continue;
             }
             float v = (spectrum_buf[i] - min) / (max - min);
@@ -699,14 +750,14 @@ bool spectrum_process(void) {
     }
 
     drm_direct_ctx_t ctx;
-    if (!drm_primary_begin_direct(&ctx, (uint32_t)s_spec_w * SPECTRUM_SIZE))
+    if (!drm_primary_begin_direct(&ctx, (uint32_t)s_spec_w * SPECTRUM_NFFT))
         return false;
 
     spectrum_render_rotated((uint32_t *)ctx.buf, s_spec_w);
 
     lv_area_t area = { .x1 = s_spec_x, .y1 = 0,
                        .x2 = s_spec_x + s_spec_w - 1,
-                       .y2 = SPECTRUM_SIZE - 1 };
+                       .y2 = SPECTRUM_NFFT - 1 };
     drm_primary_end_direct(&area);
     return true;
 }

@@ -16,7 +16,10 @@ typedef void (*psd_frame_cb_t)(const float *psd_db, size_t size,
 #define PSD_SUB_INVALID (0u)
 
 typedef struct {
-    uint32_t (*subscribe)(psd_frame_cb_t cb, void *user_data);
+    /* size is the number of bins requested by the subscriber (no default).
+     * chunks_per_frame is the DSP chunk cadence requested by the subscriber
+     * (counted in BASE chunks, not milliseconds; 0 is rejected). */
+    uint32_t (*subscribe)(psd_frame_cb_t cb, uint16_t size, uint16_t chunks_per_frame, void *user_data);
     void     (*set_active)(uint32_t id, bool active);
     void     (*unsubscribe)(uint32_t id);
 } psd_port_t;

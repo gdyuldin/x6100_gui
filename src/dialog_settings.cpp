@@ -238,9 +238,6 @@ static void spinbox_update_cb(lv_event_t * e) {
     if (b->voice) {
         voice_say_int(b->voice, val);
     }
-    if (b->extra) {
-        b->extra();
-    }
 }
 
 static void dropdown_update_cb(lv_event_t * e) {
@@ -277,7 +274,7 @@ static lv_obj_t * switch_bool(lv_obj_t *parent, ParamInt &param, const char *voi
 }
 
 static lv_obj_t * spinbox_int(lv_obj_t *parent, ParamInt &param, int32_t min, int32_t max,
-                              const char *voice = nullptr, void (*update_cb)(void) = nullptr) {
+                              const char *voice = nullptr) {
     lv_obj_t *obj = lv_spinbox_create(parent);
 
     dialog_item(&dialog, obj);
@@ -285,7 +282,7 @@ static lv_obj_t * spinbox_int(lv_obj_t *parent, ParamInt &param, int32_t min, in
     lv_spinbox_set_value(obj, param.get());
     lv_spinbox_set_range(obj, min, max);
 
-    lv_obj_add_event_cb(obj, spinbox_update_cb, LV_EVENT_VALUE_CHANGED, setting_bind(&param, voice, update_cb));
+    lv_obj_add_event_cb(obj, spinbox_update_cb, LV_EVENT_VALUE_CHANGED, setting_bind(&param, voice));
 
     return obj;
 }
@@ -1393,8 +1390,7 @@ uint8_t make_spectrum_beta_peak_hold_speed(uint8_t row) {
     lv_label_set_text(obj, "Spec. beta, hold, speed");
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
-    obj = spinbox_int(grid, *cfg.spectrum.beta(), 0, 90, nullptr,
-                      []() { dsp_set_spectrum_beta(cfg.spectrum.beta()->get() * 0.01f); });
+    obj = spinbox_int(grid, *cfg.spectrum.beta(), 0, 90);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(obj, change_bg_opa_cb, LV_EVENT_DEFOCUSED, NULL);
 

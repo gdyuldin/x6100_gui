@@ -60,10 +60,12 @@ void lpf(float *x, float current, float beta, float initial) {
 
 }
 
-void lpf_block(float *x, float *current, float beta, unsigned int count) {
-    liquid_vectorf_mulscalar(current, count, (1.0f - beta), current);
-    liquid_vectorf_mulscalar(x, count, beta, x);
-    liquid_vectorf_add(x, current, count, x);
+void lpf_block(float *x, const float *current, float beta, unsigned int count) {
+    const float a = 1.0f - beta;
+
+    for (unsigned int i = 0; i < count; i++) {
+        x[i] += a * (current[i] - x[i]);
+    }
 }
 
 char * util_canonize_callsign(const char * callsign, bool strip_slashes) {

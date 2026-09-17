@@ -99,7 +99,7 @@ static void psd_adapter(const dsp_frame_t *frame, void *user_data) {
     }
 }
 
-static uint32_t port_psd_subscribe(psd_frame_cb_t cb, void *user_data) {
+static uint32_t port_psd_subscribe(psd_frame_cb_t cb, uint16_t nfft, uint16_t chunks_per_frame, void *user_data) {
     if (!cb) {
         return PSD_SUB_INVALID;
     }
@@ -109,7 +109,12 @@ static uint32_t port_psd_subscribe(psd_frame_cb_t cb, void *user_data) {
             continue;
         }
 
-        uint32_t id = dsp_frame_subscribe(DSP_FRAME_SCOPE, &psd_adapter, &psd_slots[i]);
+        const dsp_frame_cfg_t sub_cfg = {
+            .nfft             = nfft,
+            .chunks_per_frame = chunks_per_frame,
+            .allow_vary_freq  = false,
+        };
+        uint32_t id = dsp_frame_subscribe(&sub_cfg, &psd_adapter, &psd_slots[i]);
         if (id == DSP_FRAME_SUB_INVALID) {
             return PSD_SUB_INVALID;
         }

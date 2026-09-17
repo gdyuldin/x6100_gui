@@ -26,8 +26,20 @@ int32_t                 scope_center_freq_hz = 0;
 uint16_t                scope_edge_num       = 1;      // 1-4
 
 std::atomic<scope_notify_cb_t> notify_cb{nullptr};
+std::atomic<scope_active_cb_t> active_cb{nullptr};
 
-constexpr uint16_t SCOPE_NBINS = 475;
+// The scope needs PSD data only when data output is enabled and a transport has
+// registered a notify callback.
+bool scope_is_active() {
+    return scope_data_enabled && notify_cb.load(std::memory_order_acquire) != nullptr;
+}
+
+void notify_active_change() {
+    scope_active_cb_t cb = active_cb.load(std::memory_order_acquire);
+    if (cb) {
+        cb(scope_is_active());
+    }
+}
 
 // ============================================================================
 // Frequency range table for 0x27 0x1E
@@ -105,6 +117,12 @@ float ref_level_decode(std::string_view data) {
 
 void scope_streamer_set_notify(scope_notify_cb_t cb) {
     notify_cb.store(cb, std::memory_order_release);
+    notify_active_change();
+}
+
+void scope_streamer_set_active_cb(scope_active_cb_t cb) {
+    active_cb.store(cb, std::memory_order_release);
+    notify_active_change();
 }
 
 void scope_streamer_set_center_freq(int32_t freq_hz) {
@@ -122,29 +140,16 @@ void scope_streamer_push_data(const float *psd_db, size_t len,
     if (range_db < 1.0f) range_db = 48.0f;
     float range_inv = 1 / range_db;
 
-    uint8_t scaled[len];
-    for (size_t i = 0; i < len; i++) {
+    if (len != SCOPE_NBINS) {
+        return;
+    }
+
+    uint8_t scaled[SCOPE_NBINS];
+    for (size_t i = 0; i < SCOPE_NBINS; i++) {
         float v = (psd_db[i] - min) * 200.0f * range_inv;
         if (v < 0.0f) v = 0.0f;
         if (v > 200.0f) v = 200.0f;
         scaled[i] = static_cast<uint8_t>(v + 0.5f);
-    }
-
-    // Downsample len -> 475
-    uint8_t binned[SCOPE_NBINS];
-    uint32_t step = (len << 12) / SCOPE_NBINS;
-    uint32_t acc = step >> 1;
-    for (uint16_t i = 0; i < SCOPE_NBINS; i++) {
-        uint32_t src_idx = acc >> 12;
-        uint32_t frac = (acc >> 3) & 0x1F;
-        if (src_idx + 1 >= len) {
-            binned[i] = scaled[len - 1];
-        } else {
-            int v0 = scaled[src_idx];
-            int v1 = scaled[src_idx + 1];
-            binned[i] = static_cast<uint8_t>(v0 + ((v1 - v0) * static_cast<int>(frac) >> 5));
-        }
-        acc += step;
     }
 
     // Build CI-V packet
@@ -176,7 +181,7 @@ void scope_streamer_push_data(const float *psd_db, size_t len,
     }
 
     after_cmd.append_byte(0x00); // In range
-    after_cmd.append_data(binned, SCOPE_NBINS); // Data
+    after_cmd.append_data(scaled, SCOPE_NBINS); // Data
 
     std::string_view packet = after_cmd.get_packet();
     if (!packet.empty()) {
@@ -207,6 +212,7 @@ std::string_view scope_streamer_handle_27(const CivPacketView &req, CivTxPacker 
                     .get_packet();
             // write
             scope_data_enabled = static_cast<uint8_t>(req.get_subcommand_data()[0]) != 0;
+            notify_active_change();
             return resp.set_ok().get_packet();
 
         case 0x13: // Send/read the Single/Dual scope setting

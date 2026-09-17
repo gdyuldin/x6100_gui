@@ -35,7 +35,7 @@ int32_t align_int(int32_t x, uint16_t step);
 int32_t limit(int32_t x, int32_t min, int32_t max);
 float sqr(float x);
 void lpf(float *x, float current, float beta, float initial);
-void lpf_block(float *x, float *current, float beta, unsigned int count);
+void lpf_block(float *x, const float *current, float beta, unsigned int count);
 
 char *util_canonize_callsign(const char *callsign, bool strip_slashes);
 

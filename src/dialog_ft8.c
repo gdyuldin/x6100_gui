@@ -24,6 +24,8 @@
 #include "events.h"
 #include "buttons.h"
 #include "main_screen.h"
+#include "spectrum.h"
+#include "waterfall.h"
 #include "lock_manager.h"
 #include "qth/qth.h"
 #include "msg.h"
@@ -300,8 +302,8 @@ static void destruct_cb() {
     worker_done();
     table_view_destroy();
 
-    dsp_set_waterfall_enabled(true);
-    dsp_set_spectrum_enabled(true);
+    waterfall_set_enabled(true);
+    spectrum_set_enabled(true);
 
     mem_load(MEM_BACKUP_ID);
 
@@ -423,8 +425,8 @@ static void construct_cb(lv_obj_t *parent) {
      * and waterfall are not visible, so skip their DSP cost entirely. The
      * companion lv_obj_invalidate() in tx_info handles the side effect of
      * losing the spectrum redraw that previously refreshed PWR/SWR bars. */
-    dsp_set_waterfall_enabled(false);
-    dsp_set_spectrum_enabled(false);
+    waterfall_set_enabled(false);
+    spectrum_set_enabled(false);
 
     lv_obj_add_event_cb(dialog.obj, band_cb, EVENT_BAND_UP, NULL);
     lv_obj_add_event_cb(dialog.obj, band_cb, EVENT_BAND_DOWN, NULL);

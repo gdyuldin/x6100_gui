@@ -5,6 +5,7 @@
 #include "cat/civ_processor.h"
 #include "cat/scope_streamer.h"
 #include "common/queue.h"
+#include "dsp.h"
 
 #include <algorithm>
 #include <atomic>
@@ -113,6 +114,14 @@ static void scope_psd_cb(const float *psd_db, size_t size, uint32_t base_freq, u
                          float min, float max, void *user_data) {
     (void)user_data;
     scope_streamer_push_data(psd_db, size, base_freq, width_hz, min, max);
+}
+
+// The scope subscription only accumulates/delivers while scope data is enabled
+// and a transport (serial or LAN) has registered a notify callback.
+static void scope_active_cb(bool active) {
+    if (g_ports && scope_psd_sub_id != PSD_SUB_INVALID) {
+        g_ports->psd->set_active(scope_psd_sub_id, active);
+    }
 }
 
 static bool udp_send(int fd, const void *data, size_t len, const sockaddr_in *dst);
@@ -946,7 +955,8 @@ int cat_lan_init(const app_ports_t *ports) {
     g_ports = ports;
 
     if (scope_psd_sub_id == PSD_SUB_INVALID) {
-        scope_psd_sub_id = g_ports->psd->subscribe(scope_psd_cb, nullptr);
+        scope_psd_sub_id = g_ports->psd->subscribe(scope_psd_cb, SCOPE_NBINS, DSP_FRAME_DEFAULT_CHUNKS, nullptr);
+        scope_streamer_set_active_cb(scope_active_cb);
     }
 
     if (fd_control >= 0) {
@@ -1040,6 +1050,7 @@ int cat_lan_init(const app_ports_t *ports) {
 
 void cat_lan_destruct(void) {
     scope_streamer_set_notify(nullptr);
+    scope_streamer_set_active_cb(nullptr);
 
     if (g_ports && scope_psd_sub_id != PSD_SUB_INVALID) {
         g_ports->psd->unsubscribe(scope_psd_sub_id);

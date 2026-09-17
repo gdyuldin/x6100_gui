@@ -27,8 +27,16 @@ extern "C" {
 }
 #endif
 
-#define WATERFALL_NFFT (RADIO_SAMPLES * 2)
-#define SPECTRUM_NFFT SCREEN_WIDTH
+/* Single FFT size for the whole spectrum/waterfall/scope pipeline. Subscribers
+ * request their own nfft (<= DSP_MAX_NFFT); the DSP decimates the shared
+ * transform result down to it. WATERFALL_NFFT/SPECTRUM_NFFT live in
+ * waterfall.h/spectrum.h respectively. */
+#define DSP_MAX_NFFT (RADIO_SAMPLES * 2)
+
+/* Full span of the PSD pipeline in Hz, i.e. the width at spectrum_factor == 1.
+ * Single source of truth shared by dsp.cpp (frame width, S-meter and noise
+ * level) and spectrum.c (frequency pan shift). */
+#define FULL_BW_HZ (100000)
 
 #define AUDIO_SUB_INVALID  (0)
 
@@ -43,11 +51,7 @@ void dsp_init();
 void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq, bool vary_freq, uint8_t fft_dec);
 void dsp_reset();
 
-float dsp_get_spectrum_beta();
 float dsp_get_s_meter_db();
-void dsp_set_waterfall_enabled(bool enabled);
-void dsp_set_spectrum_enabled(bool enabled);
-void dsp_set_spectrum_beta(float x);
 
 void dsp_put_audio_samples(size_t nsamples, int16_t *samples);
 
@@ -69,18 +73,33 @@ void dsp_audio_unsubscribe(uint32_t id);
 /*
  * PSD frame subscribers.
  *
- * The DSP thread produces PSD frames (spectrum / waterfall / scope) and
- * delivers them to the subscribers of the matching kind, so dsp.cpp never
- * includes the UI or CAT modules. Callbacks run on the DSP thread; they must
- * not block, allocate, or call dsp_frame_subscribe()/dsp_frame_unsubscribe()/
- * dsp_frame_set_active() (non-recursive mutex -> deadlock).
+ * The DSP thread produces a single PSD pipeline and delivers frames to every
+ * subscriber, so dsp.cpp never knows which consumer it feeds. Callbacks run on
+ * the DSP thread; they must not block, allocate, or call
+ * dsp_frame_subscribe()/dsp_frame_unsubscribe()/dsp_frame_set_active()
+ * (non-recursive mutex -> deadlock).
+ *
+ * nfft is the number of bins the subscriber wants (no default): the DSP runs
+ * one FFT of DSP_MAX_NFFT per direction and decimates the accumulated power
+ * down to nfft. nfft == 0 or nfft > DSP_MAX_NFFT is rejected.
+ *
+ * chunks_per_frame is how many BASE chunks to accumulate before delivering a
+ * frame. Cadence is counted in chunks, not milliseconds, because the radio
+ * flow is quantized to chunks (~27/s) and a millisecond timer would drift;
+ * chunks_per_frame == 0 is rejected.
+ *
+ * allow_vary_freq: when false, transforms collected while the base frequency
+ * is changing are dropped instead of delivered.
  */
-typedef enum {
-    DSP_FRAME_SPECTRUM = 0,
-    DSP_FRAME_WATERFALL,
-    DSP_FRAME_SCOPE,
-    DSP_FRAME_KIND_COUNT
-} dsp_frame_kind_t;
+typedef struct {
+    uint16_t nfft;             /* number of output bins */
+    uint16_t chunks_per_frame; /* chunks to accumulate before a frame */
+    bool     allow_vary_freq;  /* deliver frames collected while retuning */
+} dsp_frame_cfg_t;
+
+/* Chunks accumulated per frame when a consumer has no cadence of its own
+ * (~13.5 frames/s at the BASE flow rate). */
+#define DSP_FRAME_DEFAULT_CHUNKS (2)
 
 typedef struct {
     const float *psd_db;   /* dB; DB_OFFSET and zoom offset already applied */
@@ -97,7 +116,7 @@ typedef void (*dsp_frame_cb_t)(const dsp_frame_t *frame, void *user_data);
 
 #define DSP_FRAME_SUB_INVALID (0u)
 
-uint32_t dsp_frame_subscribe(dsp_frame_kind_t kind, dsp_frame_cb_t cb, void *user_data);
+uint32_t dsp_frame_subscribe(const dsp_frame_cfg_t *cfg, dsp_frame_cb_t cb, void *user_data);
 void     dsp_frame_set_active(uint32_t id, bool active);
 void     dsp_frame_unsubscribe(uint32_t id);
 

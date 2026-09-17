@@ -115,10 +115,19 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
     lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop_cb, NULL);
 
     if (waterfall_sub_id == DSP_FRAME_SUB_INVALID) {
-        waterfall_sub_id = dsp_frame_subscribe(DSP_FRAME_WATERFALL, waterfall_frame_cb, NULL);
+        const dsp_frame_cfg_t sub_cfg = {
+            .nfft             = WATERFALL_NFFT,
+            .chunks_per_frame = DSP_FRAME_DEFAULT_CHUNKS,
+            .allow_vary_freq  = false,
+        };
+        waterfall_sub_id = dsp_frame_subscribe(&sub_cfg, waterfall_frame_cb, NULL);
     }
 
     return obj;
+}
+
+void waterfall_set_enabled(bool enabled) {
+    dsp_frame_set_active(waterfall_sub_id, enabled);
 }
 
 static void scroll_down() {
@@ -145,11 +154,10 @@ void waterfall_data(const float *data_buf, uint16_t size, bool tx, uint32_t base
     wf_rows[last_row_id].center_freq = base_freq;
     wf_rows[last_row_id].width = width_hz;
 
-    float temp_buf[size];
-    liquid_vectorf_addscalar((float *)data_buf, size, -min, temp_buf);
-    liquid_vectorf_mulscalar(temp_buf, size, 255.0f / (max - min), temp_buf);
+    const float scale = 255.0f / (max - min);
+
     for (uint16_t x = 0; x < size; x++) {
-        float   v = temp_buf[x];
+        float   v = (data_buf[x] - min) * scale;
         uint8_t id;
 
         if (v < 0.0f) {
