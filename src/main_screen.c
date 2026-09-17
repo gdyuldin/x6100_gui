@@ -1098,9 +1098,7 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
 
     /* Indicators block */
     // width from meter style for correct padding
-    lv_style_value_t meter_w;
-    lv_style_get_prop(&style.s_meter, LV_STYLE_WIDTH, &meter_w);
-    indicators_init(obj, INDICATORS_HEIGHT, meter_w.num);
+    indicators_init(obj, INDICATORS_HEIGHT, METER_WIDTH);
     y += INDICATORS_HEIGHT;
 
     /* Spectrum */
@@ -1115,16 +1113,16 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     /* Freq boundary (left, right) */
     lv_obj_t *f;
 
-    f = lv_label_create(obj);
+    f = lv_label_create(spectrum);
     lv_obj_add_style(f, &style.freq_bounds, LV_PART_MAIN);
     lv_obj_add_style(f, &style.text_muted_color, LV_STATE_DISABLED);
-    lv_obj_align(f, LV_ALIGN_TOP_LEFT, 10, y + 3);
+    lv_obj_align(f, LV_ALIGN_TOP_LEFT, 10, TOP_BLOCK_SMALL_HEIGHT + 1);
     freq_bounds[0] = f;
 
-    f = lv_label_create(obj);
+    f = lv_label_create(spectrum);
     lv_obj_add_style(f, &style.freq_bounds, LV_PART_MAIN);
     lv_obj_add_style(f, &style.text_muted_color, LV_STATE_DISABLED);
-    lv_obj_align(f, LV_ALIGN_TOP_RIGHT, -10, y + 3);
+    lv_obj_align(f, LV_ALIGN_TOP_RIGHT, -10, TOP_BLOCK_SMALL_HEIGHT + 1);
     freq_bounds[1] = f;
 
     /* Waterfall */

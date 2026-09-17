@@ -90,7 +90,7 @@ void styles_init(themes_t theme) {
     lv_style_set_pad_all(&style.freq_bounds, 3);
     lv_style_set_text_align(&style.freq_bounds, LV_TEXT_ALIGN_CENTER);
     lv_style_set_bg_color(&style.freq_bounds, lv_color_black());
-    lv_style_set_bg_opa(&style.freq_bounds, LV_OPA_30);
+    lv_style_set_bg_opa(&style.freq_bounds, LV_OPA_40);
     lv_style_set_radius(&style.freq_bounds, 5);
 
     /* Buttons */
@@ -884,15 +884,15 @@ static void set_skin(skin_t *skin) {
     lv_color_t muted_text_color;
     if (lv_color_brightness(skin->base_text_color) > 64) {
         // Bright color, muted should be darker
-        muted_text_color = lv_color_darken(skin->base_text_color, LV_OPA_40);
+        muted_text_color = lv_color_darken(skin->base_text_color, LV_OPA_50);
     } else {
-        muted_text_color = lv_color_lighten(skin->base_text_color, LV_OPA_40);
+        muted_text_color = lv_color_lighten(skin->base_text_color, LV_OPA_50);
     }
     colors.base_text_color = skin->base_text_color;
 
     lv_style_set_text_color(&style.text_base_color, skin->base_text_color);
     lv_style_set_text_color(&style.btn.base, skin->base_text_color);
-    lv_style_set_text_color(&style.freq_bounds, skin->base_text_color);
+    lv_style_set_text_color(&style.freq_bounds, lv_color_darken(skin->base_text_color, LV_OPA_30));
     lv_style_set_text_color(&style.msg, skin->base_text_color);
     lv_style_set_text_color(&style.msg_tiny, skin->base_text_color);
     lv_style_set_text_color(&style.panels.base, skin->base_text_color);
