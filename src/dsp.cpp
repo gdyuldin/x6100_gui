@@ -158,9 +158,16 @@ struct FrameSub {
     bool              used             = false;
     std::atomic<bool> active{false};
 
-    /* Accumulator of linear power over DSP_MAX_NFFT in DC-shifted order. */
-    float             accum[DSP_MAX_NFFT] = {};
-    uint32_t          count               = 0;
+    /* Accumulator of linear power over DSP_MAX_NFFT in DC-shifted order, and
+     * how many chunks were actually summed into it (used for normalisation). */
+    float    accum[DSP_MAX_NFFT] = {};
+    uint32_t accum_count         = 0;
+
+    /* Cadence counter: +1 per active chunk, saturates at chunks_per_frame and
+     * is cleared only when a frame is emitted. It is not reset by
+     * reset_accumulators()/frame_sub_zero(), so a run of rejected (dirty)
+     * chunks or a frequency change cannot stall delivery. */
+    uint16_t chunks_elapsed = 0;
 
     /* Precomputed max-pool decimation ranges: output bin j takes the maximum of
      * the accumulator bins [bstart[j], bend[j]). */
@@ -353,21 +360,24 @@ static void build_decim_ranges(FrameSub &s) {
 }
 
 static void frame_sub_consume(FrameSub &s) {
-    if (s.count == 0) {
+    if (s.accum_count == 0) {
         return;
     }
 
-    const float inv = 1.0f / (float)s.count;
+    const float inv = 1.0f / (float)s.accum_count;
 
     for (uint16_t i = 0; i < DSP_MAX_NFFT; i++) {
         s.accum[i] *= inv;
     }
-    s.count = 0;
+    s.accum_count = 0;
 }
 
+/* Drop the accumulated data only. The cadence counter is deliberately left
+ * alone: delivery must not restart from zero after a rejected chunk or a
+ * frequency / rx-tx / spectrum-factor change. */
 static void frame_sub_zero(FrameSub &s) {
     memset(s.accum, 0, sizeof(s.accum));
-    s.count = 0;
+    s.accum_count = 0;
 }
 
 /* Fold one transform into a full-resolution accumulator, reversing the FFT DC
@@ -385,7 +395,7 @@ static void accumulate_shifted(float *accum) {
 
 static void accumulate(FrameSub &s) {
     accumulate_shifted(s.accum);
-    s.count++;
+    s.accum_count++;
 }
 
 static void meter_zero() {
@@ -393,17 +403,18 @@ static void meter_zero() {
     meter_count = 0;
 }
 
-/* Zero every accumulator owned by the DSP pipeline (all frame subscribers and
- * the meter). Acquires frame_subs_mutex, so callers must not hold it; do not
- * call it from deliver_frames()/meter_tick() or any other path that already
- * holds the mutex. */
+/* Zero the accumulated data owned by the DSP pipeline, which requires stable
+ * freq. Only the data is dropped; the per-subscriber cadence counters are left
+ * alone so a frequency / rx-tx / spectrum-factor change does not restart
+ * delivery from the beginning of the interval. Acquires frame_subs_mutex, so
+ * callers must not hold it; do not call it from deliver_frames()/meter_tick()
+ * or any other path that already holds the mutex. */
 static void reset_accumulators() {
     std::lock_guard<std::mutex> lock(frame_subs_mutex);
 
     for (size_t i = 0; i < MAX_FRAME_SUBS; i++) {
         frame_sub_zero(frame_subs[i]);
     }
-    meter_zero();
 }
 
 /* S-meter / noise / auto-levels tick. Runs on every chunk from the internal
@@ -650,16 +661,30 @@ static void deliver_frames(bool tx, uint32_t base_freq, uint8_t fft_dec, bool va
 
         /* Frames collected while the base frequency was changing are dropped
          * unless the subscriber opts in (spectrum keeps them). */
-        if ((vary_freq || psd_delay) && !s.allow_vary_freq) {
+        const bool dirty = (vary_freq || psd_delay) && !s.allow_vary_freq;
+
+        if (dirty) {
+            /* The dirty chunk is not used, but it still advances the cadence
+             * below so delivery cannot stall while retuning. */
             frame_sub_zero(s);
-            continue;
+        } else {
+            accumulate(s);
         }
 
-        accumulate(s);
+        /* Cadence advances on every active chunk and saturates at the
+         * interval, so a saturated subscriber is "due" and emits on the first
+         * chunk it can actually use. The increment happens before the early
+         * continues to keep the due state. */
+        if (s.chunks_elapsed < s.chunks_per_frame) {
+            s.chunks_elapsed++;
+        }
 
-        /* Accumulation continues while the pipeline settles; only delivery is
-         * skipped. */
-        if (s.count < s.chunks_per_frame) {
+        if (s.chunks_elapsed < s.chunks_per_frame) {
+            continue;
+        }
+        if (s.accum_count == 0) {
+            /* Due, but no usable data yet: stay due and emit on the first
+             * usable chunk. */
             continue;
         }
 
@@ -673,6 +698,7 @@ static void deliver_frames(bool tx, uint32_t base_freq, uint8_t fft_dec, bool va
         }
 
         frame_sub_zero(s);
+        s.chunks_elapsed = 0;
     }
 }
 
@@ -702,8 +728,8 @@ void dsp_samples(cfloat *buf_samples, uint16_t size, bool tx, uint32_t base_freq
         psd_delay--;
     }
 
-    /* Accumulators (per subscriber and the meter) do not survive a direction
-     * change. */
+    /* Subscriber accumulators do not survive a direction change; the meter keeps
+     * its own window and the cadence counters are preserved. */
     if (cur_tx != tx) {
         cur_tx = tx;
 
@@ -923,7 +949,8 @@ uint32_t dsp_frame_subscribe(const dsp_frame_cfg_t *cfg, dsp_frame_cb_t cb, void
         s.ud               = user_data;
         build_decim_ranges(s);
         frame_sub_zero(s);
-        s.used        = true;
+        s.chunks_elapsed = 0;
+        s.used           = true;
         s.active.store(true, std::memory_order_relaxed);
         return s.id;
     }
@@ -942,7 +969,9 @@ void dsp_frame_set_active(uint32_t id, bool active) {
         if (frame_subs[i].used && frame_subs[i].id == id) {
             if (active) {
                 /* Start the accumulation window fresh so a resumed subscriber
-                 * does not blend in samples from before the pause. */
+                 * does not blend in samples from before the pause. The cadence
+                 * counter is kept, so the first usable chunk after resume is
+                 * delivered immediately. */
                 frame_sub_zero(frame_subs[i]);
             }
             frame_subs[i].active.store(active, std::memory_order_release);
@@ -960,9 +989,11 @@ void dsp_frame_set_chunks_per_frame(uint32_t id, uint16_t chunks_per_frame) {
 
     for (size_t i = 0; i < MAX_FRAME_SUBS; i++) {
         if (frame_subs[i].used && frame_subs[i].id == id) {
-            /* The accumulation window is intentionally left as is: already
-             * accumulated samples are valid, only the averaging interval
-             * changes, so the next frame is assembled against the new count. */
+            /* The accumulation window and the cadence counter are intentionally
+             * left as is: already accumulated samples are valid, only the
+             * averaging interval changes. Lowering the interval below the
+             * current chunks_elapsed makes the subscriber immediately due, so
+             * the current window is emitted on the next usable chunk. */
             frame_subs[i].chunks_per_frame = chunks_per_frame;
             return;
         }

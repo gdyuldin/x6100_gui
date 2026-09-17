@@ -83,16 +83,23 @@ void dsp_audio_unsubscribe(uint32_t id);
  * one FFT of DSP_MAX_NFFT per direction and decimates the accumulated power
  * down to nfft. nfft == 0 or nfft > DSP_MAX_NFFT is rejected.
  *
- * chunks_per_frame is how many BASE chunks to accumulate before delivering a
- * frame. Cadence is counted in chunks, not milliseconds, because the radio
- * flow is quantized to chunks (~27/s) and a millisecond timer would drift;
- * chunks_per_frame == 0 is rejected. The cadence of a live subscription can be
+ * chunks_per_frame is the delivery interval in BASE chunks. A frame is
+ * delivered once the interval is reached and at least one chunk has been
+ * accumulated, so the window may be partial (averaged over the chunks actually
+ * accumulated, not over the interval). Cadence is counted in chunks, not
+ * milliseconds, because the radio flow is quantized to chunks (~27/s) and a
+ * millisecond timer would drift; chunks_per_frame == 0 is rejected.
+ *
+ * The cadence counter is not reset by a base-frequency / rx-tx / spectrum-factor
+ * change and saturates at chunks_per_frame, so after a gap the first usable
+ * chunk is delivered immediately. The cadence of a live subscription can be
  * changed with dsp_frame_set_chunks_per_frame() (also in BASE chunks); it takes
  * the same non-recursive mutex as the subscribe/active calls, so it must not be
  * called from a DSP callback either.
  *
  * allow_vary_freq: when false, transforms collected while the base frequency
- * is changing are dropped instead of delivered.
+ * is changing are dropped instead of accumulated, but they still advance the
+ * cadence.
  */
 typedef struct {
     uint16_t nfft;             /* number of output bins */
