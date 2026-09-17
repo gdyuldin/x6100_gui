@@ -33,7 +33,7 @@
 #include "screenshot.h"
 #include "keyboard.h"
 #include "dialog.h"
-#include "dialog_settings.h"
+#include "settings/dialog_settings.h"
 #include "dialog_freq.h"
 #include "dialog_msg_cw.h"
 #include "dialog_msg_voice.h"

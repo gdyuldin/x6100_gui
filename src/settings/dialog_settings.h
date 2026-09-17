@@ -10,12 +10,11 @@
 
 #ifdef __cplusplus
 
-#include "helpers.h"
-#include "dialog.h"
+#include "../dialog.h"
+#include "../helpers.h"
 
 extern "C" {
 #endif
-
 
 extern dialog_t *dialog_settings;
 
