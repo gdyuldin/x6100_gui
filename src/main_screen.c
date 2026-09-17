@@ -686,15 +686,15 @@ static void main_screen_keypad_cb(lv_event_t *e) {
             break;
 
         case KEYPAD_GEN:
-            keypad_group_page(kp, cfg.keys.long_gen(), buttons_group_gen, NULL);
+            keypad_group_page(kp, cfg.keys.long_gen(), buttons_group_gen, "General menu keys");
             break;
 
         case KEYPAD_APP:
-            keypad_group_page(kp, cfg.keys.long_app(), buttons_group_app, NULL);
+            keypad_group_page(kp, cfg.keys.long_app(), buttons_group_app, "Application menu keys");
             break;
 
         case KEYPAD_KEY:
-            keypad_group_page(kp, cfg.keys.long_key(), buttons_group_key, NULL);
+            keypad_group_page(kp, cfg.keys.long_key(), buttons_group_key, "CW parameters");
             break;
 
         case KEYPAD_MSG:
@@ -702,7 +702,7 @@ static void main_screen_keypad_cb(lv_event_t *e) {
             break;
 
         case KEYPAD_DFN:
-            keypad_group_page(kp, cfg.keys.long_dfn(), buttons_group_dfn, NULL);
+            keypad_group_page(kp, cfg.keys.long_dfn(), buttons_group_dfn, "DNF parameters");
             break;
 
         case KEYPAD_DFL:
