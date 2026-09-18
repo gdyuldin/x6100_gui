@@ -12,9 +12,15 @@
 #include "globals.h"
 #include "cfg/cfg_api.h"
 
-#include "styles_wf_palette.c"
-
 #define PATH "A:/dev/shm/"
+
+const uint32_t wf_palette_legacy[] = {
+#include "palettes/legacy.inc"
+};
+
+const uint32_t wf_palette_gauss[] = {
+#include "palettes/gauss.inc"
+};
 
 /* Skin API */
 typedef struct {
