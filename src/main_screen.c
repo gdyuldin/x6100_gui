@@ -1180,6 +1180,7 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start_cb, NULL);
     lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop_cb, NULL);
     subject_subscribe_delayed((Subject*)radio_fg_freq_subj, update_freq_boundaries, NULL);
+    subject_subscribe_delayed((Subject*)cfg.band.if_shift(), update_freq_boundaries, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg.mode.zoom(), update_freq_boundaries, NULL);
 
     subject_subscribe_delayed((Subject*)cfg.band.if_shift(), update_zoom_on_if_shift_change, NULL);
@@ -1205,7 +1206,7 @@ static void on_fg_freq_change(Subject *subj, void *user_data) {
 }
 
 static void update_freq_boundaries(Subject *subj, void *user_data) {
-    int32_t f = subject_i_get(radio_fg_freq_subj);
+    int32_t f = subject_i_get(radio_fg_freq_subj) - param_i_get(cfg.band.if_shift());
 
     uint16_t mhz, khz, hz;
 

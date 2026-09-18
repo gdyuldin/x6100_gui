@@ -47,7 +47,6 @@ static uint8_t          delay = 0;
 static wf_data_row_t    *wf_rows;
 static uint16_t         last_row_id;
 
-static int32_t          radio_center_freq = 0;
 static int32_t          wf_center_freq = 0;
 static int32_t          mode_lo_offset = 0;
 static int32_t          if_shift = 0;
@@ -71,9 +70,9 @@ static int s_data_ready = 0;
 static int s_cond_dirty = 1;
 
 static void on_zoom_changed(Subject *subj, void *user_data);
-static void on_fg_freq_change(Subject *subj, void *user_data);
+static void update_freq_cb(Subject *subj, void *user_data);
 static void on_mode_lo_offset_change(Subject *subj, void *user_data);
-static void on_if_shift_changed(Subject *subj, void *user_data);
+// static void on_if_shift_changed(Subject *subj, void *user_data);
 static void on_dialog_start_cb(void *s, lv_msg_t *m);
 static void on_dialog_stop_cb(void *s, lv_msg_t *m);
 
@@ -90,7 +89,7 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
 
     wf_rows = calloc(h, sizeof(*wf_rows));
     for (size_t i = 0; i < (size_t)h; i++) {
-        wf_rows[i].center_freq = radio_center_freq;
+        wf_rows[i].center_freq = wf_center_freq;
         memset(wf_rows[i].values, 0, WATERFALL_NFFT);
     }
     last_row_id = 0;
@@ -106,9 +105,9 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
 
     ready = true;
 
-    subject_subscribe_and_notify((Subject*)cfg.computed.fg_freq(), on_fg_freq_change, NULL);
+    subject_subscribe((Subject*)cfg.computed.fg_freq(), update_freq_cb, NULL);
+    subject_subscribe_and_notify((Subject*)cfg.band.if_shift(), update_freq_cb, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg.mode.zoom(), on_zoom_changed, NULL);
-    subject_subscribe_delayed_and_notify((Subject*)cfg.band.if_shift(), on_if_shift_changed, NULL);
     subject_subscribe_and_notify((Subject*)cfg.computed.mode_lo_offset(), on_mode_lo_offset_change, NULL);
 
     lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start_cb, NULL);
@@ -146,7 +145,7 @@ void waterfall_data(const float *data_buf, uint16_t size, bool tx, uint32_t base
     scroll_down();
 
     if (base_freq == 0) {
-        base_freq = radio_center_freq + mode_lo_offset;
+        base_freq = wf_center_freq + mode_lo_offset;
     } else if (tx) {
         // New patched firmware
         base_freq += mode_lo_offset;
@@ -361,23 +360,15 @@ bool waterfall_process(void) {
     return true;
 }
 
+static void update_freq_cb(Subject *subj, void *user_data) {
+    delay = 2;
+    if_shift = param_i_get(cfg.band.if_shift());
+    wf_center_freq = cparam_i_get(cfg.computed.fg_freq()) - if_shift;
+    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
+}
 
 static void on_zoom_changed(Subject *subj, void *user_data) {
     zoom = subject_i_get((SubjectInt*)subj);
-    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
-}
-
-static void on_if_shift_changed(Subject *subj, void *user_data) {
-    delay = 2;
-    if_shift = subject_i_get((SubjectInt*)subj);
-    radio_center_freq = cparam_i_get(cfg.computed.fg_freq()) - if_shift;
-    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
-}
-
-static void on_fg_freq_change(Subject *subj, void *user_data) {
-    delay = 2;
-    radio_center_freq = subject_i_get((SubjectInt*)subj) - if_shift;
-    wf_center_freq = radio_center_freq;
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
 }
 

@@ -174,7 +174,7 @@ extern "C" lv_obj_t *band_info_init(lv_obj_t *parent) {
     return obj;
 }
 
-extern "C" void band_info_update(int32_t f) {
+static void band_info_update(int32_t f) {
     freq = f;
 
     lv_obj_invalidate(obj);
@@ -195,6 +195,7 @@ extern "C" void band_info_update(int32_t f) {
 
 static void on_zoom_changed(Subject *subj, void *user_data) {
     zoom = static_cast<ParamInt *>(subj)->get();
+    lv_obj_invalidate(obj);
 }
 
 static void on_freq_changed(Subject *subj, void *user_data) {
@@ -203,4 +204,5 @@ static void on_freq_changed(Subject *subj, void *user_data) {
 
 static void on_if_shift_changed(Subject *subj, void *user_data) {
     if_shift = static_cast<ParamInt *>(subj)->get();
+    lv_obj_invalidate(obj);
 }
