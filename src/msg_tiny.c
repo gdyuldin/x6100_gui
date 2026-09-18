@@ -50,12 +50,12 @@ static void msg_update_cb(lv_event_t * e) {
     }
 }
 
-lv_obj_t * msg_tiny_init(lv_obj_t *parent) {
+lv_obj_t * msg_tiny_init(lv_obj_t *parent, lv_obj_t *align_base) {
     obj = lv_label_create(parent);
 
     lv_obj_remove_style_all(obj);
     lv_obj_add_style(obj, &style.msg_tiny, 0);
-    lv_obj_align(obj, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align_to(obj, align_base, LV_ALIGN_CENTER, 0, TOP_BLOCK_SMALL_HEIGHT / 2);
 
     lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_opa(obj, 0, 0);

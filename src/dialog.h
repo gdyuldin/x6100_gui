@@ -40,7 +40,7 @@ void dialog_destruct();
 
 bool dialog_key(dialog_t *dialog, lv_event_t * e);
 void dialog_send(lv_event_code_t event_code, void *param);
-bool dialog_is_run();
+bool dialog_is_run() __attribute__((deprecated("Use subscription on MSG_DIALOG_START and MSG_DIALOG_STOP")));
 bool dialog_type_is_run(dialog_t *dialog);
 
 lv_obj_t * dialog_init(lv_obj_t *parent);

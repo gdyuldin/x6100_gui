@@ -34,6 +34,7 @@ static ParamInt *cfg_moni(void) { return &cfg_instance().p_moni; }
 static ParamInt *cfg_ant_id(void) { return &cfg_instance().p_ant_id; }
 static ParamInt *cfg_atu_enabled(void) { return &cfg_instance().p_atu_enabled; }
 static ParamInt *cfg_cat_baud(void) { return &cfg_instance().p_cat_baud; }
+static ParamInt *cfg_show_meter_values(void) { return &cfg_instance().p_show_meter_values; }
 static ParamInt *cfg_display_invert(void) { return &cfg_instance().p_display_invert; }
 static ParamInt *cfg_auto_level_enabled(void) { return &cfg_instance().p_auto_level_enabled; }
 static ParamFloat *cfg_auto_level_offset(void) { return reinterpret_cast<ParamFloat *>(&cfg_instance().p_auto_level_offset); }
@@ -204,6 +205,7 @@ extern "C" const cfg_refs_t cfg = {
         .ant_id = &cfg_ant_id,
         .atu_enabled = &cfg_atu_enabled,
         .cat_baud = &cfg_cat_baud,
+        .show_meter_value = &cfg_show_meter_values,
     },
     .spectrum = {
         .auto_level_enabled = &cfg_auto_level_enabled,

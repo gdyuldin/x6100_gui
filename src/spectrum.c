@@ -121,7 +121,7 @@ static void spectrum_blend_px(uint32_t *buf, int stride, int x, int y, float bri
 
 
 static lv_coord_t spectrum_markers_offset(void) {
-    return ((mode_lo_offset + if_shift) * zoom_factor * SPECTRUM_NFFT + width_hz / 2) / width_hz;
+    return ((mode_lo_offset + if_shift) * SPECTRUM_NFFT + width_hz / 2) / width_hz;
 }
 
 static void spectrum_overlay_draw_cb(lv_event_t *e) {
@@ -131,12 +131,38 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     lv_draw_rect_dsc_t rect_dsc;
 
     lv_coord_t x1 = obj->coords.x1;
-    // TODO: move offset to configuration
-    lv_coord_t y1 = obj->coords.y1 + 70;
+    lv_coord_t y1 = obj->coords.y1 + TOP_BLOCK_SMALL_HEIGHT;
     lv_coord_t w = lv_obj_get_width(obj);
     lv_coord_t h = obj->coords.y2 - y1;
 
     lv_coord_t markers_offset = spectrum_markers_offset();
+
+    /* Frequency ticks */
+
+    // lv_draw_line_dsc_init(&line_dsc);
+
+    // line_dsc.dash_width = 1;
+    // line_dsc.dash_gap = 1;
+    // line_dsc.opa = LV_OPA_20;
+    // line_dsc.color = lv_color_white();
+
+    // lv_point_t p1, p2;
+    // p1.y = y1;
+    // p2.y = obj->coords.y2;
+
+    // // const int tick_interval = 1000; // for 8x ?
+    // const int tick_interval = 10000; // for 4x ?
+    // int32_t df = ((fg_freq - if_shift - width_hz / 2) % tick_interval) * SPECTRUM_NFFT / width_hz;
+    // int32_t tick_step = tick_interval * SPECTRUM_NFFT / width_hz;
+    // lv_coord_t tick_x = x1 - df;
+    // while (tick_x < obj->coords.x2) {
+    //     if (tick_x >= obj->coords.x1) {
+    //         p1.x = tick_x;
+    //         p2.x = tick_x;
+    //         lv_draw_line(draw_ctx, &line_dsc, &p1, &p2);
+    //     }
+    //     tick_x += tick_step;
+    // }
 
     /* Filter */
 
@@ -149,13 +175,11 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     }
     rect_dsc.bg_opa = LV_OPA_40;
 
-    int32_t w_hz = width_hz / zoom_factor;
-
     int16_t sign_from = (filter_from > 0) ? 1 : -1;
     int16_t sign_to   = (filter_to > 0) ? 1 : -1;
 
-    int32_t f1 = (float)(w * filter_from) / w_hz + 1.0f;
-    int32_t f2 = (float)(w * filter_to) / w_hz + 1.0f;
+    int32_t f1 = (float)(w * filter_from) / width_hz + 1.0f;
+    int32_t f2 = (float)(w * filter_to) / width_hz + 1.0f;
 
     lv_area_t area;
     area.x1 = x1 + markers_offset + w / 2 + f1;
@@ -176,11 +200,11 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
         to   = sign_to * (dnf_center + dnf_width);
 
         if (from < to) {
-            f1 = (w * from) / w_hz;
-            f2 = (w * to) / w_hz;
+            f1 = (w * from) / width_hz;
+            f2 = (w * to) / width_hz;
         } else {
-            f1 = (w * to) / w_hz;
-            f2 = (w * from) / w_hz;
+            f1 = (w * to) / width_hz;
+            f2 = (w * from) / width_hz;
         }
 
         area.x1 = x1 + markers_offset + w / 2 + f1;
@@ -208,8 +232,8 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
         from = sign_from * (param_i_get(cfg.rtty.center()) - param_i_get(cfg.rtty.shift()) / 2);
         to   = sign_to * (param_i_get(cfg.rtty.center()) + param_i_get(cfg.rtty.shift()) / 2);
 
-        f1 = (int64_t)(w * from) / w_hz;
-        f2 = (int64_t)(w * to) / w_hz;
+        f1 = (int64_t)(w * from) / width_hz;
+        f2 = (int64_t)(w * to) / width_hz;
 
         lv_point_t a, b;
 
@@ -404,6 +428,7 @@ void spectrum_clear() {
 
 static void on_zoom_changed(Subject *subj, void *user_data) {
     zoom_factor = (uint8_t)subject_i_get((SubjectInt*)subj);
+    width_hz = FULL_BW_HZ / zoom_factor;
     spectrum_clear();
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
     lv_obj_invalidate(obj);
@@ -491,6 +516,7 @@ static void on_if_shift_change(Subject *subj, void *user_data) {
 static void on_fg_freq_change(Subject *subj, void *user_data) {
     fg_freq = cparam_i_get(cfg.computed.fg_freq());
     __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
+    lv_obj_invalidate(obj);
 }
 
 static void on_rit_change(Subject *subj, void *user_data) {
@@ -513,7 +539,7 @@ static void shift_peaks(int32_t df) {
     df += freq_mod;
     uint64_t time = get_time();
 
-    uint16_t div     = width_hz / SPECTRUM_NFFT / zoom_factor;
+    uint16_t div     = width_hz / SPECTRUM_NFFT;
     int32_t  delta   = (df + div / 2) / div;
     freq_mod = df - delta * div;
 
@@ -550,7 +576,7 @@ static int32_t spectrum_compute_offset(void) {
     int32_t w = SPECTRUM_NFFT;
 
     if (spectrum_tx) {
-        return ((mode_lo_offset + if_shift) * zoom_factor * w + width_hz / 2) / width_hz;
+        return ((mode_lo_offset + if_shift) * w + width_hz / 2) / width_hz;
     }
 
     int32_t data_shift = 0;
@@ -558,7 +584,7 @@ static int32_t spectrum_compute_offset(void) {
         // Handle delay between sending new settings to base and new data flow
         data_shift = cur_base_lo_freq - (fg_freq + mode_lo_offset - if_shift + rit);
     }
-    return ((mode_lo_offset + data_shift) * zoom_factor * w + width_hz / 2) / width_hz;
+    return ((mode_lo_offset + data_shift) * w + width_hz / 2) / width_hz;
 }
 
 /* Fill one physical row from column x_top to the bottom of the strip. */

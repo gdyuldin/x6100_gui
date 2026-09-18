@@ -55,6 +55,7 @@ typedef struct {
     ParamInt *(*ant_id)(void); /* p_ant_id */
     ParamInt *(*atu_enabled)(void); /* p_atu_enabled */
     ParamInt *(*cat_baud)(void); /* p_cat_baud */
+    ParamInt *(*show_meter_value)(void); /* p_show_meter_values */
 } cfg_general_refs_t;
 
 typedef struct {

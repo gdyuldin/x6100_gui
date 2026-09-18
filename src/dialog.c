@@ -18,6 +18,8 @@
 static lv_obj_t     *obj;
 static dialog_t     *current_dialog = NULL;
 
+static bool dialog_is_running();
+
 void dialog_construct(dialog_t *dialog, lv_obj_t *parent) {
     if (dialog && !dialog->run) {
         scheduler_msg_send(MSG_DIALOG_START, NULL);
@@ -55,7 +57,7 @@ void dialog_destruct() {
 }
 
 void dialog_send(lv_event_code_t event_code, void *param) {
-    if (dialog_is_run()) {
+    if (dialog_is_running()) {
         event_send(current_dialog->obj, event_code, param);
     }
 }
@@ -70,7 +72,7 @@ bool dialog_key(dialog_t *dialog, lv_event_t * e) {
 }
 
 bool dialog_is_run() {
-    return (current_dialog != NULL) && current_dialog->run;
+    return dialog_is_running();
 }
 
 bool dialog_type_is_run(dialog_t *dialog) {
@@ -111,7 +113,12 @@ void dialog_item(dialog_t *dialog, lv_obj_t *obj) {
 }
 
 void dialog_rotary(int32_t diff) {
-    if (dialog_is_run() && current_dialog->rotary_cb) {
+    if (dialog_is_running() && current_dialog->rotary_cb) {
         current_dialog->rotary_cb(diff);
     }
+}
+
+
+static bool dialog_is_running() {
+    return (current_dialog != NULL) && current_dialog->run;
 }

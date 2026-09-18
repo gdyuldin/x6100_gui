@@ -66,6 +66,7 @@ static uint16_t     freq_height = 36;
 static lv_obj_t     *obj;
 
 static lv_obj_t     *top_container;
+static uint32_t     top_container_index;
 static lv_obj_t     *spectrum;
 static lv_obj_t     *freq_bounds[2];
 static lv_obj_t     *meter;
@@ -829,13 +830,21 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 }
 
 static void rx_cb(void * s, lv_msg_t * msg) {
-    indicators_left_show(true);
-    // lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    if (!dialog_is_run()) {
+        indicators_left_show(true);
+    }
+    // Show left freq boundary
+    lv_obj_clear_flag(freq_bounds[0], LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_to_index(top_container, top_container_index);
 }
 
 static void tx_cb(void * s, lv_msg_t * msg) {
     indicators_left_show(false);
-    // lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    if (dialog_is_run()) {
+        lv_obj_move_foreground(top_container);
+    }
+    // Hide left freq boundary
+    lv_obj_add_flag(freq_bounds[0], LV_OBJ_FLAG_HIDDEN);
 }
 
 static void low_power_cb(void * s, lv_msg_t * msg) {
@@ -1116,13 +1125,13 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     f = lv_label_create(spectrum);
     lv_obj_add_style(f, &style.freq_bounds, LV_PART_MAIN);
     lv_obj_add_style(f, &style.text_muted_color, LV_STATE_DISABLED);
-    lv_obj_align(f, LV_ALIGN_TOP_LEFT, 10, TOP_BLOCK_SMALL_HEIGHT + 1);
+    lv_obj_align(f, LV_ALIGN_TOP_LEFT, 5, TOP_BLOCK_SMALL_HEIGHT + 10);
     freq_bounds[0] = f;
 
     f = lv_label_create(spectrum);
     lv_obj_add_style(f, &style.freq_bounds, LV_PART_MAIN);
     lv_obj_add_style(f, &style.text_muted_color, LV_STATE_DISABLED);
-    lv_obj_align(f, LV_ALIGN_TOP_RIGHT, -10, TOP_BLOCK_SMALL_HEIGHT + 1);
+    lv_obj_align(f, LV_ALIGN_TOP_RIGHT, -5, TOP_BLOCK_SMALL_HEIGHT + 10);
     freq_bounds[1] = f;
 
     /* Waterfall */
@@ -1135,39 +1144,27 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     buttons_init(obj);
     buttons_load_page(&buttons_page_vol_1);
 
-    /* Panel (CW/RTTY) */
-    panel_init(obj);
-    msg_init(obj, waterfall);
-    msg_tiny_init(spectrum);
-
     /* Top container (meter, clock, freq) */
     top_container = lv_obj_create(obj);
     lv_obj_remove_style_all(top_container);
     lv_obj_clear_flag(top_container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(top_container, 0, 0);
     // height from tx_info style for correct padding
-    lv_style_value_t tx_info_h;
-    lv_style_get_prop(&style.tx_info, LV_STYLE_HEIGHT, &tx_info_h);
-    lv_obj_set_size(top_container, SCREEN_WIDTH, tx_info_h.num);
+    lv_obj_set_size(top_container, SCREEN_WIDTH, TOP_BLOCK_BIG_HEIGHT);
     lv_obj_set_layout(top_container, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(top_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    // lv_obj_t *item = lv_obj_create(top_container);
-    // lv_obj_set_size(item, 200, 50);
-
-    // item = lv_obj_create(top_container);
-    // lv_obj_set_size(item, 50, 30);
-
-    // item = lv_obj_create(top_container);
-    // lv_obj_set_size(item, 100, 30);
+    top_container_index = lv_obj_get_index(top_container);
 
     meter = meter_init(top_container);
     tx_info = tx_info_init(top_container);
-    // info_init(top_container);
     freq_info_init(top_container);
     clock_init(top_container);
 
+    /* Panel (CW/RTTY) */
+    panel_init(obj);
+    msg_init(obj, waterfall);
+    msg_tiny_init(obj, spectrum);
 
     /* CW tune */
     cw_tune_init(spectrum);

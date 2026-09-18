@@ -65,6 +65,7 @@ static bar_tick_t vswr_ticks[] = {
 };
 
 static void on_cur_mode_change(Subject *subj, void *user_data);
+static void update_labels_visibility_cb(Subject *, void *);
 
 static void tx_cb(void * s, lv_msg_t * msg) {
     pwr  = 0.0f;
@@ -86,21 +87,12 @@ static void update_tx_info(void *arg) {
     lv_bar_indicator_set_value(pwr_bar, pwr);
     lv_bar_indicator_set_value(swr_bar, vswr);
 
-    if (param_i_get(cfg.view.mag_alc())) {
-        lv_obj_add_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
+    if (param_i_get(cfg.view.mag_alc()) && !dialog_run) {
         msg_tiny_set_text_fmt("ALC: %.1f", alc);
-    }
-    if (dialog_run || !param_i_get(cfg.view.mag_alc())) {
-        lv_obj_clear_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(vswr_label, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(vswr_label, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
 static void update_labels_cb(lv_timer_t *t) {
-    // TODO: add check for visibility
     lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
     lv_label_set_text_fmt(vswr_label, "%.2f", vswr);
     lv_label_set_text_fmt(pwr_label, "%.2f", pwr);
@@ -108,12 +100,12 @@ static void update_labels_cb(lv_timer_t *t) {
 
 static void on_dialog_start(void *s, lv_msg_t *msg) {
     dialog_run = true;
-    update_tx_info(NULL);
+    update_labels_visibility_cb(NULL, NULL);
 }
 
 static void on_dialog_stop(void *s, lv_msg_t *msg) {
     dialog_run = false;
-    update_tx_info(NULL);
+    update_labels_visibility_cb(NULL, NULL);
 }
 
 static lv_color_t swr_bar_color_cb(float val) {
@@ -136,10 +128,6 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     lv_coord_t pad = lv_obj_get_style_pad_top(obj, 0);
 
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
-    lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
-    lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start, NULL);
-    lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop, NULL);
 
     lv_obj_update_layout(obj);
     lv_coord_t w = lv_obj_get_content_width(obj);
@@ -148,8 +136,6 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     /* PWR indicator */
     pwr_bar = lv_bar_indicator_create(obj);
     lv_obj_set_size(pwr_bar, w, (h - pad) / 2);
-    // lv_obj_set_y(pwr_bar, 0);
-    // lv_obj_set_align(pwr_bar, LV_ALIGN_TOP_LEFT);
     lv_bar_indicator_set_range(pwr_bar, min_pwr, max_pwr, 0.25f);
     lv_bar_indicator_set_ticks(pwr_bar, pwr_ticks, ARRAY_SIZE(pwr_ticks));
     lv_bar_indicator_set_default_color(pwr_bar, lv_color_hex(0xAAAAAA));
@@ -168,28 +154,36 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     lv_bar_indicator_set_default_color(swr_bar, lv_color_hex(0xAA0000));
     lv_bar_indicator_set_color_cb(swr_bar, swr_bar_color_cb);
 
-    // Small alc indicator
+    // Small alc label
     alc_label = lv_label_create(obj);
     lv_obj_add_style(alc_label, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_text_font(alc_label, &sony_20, 0);
-    lv_obj_align(alc_label, LV_ALIGN_BOTTOM_RIGHT, 12, 16);
+    lv_obj_align(alc_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, pad - 2);
     lv_label_set_text(alc_label, "");
 
-    // pwr indicator
+    // pwr label
     pwr_label = lv_label_create(obj);
     lv_obj_add_style(pwr_label, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_text_font(pwr_label, &sony_20, 0);
     lv_obj_align(pwr_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, -h / 2 - 2);
     lv_label_set_text(pwr_label, "");
 
-    // swr indicator
+    // swr label
     vswr_label = lv_label_create(obj);
     lv_obj_add_style(vswr_label, &style.text_base_color, LV_PART_MAIN);
     lv_obj_set_style_text_font(vswr_label, &sony_20, 0);
     lv_obj_align(vswr_label, LV_ALIGN_BOTTOM_RIGHT, pad - 3, pad - 2);
     lv_label_set_text(vswr_label, "");
 
+    lv_msg_subscribe(MSG_RADIO_TX, tx_cb, NULL);
+    lv_msg_subscribe(MSG_RADIO_RX, rx_cb, NULL);
+    lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start, NULL);
+    lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop, NULL);
+
     subject_subscribe((Subject*)cfg.computed.mode(), on_cur_mode_change, NULL);
+
+    subject_subscribe_delayed((Subject*)cfg.view.mag_alc(), update_labels_visibility_cb, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg.general.show_meter_value(), update_labels_visibility_cb, NULL);
 
     lv_timer_create(update_labels_cb, LV_DISP_DEF_REFR_PERIOD * 3, NULL);
 
@@ -235,4 +229,25 @@ bool tx_info_refresh(uint8_t *prev_msg_id, float *alc_p, float *pwr_p, float *vs
 
 static void on_cur_mode_change(Subject *subj, void *user_data) {
     cur_mode = cparam_i_get(cfg.computed.mode());
+}
+
+static void update_labels_visibility_cb(Subject *, void *) {
+    bool small_alc_required = !param_i_get(cfg.view.mag_alc()) || dialog_run;
+    if (small_alc_required) {
+        lv_obj_clear_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
+        // Hide VSWR
+        lv_obj_add_flag(vswr_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (param_i_get(cfg.general.show_meter_value())) {
+        lv_obj_clear_flag(pwr_label, LV_OBJ_FLAG_HIDDEN);
+        if (!small_alc_required) {
+            lv_obj_clear_flag(vswr_label, LV_OBJ_FLAG_HIDDEN);
+        }
+    } else {
+        lv_obj_add_flag(pwr_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(vswr_label, LV_OBJ_FLAG_HIDDEN);
+    }
 }

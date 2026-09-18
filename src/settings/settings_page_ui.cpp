@@ -425,6 +425,20 @@ static void make_knob_info(SettingsPage &page) {
     page.row++;
 }
 
+static void make_meter_label_info(SettingsPage &page) {
+    lv_obj_t *obj;
+
+    page.label("Meter label");
+
+    obj = page.cell(4, 3, SMALL_3);
+
+    obj = page.switch_bool(obj, *cfg.general.show_meter_value());
+
+    lv_obj_set_width(obj, SMALL_3 - 30);
+
+    page.row++;
+}
+
 static void make_display_invert(SettingsPage &page) {
     lv_obj_t *obj;
 
@@ -680,7 +694,12 @@ void make_ui_page(SettingsPage &page) {
     page.delimiter();
 
     make_waterfall_line(page);
+    page.delimiter();
+
     make_knob_info(page);
+    page.delimiter();
+
+    make_meter_label_info(page);
     page.delimiter();
 
     make_display_invert(page);

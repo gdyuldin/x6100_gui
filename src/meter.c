@@ -14,6 +14,7 @@
 #include "scheduler.h"
 #include "audio.h"
 #include "widgets/lv_bar_indicator.h"
+#include "cfg/cfg_api.h"
 
 #define METER_PEAK_HOLD 1500
 #define METER_PEAK_SPEED 20
@@ -57,6 +58,14 @@ static bar_tick_t level_items[] = {
     { .label = "-36",   .val = -36 },
     { .label = "-48",   .val = -48 }
 };
+
+static void on_show_meter_value_change(Subject *, void *) {
+    if (param_i_get(cfg.general.show_meter_value())) {
+        lv_obj_clear_flag(db_val_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(db_val_label, LV_OBJ_FLAG_HIDDEN);
+    }
+}
 
 static void meter_scheduled_refresh(void *unused) {
     (void)unused;
@@ -165,6 +174,8 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
     lv_label_set_text(db_val_label, "");
 
     lv_timer_create(update_db_label_cb, LV_DISP_DEF_REFR_PERIOD * 3, NULL);
+
+    subject_subscribe_delayed_and_notify((Subject *)cfg.general.show_meter_value(), on_show_meter_value_change, NULL);
 
     return obj;
 }

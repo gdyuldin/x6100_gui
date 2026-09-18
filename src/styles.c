@@ -92,7 +92,7 @@ void styles_init(themes_t theme) {
     lv_style_init(&style.text_muted_color);
 
     lv_style_init(&style.freq_bounds);
-    lv_style_set_text_font(&style.freq_bounds, &mono_30);
+    lv_style_set_text_font(&style.freq_bounds, &mono_22);
     lv_style_set_pad_all(&style.freq_bounds, 3);
     lv_style_set_text_align(&style.freq_bounds, LV_TEXT_ALIGN_CENTER);
     lv_style_set_bg_color(&style.freq_bounds, lv_color_black());
@@ -673,7 +673,7 @@ static void setup_skin_default(skin_t *skin) {
 
     // TX info
     if (style_get_size(&style.tx_info, &w, &h)) {
-        render_grad_bg_with_border(w, h, &tx_info_bg_dsc, top_block_opa, border_width, radius, &top_bg_grad,
+        render_grad_bg_with_border(w, h, &tx_info_bg_dsc, LV_OPA_COVER, border_width, radius, &top_bg_grad,
                                    &top_border_grad);
         skin->bg_img.tx_info = &tx_info_bg_dsc;
     } else {
