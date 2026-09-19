@@ -36,7 +36,7 @@ void insert_band(sqlite3 *db, int id, int start, int stop, int type = 1) {
 // In-memory DB fixture: creates all three params tables and initialises the
 // shared prepared statements of every table class used by the storage
 // policies. A BAND/MODE round-trip fails with rc=21 (SQLITE_MISUSE) if
-// BandParamsTable/ModeParamsTable is not initialised.
+// KeyValueTable<BAND>/KeyValueTable<MODE> is not initialised.
 struct TestDbGuard {
     sqlite3 *db = nullptr;
 
@@ -77,19 +77,19 @@ struct TestDbGuard {
         REQUIRE(rc == SQLITE_OK);
         if (err)
             sqlite3_free(err);
-        ParamsTable::Init(db);
-        BandParamsTable::Init(db);
-        ModeParamsTable::Init(db);
+        KeyValueTable<StorageType::GLOBAL>::Init(db);
+        KeyValueTable<StorageType::BAND>::Init(db);
+        KeyValueTable<StorageType::MODE>::Init(db);
         BandsTable::Init(db);
-        TransverterTable::Init(db);
+        KeyValueTable<StorageType::TRANSVERTER>::Init(db);
     }
 
     ~TestDbGuard() {
-        TransverterTable::Shutdown();
+        KeyValueTable<StorageType::TRANSVERTER>::Shutdown();
         BandsTable::Shutdown();
-        ParamsTable::Shutdown();
-        BandParamsTable::Shutdown();
-        ModeParamsTable::Shutdown();
+        KeyValueTable<StorageType::GLOBAL>::Shutdown();
+        KeyValueTable<StorageType::BAND>::Shutdown();
+        KeyValueTable<StorageType::MODE>::Shutdown();
         if (db) {
             sqlite3_close(db);
         }
@@ -103,20 +103,17 @@ TEST_CASE("SettingsManager init_load loads global/band/mode params", "[manager]"
 
     // Pre-populate the DB with known values for band 5 / MODE_GROUP_DIGI.
     {
-        StoragePolicy &g = storage_policy_for(StorageType::GLOBAL);
-        REQUIRE(g.save_int(0, "vol", 45) == SUCCESS);
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(5, "vfoa_freq", 7100) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfob_freq", 14300) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfo", X6100_VFO_B) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::GLOBAL, 0, "vol", 45) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7100) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 14300) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_B) == SUCCESS);
         // The starting mode is derived from the active VFO (B) -> 3.
-        REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_usb_dig) == SUCCESS);
-        StoragePolicy &m = storage_policy_for(StorageType::MODE);
-        REQUIRE(m.save_int(MODE_GROUP_DIGI, "freq_step", 9) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_mode", x6100_mode_usb_dig) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_DIGI, "freq_step", 9) == SUCCESS);
     }
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     REQUIRE(mgr.current_band_id() == 5);
@@ -136,25 +133,25 @@ TEST_CASE("SettingsManager deferred writes round-trip after flush", "[manager]")
     TestDbGuard db;
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     // Change parameters; the new values go to the journal (not the DB yet).
     mgr.p_volume.set(45);
     mgr.p_band_if_shift.set(10);
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") != 45);
+    REQUIRE(store_load<int32_t>(StorageType::GLOBAL, 0, "vol") != 45);
 
     mgr.flush_all();
 
     // Values are now persisted.
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") == 45);
-    auto if_shift = storage_policy_for(StorageType::BAND).load_int(5, "if_shift");
+    REQUIRE(store_load<int32_t>(StorageType::GLOBAL, 0, "vol") == 45);
+    auto if_shift = store_load<int32_t>(StorageType::BAND, 5, "if_shift");
     REQUIRE(if_shift.has_value());
     REQUIRE(*if_shift == 10);
 
     // A fresh manager loads the persisted values.
     SettingsManager mgr2;
-    mgr2.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr2.init_load();
     REQUIRE(mgr2.p_volume.get() == 45);
     REQUIRE(mgr2.p_band_if_shift.get() == 10);
@@ -166,15 +163,14 @@ TEST_CASE("band_id persists globally and is restored on a fresh manager", "[mana
     insert_band(db.db, 6, 10'000 * kHz, 10'100 * kHz);
 
     {
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfo", X6100_VFO_A) == SUCCESS);
     }
 
     // Start on band 7, then switch explicitly to band 6.
     SettingsManager mgr;
     mgr.init_load();
-    // mgr.p_band_id.set_quiet(5);
+    // store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     REQUIRE(mgr.current_band_id() != 6);
 
     mgr.p_band_id.set(6);
@@ -183,7 +179,7 @@ TEST_CASE("band_id persists globally and is restored on a fresh manager", "[mana
 
     // The switch enqueued a deferred GLOBAL write for band_id; flush persists it.
     mgr.flush_all();
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "band_id").value() == 6);
+    REQUIRE(store_load<int32_t>(StorageType::GLOBAL, 0, "band_id").value() == 6);
 
     // A fresh manager derives its starting band from the persisted global value.
     SettingsManager mgr2;
@@ -196,17 +192,16 @@ TEST_CASE("band switch via p_band_id loads new band, keeps VFO reference", "[man
 
     // Band 5: VFO reference = A (0).
     {
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfob_freq", 7'150 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfo", 0) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 7'150 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", 0) == SUCCESS);
         // Band 6 has different frequencies and no current_vfo row (missing).
-        REQUIRE(b.save_int(6, "vfoa_freq", 10'150 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfob_freq", 10'160 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfoa_freq", 10'150 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfob_freq", 10'160 * kHz) == SUCCESS);
     }
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_A);
     REQUIRE(mgr.cp_fg_freq.get() == 7'100 * kHz);
@@ -232,16 +227,15 @@ TEST_CASE("frequency set into new band switches implicitly", "[manager]") {
     insert_band(db.db, 5, 7'000 * kHz, 7'200 * kHz);
     insert_band(db.db, 6, 3'600 * kHz, 4'000 * kHz);
 
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_freq", 7'150 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfoa_freq", 3'650 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfob_freq", 3'800 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfo", X6100_VFO_B) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 7'150 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfoa_freq", 3'650 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfob_freq", 3'800 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfo", X6100_VFO_B) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_A);
     REQUIRE(mgr.cp_fg_freq.get() == 7'100 * kHz);
@@ -260,15 +254,13 @@ TEST_CASE("frequency set into new band switches implicitly", "[manager]") {
 TEST_CASE("switch_mode saves and loads mode params", "[manager]") {
     TestDbGuard db;
 
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
     // The starting mode group is derived from the active VFO (A) -> 3.
-    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
-    StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(MODE_GROUP_SSB, "freq_step", 5) == SUCCESS);
-    REQUIRE(m.save_int(MODE_GROUP_CW, "freq_step", 15) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_SSB, "freq_step", 5) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_CW, "freq_step", 15) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.p_mode_freq_step.get() == 5);
 
@@ -282,13 +274,12 @@ TEST_CASE("switch_mode saves and loads mode params", "[manager]") {
 TEST_CASE("init_load loads vfo modes, cur_mode mirrors active VFO", "[manager]") {
     TestDbGuard db;
 
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_am) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_mode", x6100_mode_am) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     REQUIRE(mgr.p_band_vfoa_mode.get() == x6100_mode_usb);
@@ -300,16 +291,14 @@ TEST_CASE("init_load loads vfo modes, cur_mode mirrors active VFO", "[manager]")
 TEST_CASE("cp_cur_mode.set writes active VFO mode and triggers switch_mode", "[manager]") {
     TestDbGuard db;
 
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_nfm) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-    StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(MODE_GROUP_SSB, "freq_step", 9) == SUCCESS);
-    REQUIRE(m.save_int(MODE_GROUP_CW, "freq_step", 15) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_mode", x6100_mode_nfm) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_SSB, "freq_step", 9) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_CW, "freq_step", 15) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_usb);
     REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_SSB);
@@ -327,16 +316,14 @@ TEST_CASE("cp_cur_mode.set writes active VFO mode and triggers switch_mode", "[m
 TEST_CASE("VFO toggle changes cur_mode and triggers switch_mode", "[manager]") {
     TestDbGuard db;
 
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_lsb) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_usb_dig) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-    StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(MODE_GROUP_SSB, "freq_step", 510) == SUCCESS);
-    REQUIRE(m.save_int(MODE_GROUP_DIGI, "freq_step", 520) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_lsb) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_mode", x6100_mode_usb_dig) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_SSB, "freq_step", 510) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_DIGI, "freq_step", 520) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_lsb);
     REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_SSB);
@@ -353,16 +340,15 @@ TEST_CASE("VFO toggle changes cur_mode and triggers switch_mode", "[manager]") {
 TEST_CASE("band switch via p_band_id loads both vfo modes", "[manager]") {
     TestDbGuard db;
 
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_lsb) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_lsb_dig) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfo", X6100_VFO_B) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfoa_mode", x6100_mode_cwr) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfob_mode", x6100_mode_am) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_lsb) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_mode", x6100_mode_lsb_dig) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfo", X6100_VFO_B) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfoa_mode", x6100_mode_cwr) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfob_mode", x6100_mode_am) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_lsb);
 
@@ -379,20 +365,19 @@ TEST_CASE("frequency switch loads active VFO mode from DB", "[manager]") {
     insert_band(db.db, 5, 7'000 * kHz, 7'200 * kHz);
     insert_band(db.db, 6, 14'000 * kHz, 14'350 * kHz);
 
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfo", X6100_VFO_B) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_freq", 7'150 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_cwr) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_usb_dig) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfo", X6100_VFO_A) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfoa_freq", 14'100 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfob_freq", 14'150 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfoa_mode", x6100_mode_cw) == SUCCESS);
-    REQUIRE(b.save_int(6, "vfob_mode", x6100_mode_lsb_dig) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_B) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 7'150 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_cwr) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_mode", x6100_mode_usb_dig) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfoa_freq", 14'100 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfob_freq", 14'150 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfoa_mode", x6100_mode_cw) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfob_mode", x6100_mode_lsb_dig) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.cp_cur_mode.get() == x6100_mode_usb_dig);
 
@@ -415,7 +400,7 @@ namespace {
 
 // initialise `mgr` against an empty band_params table for `band_id`.
 void fresh_manager(SettingsManager &mgr, TestDbGuard &db, int band_id) {
-    mgr.p_band_id.set_quiet(band_id);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", band_id);
     mgr.init_load();
 }
 
@@ -427,17 +412,16 @@ TEST_CASE("explicit switch ignores stored vfo, cp_fg_freq tracks active VFO", "[
     insert_band(db.db, 6, 14'000 * kHz, 14'350 * kHz);
     // Band 6 stores vfo=X6100_VFO_B — different from the current VFO reference.
     {
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfob_freq", 7'150 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfoa_freq", 14'100 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfob_freq", 14'150 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfo", X6100_VFO_B) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 7'150 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfoa_freq", 14'100 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfob_freq", 14'150 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfo", X6100_VFO_B) == SUCCESS);
     }
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_A);
     REQUIRE(mgr.cp_fg_freq.get() == 7'100 * kHz);
@@ -459,17 +443,16 @@ TEST_CASE("cp_fg_freq.set doing band switch but preserve p_band_current_vfo and 
     insert_band(db.db, 6, 14'000 * kHz, 14'350 * kHz);
     // Band 6 stores vfo=0 (A) while the current VFO reference is B.
     {
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfob_freq", 7'150 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfo", X6100_VFO_B) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfoa_freq", 14'100 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfob_freq", 14'150 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 7'150 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_B) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfoa_freq", 14'100 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfob_freq", 14'150 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfo", X6100_VFO_A) == SUCCESS);
     }
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_B);
     REQUIRE(mgr.cp_fg_freq.get() == 7'150 * kHz);
@@ -490,17 +473,16 @@ TEST_CASE("Active VFO frequency set doing band switch but preserve p_band_curren
     insert_band(db.db, 6, 14'000 * kHz, 14'350 * kHz);
     // Band 6 stores vfo=0 (A) while the current VFO reference is B.
     {
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfob_freq", 7'150 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfo", X6100_VFO_B) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfoa_freq", 14'100 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfob_freq", 14'150 * kHz) == SUCCESS);
-        REQUIRE(b.save_int(6, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 7'150 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_B) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfoa_freq", 14'100 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfob_freq", 14'150 * kHz) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 6, "vfo", X6100_VFO_A) == SUCCESS);
     }
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.p_band_current_vfo.get() == X6100_VFO_B);
     REQUIRE(mgr.cp_fg_freq.get() == 7'150 * kHz);
@@ -550,9 +532,8 @@ TEST_CASE("VFO boundary clamp of a DB value outside all HW ranges", "[manager]")
     // vfoa_freq = 999.999 MHz is above TV1's upper boundary; vfob_freq = 1 kHz is
     // below HF's lower boundary. Both are outside every hardware-usable range,
     // so they clamp to the *nearest* HW-valid boundary (not the band start).
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfoa_freq", 999'999 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_freq", 1 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 999'999 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 1 * kHz) == SUCCESS);
 
     SettingsManager mgr;
     fresh_manager(mgr, db, 5);
@@ -568,8 +549,7 @@ TEST_CASE("vfob copies a loaded vfoa freq and restores its mode", "[manager]") {
     insert_band(db.db, 5, 21'000 * kHz, 21'450 * kHz);
 
     // Only vfoa_freq is seeded (in-band); vfob_* and vfoa_mode are absent.
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfoa_freq", 21'200 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 21'200 * kHz) == SUCCESS);
 
     SettingsManager mgr;
     fresh_manager(mgr, db, 5);
@@ -616,11 +596,10 @@ TEST_CASE("VFO restore default on undefined band", "[manager]") {
 TEST_CASE("frequency switch keeps active VFO, restores inactive", "[manager]") {
     TestDbGuard db;
     insert_band(db.db, 5, 10'000 * kHz, 11'000 * kHz);
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     // Tune active VFO A inside band 5.
@@ -644,11 +623,10 @@ TEST_CASE("explicit band switch restores both VFOs", "[manager]") {
     TestDbGuard db;
     insert_band(db.db, 5, 10'100 * kHz, 20'000 * kHz);
     insert_band(db.db, 6, 1'400 * kHz, 2'000 * kHz);
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfo", 0) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", 0) == SUCCESS);
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     mgr.p_band_vfoa_freq.set(10'200 * kHz);
     mgr.p_band_id.set(6);
@@ -666,7 +644,7 @@ TEST_CASE("flush thread lifecycle starts and stops cleanly", "[manager][threads]
     TestDbGuard db;
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     mgr.start_flush_thread();
@@ -687,12 +665,12 @@ TEST_CASE("flush thread persists pending writes within the wake timeout", "[mana
     TestDbGuard db;
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     // Queue a write (not yet in the DB).
     mgr.p_volume.set(45);
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") != 45);
+    REQUIRE(store_load<int32_t>(StorageType::GLOBAL, 0, "vol") != 45);
 
     mgr.start_flush_thread();
 
@@ -700,7 +678,7 @@ TEST_CASE("flush thread persists pending writes within the wake timeout", "[mana
     bool       persisted = false;
     const auto deadline  = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline) {
-        if (storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") == 45) {
+        if (store_load<int32_t>(StorageType::GLOBAL, 0, "vol") == 45) {
             persisted = true;
             break;
         }
@@ -715,7 +693,7 @@ TEST_CASE("parameter validators clamp out-of-range values on set", "[manager]") 
     TestDbGuard db;
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     // Clamping validators bound the documented ranges.
@@ -736,7 +714,7 @@ TEST_CASE("numeric validators clamp to the UI-derived ranges", "[manager][valida
     TestDbGuard db;
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     // Exceptions (ranges NOT taken from the UI clip).
@@ -780,7 +758,7 @@ TEST_CASE("enum validators clamp to the documented bounds", "[manager][validator
     TestDbGuard db;
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     mgr.p_mic.set(99);                          // 0..2
@@ -803,7 +781,7 @@ TEST_CASE("boolean validators clamp to 0/1", "[manager][validators]") {
     TestDbGuard db;
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     mgr.p_vox_en.set(7);
@@ -818,7 +796,7 @@ TEST_CASE("set to an already-clamped value does not enqueue a write", "[manager]
     TestDbGuard db;
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     // 500 clamps to 55; pending write holds 55.
@@ -837,7 +815,7 @@ TEST_CASE("set to an already-clamped value does not enqueue a write", "[manager]
 TEST_CASE("encoder_bind round-trip via DB", "[manager]") {
     TestDbGuard     db;
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     auto def = mgr.p_encoder_bind.get();
@@ -853,7 +831,7 @@ TEST_CASE("encoder_bind round-trip via DB", "[manager]") {
     mgr.flush_all();
 
     SettingsManager mgr2;
-    mgr2.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr2.init_load();
     REQUIRE(mgr2.p_encoder_bind.get() == custom);
 }
@@ -861,7 +839,7 @@ TEST_CASE("encoder_bind round-trip via DB", "[manager]") {
 TEST_CASE("encoder_bind validator pads/truncates to FAST_ACCESS_LAST", "[manager]") {
     TestDbGuard     db;
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     mgr.p_encoder_bind.set("VV");
@@ -877,7 +855,7 @@ TEST_CASE("encoder_bind validator pads/truncates to FAST_ACCESS_LAST", "[manager
 TEST_CASE("encoder_bind deferred write enqueued on change", "[manager]") {
     TestDbGuard     db;
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     std::string val(CTRL_FAST_ACCESS_LAST, ENCODER_BIND_NONE);
@@ -898,13 +876,11 @@ namespace {
 // mirrors production (cp_cur_mode == mode context) so filter_mode() picks the
 // right category and reads the right MODE pair.
 void init_filter_manager(SettingsManager &mgr, TestDbGuard &db, int32_t mode, ModeGroup group, int low, int high) {
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfo", 0) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfoa_mode", mode) == SUCCESS);
-    StoragePolicy &m = storage_policy_for(StorageType::MODE);
-    REQUIRE(m.save_int(group, "filter_low", low) == SUCCESS);
-    REQUIRE(m.save_int(group, "filter_high", high) == SUCCESS);
-    mgr.p_band_id.set_quiet(5);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", 0) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", mode) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, group, "filter_low", low) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, group, "filter_high", high) == SUCCESS);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 }
 
@@ -913,7 +889,7 @@ void init_filter_manager(SettingsManager &mgr, TestDbGuard &db, int32_t mode, Mo
 TEST_CASE("freq_step/spectrum_factor default and clamp", "[manager]") {
     TestDbGuard     db;
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     // Test for default values
@@ -1108,18 +1084,16 @@ TEST_CASE("switch_mode recomputes cur_filter_* for the new mode's pair", "[manag
 
     // Seed both the SSB (usb) and CW mode pairs, plus the VFO mode.
     {
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
-        StoragePolicy &m = storage_policy_for(StorageType::MODE);
-        REQUIRE(m.save_int(MODE_GROUP_SSB, "filter_low", 500) == SUCCESS);
-        REQUIRE(m.save_int(MODE_GROUP_SSB, "filter_high", 3000) == SUCCESS);
-        REQUIRE(m.save_int(MODE_GROUP_CW, "filter_low", 0) == SUCCESS);
-        REQUIRE(m.save_int(MODE_GROUP_CW, "filter_high", 200) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_SSB, "filter_low", 500) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_SSB, "filter_high", 3000) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_CW, "filter_low", 0) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_CW, "filter_high", 200) == SUCCESS);
     }
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
     REQUIRE(mgr.cp_cur_filter_low.get() == 500);
     REQUIRE(mgr.cp_cur_filter_high.get() == 3000);
@@ -1144,18 +1118,17 @@ TEST_CASE("init_load preserves transverter frequency inside HW range", "[manager
     insert_band(db.db, 7, 14'070'000, 14'350'000);
 
     {
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(7, "vfo", X6100_VFO_A) == SUCCESS);
-        REQUIRE(b.save_int(7, "vfoa_freq", 145'000'000) == SUCCESS);
-        REQUIRE(b.save_int(7, "vfob_freq", 145'000'000) == SUCCESS);
-        REQUIRE(b.save_int(7, "vfoa_mode", x6100_mode_usb) == SUCCESS);
-        REQUIRE(b.save_int(7, "vfob_mode", x6100_mode_usb) == SUCCESS);
-        REQUIRE(b.save_int(7, "vfoa_agc", x6100_agc_auto) == SUCCESS);
-        REQUIRE(b.save_int(7, "vfob_agc", x6100_agc_auto) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 7, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 7, "vfoa_freq", 145'000'000) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 7, "vfob_freq", 145'000'000) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 7, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 7, "vfob_mode", x6100_mode_usb) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 7, "vfoa_agc", x6100_agc_auto) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 7, "vfob_agc", x6100_agc_auto) == SUCCESS);
     }
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(7);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 7);
     mgr.init_load();
 
     // 145 MHz is hardware-usable (transverter 0: 144-150 MHz), so it survives
@@ -1174,18 +1147,17 @@ TEST_CASE("init_load clamps frequency outside HW ranges to nearest boundary", "[
     insert_band(db.db, 5, 10'100'000, 10'150'000);
 
     {
-        StoragePolicy &b = storage_policy_for(StorageType::BAND);
-        REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfoa_freq", 65'000'000) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfob_freq", 65'000'000) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_lsb) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_lsb) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfoa_agc", x6100_agc_auto) == SUCCESS);
-        REQUIRE(b.save_int(5, "vfob_agc", x6100_agc_auto) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 65'000'000) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 65'000'000) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_lsb) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_mode", x6100_mode_lsb) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_agc", x6100_agc_auto) == SUCCESS);
+        REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_agc", x6100_agc_auto) == SUCCESS);
     }
 
     SettingsManager mgr;
-    mgr.p_band_id.set_quiet(5);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5);
     mgr.init_load();
 
     // 65 MHz is not hardware-usable; it clamps to the nearest boundary (55 MHz).
@@ -1193,4 +1165,93 @@ TEST_CASE("init_load clamps frequency outside HW ranges to nearest boundary", "[
     REQUIRE(mgr.is_valid_hw_freq(55'000'000));
     REQUIRE(mgr.p_band_vfoa_freq.get() == 55'000'000);
     REQUIRE(mgr.cp_fg_freq.get() == 55'000'000);
+}
+
+namespace {
+
+struct NotifyCounter {
+    int         count = 0;
+    static void cb(Subject * /*subj*/, void *user_data) { static_cast<NotifyCounter *>(user_data)->count++; }
+};
+
+} // namespace
+
+TEST_CASE("init_load is idempotent: repeated call resets and reloads", "[manager]") {
+    TestDbGuard db;
+    insert_band(db.db, 5, 7'000 * kHz, 7'200 * kHz);
+
+    REQUIRE(store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::MODE, MODE_GROUP_SSB, "freq_step", 9) == SUCCESS);
+
+    SettingsManager mgr;
+    mgr.init_load();
+
+    REQUIRE(mgr.current_band_id() == 5);
+    REQUIRE(mgr.current_mode_group_id() == MODE_GROUP_SSB);
+    REQUIRE(mgr.p_band_vfoa_freq.get() == 7'100 * kHz);
+    REQUIRE(mgr.p_mode_freq_step.get() == 9);
+    REQUIRE(mgr.cp_fg_freq.get() == 7'100 * kHz);
+
+    // Observe cp_fg_freq to prove a repeated init_load does not accumulate
+    // duplicate source subscriptions: each source change must notify once.
+    NotifyCounter counter;
+    Subscription  obs(mgr.cp_fg_freq.subscribe(NotifyCounter::cb, &counter));
+
+    // Mutate in memory without persisting (p_volume enqueues a deferred write),
+    // then re-run init_load: it must reset to defaults and reload the DB values.
+    mgr.p_volume.set(45);
+    mgr.p_band_vfoa_freq.set_quiet(21'000 * kHz);
+    mgr.p_mode_freq_step.set_quiet(5000);
+
+    mgr.init_load();
+
+    REQUIRE(mgr.current_band_id() == 5);
+    REQUIRE(mgr.p_band_vfoa_freq.get() == 7'100 * kHz);
+    REQUIRE(mgr.p_mode_freq_step.get() == 9);
+    REQUIRE(mgr.cp_fg_freq.get() == 7'100 * kHz);
+    // The reset cleared the pending deferred write, so the DB is untouched.
+    REQUIRE_FALSE(store_load<int32_t>(StorageType::GLOBAL, 0, "vol").has_value());
+
+    // Exactly one notification for one source change (no duplicated observers).
+    counter.count = 0;
+    mgr.p_band_vfoa_freq.set_quiet(7'050 * kHz);
+    REQUIRE(counter.count == 1);
+}
+
+namespace {
+
+struct ValueNotifyCounter {
+    int         count = 0;
+    int32_t     last  = -1;
+    static void cb(Subject *subj, void *user_data) {
+        auto *self = static_cast<ValueNotifyCounter *>(user_data);
+        self->count++;
+        self->last = static_cast<SubjectT<int32_t> *>(subj)->get();
+    }
+};
+
+} // namespace
+
+TEST_CASE("init_load coalesces reset and reload into one notification with DB value", "[manager]") {
+    TestDbGuard db;
+
+    // DB value (45) differs from the construction-time default (30).
+    REQUIRE(store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::GLOBAL, 0, "vol", 45) == SUCCESS);
+
+    SettingsManager mgr;
+
+    // Subscribe before the first init_load: the reset-to-default must not be
+    // delivered as a separate notification before the reloaded DB value.
+    ValueNotifyCounter counter;
+    Subscription       obs(mgr.p_volume.subscribe(ValueNotifyCounter::cb, &counter));
+
+    mgr.init_load();
+
+    REQUIRE(mgr.p_volume.get() == 45);
+    REQUIRE(counter.count == 1);
+    REQUIRE(counter.last == 45);
 }

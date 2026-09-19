@@ -16,8 +16,6 @@
 
 #include "globals.h"
 #include "cfg/cfg_api.h"
-#include "cfg/settings_manager_api.h"
-#include "cfg/subject_api.h"
 #include "cfg/db.h"
 
 #include "main.h"

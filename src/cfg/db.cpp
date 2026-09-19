@@ -14,44 +14,67 @@
 #include "migrations.h"
 
 #include "../lvgl/lvgl.h"
+#include <cstdio>
 #include <pthread.h>
 #include <stdlib.h>
 
 // ---------------------------------------------------------------------------
-// ParamsTable
+// KeyValueTable<Type> — shared implementation for all key-value stores
 // ---------------------------------------------------------------------------
 
-bool ParamsTable::Init(sqlite3 *database) {
+template <StorageType Type> bool KeyValueTable<Type>::Init(sqlite3 *database) {
     if (db_) {
-        LV_LOG_ERROR("Repeated ParamsTable initialization");
+        LV_LOG_ERROR("Repeated KeyValueTable initialization for %s", KeyValueTableTraits<Type>::table);
         return false;
     }
     db_ = database;
 
-    int rc;
-    rc = sqlite3_prepare_v2(db_, "SELECT val FROM params WHERE name = :name", -1, &load_stmt_, 0);
+    using Traits = KeyValueTableTraits<Type>;
+
+    // Build the load/save SQL from the table traits: the GLOBAL `params` table
+    // is flat (no key column), the band/mode/transverter tables are keyed.
+    char load_sql[160];
+    char save_sql[192];
+    if constexpr (Traits::has_key) {
+        snprintf(load_sql, sizeof(load_sql), "SELECT val FROM %s WHERE %s = :id AND name = :name", Traits::table,
+                 Traits::key_col);
+        snprintf(save_sql, sizeof(save_sql), "INSERT OR REPLACE INTO %s(%s, name, val) VALUES(:id, :name, :val)",
+                 Traits::table, Traits::key_col);
+    } else {
+        snprintf(load_sql, sizeof(load_sql), "SELECT val FROM %s WHERE name = :name", Traits::table);
+        snprintf(save_sql, sizeof(save_sql), "INSERT OR REPLACE INTO %s(name, val) VALUES(:name, :val)", Traits::table);
+    }
+
+    int rc = sqlite3_prepare_v2(db_, load_sql, -1, &load_stmt_, 0);
     if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare read statement: %s", sqlite3_errmsg(db_));
+        LV_LOG_ERROR("Failed prepare load statement for %s: %s", Traits::table, sqlite3_errmsg(db_));
         db_ = nullptr;
         return false;
     }
     load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
+    if constexpr (Traits::has_key) {
+        load_id_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":id");
+    }
 
-    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO params(name, val) VALUES(:name, :val)", -1, &save_stmt_, 0);
+    rc = sqlite3_prepare_v2(db_, save_sql, -1, &save_stmt_, 0);
     if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare write statement: %s", sqlite3_errmsg(db_));
+        LV_LOG_ERROR("Failed prepare save statement for %s: %s", Traits::table, sqlite3_errmsg(db_));
         sqlite3_finalize(load_stmt_);
         load_stmt_             = nullptr;
+        load_id_param_index_   = 0;
         load_name_param_index_ = 0;
         db_                    = nullptr;
         return false;
     }
     save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
     save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
+    if constexpr (Traits::has_key) {
+        save_id_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":id");
+    }
     return true;
 }
 
-void ParamsTable::Shutdown() {
+template <StorageType Type> void KeyValueTable<Type>::Shutdown() {
     if (load_stmt_) {
         sqlite3_finalize(load_stmt_);
         load_stmt_ = nullptr;
@@ -60,11 +83,20 @@ void ParamsTable::Shutdown() {
         sqlite3_finalize(save_stmt_);
         save_stmt_ = nullptr;
     }
+    load_id_param_index_   = 0;
     load_name_param_index_ = 0;
+    save_id_param_index_   = 0;
     save_name_param_index_ = 0;
     save_val_param_index_  = 0;
     db_                    = nullptr;
 }
+
+// Explicit instantiations: Init/Shutdown are defined in this TU, so every
+// KeyValueTable<...> used by the application (and tests) must be listed here.
+template class KeyValueTable<StorageType::GLOBAL>;
+template class KeyValueTable<StorageType::BAND>;
+template class KeyValueTable<StorageType::MODE>;
+template class KeyValueTable<StorageType::TRANSVERTER>;
 
 // ---------------------------------------------------------------------------
 // BandsTable
@@ -355,175 +387,6 @@ std::vector<BandInfo> BandsTable::all_bands() {
         }
     }
     return result;
-}
-
-// ---------------------------------------------------------------------------
-// BandParamsTable
-// ---------------------------------------------------------------------------
-
-bool BandParamsTable::Init(sqlite3 *database) {
-    if (db_) {
-        LV_LOG_ERROR("Repeated BandParamsTable initialization");
-        return false;
-    }
-    db_ = database;
-
-    int rc;
-
-    rc = sqlite3_prepare_v2(db_, "SELECT val FROM band_params WHERE bands_id = :id AND name = :name", -1, &load_stmt_,
-                            0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare BandParamsTable::load: %s", sqlite3_errmsg(db_));
-        db_ = nullptr;
-        return false;
-    }
-    load_id_param_index_   = sqlite3_bind_parameter_index(load_stmt_, ":id");
-    load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
-
-    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO band_params(bands_id, name, val) VALUES(:id, :name, :val)", -1,
-                            &save_stmt_, 0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare BandParamsTable::save: %s", sqlite3_errmsg(db_));
-        sqlite3_finalize(load_stmt_);
-        load_stmt_             = nullptr;
-        load_id_param_index_   = 0;
-        load_name_param_index_ = 0;
-        db_                    = nullptr;
-        return false;
-    }
-    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
-    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
-    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
-    return true;
-}
-
-void BandParamsTable::Shutdown() {
-    if (load_stmt_) {
-        sqlite3_finalize(load_stmt_);
-        load_stmt_ = nullptr;
-    }
-    if (save_stmt_) {
-        sqlite3_finalize(save_stmt_);
-        save_stmt_ = nullptr;
-    }
-    load_id_param_index_   = 0;
-    load_name_param_index_ = 0;
-    save_id_param_index_   = 0;
-    save_name_param_index_ = 0;
-    save_val_param_index_  = 0;
-    db_                    = nullptr;
-}
-
-// ---------------------------------------------------------------------------
-// ModeParamsTable
-// ---------------------------------------------------------------------------
-
-bool ModeParamsTable::Init(sqlite3 *database) {
-    if (db_) {
-        LV_LOG_ERROR("Repeated ModeParamsTable initialization");
-        return false;
-    }
-    db_ = database;
-
-    int rc;
-
-    rc = sqlite3_prepare_v2(db_, "SELECT val FROM mode_params WHERE mode = :id AND name = :name", -1, &load_stmt_, 0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare ModeParamsTable::load: %s", sqlite3_errmsg(db_));
-        db_ = nullptr;
-        return false;
-    }
-    load_id_param_index_   = sqlite3_bind_parameter_index(load_stmt_, ":id");
-    load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
-
-    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO mode_params(mode, name, val) VALUES(:id, :name, :val)", -1,
-                            &save_stmt_, 0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare ModeParamsTable::save: %s", sqlite3_errmsg(db_));
-        sqlite3_finalize(load_stmt_);
-        load_stmt_             = nullptr;
-        load_id_param_index_   = 0;
-        load_name_param_index_ = 0;
-        db_                    = nullptr;
-        return false;
-    }
-    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
-    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
-    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
-    return true;
-}
-
-void ModeParamsTable::Shutdown() {
-    if (load_stmt_) {
-        sqlite3_finalize(load_stmt_);
-        load_stmt_ = nullptr;
-    }
-    if (save_stmt_) {
-        sqlite3_finalize(save_stmt_);
-        save_stmt_ = nullptr;
-    }
-    load_id_param_index_   = 0;
-    load_name_param_index_ = 0;
-    save_id_param_index_   = 0;
-    save_name_param_index_ = 0;
-    save_val_param_index_  = 0;
-    db_                    = nullptr;
-}
-
-// ---------------------------------------------------------------------------
-// TransverterTable
-// ---------------------------------------------------------------------------
-
-bool TransverterTable::Init(sqlite3 *database) {
-    if (db_) {
-        LV_LOG_ERROR("Repeated TransverterTable initialization");
-        return false;
-    }
-    db_ = database;
-
-    int rc;
-
-    rc = sqlite3_prepare_v2(db_, "SELECT val FROM transverter WHERE name = :name AND id = :id", -1, &load_stmt_, 0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare TransverterTable::load: %s", sqlite3_errmsg(db_));
-        db_ = nullptr;
-        return false;
-    }
-    load_name_param_index_ = sqlite3_bind_parameter_index(load_stmt_, ":name");
-    load_id_param_index_   = sqlite3_bind_parameter_index(load_stmt_, ":id");
-
-    rc = sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO transverter(id, name, val) VALUES(:id, :name, :val)", -1,
-                            &save_stmt_, 0);
-    if (rc != SQLITE_OK) {
-        LV_LOG_ERROR("Failed prepare TransverterTable::save: %s", sqlite3_errmsg(db_));
-        sqlite3_finalize(load_stmt_);
-        load_stmt_             = nullptr;
-        load_name_param_index_ = 0;
-        load_id_param_index_   = 0;
-        db_                    = nullptr;
-        return false;
-    }
-    save_id_param_index_   = sqlite3_bind_parameter_index(save_stmt_, ":id");
-    save_name_param_index_ = sqlite3_bind_parameter_index(save_stmt_, ":name");
-    save_val_param_index_  = sqlite3_bind_parameter_index(save_stmt_, ":val");
-    return true;
-}
-
-void TransverterTable::Shutdown() {
-    if (load_stmt_) {
-        sqlite3_finalize(load_stmt_);
-        load_stmt_ = nullptr;
-    }
-    if (save_stmt_) {
-        sqlite3_finalize(save_stmt_);
-        save_stmt_ = nullptr;
-    }
-    load_id_param_index_   = 0;
-    load_name_param_index_ = 0;
-    save_id_param_index_   = 0;
-    save_name_param_index_ = 0;
-    save_val_param_index_  = 0;
-    db_                    = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -1054,19 +917,19 @@ extern "C" sqlite3 *cfg_db_get(void) {
 
 extern "C" void cfg_db_init(sqlite3 *database) {
     bool ok;
-    ok = ParamsTable::Init(database);
+    ok = KeyValueTable<StorageType::GLOBAL>::Init(database);
+    if (!ok)
+        exit(1);
+    ok = KeyValueTable<StorageType::BAND>::Init(database);
+    if (!ok)
+        exit(1);
+    ok = KeyValueTable<StorageType::MODE>::Init(database);
+    if (!ok)
+        exit(1);
+    ok = KeyValueTable<StorageType::TRANSVERTER>::Init(database);
     if (!ok)
         exit(1);
     ok = BandsTable::Init(database);
-    if (!ok)
-        exit(1);
-    ok = BandParamsTable::Init(database);
-    if (!ok)
-        exit(1);
-    ok = ModeParamsTable::Init(database);
-    if (!ok)
-        exit(1);
-    ok = TransverterTable::Init(database);
     if (!ok)
         exit(1);
     ok = MemoryTable::Init(database);
@@ -1081,11 +944,11 @@ extern "C" void cfg_db_init(sqlite3 *database) {
 }
 
 void cfg_db_shutdown() {
-    ParamsTable::Shutdown();
+    KeyValueTable<StorageType::GLOBAL>::Shutdown();
+    KeyValueTable<StorageType::BAND>::Shutdown();
+    KeyValueTable<StorageType::MODE>::Shutdown();
+    KeyValueTable<StorageType::TRANSVERTER>::Shutdown();
     BandsTable::Shutdown();
-    BandParamsTable::Shutdown();
-    ModeParamsTable::Shutdown();
-    TransverterTable::Shutdown();
     MemoryTable::Shutdown();
     DigitalModesTable::Shutdown();
     AtuTable::Shutdown();

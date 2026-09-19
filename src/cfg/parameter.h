@@ -9,20 +9,11 @@
 
 #include "../common/math.h"
 #include "db.h"
-#include "storage_policy.h"
 #include "subject.h"
 
 #ifdef __cplusplus
 
-// StorageType marks which logical table a parameter belongs to. It is used
-// only by PendingWrites/flush_storage to force-save into the right table;
-// the actual per-table DB helpers live in db.h and are added separately.
-enum class StorageType {
-    GLOBAL,
-    BAND,
-    MODE,
-    TRANSVERTER
-};
+// StorageType is defined in db.h (the storage layer) and included above.
 
 // Fully identifies a persisted parameter. PendingWrites stores pending writes
 // by (type, context_id, name); context_id is the band_id/mode_id/etc. and is
@@ -61,6 +52,9 @@ class ParamBase {
     virtual int         context_id() const             = 0;
     virtual StorageType storage_type() const           = 0;
     virtual const char *db_name() const                = 0;
+    // Restore the construction-time default value (quietly). Used by
+    // SettingsManager::init_load's reset before reloading from the DB.
+    virtual void        reset()                        = 0;
 };
 
 // Deferred-write sink injected by type. PendingWrites implements it;
@@ -75,7 +69,7 @@ class WriteSink {
 
 // A stored Parameter: holds a typed value (SubjectT<T>), validates on set,
 // enqueues changes for deferred persistence, and loads/saves through the
-// flat `params` table helpers in db.h (cfg_param_load/cfg_param_save).
+// store_load/store_save routing helpers in db.h.
 //
 // NOT_FOUND handling: on load with rc == NOT_FOUND the parameter keeps its
 // current value; if an on_not_found callback is provided it is invoked
@@ -102,7 +96,8 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
               StorageType storage, WriteSink &sink, std::function<void()> on_not_found = {},
               std::vector<ParamBase *> *group = nullptr, int context_id = 0)
         : SubjectT<ValueType>(default_val), db_name_(db_name), storage_(storage), sink_(sink),
-          validator_(std::move(validator)), on_not_found_(std::move(on_not_found)), context_id_(context_id) {
+          validator_(std::move(validator)), on_not_found_(std::move(on_not_found)), context_id_(context_id),
+          default_(default_val) {
         if (group) {
             group->push_back(this);
         }
@@ -112,7 +107,8 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
     Parameter(const char *db_name, ValueType default_val, ValueType min, ValueType max, StorageType storage,
               WriteSink &sink, std::vector<ParamBase *> *group = nullptr,
               int context_id = 0)
-        : SubjectT<ValueType>(default_val), db_name_(db_name), storage_(storage), sink_(sink), context_id_(context_id) {
+        : SubjectT<ValueType>(default_val), db_name_(db_name), storage_(storage), sink_(sink), context_id_(context_id),
+          default_(default_val) {
         validator_ = [min, max](ValueType v) { return clip(v, min, max); };
         if (group) {
             group->push_back(this);
@@ -151,7 +147,11 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
         SubjectT<ValueType>::set(v);
     }
 
-    // Load from the storage policy matching storage(). Returns rc (SUCCESS or
+    // Restore the construction-time default (validated, no deferred write).
+    // Used by SettingsManager::init_load's reset before reloading from the DB.
+    void reset() override { set_quiet(default_); }
+
+    // Load from the store matching storage(). Returns rc (SUCCESS or
     // NOT_FOUND); on SUCCESS the stored DB value is converted back and applied
     // quietly. NOT_FOUND keeps the current value and may trigger on_not_found_.
     // context_id is the band_id/mode_id for BAND/MODE parameters (0 for the
@@ -162,15 +162,7 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
         if (context_id == -1) {
             context_id = context_id_;
         }
-        StoragePolicy        &policy = storage_policy_for(storage_);
-        std::optional<DbType> res;
-        if constexpr (std::is_same_v<DbType, int32_t>) {
-            res = policy.load_int(context_id, db_name_);
-        } else if constexpr (std::is_same_v<DbType, float>) {
-            res = policy.load_float(context_id, db_name_);
-        } else if constexpr (std::is_same_v<DbType, std::string>) {
-            res = policy.load_text(context_id, db_name_);
-        }
+        std::optional<DbType> res = store_load<DbType>(storage_, context_id, db_name_);
         if (res.has_value()) {
             set_quiet(from_db_value(*res));
             return SUCCESS;
@@ -181,23 +173,13 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
         return NOT_FOUND;
     }
 
-    // Persist immediately through the storage policy matching storage().
+    // Persist immediately through the store matching storage().
     int save(int context_id = -1) override {
         if (context_id == -1) {
             context_id = context_id_;
         }
-        StoragePolicy &policy   = storage_policy_for(storage_);
-        const DbType   db_value = to_db_value(SubjectT<ValueType>::get());
-        if constexpr (std::is_same_v<DbType, int32_t>) {
-            return policy.save_int(context_id, db_name_, db_value);
-        } else if constexpr (std::is_same_v<DbType, float>) {
-            return policy.save_float(context_id, db_name_, db_value);
-        } else if constexpr (std::is_same_v<DbType, std::string>) {
-            return policy.save_text(context_id, db_name_, db_value);
-        } else {
-            // Unsupported DbType: nothing to persist.
-            return SUCCESS;
-        }
+        const DbType db_value = to_db_value(SubjectT<ValueType>::get());
+        return store_save<DbType>(storage_, context_id, db_name_, db_value);
     }
 
   private:
@@ -225,6 +207,7 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
     std::function<ValueType(ValueType)> validator_;
     std::function<void()>               on_not_found_;
     int                                 context_id_;
+    ValueType                           default_;
 };
 
 #endif

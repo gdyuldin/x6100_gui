@@ -1,5 +1,5 @@
 // test_db.cpp
-// Tests for ParamsTable and ModeParamsTable: Save/Load round-trips for
+// Tests for KeyValueTable<StorageType::GLOBAL> and KeyValueTable<StorageType::MODE>: Save/Load round-trips for
 // int32_t, float and std::string against in-memory SQLite databases. Only the
 // tables needed by the tested class are created, and each table is
 // initialised directly so the tests never touch cfg_db_init()/exit().
@@ -12,11 +12,12 @@
 #include "db.h"
 
 // RAII fixture: opens an in-memory database, creates the params table and
-// initialises ParamsTable. Shuts ParamsTable down and closes the connection
-// on destruction.
-class ParamsTableFixture {
+// initialises KeyValueTable<StorageType::GLOBAL>. Shuts
+// KeyValueTable<StorageType::GLOBAL> down and closes the connection on
+// destruction.
+class GlobalTableFixture {
   public:
-    ParamsTableFixture() {
+    GlobalTableFixture() {
         // Validate the fixture prerequisites explicitly.
         int rc;
         rc = sqlite3_open(":memory:", &db_);
@@ -29,12 +30,12 @@ class ParamsTableFixture {
         rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
-        bool ok = ParamsTable::Init(db_);
+        bool ok = KeyValueTable<StorageType::GLOBAL>::Init(db_);
         REQUIRE(ok);
     }
 
-    ~ParamsTableFixture() {
-        ParamsTable::Shutdown();
+    ~GlobalTableFixture() {
+        KeyValueTable<StorageType::GLOBAL>::Shutdown();
         sqlite3_close(db_);
     }
 
@@ -45,11 +46,11 @@ class ParamsTableFixture {
 };
 
 // RAII fixture: opens an in-memory database, creates the mode_params table
-// and initialises ModeParamsTable. Shuts ModeParamsTable down and closes the
+// and initialises KeyValueTable<StorageType::MODE>. Shuts KeyValueTable<StorageType::MODE> down and closes the
 // connection on destruction.
-class ModeParamsTableFixture {
+class ModeGlobalTableFixture {
   public:
-    ModeParamsTableFixture() {
+    ModeGlobalTableFixture() {
         // Validate the fixture prerequisites explicitly.
         int rc;
         rc = sqlite3_open(":memory:", &db_);
@@ -64,12 +65,12 @@ class ModeParamsTableFixture {
         rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
-        bool ok = ModeParamsTable::Init(db_);
+        bool ok = KeyValueTable<StorageType::MODE>::Init(db_);
         REQUIRE(ok);
     }
 
-    ~ModeParamsTableFixture() {
-        ModeParamsTable::Shutdown();
+    ~ModeGlobalTableFixture() {
+        KeyValueTable<StorageType::MODE>::Shutdown();
         sqlite3_close(db_);
     }
 
@@ -78,190 +79,190 @@ class ModeParamsTableFixture {
 };
 
 // ---------------------------------------------------------------------------
-// ParamsTable
+// KeyValueTable<StorageType::GLOBAL>
 // ---------------------------------------------------------------------------
 
-TEST_CASE("ParamsTable saves and loads int32_t", "[db]") {
-    ParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::GLOBAL> saves and loads int32_t", "[db]") {
+    GlobalTableFixture f;
 
-    int rc = ParamsTable::Save<int32_t>("vol", 42);
+    int rc = KeyValueTable<StorageType::GLOBAL>::Save<int32_t>(0, "vol", 42);
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<int32_t> res = ParamsTable::Load<int32_t>("vol");
+    ParamLoadResult<int32_t> res = KeyValueTable<StorageType::GLOBAL>::Load<int32_t>(0, "vol");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == 42);
 }
 
-TEST_CASE("ParamsTable saves and loads float", "[db]") {
-    ParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::GLOBAL> saves and loads float", "[db]") {
+    GlobalTableFixture f;
 
-    int rc = ParamsTable::Save<float>("pwr", 14.175f);
+    int rc = KeyValueTable<StorageType::GLOBAL>::Save<float>(0, "pwr", 14.175f);
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<float> res = ParamsTable::Load<float>("pwr");
+    ParamLoadResult<float> res = KeyValueTable<StorageType::GLOBAL>::Load<float>(0, "pwr");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == Catch::Approx(14.175f));
 }
 
-TEST_CASE("ParamsTable saves and loads std::string", "[db]") {
-    ParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::GLOBAL> saves and loads std::string", "[db]") {
+    GlobalTableFixture f;
 
-    int rc = ParamsTable::Save<std::string>("callsign", "R1XXX");
+    int rc = KeyValueTable<StorageType::GLOBAL>::Save<std::string>(0, "callsign", "R1XXX");
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<std::string> res = ParamsTable::Load<std::string>("callsign");
+    ParamLoadResult<std::string> res = KeyValueTable<StorageType::GLOBAL>::Load<std::string>(0, "callsign");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == "R1XXX");
 }
 
-TEST_CASE("ParamsTable type switch under the same key", "[db]") {
-    ParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::GLOBAL> type switch under the same key", "[db]") {
+    GlobalTableFixture f;
 
     // Write an int, then overwrite it as float and as text.
-    REQUIRE(ParamsTable::Save<int32_t>("mixed", 1000) == SUCCESS);
-    REQUIRE(ParamsTable::Load<int32_t>("mixed").value == 1000);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Save<int32_t>(0, "mixed", 1000) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Load<int32_t>(0, "mixed").value == 1000);
 
-    REQUIRE(ParamsTable::Save<float>("mixed", 3.5f) == SUCCESS);
-    REQUIRE(ParamsTable::Load<float>("mixed").value == Catch::Approx(3.5f));
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Save<float>(0, "mixed", 3.5f) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Load<float>(0, "mixed").value == Catch::Approx(3.5f));
 
-    REQUIRE(ParamsTable::Save<std::string>("mixed", "txt") == SUCCESS);
-    REQUIRE(ParamsTable::Load<std::string>("mixed").value == "txt");
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Save<std::string>(0, "mixed", "txt") == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Load<std::string>(0, "mixed").value == "txt");
 
     // Overwrite text with an int again.
-    REQUIRE(ParamsTable::Save<int32_t>("mixed", 7) == SUCCESS);
-    REQUIRE(ParamsTable::Load<int32_t>("mixed").value == 7);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Save<int32_t>(0, "mixed", 7) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Load<int32_t>(0, "mixed").value == 7);
 }
 
-TEST_CASE("ParamsTable returns NOT_FOUND for a missing key", "[db]") {
-    ParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::GLOBAL> returns NOT_FOUND for a missing key", "[db]") {
+    GlobalTableFixture f;
 
-    ParamLoadResult<int32_t> res = ParamsTable::Load<int32_t>("missing");
+    ParamLoadResult<int32_t> res = KeyValueTable<StorageType::GLOBAL>::Load<int32_t>(0, "missing");
     REQUIRE(res.rc == NOT_FOUND);
 }
 
-TEST_CASE("ParamsTable handles an empty string value", "[db]") {
-    ParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::GLOBAL> handles an empty string value", "[db]") {
+    GlobalTableFixture f;
 
-    REQUIRE(ParamsTable::Save<std::string>("empty", "") == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Save<std::string>(0, "empty", "") == SUCCESS);
 
-    ParamLoadResult<std::string> res = ParamsTable::Load<std::string>("empty");
+    ParamLoadResult<std::string> res = KeyValueTable<StorageType::GLOBAL>::Load<std::string>(0, "empty");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.empty());
 }
 
-TEST_CASE("ParamsTable supports re-initialisation on the same connection", "[db]") {
-    ParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::GLOBAL> supports re-initialisation on the same connection", "[db]") {
+    GlobalTableFixture f;
 
     // First save/load cycle.
-    REQUIRE(ParamsTable::Save<int32_t>("reinit", 11) == SUCCESS);
-    REQUIRE(ParamsTable::Load<int32_t>("reinit").value == 11);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Save<int32_t>(0, "reinit", 11) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Load<int32_t>(0, "reinit").value == 11);
 
     // Shut down and re-initialise the table on the same connection. The
     // statements are re-prepared; previously stored data must stay intact.
-    ParamsTable::Shutdown();
-    bool ok = ParamsTable::Init(f.db());
+    KeyValueTable<StorageType::GLOBAL>::Shutdown();
+    bool ok = KeyValueTable<StorageType::GLOBAL>::Init(f.db());
     REQUIRE(ok);
 
-    REQUIRE(ParamsTable::Load<int32_t>("reinit").value == 11);
-    REQUIRE(ParamsTable::Save<std::string>("reinit", "again") == SUCCESS);
-    REQUIRE(ParamsTable::Load<std::string>("reinit").value == "again");
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Load<int32_t>(0, "reinit").value == 11);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Save<std::string>(0, "reinit", "again") == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::GLOBAL>::Load<std::string>(0, "reinit").value == "again");
 }
 
 // ---------------------------------------------------------------------------
-// ModeParamsTable
+// KeyValueTable<StorageType::MODE>
 // ---------------------------------------------------------------------------
 
-TEST_CASE("ModeParamsTable saves and loads int32_t", "[db]") {
-    ModeParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::MODE> saves and loads int32_t", "[db]") {
+    ModeGlobalTableFixture f;
 
-    int rc = ModeParamsTable::Save<int32_t>(3, "agc", 5);
+    int rc = KeyValueTable<StorageType::MODE>::Save<int32_t>(3, "agc", 5);
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<int32_t> res = ModeParamsTable::Load<int32_t>(3, "agc");
+    ParamLoadResult<int32_t> res = KeyValueTable<StorageType::MODE>::Load<int32_t>(3, "agc");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == 5);
 }
 
-TEST_CASE("ModeParamsTable saves and loads float", "[db]") {
-    ModeParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::MODE> saves and loads float", "[db]") {
+    ModeGlobalTableFixture f;
 
-    int rc = ModeParamsTable::Save<float>(7, "cutoff", 2.4f);
+    int rc = KeyValueTable<StorageType::MODE>::Save<float>(7, "cutoff", 2.4f);
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<float> res = ModeParamsTable::Load<float>(7, "cutoff");
+    ParamLoadResult<float> res = KeyValueTable<StorageType::MODE>::Load<float>(7, "cutoff");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == Catch::Approx(2.4f));
 }
 
-TEST_CASE("ModeParamsTable saves and loads std::string", "[db]") {
-    ModeParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::MODE> saves and loads std::string", "[db]") {
+    ModeGlobalTableFixture f;
 
-    int rc = ModeParamsTable::Save<std::string>(2, "label", "LSB");
+    int rc = KeyValueTable<StorageType::MODE>::Save<std::string>(2, "label", "LSB");
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<std::string> res = ModeParamsTable::Load<std::string>(2, "label");
+    ParamLoadResult<std::string> res = KeyValueTable<StorageType::MODE>::Load<std::string>(2, "label");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == "LSB");
 }
 
-TEST_CASE("ModeParamsTable overwrites a value under the same (mode, name) key", "[db]") {
-    ModeParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::MODE> overwrites a value under the same (mode, name) key", "[db]") {
+    ModeGlobalTableFixture f;
 
-    REQUIRE(ModeParamsTable::Save<int32_t>(3, "agc", 5) == SUCCESS);
-    REQUIRE(ModeParamsTable::Load<int32_t>(3, "agc").value == 5);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Save<int32_t>(3, "agc", 5) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Load<int32_t>(3, "agc").value == 5);
 
     // INSERT OR REPLACE on (mode, name) must replace the stored value.
-    REQUIRE(ModeParamsTable::Save<int32_t>(3, "agc", 9) == SUCCESS);
-    REQUIRE(ModeParamsTable::Load<int32_t>(3, "agc").value == 9);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Save<int32_t>(3, "agc", 9) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Load<int32_t>(3, "agc").value == 9);
 }
 
-TEST_CASE("ModeParamsTable isolates values between different modes", "[db]") {
-    ModeParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::MODE> isolates values between different modes", "[db]") {
+    ModeGlobalTableFixture f;
 
-    REQUIRE(ModeParamsTable::Save<int32_t>(3, "agc", 5) == SUCCESS);
-    REQUIRE(ModeParamsTable::Save<int32_t>(7, "agc", 8) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Save<int32_t>(3, "agc", 5) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Save<int32_t>(7, "agc", 8) == SUCCESS);
 
-    REQUIRE(ModeParamsTable::Load<int32_t>(3, "agc").value == 5);
-    REQUIRE(ModeParamsTable::Load<int32_t>(7, "agc").value == 8);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Load<int32_t>(3, "agc").value == 5);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Load<int32_t>(7, "agc").value == 8);
 }
 
-TEST_CASE("ModeParamsTable returns NOT_FOUND for a missing key", "[db]") {
-    ModeParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::MODE> returns NOT_FOUND for a missing key", "[db]") {
+    ModeGlobalTableFixture f;
 
-    ParamLoadResult<int32_t> res = ModeParamsTable::Load<int32_t>(3, "missing");
+    ParamLoadResult<int32_t> res = KeyValueTable<StorageType::MODE>::Load<int32_t>(3, "missing");
     REQUIRE(res.rc == NOT_FOUND);
 }
 
-TEST_CASE("ModeParamsTable returns NOT_FOUND when the mode has no entry", "[db]") {
-    ModeParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::MODE> returns NOT_FOUND when the mode has no entry", "[db]") {
+    ModeGlobalTableFixture f;
 
-    REQUIRE(ModeParamsTable::Save<int32_t>(3, "agc", 5) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Save<int32_t>(3, "agc", 5) == SUCCESS);
 
     // The (mode, name) pair for mode 9 was never written.
-    ParamLoadResult<int32_t> res = ModeParamsTable::Load<int32_t>(9, "agc");
+    ParamLoadResult<int32_t> res = KeyValueTable<StorageType::MODE>::Load<int32_t>(9, "agc");
     REQUIRE(res.rc == NOT_FOUND);
 }
 
-TEST_CASE("ModeParamsTable handles an empty string value", "[db]") {
-    ModeParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::MODE> handles an empty string value", "[db]") {
+    ModeGlobalTableFixture f;
 
-    REQUIRE(ModeParamsTable::Save<std::string>(4, "empty", "") == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::MODE>::Save<std::string>(4, "empty", "") == SUCCESS);
 
-    ParamLoadResult<std::string> res = ModeParamsTable::Load<std::string>(4, "empty");
+    ParamLoadResult<std::string> res = KeyValueTable<StorageType::MODE>::Load<std::string>(4, "empty");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.empty());
 }
 
 // ---------------------------------------------------------------------------
-// BandParamsTable
+// KeyValueTable<StorageType::BAND>
 // ---------------------------------------------------------------------------
 
 // RAII fixture: opens an in-memory database, creates the band_params table
-// and initialises BandParamsTable. Shuts BandParamsTable down and closes the
+// and initialises KeyValueTable<StorageType::BAND>. Shuts KeyValueTable<StorageType::BAND> down and closes the
 // connection on destruction.
-class BandParamsTableFixture {
+class BandGlobalTableFixture {
   public:
-    BandParamsTableFixture() {
+    BandGlobalTableFixture() {
         int rc;
         rc = sqlite3_open(":memory:", &db_);
         REQUIRE(rc == SQLITE_OK);
@@ -275,12 +276,12 @@ class BandParamsTableFixture {
         rc                     = sqlite3_exec(db_, create_sql, nullptr, nullptr, nullptr);
         REQUIRE(rc == SQLITE_OK);
 
-        bool ok = BandParamsTable::Init(db_);
+        bool ok = KeyValueTable<StorageType::BAND>::Init(db_);
         REQUIRE(ok);
     }
 
-    ~BandParamsTableFixture() {
-        BandParamsTable::Shutdown();
+    ~BandGlobalTableFixture() {
+        KeyValueTable<StorageType::BAND>::Shutdown();
         sqlite3_close(db_);
     }
 
@@ -288,84 +289,84 @@ class BandParamsTableFixture {
     sqlite3 *db_ = nullptr;
 };
 
-TEST_CASE("BandParamsTable saves and loads int32_t", "[db]") {
-    BandParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::BAND> saves and loads int32_t", "[db]") {
+    BandGlobalTableFixture f;
 
-    int rc = BandParamsTable::Save<int32_t>(1, "tx_gain", 50);
+    int rc = KeyValueTable<StorageType::BAND>::Save<int32_t>(1, "tx_gain", 50);
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<int32_t> res = BandParamsTable::Load<int32_t>(1, "tx_gain");
+    ParamLoadResult<int32_t> res = KeyValueTable<StorageType::BAND>::Load<int32_t>(1, "tx_gain");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == 50);
 }
 
-TEST_CASE("BandParamsTable saves and loads int32_t with BAND_UNDEFINED", "[db]") {
-    BandParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::BAND> saves and loads int32_t with BAND_UNDEFINED", "[db]") {
+    BandGlobalTableFixture f;
 
-    int rc = BandParamsTable::Save<int32_t>(BAND_UNDEFINED, "tx_gain", 30);
+    int rc = KeyValueTable<StorageType::BAND>::Save<int32_t>(BAND_UNDEFINED, "tx_gain", 30);
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<int32_t> res = BandParamsTable::Load<int32_t>(BAND_UNDEFINED, "tx_gain");
+    ParamLoadResult<int32_t> res = KeyValueTable<StorageType::BAND>::Load<int32_t>(BAND_UNDEFINED, "tx_gain");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == 30);
 }
 
-TEST_CASE("BandParamsTable saves and loads float", "[db]") {
-    BandParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::BAND> saves and loads float", "[db]") {
+    BandGlobalTableFixture f;
 
-    int rc = BandParamsTable::Save<float>(2, "cutter", 2.5f);
+    int rc = KeyValueTable<StorageType::BAND>::Save<float>(2, "cutter", 2.5f);
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<float> res = BandParamsTable::Load<float>(2, "cutter");
+    ParamLoadResult<float> res = KeyValueTable<StorageType::BAND>::Load<float>(2, "cutter");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == Catch::Approx(2.5f));
 }
 
-TEST_CASE("BandParamsTable saves and loads std::string", "[db]") {
-    BandParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::BAND> saves and loads std::string", "[db]") {
+    BandGlobalTableFixture f;
 
-    int rc = BandParamsTable::Save<std::string>(3, "label", "40m");
+    int rc = KeyValueTable<StorageType::BAND>::Save<std::string>(3, "label", "40m");
     REQUIRE(rc == SUCCESS);
 
-    ParamLoadResult<std::string> res = BandParamsTable::Load<std::string>(3, "label");
+    ParamLoadResult<std::string> res = KeyValueTable<StorageType::BAND>::Load<std::string>(3, "label");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value == "40m");
 }
 
-TEST_CASE("BandParamsTable overwrites a value under the same (band_id, name) key", "[db]") {
-    BandParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::BAND> overwrites a value under the same (band_id, name) key", "[db]") {
+    BandGlobalTableFixture f;
 
-    REQUIRE(BandParamsTable::Save<int32_t>(1, "tx_gain", 50) == SUCCESS);
-    REQUIRE(BandParamsTable::Load<int32_t>(1, "tx_gain").value == 50);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Save<int32_t>(1, "tx_gain", 50) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Load<int32_t>(1, "tx_gain").value == 50);
 
     // INSERT OR REPLACE on (bands_id, name) must replace the stored value.
-    REQUIRE(BandParamsTable::Save<int32_t>(1, "tx_gain", 80) == SUCCESS);
-    REQUIRE(BandParamsTable::Load<int32_t>(1, "tx_gain").value == 80);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Save<int32_t>(1, "tx_gain", 80) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Load<int32_t>(1, "tx_gain").value == 80);
 }
 
-TEST_CASE("BandParamsTable isolates values between different bands", "[db]") {
-    BandParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::BAND> isolates values between different bands", "[db]") {
+    BandGlobalTableFixture f;
 
-    REQUIRE(BandParamsTable::Save<int32_t>(1, "tx_gain", 50) == SUCCESS);
-    REQUIRE(BandParamsTable::Save<int32_t>(2, "tx_gain", 70) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Save<int32_t>(1, "tx_gain", 50) == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Save<int32_t>(2, "tx_gain", 70) == SUCCESS);
 
-    REQUIRE(BandParamsTable::Load<int32_t>(1, "tx_gain").value == 50);
-    REQUIRE(BandParamsTable::Load<int32_t>(2, "tx_gain").value == 70);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Load<int32_t>(1, "tx_gain").value == 50);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Load<int32_t>(2, "tx_gain").value == 70);
 }
 
-TEST_CASE("BandParamsTable returns NOT_FOUND for a missing key", "[db]") {
-    BandParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::BAND> returns NOT_FOUND for a missing key", "[db]") {
+    BandGlobalTableFixture f;
 
-    ParamLoadResult<int32_t> res = BandParamsTable::Load<int32_t>(1, "missing");
+    ParamLoadResult<int32_t> res = KeyValueTable<StorageType::BAND>::Load<int32_t>(1, "missing");
     REQUIRE(res.rc == NOT_FOUND);
 }
 
-TEST_CASE("BandParamsTable handles an empty string value", "[db]") {
-    BandParamsTableFixture f;
+TEST_CASE("KeyValueTable<StorageType::BAND> handles an empty string value", "[db]") {
+    BandGlobalTableFixture f;
 
-    REQUIRE(BandParamsTable::Save<std::string>(4, "empty", "") == SUCCESS);
+    REQUIRE(KeyValueTable<StorageType::BAND>::Save<std::string>(4, "empty", "") == SUCCESS);
 
-    ParamLoadResult<std::string> res = BandParamsTable::Load<std::string>(4, "empty");
+    ParamLoadResult<std::string> res = KeyValueTable<StorageType::BAND>::Load<std::string>(4, "empty");
     REQUIRE(res.rc == SUCCESS);
     REQUIRE(res.value.empty());
 }

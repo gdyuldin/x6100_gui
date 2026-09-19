@@ -1,5 +1,4 @@
 #include "pending_writes.h"
-#include "storage_policy.h"
 
 #include <cassert>
 #include <type_traits>
@@ -19,22 +18,19 @@ void PendingWrites::write(const StorageKey &key, const std::string &value) {
     pending_texts_[key] = value;
 }
 
-// Select the storage policy to use for a logical table. Production builds use
-// the stateless GlobalStorage/BandStorage/ModeStorage via storage_policy_for();
-// tests may inject a per-type resolver through the constructor (which returns
-// e.g. a different mock per table, see tests/cfg/mocks/mock_storage.h).
-StoragePolicy &PendingWrites::policy_for(StorageType type) {
-    if (policy_resolver_) {
-        return policy_resolver_(type);
-    }
-
-    return storage_policy_for(type);
+// Drop every pending entry without persisting it.
+void PendingWrites::clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pending_ints_.clear();
+    pending_floats_.clear();
+    pending_texts_.clear();
 }
 
-// Persist all pending changes. Values are written via the StoragePolicy that
-// matches the logical table of each key; only the last value per key is kept,
-// so repeated flushes are idempotent. Each entry is erased only when its save
-// succeeds (retained for retry otherwise), so a single pass is sufficient.
+// Persist all pending changes. Values are written via store_save(), which
+// routes each key to the logical table named by its StorageType; only the last
+// value per key is kept, so repeated flushes are idempotent. Each entry is
+// erased only when its save succeeds (retained for retry otherwise), so a
+// single pass is sufficient.
 void PendingWrites::flush_all() {
     flush_storage(StorageType::GLOBAL, -1);
     flush_storage(StorageType::BAND, -1);
@@ -68,15 +64,7 @@ void PendingWrites::flush_storage(StorageType type, int context_id) {
             // On failure (positive sqlite rc / negative error code) keep the
             // entry so a later flush can retry it; the value is never silently
             // lost.
-            StoragePolicy &policy = policy_for(key.type);
-            int            rc     = SUCCESS;
-            if constexpr (std::is_same_v<MappedT, int32_t>) {
-                rc = policy.save_int(key.context_id, key.name.c_str(), it->second);
-            } else if constexpr (std::is_same_v<MappedT, float>) {
-                rc = policy.save_float(key.context_id, key.name.c_str(), it->second);
-            } else if constexpr (std::is_same_v<MappedT, std::string>) {
-                rc = policy.save_text(key.context_id, key.name.c_str(), it->second);
-            }
+            int rc = store_save<MappedT>(key.type, key.context_id, key.name.c_str(), it->second);
 
             if (rc == SUCCESS) {
                 it = map.erase(it);

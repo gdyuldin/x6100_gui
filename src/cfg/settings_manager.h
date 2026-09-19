@@ -6,7 +6,7 @@
 //
 // Scope of this header (project rules):
 //   - Only src/cfg/ dependencies: parameter.h, pending_writes.h,
-//     computed_parameter.h, storage_policy.h, db.h.
+//     computed_parameter.h, db.h.
 //   - Parameters live statically (owned by the manager, never deleted) and
 //     are wired to the pending-write queue at construction time.
 //   - No exceptions, C++17 only.
@@ -631,6 +631,13 @@ class SettingsManager {
     // Full group loads (used by init_load).
     void load_band_all(int band_id);
     void load_mode_all();
+
+    // Full reset to a clean state: drop internal observers, unbind every
+    // computed parameter, restore all parameters to their construction-time
+    // defaults and zero the band/mode context. Emits no notifications itself:
+    // init_load holds one NotifySuppressGuard over reset+reload and is
+    // idempotent (no accumulated observers, no stale context/values).
+    void reset_state();
 
     // Switch-time band loads: never loads current_vfo; when `implicit` is true
     // also keeps the active VFO's freq+mode (loads only the inactive VFO).

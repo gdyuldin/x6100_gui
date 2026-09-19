@@ -1,15 +1,10 @@
 #pragma once
 
-// C-compatible API for the SettingsManager's parameters. This header is the
-// umbrella entry point for C (and C++) consumers: it aggregates the per-type
-// C-API headers and exposes the parameter access tree `cfg`.
-//
-// Per-type APIs (all included here for convenience):
-//   - subject_api.h            generic Subject/SubjectT/Observer helpers
-//   - parameter_api.h          Parameter<T> typed get/set
-//   - computed_api.h           ComputedParameter<T> set/get
-//   - atu_api.h                ATU tuner-network cache
-//   - settings_manager_api.h   init, flush, band/VFO switching, freq helpers
+// C-compatible API for the SettingsManager's parameters. This single header is
+// the umbrella entry point for C (and C++) consumers: it includes the generic
+// Subject helpers (subject_api.h) and adds the Parameter<T>/ComputedParameter<T>
+// typed access, the ATU tuner-network cache API and the SettingsManager-level
+// operations, and exposes the parameter access tree `cfg`.
 //
 // Access is through cfg.<group>.<name>(), which returns the Parameter<T>*
 // handle (opaque in C, concrete in C++). All writes route through
@@ -17,22 +12,135 @@
 // notifications all apply.
 // Ownership: the parameters (and the SettingsManager singleton) are static and
 // owned by C++ (cfg_api.cpp). C code only receives/holds borrowed pointers and
-// must never free them. Observers returned by subject_*_subscribe are borrowed:
-// the Subject owns one reference while the observer stays subscribed; C/UI code
-// releases that reference with param_unsubscribe.
+// must never free them.
 //
 // cfg_api_init() does NOT open the DB or call cfg_db_init(): the caller owns
 // the sqlite3 connection and table initialisation (avoids double-Init).
 
-#include "computed_api.h"
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "subject_api.h"
-#include "parameter_api.h"
-#include "atu_api.h"
-#include "settings_manager_api.h"
+
+#ifdef __cplusplus
+#include <string>
+
+#include "computed_parameter.h"
+#include "parameter.h"
+
+using ParamInt   = Parameter<int32_t>;
+using ParamFloat = Parameter<float>;
+using ParamText  = Parameter<std::string>;
+
+using ComputedParamInt   = ComputedParameter<int32_t>;
+using ComputedParamFloat = ComputedParameter<float>;
+using ComputedParamText  = ComputedParameter<std::string>;
+#else
+// Opaque C handles (resolved to real C++ types in C++ builds).
+typedef struct ParamInt   ParamInt;
+typedef struct ParamFloat ParamFloat;
+typedef struct ParamText  ParamText;
+
+typedef struct ComputedParamInt   ComputedParamInt;
+typedef struct ComputedParamFloat ComputedParamFloat;
+typedef struct ComputedParamText  ComputedParamText;
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// --- Parameter<T> typed get/set ---
+// Typed get/set only: route through Parameter<T>::set / SubjectT<T>::get, so
+// validators, deferred-write enqueue and observer notifications all apply.
+// Creation stays C++-only (validators and storage wiring are C++ constructs).
+
+int32_t     param_i_get(const ParamInt *p);
+void        param_i_set(ParamInt *p, int32_t v);
+float       param_f_get(const ParamFloat *p);
+void        param_f_set(ParamFloat *p, float v);
+const char *param_t_get(const ParamText *p);          // borrowed: valid until next param_t_get on this thread
+void        param_t_set(ParamText *p, const char *v); // NULL -> ""
+
+// --- ComputedParameter<T> set/get ---
+// Only set/get are provided: creation stays C++-only (ComputeFn/
+// ReverseFn are C++ callables, constructed by SettingsManager).
+//   cparam_i_set(cfg.computed.fg_freq(), 7100000);
+
+void    cparam_i_set(ComputedParamInt *p, int32_t value);
+int32_t cparam_i_get(const ComputedParamInt *p);
+
+void  cparam_f_set(ComputedParamFloat *p, float value);
+float cparam_f_get(const ComputedParamFloat *p);
+
+void cparam_t_set(ComputedParamText *p, const char *value);
+
+// --- ATU tuner-network cache ---
+// The cache lives as a C++ static, exposed to C code as subscribe/read helpers;
+// saving a freshly-tuned network wakes the cache.
+
+// Save a freshly-tuned network immediately for the current antenna/frequency
+// (replacement for the legacy cfg_atu_save_network). Values are the auto-tuner
+// network number for the current front-panel frequency.
+int cfg_atu_save_network(uint32_t network);
+
+// Direct value reads (for C code that needs the current value without
+// subscribing).
+bool     cfg_atu_is_loaded(void);
+uint32_t cfg_atu_get_network(void);
+
+// ATU subjects: whether a saved network exists for the current freq/ant and
+// its value (0 when not loaded). The returned Observer / ObserverDelayed is
+// borrowed from the Subject and its reference is released with
+// param_unsubscribe.
+Observer        *cfg_atu_loaded_subscribe(observer_cb cb, void *user_data);
+Observer        *cfg_atu_network_subscribe(observer_cb cb, void *user_data);
+ObserverDelayed *cfg_atu_loaded_subscribe_delayed(observer_cb cb, void *user_data);
+ObserverDelayed *cfg_atu_network_subscribe_delayed(observer_cb cb, void *user_data);
+
+// --- SettingsManager-level operations ---
+// Initialisation, deferred-write flushing, band/VFO switching, frequency-step
+// cycling and hardware-frequency helpers.
+
+// Single process-wide settings entry point: opens CFG_DB_PATH, applies
+// migrations, initialises the DB tables, loads the manager params through
+// cfg_api_init() and starts the deferred-save flush thread. Unlike
+// cfg_api_init/init_load this is NOT idempotent (it opens the DB and re-inits
+// the tables); call once from main() before any settings consumer.
+void cfg_init(void);
+
+// Initialise the manager (loads global/band/mode params). Parameter handles
+// are accessor functions in this header and need no wiring. The caller owns
+// the sqlite3 connection/table init (cfg_api_init is not handed a db handle).
+// on_db_error is kept for signature compatibility; it is currently inert.
+void cfg_api_init(void (*on_db_error)(const char *));
+
+// Transverter shift for a frequency: the shift of the transverter whose
+// [from, to] range contains freq, or 0 when none covers it.
+int32_t cfg_transverter_shift_for(int32_t freq);
+
+// True when freq is usable by the hardware: HF 0.5-55 MHz or inside any
+// transverter range.
+bool cfg_is_valid_hw_freq(int32_t freq);
+
+// Persist all pending deferred writes immediately.
+void cfg_api_flush_all(void);
+
+// Start/stop the background deferred-save thread; wakes every ~3 s and calls
+// flush_all(). Inert/no-op when the thread is already running / already stopped.
+void cfg_api_start_flush_thread(void);
+void cfg_api_stop_flush_thread(void);
+
+// --- Band switching ---
+// Load the next/previous band above/below current frequency.
+void cfg_band_load_next(bool up);
+
+// Copy active VFO (freq, mode, agc, att, pre) to inactive VFO.
+void cfg_band_vfo_copy(void);
+
+// --- Step cycling ---
+// Cycle freq_step through [10, 100, 500, 1000, 5000] Hz. Returns new step.
+int32_t cfg_mode_change_freq_step(bool up);
 
 // --- Parameter access tree ---
 // cfg.<group>.<name>() returns the handle of the matching SettingsManager

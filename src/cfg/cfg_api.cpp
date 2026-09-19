@@ -1,6 +1,6 @@
 #include "cfg_api.h"
 
-#include "atu_api.h"
+#include "atu.h"
 #include "settings_internal.h"
 
 // Owned by C++ for the whole program; never deleted.
@@ -409,4 +409,19 @@ void cfg_api_init(void (*on_db_error)(const char *)) {
 
     // Wire the ATU cache to the parameter sources and do the initial load.
     atu_wire_subscriptions();
+}
+
+void atu_wire_subscriptions(void) {
+    // Recompute the published loaded/network subjects whenever the antenna,
+    // front-panel frequency, or ATU-enabled changes.
+    auto on_atu_param_change = [](Subject * /*subj*/, void * /*user_data*/) -> void {
+        atu_network.on_params_changed(cfg_sm.p_ant_id.get(), cfg_sm.cp_fg_freq.get(), cfg_sm.p_atu_enabled.get() != 0);
+    };
+    // Keep the subscriptions alive for the whole program (never unsubscribed).
+    static Subscription atu_ant_obs(cfg_sm.p_ant_id.subscribe(on_atu_param_change, nullptr));
+    static Subscription atu_freq_obs(cfg_sm.cp_fg_freq.subscribe(on_atu_param_change, nullptr));
+    static Subscription atu_enabled_obs(cfg_sm.p_atu_enabled.subscribe(on_atu_param_change, nullptr));
+
+    // Initial load: populate the cache for the current antenna/frequency.
+    atu_network.on_params_changed(cfg_sm.p_ant_id.get(), cfg_sm.cp_fg_freq.get(), cfg_sm.p_atu_enabled.get() != 0);
 }

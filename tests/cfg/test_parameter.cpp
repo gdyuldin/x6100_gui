@@ -47,15 +47,15 @@ struct TestDbGuard {
         REQUIRE(rc == SQLITE_OK);
         if (err)
             sqlite3_free(err);
-        ParamsTable::Init(db);
-        BandParamsTable::Init(db);
-        ModeParamsTable::Init(db);
+        KeyValueTable<StorageType::GLOBAL>::Init(db);
+        KeyValueTable<StorageType::BAND>::Init(db);
+        KeyValueTable<StorageType::MODE>::Init(db);
     }
 
     ~TestDbGuard() {
-        ParamsTable::Shutdown();
-        BandParamsTable::Shutdown();
-        ModeParamsTable::Shutdown();
+        KeyValueTable<StorageType::GLOBAL>::Shutdown();
+        KeyValueTable<StorageType::BAND>::Shutdown();
+        KeyValueTable<StorageType::MODE>::Shutdown();
         if (db) {
             sqlite3_close(db);
         }
@@ -140,6 +140,30 @@ TEST_CASE("Parameter set_quiet does not enqueue", "[parameter]") {
     p.set_quiet(80);
     REQUIRE(p.get() == 80);
     REQUIRE(sink.records.empty());
+}
+
+TEST_CASE("Parameter reset restores the construction-time default quietly", "[parameter]") {
+    MockWriteSink           sink;
+    Parameter<int, int32_t> p(
+        "volume", 50, [](int v) { return v < 0 ? 0 : (v > 100 ? 100 : v); }, StorageType::GLOBAL, sink);
+
+    p.set(80);
+    REQUIRE(p.get() == 80);
+    REQUIRE(sink.records.size() == 1);
+
+    // reset() restores the default and is quiet: no deferred write is enqueued.
+    p.reset();
+    REQUIRE(p.get() == 50);
+    REQUIRE(sink.records.size() == 1);
+
+    // A reset to the current value neither notifies nor enqueues.
+    int          notify_count = 0;
+    auto         count_cb     = [](Subject *, void *ud) { ++(*static_cast<int *>(ud)); };
+    Subscription sub(p.subscribe(count_cb, &notify_count));
+    p.reset();
+    REQUIRE(p.get() == 50);
+    REQUIRE(notify_count == 0);
+    REQUIRE(sink.records.size() == 1);
 }
 
 TEST_CASE("Parameter float->int32 scaling round-trip", "[parameter]") {

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "computed_api.h"       // C-compatible opaque-types and set/get functions
+#include "cfg_api.h"            // C-compatible opaque-types and set/get functions
 #include "computed_parameter.h" // ComputedParameter<T>
 #include "subject.h"            // SubjectT, Observer, Subscription
 
@@ -46,6 +46,22 @@ TEST_CASE("ComputedParameter recomputes on source change", "[computed]") {
     REQUIRE(cp.get() == 15);
 
     source.set(100);
+    REQUIRE(cp.get() == 105);
+}
+
+TEST_CASE("ComputedParameter clear_sources stops recomputing on source change", "[computed]") {
+    SubjectT<int>          source(10);
+    ComputedParameter<int> cp([&] { return source.get() + 5; });
+    cp.bind(source);
+    REQUIRE(cp.get() == 15);
+
+    cp.clear_sources();
+    source.set(100);
+    REQUIRE(cp.get() == 15); // no longer subscribed
+
+    // Rebinding after clear works (no leftover/duplicated observers).
+    cp.bind(source);
+    cp.recompute();
     REQUIRE(cp.get() == 105);
 }
 

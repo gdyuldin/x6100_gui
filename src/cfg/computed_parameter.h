@@ -24,6 +24,15 @@ template <typename T> class ComputedParameter : public SubjectT<T> {
         subscriptions_.push_back(Subscription(source.subscribe(source_notify, this)));
     }
 
+    // Unbind every source: unsubscribe and release all observers. Also clears
+    // the re-entrancy guard so a subsequent bind/recompute cycle starts clean.
+    // Safe to call when nothing is bound. Used by SettingsManager::init_load's
+    // reset so a repeated init_load does not accumulate observers.
+    void clear_sources() {
+        subscriptions_.clear();
+        updating_.store(false);
+    }
+
     ~ComputedParameter() {
         subscriptions_.clear(); // unsubscribe and release all bound observers
     }

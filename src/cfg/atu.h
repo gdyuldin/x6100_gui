@@ -13,7 +13,7 @@
 // public subjects (`loaded` bool, `network` value). It is pure logic: it never
 // touches LVGL or the UI.
 //
-// Not part of the Parameter<T>/StoragePolicy/PendingWrites pipeline (composite
+// Not part of the Parameter<T>/store_save/PendingWrites pipeline (composite
 // key, bulk load, nearest-match, immediate save). Subscriptions to ant_id,
 // fg_freq and atu_enabled are NOT wired here — the owner wires them externally
 // (see cfg_api.cpp) and calls on_params_changed.

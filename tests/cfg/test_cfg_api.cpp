@@ -11,12 +11,10 @@
 #include <vector>
 
 #include "cfg_api.h"
-#include "computed_api.h"
 #include "db.h"
 #include "lvgl.h"
 #include "parameter.h"
 #include "settings_manager.h"
-#include "storage_policy.h"
 
 
 namespace {
@@ -58,17 +56,17 @@ struct TestDbGuard {
         REQUIRE(rc == SQLITE_OK);
         if (err)
             sqlite3_free(err);
-        ParamsTable::Init(db);
-        BandParamsTable::Init(db);
-        ModeParamsTable::Init(db);
+        KeyValueTable<StorageType::GLOBAL>::Init(db);
+        KeyValueTable<StorageType::BAND>::Init(db);
+        KeyValueTable<StorageType::MODE>::Init(db);
         BandsTable::Init(db);
     }
 
     ~TestDbGuard() {
         BandsTable::Shutdown();
-        ParamsTable::Shutdown();
-        BandParamsTable::Shutdown();
-        ModeParamsTable::Shutdown();
+        KeyValueTable<StorageType::GLOBAL>::Shutdown();
+        KeyValueTable<StorageType::BAND>::Shutdown();
+        KeyValueTable<StorageType::MODE>::Shutdown();
         if (db) {
             sqlite3_close(db);
         }
@@ -86,7 +84,7 @@ struct IntObserver {
 // derives the starting band from the persisted global band_id) lands on band
 // `band_id` instead of the default.
 void prime_band(sqlite3 *db, int band_id) {
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).save_int(0, "band_id", band_id) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", band_id) == SUCCESS);
     char *err = nullptr;
     REQUIRE(sqlite3_exec(db,
                          "INSERT INTO bands(id, name, start_freq, stop_freq, type) "
@@ -99,7 +97,7 @@ void prime_band(sqlite3 *db, int band_id) {
 TEST_CASE("cfg_api_init loads preseeded values through the accessors", "[cfg_api]") {
     TestDbGuard db;
     prime_band(db.db, 5);
-    storage_policy_for(StorageType::GLOBAL).save_int(0, "vol", 55);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "vol", 55);
 
     cfg_api_init(nullptr);
 
@@ -141,9 +139,9 @@ TEST_CASE("cfg accessor tree exposes the parameter handles", "[cfg_api]") {
 TEST_CASE("parameter accessors are available for the extended global params", "[cfg_api]") {
     TestDbGuard db;
     prime_band(db.db, 5);
-    storage_policy_for(StorageType::GLOBAL).save_int(0, "key_tone", 800);
-    storage_policy_for(StorageType::GLOBAL).save_int(0, "vox_delay", 700);
-    storage_policy_for(StorageType::GLOBAL).save_int(0, "swrscan_span", 300000);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "key_tone", 800);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "vox_delay", 700);
+    store_save<int32_t>(StorageType::GLOBAL, 0, "swrscan_span", 300000);
 
     cfg_api_init(nullptr);
 
@@ -259,22 +257,21 @@ TEST_CASE("cfg_api set runs the validator and persists via flush", "[cfg_api]") 
     REQUIRE(param_i_get(cfg.general.volume()) == 55);
 
     // The value is queued, not yet in the DB.
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") != 55);
+    REQUIRE(store_load<int32_t>(StorageType::GLOBAL, 0, "vol") != 55);
 
     cfg_api_flush_all();
 
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).load_int(0, "vol") == 55);
+    REQUIRE(store_load<int32_t>(StorageType::GLOBAL, 0, "vol") == 55);
 }
 
 TEST_CASE("cfg.computed.fg_freq() mirrors the active VFO and writes back through reverse fn", "[cfg_api]") {
     TestDbGuard db;
     prime_band(db.db, 5);
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfoa_freq", 7'100'000) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfo", 0) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100'000) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", 0) == SUCCESS);
     // Persisted band_id must also be present in the DB (global param).
-    REQUIRE(storage_policy_for(StorageType::GLOBAL).save_int(0, "band_id", 5) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5) == SUCCESS);
 
     cfg_api_init(nullptr);
 

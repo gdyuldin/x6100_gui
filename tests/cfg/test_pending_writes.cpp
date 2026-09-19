@@ -2,12 +2,12 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <optional>
+#include <sqlite3.h>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "pending_writes.h"
-#include "tests/cfg/mocks/mock_storage.h"
 #include "tests/cfg/mocks/pending_writes_test_access.h"
 
 // Helper to create keys easily
@@ -49,8 +49,17 @@ TEST_CASE("PendingWrites key distinguishes band_id and mode_id", "[pending_write
     REQUIRE(PendingWritesTestAccess::peek_int(pending, key_band2) == 14'000'000);
 }
 
-TEST_CASE("PendingWrites thread safety basic", "[pending_writes]") {
+TEST_CASE("PendingWrites clear drops entries without saving", "[pending_writes]") {
     PendingWrites pending;
+    auto          key = make_key(StorageType::BAND, 1, "vfoa_freq");
+    pending.write(key, int32_t(7'100'000));
+    REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == 7'100'000);
+
+    pending.clear();
+    REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == std::nullopt);
+}
+
+TEST_CASE("PendingWrites thread safety basic", "[pending_writes]") {    PendingWrites pending;
     const int     num_threads       = 4;
     const int     writes_per_thread = 100;
     auto          key               = make_key(StorageType::GLOBAL, 0, "counter");
@@ -73,27 +82,57 @@ TEST_CASE("PendingWrites thread safety basic", "[pending_writes]") {
     REQUIRE(val.has_value());
 }
 
+namespace {
+
+// RAII in-memory DB whose KeyValueTable<BAND> is only initialised on demand.
+// Flushing before init() makes the save fail (statements are not prepared),
+// which lets the test exercise the retry path without a mock.
+struct PendingWritesDbGuard {
+    sqlite3 *db = nullptr;
+
+    PendingWritesDbGuard() {
+        REQUIRE(sqlite3_open(":memory:", &db) == SQLITE_OK);
+        char *err = nullptr;
+        int   rc  = sqlite3_exec(db,
+                                 "CREATE TABLE IF NOT EXISTS band_params("
+                                    "  bands_id INTEGER,"
+                                    "  name     TEXT,"
+                                    "  val      INTEGER,"
+                                    "  UNIQUE (bands_id, name) ON CONFLICT REPLACE"
+                                    ");",
+                                 nullptr, nullptr, &err);
+        REQUIRE(rc == SQLITE_OK);
+        if (err)
+            sqlite3_free(err);
+    }
+
+    void init() { REQUIRE(KeyValueTable<StorageType::BAND>::Init(db)); }
+
+    ~PendingWritesDbGuard() {
+        KeyValueTable<StorageType::BAND>::Shutdown();
+        if (db) {
+            sqlite3_close(db);
+        }
+    }
+};
+
+} // namespace
+
 TEST_CASE("PendingWrites retains entry on failed save and retries later", "[pending_writes]") {
-    // One mock per logical table (each bound to its StorageType), so keys are
-    // tagged with the correct type — mirroring the production design where a
-    // storage policy instance only ever touches its own table.
-    MockStorage   mock_band(StorageType::BAND);
-    PendingWrites pending([&](StorageType type) -> StoragePolicy & {
-        (void)type;
-        return mock_band;
-    });
+    PendingWritesDbGuard db; // table intentionally not initialised yet
+    PendingWrites        pending;
 
     auto key = make_key(StorageType::BAND, 1, "vfoa_freq");
     pending.write(key, int32_t(7'100'000));
 
-    // First save fails: the pending entry must NOT be dropped (no data loss).
-    mock_band.arm_fail_save(5);
+    // First save fails (no prepared statement): the pending entry must NOT be
+    // dropped (no data loss).
     pending.flush_storage(StorageType::BAND, 1);
     REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == 7'100'000);
-    REQUIRE(mock_band.ints().empty());
 
     // A subsequent flush succeeds and clears the entry.
+    db.init();
     pending.flush_storage(StorageType::BAND, 1);
     REQUIRE(PendingWritesTestAccess::peek_int(pending, key) == std::nullopt);
-    REQUIRE(mock_band.ints().at({StorageType::BAND, 1, "vfoa_freq"}) == 7'100'000);
+    REQUIRE(store_load<int32_t>(StorageType::BAND, 1, "vfoa_freq").value() == 7'100'000);
 }

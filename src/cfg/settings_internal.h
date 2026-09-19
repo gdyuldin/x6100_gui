@@ -21,3 +21,8 @@ SettingsManager &cfg_instance();
 // restore the global cfg_sm. The caller must keep the manager alive while it is
 // installed and reset it afterwards.
 void cfg_set_instance(SettingsManager *sm);
+
+// Wire the ATU cache's public subjects to the parameter sources (p_ant_id,
+// cp_fg_freq, p_atu_enabled) and do the initial load. Defined in cfg_api.cpp,
+// called once from cfg_api_init(). Internal: not part of the C API.
+void atu_wire_subscriptions(void);

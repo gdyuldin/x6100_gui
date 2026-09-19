@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -78,19 +79,70 @@ template <typename T> struct ParamLoadResult {
     int rc; // load_save_error_codes_t (negative) or sqlite3 rc (positive)
 };
 
-class ParamsTable {
+// StorageType marks which logical table a parameter belongs to. It is used by
+// PendingWrites/flush_storage to force-save into the right table and by
+// Parameter::load/save to route a key to the matching KeyValueTable<Type>.
+enum class StorageType {
+    GLOBAL,
+    BAND,
+    MODE,
+    TRANSVERTER
+};
+
+// Table metadata for each StorageType: the SQLite table name and the key
+// column (unused when has_key is false, i.e. the flat GLOBAL `params` table).
+template <StorageType Type> struct KeyValueTableTraits;
+
+template <> struct KeyValueTableTraits<StorageType::GLOBAL> {
+    static constexpr const char *table   = "params";
+    static constexpr bool        has_key = false;
+};
+
+template <> struct KeyValueTableTraits<StorageType::BAND> {
+    static constexpr const char *table   = "band_params";
+    static constexpr const char *key_col = "bands_id";
+    static constexpr bool        has_key = true;
+};
+
+template <> struct KeyValueTableTraits<StorageType::MODE> {
+    static constexpr const char *table   = "mode_params";
+    static constexpr const char *key_col = "mode";
+    static constexpr bool        has_key = true;
+};
+
+template <> struct KeyValueTableTraits<StorageType::TRANSVERTER> {
+    static constexpr const char *table   = "transverter";
+    static constexpr const char *key_col = "id";
+    static constexpr bool        has_key = true;
+};
+
+// One key-value storage table, parameterised by StorageType. Each
+// instantiation owns its own prepared statements, guarding mutexes and cached
+// :id/:name/:val parameter indices (inline static, one set per specialization).
+// The flat GLOBAL `params` table has no key column: Load/Save ignore
+// context_id there.
+template <StorageType Type> class KeyValueTable {
   public:
     static bool Init(sqlite3 *database);
     static void Shutdown();
 
-    template <typename T> static ParamLoadResult<T> Load(const char *name) {
+    template <typename T> static ParamLoadResult<T> Load(int context_id, const char *name) {
         int            rc;
         StmtResetGuard guard(load_mutex_, load_stmt_);
 
         rc = sqlite3_bind_text(load_stmt_, load_name_param_index_, name, strlen(name), SQLITE_STATIC);
         if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind name %s: %s", name, sqlite3_errmsg(db_));
+            LV_LOG_ERROR("Failed to bind name %s in %s: %s", name, KeyValueTableTraits<Type>::table,
+                         sqlite3_errmsg(db_));
             return {T{}, rc};
+        }
+        if constexpr (KeyValueTableTraits<Type>::has_key) {
+            rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, context_id);
+            if (rc != SQLITE_OK) {
+                LV_LOG_ERROR("Failed to bind key %i in %s: %s", context_id, KeyValueTableTraits<Type>::table,
+                             sqlite3_errmsg(db_));
+                return {T{}, rc};
+            }
         }
 
         rc = sqlite3_step(load_stmt_);
@@ -98,35 +150,45 @@ class ParamsTable {
             T value;
             if constexpr (std::is_same_v<T, int32_t>) {
                 value = sqlite3_column_int(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%i", name, value);
+                LV_LOG_USER("Loaded %s=%i (context=%i)", name, value, context_id);
             } else if constexpr (std::is_same_v<T, float>) {
                 value = sqlite3_column_double(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%f", name, value);
+                LV_LOG_USER("Loaded %s=%f (context=%i)", name, value, context_id);
             } else if constexpr (std::is_same_v<T, std::string>) {
                 const unsigned char *txt = sqlite3_column_text(load_stmt_, 0);
                 value                    = txt ? reinterpret_cast<const char *>(txt) : "";
-                LV_LOG_USER("Loaded %s=%s", name, value.c_str());
+                LV_LOG_USER("Loaded %s=%s (context=%i)", name, value.c_str(), context_id);
             } else {
                 static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_load().");
             }
             return {value, SUCCESS};
         }
         if (rc == SQLITE_DONE) {
-            LV_LOG_WARN("No results for load %s", name);
+            LV_LOG_WARN("No results for load %s in %s (context=%i)", name, KeyValueTableTraits<Type>::table,
+                        context_id);
             return {T{}, NOT_FOUND};
         }
-        LV_LOG_WARN("Load %s failed: %s", name, sqlite3_errmsg(db_));
+        LV_LOG_WARN("Load %s in %s (context=%i) failed: %s", name, KeyValueTableTraits<Type>::table, context_id,
+                    sqlite3_errmsg(db_));
         return {T{}, rc};
     }
 
-    template <typename T> static int Save(const char *name, const T &value) {
+    template <typename T> static int Save(int context_id, const char *name, const T &value) {
         int            rc;
         StmtResetGuard guard(save_mutex_, save_stmt_);
 
         rc = sqlite3_bind_text(save_stmt_, save_name_param_index_, name, strlen(name), 0);
         if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind name %s to save params query", name);
+            LV_LOG_WARN("Can't bind name %s to save %s query", name, KeyValueTableTraits<Type>::table);
             return rc;
+        }
+        if constexpr (KeyValueTableTraits<Type>::has_key) {
+            rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, context_id);
+            if (rc != SQLITE_OK) {
+                LV_LOG_ERROR("Failed to bind key %i in %s: %s", context_id, KeyValueTableTraits<Type>::table,
+                             sqlite3_errmsg(db_));
+                return rc;
+            }
         }
 
         if constexpr (std::is_same_v<T, int32_t>) {
@@ -140,13 +202,15 @@ class ParamsTable {
         }
 
         if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind val %s to save params query", value_to_string(value).c_str());
+            LV_LOG_WARN("Can't bind val %s (context=%i) to save %s query", value_to_string(value).c_str(), context_id,
+                        KeyValueTableTraits<Type>::table);
         } else {
             rc = sqlite3_step(save_stmt_);
             if (rc != SQLITE_DONE) {
-                LV_LOG_ERROR("Failed save item %s: %s", name, sqlite3_errmsg(db_));
+                LV_LOG_ERROR("Failed save item %s in %s (context=%i): %s", name, KeyValueTableTraits<Type>::table,
+                             context_id, sqlite3_errmsg(db_));
             } else {
-                LV_LOG_USER("Saved %s=%s", name, value_to_string(value).c_str());
+                LV_LOG_USER("Saved %s=%s (context=%i)", name, value_to_string(value).c_str(), context_id);
                 rc = SUCCESS;
             }
         }
@@ -158,19 +222,73 @@ class ParamsTable {
     inline static sqlite3 *db_ = nullptr;
 
     // Load statement group: prepared statement + guarding mutex + cached
-    // :name parameter index. Indices are resolved once at Init via
-    // sqlite3_bind_parameter_index() and reused on every bind.
+    // :id (only when the table has a key column) and :name parameter indices.
+    // Indices are resolved once at Init via sqlite3_bind_parameter_index() and
+    // reused on every bind.
     inline static sqlite3_stmt *load_stmt_ = nullptr;
     inline static std::mutex    load_mutex_;
+    inline static int           load_id_param_index_   = 0;
     inline static int           load_name_param_index_ = 0;
 
     // Save statement group: prepared statement + guarding mutex + cached
-    // :name and :val parameter indices.
+    // :id, :name and :val parameter indices.
     inline static sqlite3_stmt *save_stmt_ = nullptr;
     inline static std::mutex    save_mutex_;
+    inline static int           save_id_param_index_   = 0;
     inline static int           save_name_param_index_ = 0;
     inline static int           save_val_param_index_  = 0;
 };
+
+// Free routing helpers used by Parameter::load/save and PendingWrites. The
+// switch maps a StorageType to the matching KeyValueTable instantiation, so
+// callers never need to know which table a logical store lives in.
+// store_save returns SUCCESS or the raw sqlite3 rc; store_load returns
+// std::nullopt on NOT_FOUND/error (the caller keeps its current value).
+template <typename T> int store_save(StorageType type, int context_id, const char *name, const T &value) {
+    int rc;
+    switch (type) {
+        case StorageType::GLOBAL:
+            rc = KeyValueTable<StorageType::GLOBAL>::Save<T>(context_id, name, value);
+            break;
+        case StorageType::BAND:
+            rc = KeyValueTable<StorageType::BAND>::Save<T>(context_id, name, value);
+            break;
+        case StorageType::MODE:
+            rc = KeyValueTable<StorageType::MODE>::Save<T>(context_id, name, value);
+            break;
+        case StorageType::TRANSVERTER:
+            rc = KeyValueTable<StorageType::TRANSVERTER>::Save<T>(context_id, name, value);
+            break;
+        default:
+            LV_LOG_ERROR("store_save: unknown storage type %d for %s", static_cast<int>(type), name);
+            return WRONG_TYPE;
+    }
+    return rc;
+}
+
+template <typename T> std::optional<T> store_load(StorageType type, int context_id, const char *name) {
+    ParamLoadResult<T> res;
+    switch (type) {
+        case StorageType::GLOBAL:
+            res = KeyValueTable<StorageType::GLOBAL>::Load<T>(context_id, name);
+            break;
+        case StorageType::BAND:
+            res = KeyValueTable<StorageType::BAND>::Load<T>(context_id, name);
+            break;
+        case StorageType::MODE:
+            res = KeyValueTable<StorageType::MODE>::Load<T>(context_id, name);
+            break;
+        case StorageType::TRANSVERTER:
+            res = KeyValueTable<StorageType::TRANSVERTER>::Load<T>(context_id, name);
+            break;
+        default:
+            return std::nullopt;
+    }
+    if (res.rc == SUCCESS) {
+        return res.value;
+    }
+    return std::nullopt;
+}
 
 enum band_type_t {
     BAND_INACTIVE = 0,
@@ -234,327 +352,6 @@ class BandsTable {
     // is read/written outside the statement guard).
     inline static BandInfo   last_band;
     inline static std::mutex last_band_mutex_;
-};
-
-class BandParamsTable {
-  public:
-    static bool Init(sqlite3 *database);
-    static void Shutdown();
-
-    template <typename T> static ParamLoadResult<T> Load(const int32_t band_id, const char *name) {
-        int            rc;
-        StmtResetGuard guard(load_mutex_, load_stmt_);
-
-        rc = sqlite3_bind_text(load_stmt_, load_name_param_index_, name, strlen(name), SQLITE_STATIC);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind name %s: %s", name, sqlite3_errmsg(db_));
-            return {T{}, rc};
-        }
-        rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, band_id);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind bands_id %i: %s", band_id, sqlite3_errmsg(db_));
-            return {T{}, rc};
-        }
-
-        rc = sqlite3_step(load_stmt_);
-        if (rc == SQLITE_ROW) {
-            T value;
-            if constexpr (std::is_same_v<T, int32_t>) {
-                value = sqlite3_column_int(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%i (band_id=%i)", name, value, band_id);
-            } else if constexpr (std::is_same_v<T, float>) {
-                value = sqlite3_column_double(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%f (band_id=%i)", name, value, band_id);
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                const unsigned char *txt = sqlite3_column_text(load_stmt_, 0);
-                value                    = txt ? reinterpret_cast<const char *>(txt) : "";
-                LV_LOG_USER("Loaded %s=%sm (band_id=%i)", name, value.c_str(), band_id);
-            } else {
-                static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_load().");
-            }
-            return {value, SUCCESS};
-        }
-        if (rc == SQLITE_DONE) {
-            LV_LOG_WARN("No results for load %s (band_id=%i)", name, band_id);
-            return {T{}, NOT_FOUND};
-        }
-        LV_LOG_WARN("Load %s (band_id=%i) failed: %s", name, band_id, sqlite3_errmsg(db_));
-        return {T{}, rc};
-    }
-
-    template <typename T> static int Save(const int32_t band_id, const char *name, const T &value) {
-        int            rc;
-        StmtResetGuard guard(save_mutex_, save_stmt_);
-
-        rc = sqlite3_bind_text(save_stmt_, save_name_param_index_, name, strlen(name), 0);
-        if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind name %s to save params query", name);
-            return rc;
-        }
-        rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, band_id);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind bands_id %i: %s", band_id, sqlite3_errmsg(db_));
-            return rc;
-        }
-
-        if constexpr (std::is_same_v<T, int32_t>) {
-            rc = sqlite3_bind_int(save_stmt_, save_val_param_index_, value);
-        } else if constexpr (std::is_same_v<T, float>) {
-            rc = sqlite3_bind_double(save_stmt_, save_val_param_index_, value);
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            rc = sqlite3_bind_text(save_stmt_, save_val_param_index_, value.c_str(), -1, 0);
-        } else {
-            static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_save().");
-        }
-
-        if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind val %s (band_id=%i) to save params query", value_to_string(value).c_str(), band_id);
-        } else {
-            rc = sqlite3_step(save_stmt_);
-            if (rc != SQLITE_DONE) {
-                LV_LOG_ERROR("Failed save item %s (band_id=%i): %s", name, band_id, sqlite3_errmsg(db_));
-            } else {
-                LV_LOG_USER("Saved %s=%s, (band_id=%i)", name, value_to_string(value).c_str(), band_id);
-                rc = SUCCESS;
-            }
-        }
-        return rc;
-    }
-
-  private:
-    // Database handle shared by all statements of this table.
-    inline static sqlite3 *db_ = nullptr;
-
-    // Load statement group: prepared statement + guarding mutex + cached
-    // :id and :name parameter indices.
-    inline static sqlite3_stmt *load_stmt_ = nullptr;
-    inline static std::mutex    load_mutex_;
-    inline static int           load_id_param_index_   = 0;
-    inline static int           load_name_param_index_ = 0;
-
-    // Save statement group: prepared statement + guarding mutex + cached
-    // :id, :name and :val parameter indices.
-    inline static sqlite3_stmt *save_stmt_ = nullptr;
-    inline static std::mutex    save_mutex_;
-    inline static int           save_id_param_index_   = 0;
-    inline static int           save_name_param_index_ = 0;
-    inline static int           save_val_param_index_  = 0;
-};
-
-class ModeParamsTable {
-  public:
-    static bool Init(sqlite3 *database);
-    static void Shutdown();
-
-    template <typename T> static ParamLoadResult<T> Load(const int32_t mode, const char *name) {
-        int            rc;
-        StmtResetGuard guard(load_mutex_, load_stmt_);
-
-        rc = sqlite3_bind_text(load_stmt_, load_name_param_index_, name, strlen(name), SQLITE_STATIC);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind name %s: %s", name, sqlite3_errmsg(db_));
-            return {T{}, rc};
-        }
-        rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, mode);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind mode %i: %s", mode, sqlite3_errmsg(db_));
-            return {T{}, rc};
-        }
-
-        rc = sqlite3_step(load_stmt_);
-        if (rc == SQLITE_ROW) {
-            T value;
-            if constexpr (std::is_same_v<T, int32_t>) {
-                value = sqlite3_column_int(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%i (mode=%i)", name, value, mode);
-            } else if constexpr (std::is_same_v<T, float>) {
-                value = sqlite3_column_double(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%f (mode=%i)", name, value, mode);
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                const unsigned char *txt = sqlite3_column_text(load_stmt_, 0);
-                value                    = txt ? reinterpret_cast<const char *>(txt) : "";
-                LV_LOG_USER("Loaded %s=%s (mode=%i)", name, value.c_str(), mode);
-            } else {
-                static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_load().");
-            }
-            return {value, SUCCESS};
-        }
-        if (rc == SQLITE_DONE) {
-            LV_LOG_WARN("No results for load %s (mode=%i)", name, mode);
-            return {T{}, NOT_FOUND};
-        }
-        LV_LOG_WARN("Load %s (mode=%i) failed: %s", name, mode, sqlite3_errmsg(db_));
-        return {T{}, rc};
-    }
-
-    template <typename T> static int Save(const int32_t mode, const char *name, const T &value) {
-        int            rc;
-        StmtResetGuard guard(save_mutex_, save_stmt_);
-
-        rc = sqlite3_bind_text(save_stmt_, save_name_param_index_, name, strlen(name), 0);
-        if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind name %s to save params query", name);
-            return rc;
-        }
-        rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, mode);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind mode %i: %s", mode, sqlite3_errmsg(db_));
-            return rc;
-        }
-
-        if constexpr (std::is_same_v<T, int32_t>) {
-            rc = sqlite3_bind_int(save_stmt_, save_val_param_index_, value);
-        } else if constexpr (std::is_same_v<T, float>) {
-            rc = sqlite3_bind_double(save_stmt_, save_val_param_index_, value);
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            rc = sqlite3_bind_text(save_stmt_, save_val_param_index_, value.c_str(), -1, 0);
-        } else {
-            static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_save().");
-        }
-
-        if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind val %s to save params query (mode=%i)", value_to_string(value).c_str(), mode);
-        } else {
-            rc = sqlite3_step(save_stmt_);
-            if (rc != SQLITE_DONE) {
-                LV_LOG_ERROR("Failed save item %s (mode=%i): %s", name, mode, sqlite3_errmsg(db_));
-            } else {
-                LV_LOG_USER("Saved %s=%s (mode=%i)", name, value_to_string(value).c_str(), mode);
-                rc = SUCCESS;
-            }
-        }
-        return rc;
-    }
-
-  private:
-    // Database handle shared by all statements of this table.
-    inline static sqlite3 *db_ = nullptr;
-
-    // Load statement group: prepared statement + guarding mutex + cached
-    // :id and :name parameter indices.
-    inline static sqlite3_stmt *load_stmt_ = nullptr;
-    inline static std::mutex    load_mutex_;
-    inline static int           load_id_param_index_   = 0;
-    inline static int           load_name_param_index_ = 0;
-
-    // Save statement group: prepared statement + guarding mutex + cached
-    // :id, :name and :val parameter indices.
-    inline static sqlite3_stmt *save_stmt_ = nullptr;
-    inline static std::mutex    save_mutex_;
-    inline static int           save_id_param_index_   = 0;
-    inline static int           save_name_param_index_ = 0;
-    inline static int           save_val_param_index_  = 0;
-};
-
-// Transverter configuration: (transverter_id, name, val) rows in the legacy
-// `transverter` SQLite table. `id` is the transverter number (0 or 1), `name`
-// is "from"/"to"/"shift" and `val` is a frequency in Hz (int32_t). Uses the
-// exact legacy column names and UNIQUE(id, name) constraint so existing user
-// data survives migration. Follows the BandParamsTable pattern; context_id in
-// StorageKey maps to `id` (fixed for the parameter's lifetime — never switched).
-class TransverterTable {
-  public:
-    static bool Init(sqlite3 *database);
-    static void Shutdown();
-
-    template <typename T> static ParamLoadResult<T> Load(const int32_t id, const char *name) {
-        int            rc;
-        StmtResetGuard guard(load_mutex_, load_stmt_);
-
-        rc = sqlite3_bind_text(load_stmt_, load_name_param_index_, name, strlen(name), SQLITE_STATIC);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind name %s: %s", name, sqlite3_errmsg(db_));
-            return {T{}, rc};
-        }
-        rc = sqlite3_bind_int(load_stmt_, load_id_param_index_, id);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind transverter id %i: %s", id, sqlite3_errmsg(db_));
-            return {T{}, rc};
-        }
-
-        rc = sqlite3_step(load_stmt_);
-        if (rc == SQLITE_ROW) {
-            T value;
-            if constexpr (std::is_same_v<T, int32_t>) {
-                value = sqlite3_column_int(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%i", name, value);
-            } else if constexpr (std::is_same_v<T, float>) {
-                value = sqlite3_column_double(load_stmt_, 0);
-                LV_LOG_USER("Loaded %s=%f", name, value);
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                const unsigned char *txt = sqlite3_column_text(load_stmt_, 0);
-                value                    = txt ? reinterpret_cast<const char *>(txt) : "";
-                LV_LOG_USER("Loaded %s=%s", name, value.c_str());
-            } else {
-                static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_load().");
-            }
-            return {value, SUCCESS};
-        }
-        if (rc == SQLITE_DONE) {
-            LV_LOG_WARN("No results for load %s", name);
-            return {T{}, NOT_FOUND};
-        }
-        LV_LOG_WARN("Load %s failed: %s", name, sqlite3_errmsg(db_));
-        return {T{}, rc};
-    }
-
-    template <typename T> static int Save(const int32_t id, const char *name, const T &value) {
-        int            rc;
-        StmtResetGuard guard(save_mutex_, save_stmt_);
-
-        rc = sqlite3_bind_text(save_stmt_, save_name_param_index_, name, strlen(name), 0);
-        if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind name %s to save params query", name);
-            return rc;
-        }
-        rc = sqlite3_bind_int(save_stmt_, save_id_param_index_, id);
-        if (rc != SQLITE_OK) {
-            LV_LOG_ERROR("Failed to bind transverter id %i: %s", id, sqlite3_errmsg(db_));
-            return rc;
-        }
-
-        if constexpr (std::is_same_v<T, int32_t>) {
-            rc = sqlite3_bind_int(save_stmt_, save_val_param_index_, value);
-        } else if constexpr (std::is_same_v<T, float>) {
-            rc = sqlite3_bind_double(save_stmt_, save_val_param_index_, value);
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            rc = sqlite3_bind_text(save_stmt_, save_val_param_index_, value.c_str(), -1, 0);
-        } else {
-            static_assert(always_false_v<T>, "Unsupported type passed to cfg_param_save().");
-        }
-
-        if (rc != SQLITE_OK) {
-            LV_LOG_WARN("Can't bind val %s to save params query", value_to_string(value).c_str());
-        } else {
-            rc = sqlite3_step(save_stmt_);
-            if (rc != SQLITE_DONE) {
-                LV_LOG_ERROR("Failed save item %s: %s", name, sqlite3_errmsg(db_));
-            } else {
-                LV_LOG_USER("Saved %s=%s", name, value_to_string(value).c_str());
-                rc = SUCCESS;
-            }
-        }
-        return rc;
-    }
-
-  private:
-    // Database handle shared by all statements of this table.
-    inline static sqlite3 *db_ = nullptr;
-
-    // Load statement group: prepared statement + guarding mutex + cached
-    // :id and :name parameter indices.
-    inline static sqlite3_stmt *load_stmt_ = nullptr;
-    inline static std::mutex    load_mutex_;
-    inline static int           load_id_param_index_   = 0;
-    inline static int           load_name_param_index_ = 0;
-
-    // Save statement group: prepared statement + guarding mutex + cached
-    // :id, :name and :val parameter indices.
-    inline static sqlite3_stmt *save_stmt_ = nullptr;
-    inline static std::mutex    save_mutex_;
-    inline static int           save_id_param_index_   = 0;
-    inline static int           save_name_param_index_ = 0;
-    inline static int           save_val_param_index_  = 0;
 };
 
 // Key-value snapshot store for user memory slots (hardware-key memories,
@@ -645,7 +442,7 @@ class DigitalModesTable {
 
 // Per-antenna, per-frequency tuner-network values in the legacy `atu` table
 // (ant, freq, val) with UNIQUE (ant, freq). ATU does NOT fit the
-// Parameter<T>/StoragePolicy/PendingWrites pipeline (composite key, bulk load,
+// Parameter<T>/store_save/PendingWrites pipeline (composite key, bulk load,
 // nearest-match scan, immediate save), so it follows the MemoryTable pattern:
 // raw DB access only, with the reactive cache living in AtuNetworkCache
 // (atu_cache.h). Uses the exact legacy column/table names so existing user data

@@ -81,35 +81,180 @@ SettingsManager::~SettingsManager() {
     stop_flush_thread();
 }
 
-void SettingsManager::init_load(void (*on_db_error)(const char *msg)) {
-    // Global params (flat `params` table; context_id is ignored). The unified
-    // ParamBase registry now includes p_pwr (float), p_encoder_bind (text) and
-    // p_band_id (the persisted current band), so the non-int32 special cases
-    // no longer need explicit load calls.
+void SettingsManager::reset_state() {
+    // Emits no notifications of its own: the caller (init_load) holds a single
+    // NotifySuppressGuard over the reset+reload so observers never see a
+    // half-reset state and are delivered once with the final loaded values.
+    // Drop the internal observers first so the parameter resets below cannot
+    // trigger a band/mode switch.
+    switch_mode_obs_.reset();
+    band_id_obs_.reset();
+    vfoa_freq_obs_.reset();
+    vfob_freq_obs_.reset();
+
+    // Unbind every computed parameter from its sources.
+    cp_fg_freq.clear_sources();
+    cp_bg_freq.clear_sources();
+    cp_cur_mode.clear_sources();
+    cp_cur_att.clear_sources();
+    cp_cur_pre.clear_sources();
+    cp_cur_agc.clear_sources();
+    cp_mode_lo_offset.clear_sources();
+    cp_cur_filter_low.clear_sources();
+    cp_cur_filter_high.clear_sources();
+    cp_cur_filter_bw.clear_sources();
+
+    // Restore every registered parameter to its construction-time default and
+    // zero its context so no stale band/mode context survives.
     for (ParamBase *p : global_params_) {
-        int rc = p->load(0);
-        if (rc != SUCCESS && rc != NOT_FOUND && on_db_error) {
-            char msg[64];
-            std::snprintf(msg, sizeof(msg), "Failed to load %s", p->db_name());
-            on_db_error(msg);
-        }
+        p->set_context_id(0);
+        p->reset();
+    }
+    for (ParamBase *p : band_params_) {
+        p->set_context_id(0);
+        p->reset();
+    }
+    for (ParamBase *p : mode_params_) {
+        p->set_context_id(0);
+        p->reset();
     }
 
-    // The starting band comes from the persisted global parameter.
-    band_id_ = p_band_id.get();
+    // VFO params are deliberately not registered: reset them explicitly.
+    ParamBase *vfo_params[] = {
+        &p_band_vfoa_freq, &p_band_vfob_freq, &p_band_vfoa_mode, &p_band_vfob_mode, &p_band_vfoa_att,
+        &p_band_vfob_att,  &p_band_vfoa_pre,  &p_band_vfob_pre,  &p_band_vfoa_agc,  &p_band_vfob_agc,
+    };
+    for (ParamBase *p : vfo_params) {
+        p->set_context_id(0);
+        p->reset();
+    }
 
-    set_band_context(band_id_);
+    // Transverter params are not registered either, but their context_id is the
+    // fixed transverter number (0/1) and must be preserved across the reset.
+    ParamBase *transverter_params[] = {
+        &p_transverter_0_from, &p_transverter_0_to, &p_transverter_0_shift,
+        &p_transverter_1_from, &p_transverter_1_to, &p_transverter_1_shift,
+    };
+    for (ParamBase *p : transverter_params) {
+        p->reset();
+    }
 
-    load_band_all(band_id_);
+    pending_writes_.clear();
+    band_id_            = 0;
+    mode_group_id_      = 0;
+    band_switch_active_ = false;
+}
 
-    // Transverter params are loaded individually (fixed context_id = the
-    // transverter number). NOT_FOUND keeps the default value.
-    p_transverter_0_from.load(0);
-    p_transverter_0_to.load(0);
-    p_transverter_0_shift.load(0);
-    p_transverter_1_from.load(1);
-    p_transverter_1_to.load(1);
-    p_transverter_1_shift.load(1);
+void SettingsManager::init_load(void (*on_db_error)(const char *msg)) {
+    // One guard for the whole reset+reload: external observers see a single
+    // coalesced round of notifications with the final loaded values, never the
+    // defaults applied by reset_state(). The internal VFO/band/mode observers
+    // are subscribed only after this scope, so the deferred initial values
+    // cannot trigger a spurious band/mode switch.
+    {
+        NotifySuppressGuard guard;
+
+        // Idempotent: bring the manager back to a clean state (observers dropped,
+        // computed params unbound, values reset to defaults, contexts zeroed)
+        // before reloading, so a repeated init_load does not accumulate observers
+        // or leak the previous context/values.
+        reset_state();
+
+        // Global params (flat `params` table; context_id is ignored). The unified
+        // ParamBase registry now includes p_pwr (float), p_encoder_bind (text) and
+        // p_band_id (the persisted current band), so the non-int32 special cases
+        // no longer need explicit load calls.
+        for (ParamBase *p : global_params_) {
+            int rc = p->load(0);
+            if (rc != SUCCESS && rc != NOT_FOUND && on_db_error) {
+                char msg[64];
+                std::snprintf(msg, sizeof(msg), "Failed to load %s", p->db_name());
+                on_db_error(msg);
+            }
+        }
+
+        // The starting band comes from the persisted global parameter.
+        band_id_ = p_band_id.get();
+
+        set_band_context(band_id_);
+
+        load_band_all(band_id_);
+
+        // Transverter params are loaded individually (fixed context_id = the
+        // transverter number). NOT_FOUND keeps the default value.
+        p_transverter_0_from.load(0);
+        p_transverter_0_to.load(0);
+        p_transverter_0_shift.load(0);
+        p_transverter_1_from.load(1);
+        p_transverter_1_to.load(1);
+        p_transverter_1_shift.load(1);
+
+        // Bind the computed fg_freq to its sources (VFO frequency params +
+        // current_vfo) so it recomputes automatically when they change.
+        cp_fg_freq.bind(p_band_vfoa_freq);
+        cp_fg_freq.bind(p_band_vfob_freq);
+        cp_fg_freq.bind(p_band_current_vfo);
+
+        // Recompute fg_freq from the freshly loaded band params.
+        cp_fg_freq.recompute();
+
+        // Bind the computed cur_mode to its sources (VFO mode params + current_vfo)
+        // and recompute it BEFORE deriving the mode id, so the initial recompute
+        // does not fire switch_mode().
+        cp_cur_mode.bind(p_band_vfoa_mode);
+        cp_cur_mode.bind(p_band_vfob_mode);
+        cp_cur_mode.bind(p_band_current_vfo);
+        cp_cur_mode.recompute();
+
+        // The starting mode is the active VFO's mode of the restored band.
+        mode_group_id_ = mode_group((x6100_mode_t)cp_cur_mode.get());
+
+        set_mode_context(mode_group_id_);
+
+        load_mode_all();
+
+        // Bind the computed current VFO att/pre/agc and the background VFO
+        // frequency to their sources and recompute from the freshly loaded params.
+        cp_cur_att.bind(p_band_vfoa_att);
+        cp_cur_att.bind(p_band_vfob_att);
+        cp_cur_att.bind(p_band_current_vfo);
+        cp_cur_att.recompute();
+
+        cp_cur_pre.bind(p_band_vfoa_pre);
+        cp_cur_pre.bind(p_band_vfob_pre);
+        cp_cur_pre.bind(p_band_current_vfo);
+        cp_cur_pre.recompute();
+
+        cp_cur_agc.bind(p_band_vfoa_agc);
+        cp_cur_agc.bind(p_band_vfob_agc);
+        cp_cur_agc.bind(p_band_current_vfo);
+        cp_cur_agc.recompute();
+
+        cp_bg_freq.bind(p_band_vfoa_freq);
+        cp_bg_freq.bind(p_band_vfob_freq);
+        cp_bg_freq.bind(p_band_current_vfo);
+        cp_bg_freq.recompute();
+
+        cp_mode_lo_offset.bind(cp_cur_mode);
+        cp_mode_lo_offset.bind(p_key_tone);
+        cp_mode_lo_offset.recompute();
+
+        // Bind the computed filter params to their sources (filter_low/high +
+        // key_tone) so reverse writes to them propagate to the sibling cur_* and
+        // direct p_mode_filter_*.set() keeps cur_* in sync. Recompute after the
+        // mode params have been loaded.
+        cp_cur_filter_low.bind(p_mode_filter_low);
+        cp_cur_filter_low.bind(p_mode_filter_high);
+        cp_cur_filter_low.bind(p_key_tone);
+        cp_cur_filter_high.bind(p_mode_filter_low);
+        cp_cur_filter_high.bind(p_mode_filter_high);
+        cp_cur_filter_high.bind(p_key_tone);
+        cp_cur_filter_bw.bind(cp_cur_filter_low);
+        cp_cur_filter_bw.bind(cp_cur_filter_high);
+        cp_cur_filter_low.recompute();
+        cp_cur_filter_high.recompute();
+        cp_cur_filter_bw.recompute();
+    }
 
     // Subscribe the VFO frequency observers that trigger an implicit band
     // switch when a frequency is tuned into a different band. Subscribed after
@@ -122,75 +267,9 @@ void SettingsManager::init_load(void (*on_db_error)(const char *msg)) {
     // of the persisted band does not trigger a switch.
     band_id_obs_ = Subscription(p_band_id.subscribe(switch_band_observer_cb, this));
 
-    // Bind the computed fg_freq to its sources (VFO frequency params +
-    // current_vfo) so it recomputes automatically when they change.
-    cp_fg_freq.bind(p_band_vfoa_freq);
-    cp_fg_freq.bind(p_band_vfob_freq);
-    cp_fg_freq.bind(p_band_current_vfo);
-
-    // Recompute fg_freq from the freshly loaded band params.
-    cp_fg_freq.recompute();
-
-    // Bind the computed cur_mode to its sources (VFO mode params + current_vfo)
-    // and recompute it BEFORE deriving the mode id, so the initial recompute
-    // does not fire switch_mode().
-    cp_cur_mode.bind(p_band_vfoa_mode);
-    cp_cur_mode.bind(p_band_vfob_mode);
-    cp_cur_mode.bind(p_band_current_vfo);
-    cp_cur_mode.recompute();
-
-    // The starting mode is the active VFO's mode of the restored band.
-    mode_group_id_ = mode_group((x6100_mode_t)cp_cur_mode.get());
-
-    set_mode_context(mode_group_id_);
-
-    load_mode_all();
-
     // Subscribe an observer that calls switch_mode() whenever the current mode
     // changes (e.g. from cp_cur_mode.set() or a VFO switch).
     switch_mode_obs_ = Subscription(cp_cur_mode.subscribe(switch_mode_observer_cb, this));
-
-    // Bind the computed current VFO att/pre/agc and the background VFO
-    // frequency to their sources and recompute from the freshly loaded params.
-    cp_cur_att.bind(p_band_vfoa_att);
-    cp_cur_att.bind(p_band_vfob_att);
-    cp_cur_att.bind(p_band_current_vfo);
-    cp_cur_att.recompute();
-
-    cp_cur_pre.bind(p_band_vfoa_pre);
-    cp_cur_pre.bind(p_band_vfob_pre);
-    cp_cur_pre.bind(p_band_current_vfo);
-    cp_cur_pre.recompute();
-
-    cp_cur_agc.bind(p_band_vfoa_agc);
-    cp_cur_agc.bind(p_band_vfob_agc);
-    cp_cur_agc.bind(p_band_current_vfo);
-    cp_cur_agc.recompute();
-
-    cp_bg_freq.bind(p_band_vfoa_freq);
-    cp_bg_freq.bind(p_band_vfob_freq);
-    cp_bg_freq.bind(p_band_current_vfo);
-    cp_bg_freq.recompute();
-
-    cp_mode_lo_offset.bind(cp_cur_mode);
-    cp_mode_lo_offset.bind(p_key_tone);
-    cp_mode_lo_offset.recompute();
-
-    // Bind the computed filter params to their sources (filter_low/high +
-    // key_tone) so reverse writes to them propagate to the sibling cur_* and
-    // direct p_mode_filter_*.set() keeps cur_* in sync. Recompute after the
-    // mode params have been loaded.
-    cp_cur_filter_low.bind(p_mode_filter_low);
-    cp_cur_filter_low.bind(p_mode_filter_high);
-    cp_cur_filter_low.bind(p_key_tone);
-    cp_cur_filter_high.bind(p_mode_filter_low);
-    cp_cur_filter_high.bind(p_mode_filter_high);
-    cp_cur_filter_high.bind(p_key_tone);
-    cp_cur_filter_bw.bind(cp_cur_filter_low);
-    cp_cur_filter_bw.bind(cp_cur_filter_high);
-    cp_cur_filter_low.recompute();
-    cp_cur_filter_high.recompute();
-    cp_cur_filter_bw.recompute();
 }
 
 void SettingsManager::on_mode_filter_low_not_found() {

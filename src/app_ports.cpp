@@ -11,8 +11,9 @@
 
 #include "app_ports.h"
 
-// radio.h pulls cfg/subject_api.h, which needs the C++ standard headers; pull
-// them before the extern "C" block so they are not parsed with C linkage.
+// radio.h pulls cfg/subject_api.h, whose C++ build includes subject.h with the
+// C++ templates; pull it before the extern "C" block so those types are not
+// parsed with C linkage.
 #include "cfg/subject_api.h"
 #include "dsp.h"
 

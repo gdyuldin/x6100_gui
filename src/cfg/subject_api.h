@@ -3,17 +3,18 @@
 // C-compatible API for the Subject / SubjectT / Observer pub-sub subsystem.
 // The C++ types (Subject, SubjectT<T>, Observer, ObserverDelayed) live in
 // subject.h and cannot be parsed by a C compiler, so this C-safe header exposes
-// opaque handles plus the generic subject helpers consumed by C code.
+// opaque handles plus the generic subject helpers consumed by C code. Pure
+// subject consumers (radio.h, app_ports.cpp, buttons.h) include this header
+// instead of the heavy cfg_api.h to avoid pulling in parameter.h/db.h.
 //
 // The opaque handles below resolve to the real C++ types in C++ builds
 // (subject.h is not a namespace, so no `using` is added for Subject/Observer).
 //
-// Ownership: values created with subject_int_create / subject_create_float are
-// owned by the caller and never freed through this API. Observers returned by
-// subject_*_subscribe are borrowed: the Subject owns one reference while the
-// observer stays subscribed. C/UI code keeps them alive by either leaving them
-// subscribed (the Subject destroys them) or releasing that reference with
-// param_unsubscribe. In C++ wrap the returned pointer in a Subscription.
+// Ownership: observers returned by subject_*_subscribe are borrowed: the
+// Subject owns one reference while the observer stays subscribed; C/UI code
+// releases that reference with param_unsubscribe. The user_data is the caller's
+// own data — param_unsubscribe never frees it. In C++ wrap the returned pointer
+// in a Subscription.
 
 #include <stdint.h>
 

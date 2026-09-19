@@ -4,6 +4,8 @@
 
 #ifdef __cplusplus
 
+#include <string>
+
 void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg);
 
 

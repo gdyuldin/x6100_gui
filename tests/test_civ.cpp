@@ -14,7 +14,6 @@
 #include "cfg/db.h"
 #include "cfg/settings_internal.h"
 #include "cfg/settings_manager.h"
-#include "cfg/storage_policy.h"
 
 // Fake application ports, injected via civ_set_ports(): CI-V handlers use them
 // instead of the application's radio/telemetry objects.
@@ -164,19 +163,19 @@ struct TestDbGuard {
         REQUIRE(rc == SQLITE_OK);
         if (err)
             sqlite3_free(err);
-        ParamsTable::Init(db);
-        BandParamsTable::Init(db);
-        ModeParamsTable::Init(db);
+        KeyValueTable<StorageType::GLOBAL>::Init(db);
+        KeyValueTable<StorageType::BAND>::Init(db);
+        KeyValueTable<StorageType::MODE>::Init(db);
         BandsTable::Init(db);
-        TransverterTable::Init(db);
+        KeyValueTable<StorageType::TRANSVERTER>::Init(db);
     }
 
     ~TestDbGuard() {
-        TransverterTable::Shutdown();
+        KeyValueTable<StorageType::TRANSVERTER>::Shutdown();
         BandsTable::Shutdown();
-        ParamsTable::Shutdown();
-        BandParamsTable::Shutdown();
-        ModeParamsTable::Shutdown();
+        KeyValueTable<StorageType::GLOBAL>::Shutdown();
+        KeyValueTable<StorageType::BAND>::Shutdown();
+        KeyValueTable<StorageType::MODE>::Shutdown();
         if (db) {
             sqlite3_close(db);
         }
@@ -189,17 +188,16 @@ struct TestDbGuard {
 
 // Pre-populate band 5 with basic VFO settings.
 static void set_band_5(TestDbGuard &db) {
-    StoragePolicy &b = storage_policy_for(StorageType::BAND);
-    REQUIRE(b.save_int(5, "vfo", X6100_VFO_A) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_freq", 7'150 * kHz) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
-    REQUIRE(b.save_int(5, "vfob_mode", x6100_mode_nfm) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfo", X6100_VFO_A) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_freq", 7'150 * kHz) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_mode", x6100_mode_usb) == SUCCESS);
+    REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfob_mode", x6100_mode_nfm) == SUCCESS);
 }
 
 static void init_band_5(TestDbGuard &db, SettingsManager &mgr) {
     set_band_5(db);
-    mgr.p_band_id.set_quiet(5);
+    REQUIRE(store_save<int32_t>(StorageType::GLOBAL, 0, "band_id", 5) == SUCCESS);
     mgr.init_load();
     civ_set_ports(&test_ports);
 }
