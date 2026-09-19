@@ -98,7 +98,7 @@ static void * say_thread(void *arg) {
 
     run = true;
 
-    profile = eng->create_voice_profile(voice_item[param_i_get(cfg.voice.lang())].name);
+    profile = eng->create_voice_profile(voice_item[cfg.voice.lang()->get()].name);
 
     char *ptr = strchr(buf, '|');
 
@@ -128,9 +128,9 @@ static void * say_thread(void *arg) {
     std::istreambuf_iterator<char>  text_end;
     std::unique_ptr<document>       doc = document::create_from_plain_text(eng, text_start, text_end, content_text, profile);
 
-    doc->speech_settings.relative.rate = param_i_get(cfg.voice.rate()) / 100.0;
-    doc->speech_settings.relative.pitch = param_i_get(cfg.voice.pitch()) / 100.0;
-    doc->speech_settings.relative.volume = param_i_get(cfg.voice.volume()) / 100.0;
+    doc->speech_settings.relative.rate = cfg.voice.rate()->get() / 100.0;
+    doc->speech_settings.relative.pitch = cfg.voice.pitch()->get() / 100.0;
+    doc->speech_settings.relative.volume = cfg.voice.volume()->get() / 100.0;
     doc->set_owner(player);
 
     audio_set_play_mode(AUDIO_PLAY_ON);
@@ -150,21 +150,21 @@ void voice_sure() {
 void voice_change_mode() {
     voice_sure();
 
-    switch (param_i_get(cfg.voice.mode())) {
+    switch (cfg.voice.mode()->get()) {
         case VOICE_OFF:
-            param_i_set(cfg.voice.mode(), VOICE_LCD);
+            cfg.voice.mode()->set(VOICE_LCD);
             msg_update_text_fmt("Voice mode: LCD");
             voice_say_text("Voice mode|", "is LCD");
             break;
 
         case VOICE_LCD:
-            param_i_set(cfg.voice.mode(), VOICE_ALWAYS);
+            cfg.voice.mode()->set(VOICE_ALWAYS);
             msg_update_text_fmt("Voice mode: Always");
             voice_say_text("Voice mode|", "is always");
             break;
 
         case VOICE_ALWAYS:
-            param_i_set(cfg.voice.mode(), VOICE_OFF);
+            cfg.voice.mode()->set(VOICE_OFF);
             msg_update_text_fmt("Voice mode: Off");
             voice_say_text("Voice mode|", "is off");
             break;
@@ -180,7 +180,7 @@ bool voice_enable() {
         return true;
     }
 
-    switch (param_i_get(cfg.voice.mode())) {
+    switch (cfg.voice.mode()->get()) {
         case VOICE_OFF:
             return false;
 
@@ -276,5 +276,5 @@ void voice_say_text(const char *prompt, const char *x) {
 }
 
 void voice_say_lang() {
-    voice_delay_say_text_fmt(voice_item[param_i_get(cfg.voice.lang())].welcome);
+    voice_delay_say_text_fmt(voice_item[cfg.voice.lang()->get()].welcome);
 }

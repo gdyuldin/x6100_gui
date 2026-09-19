@@ -544,7 +544,7 @@ static void update_s_meter(float *lin) {
     s_meter_db_raw.store(sum_db);
 
     // TODO: use subscription
-    meter_update(sum_db, param_i_get(cfg.ui.spectrum_beta()) * 0.01f);
+    meter_update(sum_db, cfg.ui.spectrum_beta()->get() * 0.01f);
 }
 
 /* Noise floor and display levels from the full-resolution linear spectrum.
@@ -801,7 +801,7 @@ static void update_cur_mode(Subject *subj, void *user_data) {
 
 static void on_pre_att_change(Subject *subj, void *user_data) {
     std::atomic<bool> *flag = static_cast<std::atomic<bool> *>(user_data);
-    flag->store(subject_i_get((SubjectInt *)subj) != 0);
+    flag->store(static_cast<SubjectT<int32_t> *>(subj)->get() != 0);
 }
 
 static void on_cur_freq_change(Subject *subj, void *user_data) {

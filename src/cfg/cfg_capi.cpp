@@ -144,20 +144,8 @@ uint32_t cfg_atu_get_network(void) {
     return atu_network.network.get();
 }
 
-Observer *cfg_atu_loaded_subscribe(observer_cb cb, void *user_data) {
-    return atu_network.loaded.subscribe(cb, user_data);
-}
-
-ObserverDelayed *cfg_atu_loaded_subscribe_delayed(observer_cb cb, void *user_data) {
-    return atu_network.loaded.subscribe_delayed(cb, user_data);
-}
-
 Observer *cfg_atu_network_subscribe(observer_cb cb, void *user_data) {
     return atu_network.network.subscribe(cb, user_data);
-}
-
-ObserverDelayed *cfg_atu_network_subscribe_delayed(observer_cb cb, void *user_data) {
-    return atu_network.network.subscribe_delayed(cb, user_data);
 }
 
 // ---------------------------------------------------------------------------

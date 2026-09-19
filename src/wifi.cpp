@@ -79,7 +79,7 @@ void wifi_power_setup() {
     }
     loop_timer = lv_timer_create(loop_iterations_cb, 30, NULL);
 
-    if (param_i_get(cfg.network.wifi_enabled()))
+    if (cfg.network.wifi_enabled()->get())
         wifi_power_on();
     else
         wifi_power_off();
@@ -108,7 +108,7 @@ void wifi_cleanup() {
 
 void wifi_power_on() {
     LV_LOG_USER("Power on wifi/bt");
-    param_i_set(cfg.network.wifi_enabled(), true);
+    cfg.network.wifi_enabled()->set(true);
     x6100_gpio_set(x6100_pin_wifi, 0);
     if (!device) {
         set_status(WIFI_STARTING);
@@ -121,7 +121,7 @@ void wifi_power_off() {
     if (device) {
         device = NULL;
     }
-    param_i_set(cfg.network.wifi_enabled(), false);
+    cfg.network.wifi_enabled()->set(false);
     x6100_gpio_set(x6100_pin_wifi, 1);
     if (scan_timer) {
         lv_timer_del(scan_timer);

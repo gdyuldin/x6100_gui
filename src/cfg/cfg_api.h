@@ -55,11 +55,22 @@ extern "C" {
 // validators, deferred-write enqueue and observer notifications all apply.
 // Creation stays C++-only (validators and storage wiring are C++ constructs).
 
+CPP_UNWANTED("Use modern C++ 'ParamInt::get' instead.")
 int32_t     param_i_get(const ParamInt *p);
+
+CPP_UNWANTED("Use modern C++ 'ParamInt::set' instead.")
 void        param_i_set(ParamInt *p, int32_t v);
+
+CPP_UNWANTED("Use modern C++ 'ParamFloat::get' instead.")
 float       param_f_get(const ParamFloat *p);
+
+CPP_UNWANTED("Use modern C++ 'ParamFloat::set' instead.")
 void        param_f_set(ParamFloat *p, float v);
+
+CPP_UNWANTED("Use modern C++ 'ParamText::get' instead.")
 const char *param_t_get(const ParamText *p);          // borrowed: valid until next param_t_get on this thread
+
+CPP_UNWANTED("Use modern C++ 'ParamText::set' instead.")
 void        param_t_set(ParamText *p, const char *v); // NULL -> ""
 
 // --- ComputedParameter<T> set/get ---
@@ -67,12 +78,19 @@ void        param_t_set(ParamText *p, const char *v); // NULL -> ""
 // ReverseFn are C++ callables, constructed by SettingsManager).
 //   cparam_i_set(cfg.cur.fg_freq(), 7100000);
 
-void    cparam_i_set(ComputedParamInt *p, int32_t value);
+CPP_UNWANTED("Use modern C++ 'ComputedParamInt::get' instead.")
 int32_t cparam_i_get(const ComputedParamInt *p);
 
-void  cparam_f_set(ComputedParamFloat *p, float value);
+CPP_UNWANTED("Use modern C++ 'ComputedParamInt::set' instead.")
+void    cparam_i_set(ComputedParamInt *p, int32_t value);
+
+CPP_UNWANTED("Use modern C++ 'ComputedParamFloat::get' instead.")
 float cparam_f_get(const ComputedParamFloat *p);
 
+CPP_UNWANTED("Use modern C++ 'ComputedParamFloat::set' instead.")
+void  cparam_f_set(ComputedParamFloat *p, float value);
+
+CPP_UNWANTED("Use modern C++ 'ComputedParamText::set' instead.")
 void cparam_t_set(ComputedParamText *p, const char *value);
 
 // --- ATU tuner-network cache ---
@@ -93,10 +111,8 @@ uint32_t cfg_atu_get_network(void);
 // its value (0 when not loaded). The returned Observer / ObserverDelayed is
 // borrowed from the Subject and its reference is released with
 // param_unsubscribe.
-Observer        *cfg_atu_loaded_subscribe(observer_cb cb, void *user_data);
 Observer        *cfg_atu_network_subscribe(observer_cb cb, void *user_data);
-ObserverDelayed *cfg_atu_loaded_subscribe_delayed(observer_cb cb, void *user_data);
-ObserverDelayed *cfg_atu_network_subscribe_delayed(observer_cb cb, void *user_data);
+
 
 // --- SettingsManager-level operations ---
 // Initialisation, deferred-write flushing, band/VFO switching, frequency-step
