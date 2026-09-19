@@ -73,6 +73,8 @@ static lv_obj_t     *meter;
 static lv_obj_t     *tx_info;
 static lv_obj_t     *knobs;
 
+static bool dialog_running = false;
+
 // power off on low battery
 static lv_timer_t *low_power_timer;
 
@@ -626,7 +628,7 @@ static void keypad_ptt(const event_keypad_t *kp) {
 }
 
 static void keypad_vm(const event_keypad_t *kp) {
-    if ((kp->state == KEYPAD_RELEASE) && !dialog_is_run()) {
+    if ((kp->state == KEYPAD_RELEASE) && !dialog_running) {
         buttons_load_page_group(buttons_group_vm);
         voice_say_text_fmt("VM parameters");
     }
@@ -824,13 +826,13 @@ static void main_screen_hkey_cb(lv_event_t * e) {
             break;
 
         default:
-            LV_LOG_WARN("Unsuported key: %u", hkey->key);
+            LV_LOG_WARN("Unsupported key: %u", hkey->key);
             break;
     }
 }
 
 static void rx_cb(void * s, lv_msg_t * msg) {
-    if (!dialog_is_run()) {
+    if (!dialog_running) {
         indicators_left_show(true);
     }
     // Show left freq boundary
@@ -840,7 +842,7 @@ static void rx_cb(void * s, lv_msg_t * msg) {
 
 static void tx_cb(void * s, lv_msg_t * msg) {
     indicators_left_show(false);
-    if (dialog_is_run()) {
+    if (dialog_running) {
         lv_obj_move_foreground(top_container);
     }
     // Hide left freq boundary
@@ -997,7 +999,7 @@ static void spectrum_key_cb(lv_event_t * e) {
 
         case LV_KEY_ESC:
             // VOL press also
-            if (!dialog_is_run()) {
+            if (!dialog_running) {
                 switch (vol->state) {
                     case VOL_STATE_EDIT:
                         vol->state = VOL_STATE_SELECT;
@@ -1237,6 +1239,7 @@ static void on_dialog_start_cb(void *s, lv_msg_t *m) {
     lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     indicators_show(false);
     main_screen_keys_enable(false);
+    dialog_running = true;
 }
 
 static void on_dialog_stop_cb(void *s, lv_msg_t *m) {
@@ -1244,4 +1247,5 @@ static void on_dialog_stop_cb(void *s, lv_msg_t *m) {
     lv_obj_set_flex_align(top_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     indicators_show(true);
     main_screen_keys_enable(true);
+    dialog_running = false;
 }
