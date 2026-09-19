@@ -186,17 +186,17 @@ static std::map<int, std::unique_ptr<Control>> make_controls() {
         controls.emplace(key, std::unique_ptr<Control>(item));
     };
 
-    add(CTRL_VOL, new ControlSubjInt("Volume", cfg.general.volume()));
-    add(CTRL_SQL, new ControlSubjInt("Voice SQL", cfg.general.squelch()));
-    add(CTRL_RFG, new ControlSubjInt("RF gain", cfg.general.rfgain()));
+    add(CTRL_VOL, new ControlSubjInt("Volume", cfg.volume()));
+    add(CTRL_SQL, new ControlSubjInt("Voice SQL", cfg.squelch()));
+    add(CTRL_RFG, new ControlSubjInt("RF gain", cfg.rfgain()));
     add(CTRL_FILTER_LOW, new ControlSubjInt("Filter low", cfg.filter.low()));
     add(CTRL_FILTER_HIGH, new ControlSubjInt("Filter high", cfg.filter.high()));
     add(CTRL_FILTER_BW, new ControlSubjInt("Filter bw", cfg.filter.bw()));
-    add(CTRL_PWR, new ControlSubjFloat("Power", cfg.general.pwr(), "%0.1f"));
-    add(CTRL_MIC, new ControlSubjChoices("MIC", cfg.general.mic(), {"Built-In", "Handle", "Auto"}));
-    add(CTRL_HMIC, new ControlSubjInt("H-MIC gain", cfg.general.hmic()));
-    add(CTRL_IMIC, new ControlSubjInt("I-MIC gain", cfg.general.imic()));
-    add(CTRL_MONI, new ControlSubjInt("Moni level", cfg.general.moni()));
+    add(CTRL_PWR, new ControlSubjFloat("Power", cfg.pwr(), "%0.1f"));
+    add(CTRL_MIC, new ControlSubjChoices("MIC", cfg.mic(), {"Built-In", "Handle", "Auto"}));
+    add(CTRL_HMIC, new ControlSubjInt("H-MIC gain", cfg.hmic()));
+    add(CTRL_IMIC, new ControlSubjInt("I-MIC gain", cfg.imic()));
+    add(CTRL_MONI, new ControlSubjInt("Moni level", cfg.moni()));
     add(CTRL_SPECTRUM_FACTOR, new ControlSubjInt("Zoom", cfg.mode.zoom()));
     add(CTRL_COMP, new ControlComp("Compressor", cfg.dsp.comp()));
 
@@ -205,9 +205,9 @@ static std::map<int, std::unique_ptr<Control>> make_controls() {
     add(CTRL_VOX_AG, new ControlSubjInt("VOX a-gain", cfg.vox.ag()));
     add(CTRL_VOX_DELAY, new ControlSubjInt("VOX delay", cfg.vox.delay()));
 
-    add(CTRL_ANT, new ControlSubjInt("Ant", cfg.general.ant_id()));
-    add(CTRL_RIT, new ControlSubjInt("RIT", cfg.general.rit()));
-    add(CTRL_XIT, new ControlSubjInt("XIT", cfg.general.xit()));
+    add(CTRL_ANT, new ControlSubjInt("Ant", cfg.ant_id()));
+    add(CTRL_RIT, new ControlSubjInt("RIT", cfg.rit()));
+    add(CTRL_XIT, new ControlSubjInt("XIT", cfg.xit()));
     add(CTRL_IF_SHIFT, new ControlSubjInt("IF shift", cfg.band.if_shift()));
 
     add(CTRL_DNF, new ControlSubjOnOff("Notch filter", cfg.dsp.dnf()));
@@ -276,7 +276,7 @@ void knobs_init(lv_obj_t * parent) {
     lv_label_set_text(mfk_info, "");
     mfk_knob_info->set_edit_mode(true);
 
-    cfg.spectrum.knob_info()->subscribe_delayed_and_notify(on_knob_info_enabled_change);
+    cfg.ui.knob_info()->subscribe_delayed_and_notify(on_knob_info_enabled_change);
 
     lv_msg_subscribe(MSG_DIALOG_START, [](void*, lv_msg_t*){
         visibility_state.dialog = true;
@@ -337,7 +337,7 @@ void knobs_set_mfk_param(cfg_ctrl_t control) {
 
 
 static void on_knob_info_enabled_change(Subject *subj, void *user_data) {
-    visibility_state.enabled = cfg.spectrum.knob_info()->get();
+    visibility_state.enabled = cfg.ui.knob_info()->get();
     update_visibility();
 }
 

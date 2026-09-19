@@ -239,7 +239,7 @@ uint8_t x_mode_is_data_mode(x6100_mode_t x_mode) {
 uint8_t get_if_bandwidth() {
     uint32_t bw = cfg.filter.bw()->get();
     uint8_t val;
-    switch (cfg.computed.mode()->get()) {
+    switch (cfg.cur.mode()->get()) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
         case x6100_mode_lsb:
@@ -264,7 +264,7 @@ uint8_t get_if_bandwidth() {
 }
 
 static uint32_t if_bandwidth_from_ci(uint8_t data) {
-    switch (cfg.computed.mode()->get()) {
+    switch (cfg.cur.mode()->get()) {
         case x6100_mode_cw:
         case x6100_mode_cwr:
         case x6100_mode_lsb:
@@ -402,7 +402,7 @@ void init_cmd_handlers() {
 std::string_view handle_snd_freq_x00(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 5) {
-        cfg.computed.fg_freq()->set(from_bcd(request.get_command_data(), 10));
+        cfg.cur.fg_freq()->set(from_bcd(request.get_command_data(), 10));
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -415,7 +415,7 @@ std::string_view handle_snd_freq_x00(const CivPacketView &request, CivTxPacker &
 
 std::string_view handle_rd_freq_x03(const CivPacketView &request, CivTxPacker &resp) {
     uint8_t bcd[5];
-    to_bcd(bcd, cfg.computed.fg_freq()->get(), 10);
+    to_bcd(bcd, cfg.cur.fg_freq()->get(), 10);
     return resp.set_command(request.get_command()).append_data(bcd, 5).get_packet();
 }
 
@@ -424,7 +424,7 @@ std::string_view handle_rd_freq_x03(const CivPacketView &request, CivTxPacker &r
 // ============================================================================
 
 std::string_view handle_rd_mode_x04(const CivPacketView &request, CivTxPacker &resp) {
-    uint8_t v = x_mode_2_ci_mode((x6100_mode_t)cfg.computed.mode()->get());
+    uint8_t v = x_mode_2_ci_mode((x6100_mode_t)cfg.cur.mode()->get());
     return resp.set_command(request.get_command()).append_byte(v).append_byte(v).get_packet();
 }
 
@@ -435,7 +435,7 @@ std::string_view handle_rd_mode_x04(const CivPacketView &request, CivTxPacker &r
 std::string_view handle_set_freq_x05(const CivPacketView &request, CivTxPacker &resp) {
     size_t data_size = request.get_command_data().size();
     if (data_size == 5) {
-        cfg.computed.fg_freq()->set(from_bcd(request.get_command_data(), 10));
+        cfg.cur.fg_freq()->set(from_bcd(request.get_command_data(), 10));
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -450,9 +450,9 @@ std::string_view handle_set_mode_x06(const CivPacketView &request, CivTxPacker &
     size_t data_size = request.get_command_data().size();
     if ((data_size >= 1) && (data_size <= 2)) {
         // Payload: mode, filter id
-        x6100_mode_t new_mode = static_cast<x6100_mode_t>(cfg.computed.mode()->get());
+        x6100_mode_t new_mode = static_cast<x6100_mode_t>(cfg.cur.mode()->get());
         new_mode = ci_mode_2_x_mode(new_mode, request.get_subcommand());
-        cfg.computed.mode()->set(new_mode);
+        cfg.cur.mode()->set(new_mode);
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -542,10 +542,10 @@ std::string_view handle_ctl_att_x11(const CivPacketView &request, CivTxPacker &r
     size_t data_size = request.get_command_data().size();
     if (data_size == 0) {
         return resp.set_command(request.get_command())
-            .append_byte(static_cast<uint8_t>(cfg.computed.att()->get() * 0x20))
+            .append_byte(static_cast<uint8_t>(cfg.cur.att()->get() * 0x20))
             .get_packet();
     } else if (data_size == 1) {
-        cfg.computed.att()->set(request.get_subcommand());
+        cfg.cur.att()->set(request.get_subcommand());
         return resp.set_ok().get_packet();
     } else {
         return civ::detail::set_unsupported(request, resp);
@@ -565,22 +565,22 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
         auto after_cmd = resp.set_command(request.get_command()).set_subcommand(subcmd);
         switch (subcmd) {
             case 0x01: // Get AF level
-                to_bcd_be(bcd, cfg.general.volume()->get() * 255 / 55, 3);
+                to_bcd_be(bcd, cfg.volume()->get() * 255 / 55, 3);
                 break;
             case 0x02: // Get RF gain
-                to_bcd_be(bcd, cfg.general.rfgain()->get() * 255 / 100, 3);
+                to_bcd_be(bcd, cfg.rfgain()->get() * 255 / 100, 3);
                 break;
             case 0x03: // Get SQL level
-                to_bcd_be(bcd, cfg.general.squelch()->get() * 255 / 100, 3);
+                to_bcd_be(bcd, cfg.squelch()->get() * 255 / 100, 3);
                 break;
             case 0x07: //  [TWIN PBT] (PBT1) position
             case 0x08: //  [TWIN PBT] (PBT2) position
                 return after_cmd.append_byte(0x01).append_byte(0x28).get_packet();
             case 0x0a: // Get Tx power
-                to_bcd_be(bcd, std::round(cfg.general.pwr()->get() * 255 / 10), 3);
+                to_bcd_be(bcd, std::round(cfg.pwr()->get() * 255 / 10), 3);
                 break;
             case 0x15: // Get MONI level
-                to_bcd_be(bcd, cfg.general.moni()->get() * 255 / 100, 3);
+                to_bcd_be(bcd, cfg.moni()->get() * 255 / 100, 3);
                 break;
             default:
                 return civ::detail::set_unsupported(request, resp);
@@ -590,22 +590,22 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
         auto bcd_val = from_bcd_be(request.get_subcommand_data(), 3);
         switch (subcmd) {
             case 0x01: // Set AF level
-                cfg.general.volume()->set(bcd_val * 55 / 255);
+                cfg.volume()->set(bcd_val * 55 / 255);
                 break;
             case 0x02: // Set RF gain
-                cfg.general.rfgain()->set(bcd_val * 100 / 255);
+                cfg.rfgain()->set(bcd_val * 100 / 255);
                 break;
             case 0x03: // Set SQL level
-                cfg.general.squelch()->set(bcd_val * 100 / 255);
+                cfg.squelch()->set(bcd_val * 100 / 255);
                 break;
             case 0x0a: // Set Tx power
                 {
                     float pwr = static_cast<float>(bcd_val) * 10.0f / 255.0f;
-                    cfg.general.pwr()->set(pwr);
+                    cfg.pwr()->set(pwr);
                     break;
                 }
             case 0x15: // Set MONI level
-                cfg.general.moni()->set(bcd_val * 100 / 255);
+                cfg.moni()->set(bcd_val * 100 / 255);
                 break;
             default:
                 return civ::detail::set_unsupported(request, resp);
@@ -685,7 +685,7 @@ std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &
         auto after_cmd = resp.set_command(request.get_command()).set_subcommand(subcmd);
         switch (subcmd) {
             case 0x02:
-                return after_cmd.append_byte(static_cast<uint8_t>(cfg.computed.pre()->get())).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(cfg.cur.pre()->get())).get_packet();
             case 0x22:
                 return after_cmd.append_byte(static_cast<uint8_t>(cfg.dsp.nb()->get())).get_packet();
             case 0x40:
@@ -695,7 +695,7 @@ std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &
             case 0x46:
                 return after_cmd.append_byte(static_cast<uint8_t>(cfg.vox.on()->get())).get_packet();
             case 0x45: // Monitor on/off
-                return after_cmd.append_byte(static_cast<uint8_t>(cfg.general.moni()->get() > 0)).get_packet();
+                return after_cmd.append_byte(static_cast<uint8_t>(cfg.moni()->get() > 0)).get_packet();
             case 0x5D: // Tone squelch — unsupported
                 return after_cmd.append_byte(0x00).get_packet();
             default:
@@ -706,7 +706,7 @@ std::string_view handle_ctl_func_x16(const CivPacketView &request, CivTxPacker &
         auto new_val = static_cast<uint8_t>(request.get_subcommand_data()[0]);
         switch (subcmd) {
             case 0x02:
-                cfg.computed.pre()->set(new_val > 0);
+                cfg.cur.pre()->set(new_val > 0);
                 break;
             case 0x22:
                 cfg.dsp.nb()->set(new_val);
@@ -749,7 +749,7 @@ std::string_view handle_rd_trxid_x19(const CivPacketView &request, CivTxPacker &
 
 std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &resp) {
     size_t       data_size = request.get_command_data().size();
-    x6100_mode_t mode      = (x6100_mode_t)cfg.computed.mode()->get();
+    x6100_mode_t mode      = (x6100_mode_t)cfg.cur.mode()->get();
 
     if (data_size == 1) {
         auto after_cmd = resp.set_command(request.get_command()).set_subcommand(request.get_subcommand());
@@ -773,7 +773,7 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
             case MEM_DM_FG:
                 // Payload: data mode, filter_id
                 mode = ci_mode_2_x_mode(mode, request.get_subcommand_data()[0]);
-                cfg.computed.mode()->set(mode);
+                cfg.cur.mode()->set(mode);
                 return resp.set_ok().get_packet();
 
             default:
@@ -815,9 +815,9 @@ std::string_view handle_send_sel_freq_x25(const CivPacketView &request, CivTxPac
     ComputedParameter<int32_t> *freq;
 
     if (request.get_vfo() == 0) {
-        freq = cfg.computed.fg_freq();
+        freq = cfg.cur.fg_freq();
     } else {
-        freq = cfg.computed.bg_freq();
+        freq = cfg.cur.bg_freq();
     }
 
     if (data_size == 1) {

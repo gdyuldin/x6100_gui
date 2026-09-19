@@ -103,7 +103,7 @@ static void do_init() {
     }
 
     freq_index = 0;
-    freq_center = cparam_i_get(cfg.computed.fg_freq());
+    freq_center = cparam_i_get(cfg.cur.fg_freq());
 
     freq_start = freq_center - span / 2;
     freq_stop = freq_center + span / 2;
@@ -258,7 +258,7 @@ static void construct_cb(lv_obj_t *parent) {
     buttons_unload_page();
     buttons_load_page(&btn_page);
 
-    freq_obs = subject_subscribe_delayed((Subject*)cfg.computed.fg_freq(), freq_update_cb, NULL);
+    freq_obs = subject_subscribe_delayed((Subject*)cfg.cur.fg_freq(), freq_update_cb, NULL);
 
     chart  = lv_obj_create(dialog.obj);
 
@@ -298,7 +298,7 @@ static void destruct_cb() {
         param_unsubscribe((Observer*)span_obs);
         span_obs = NULL;
     }
-    radio_set_freq(cparam_i_get(cfg.computed.fg_freq()));
+    radio_set_freq(cparam_i_get(cfg.cur.fg_freq()));
 }
 
 static void key_cb(lv_event_t * e) {

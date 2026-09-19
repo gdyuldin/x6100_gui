@@ -166,26 +166,26 @@ static button_data_t btn_vol = {
     .press           = button_encoder_update_cb,
     .ctrl            = CTRL_VOL,
     .encoder_allowed = true,
-    .subj            = (Subject*)cfg.general.volume(),
+    .subj            = (Subject*)cfg.volume(),
 };
 
-static button_data_t btn_sql = make_encoder_btn(sql_label_getter, CTRL_SQL, (Subject*)cfg.general.squelch());
-static button_data_t btn_rfg = make_encoder_btn(rfg_label_getter, CTRL_RFG, (Subject*)cfg.general.rfgain());
-static button_data_t btn_tx_pwr = make_encoder_btn(tx_power_label_getter, CTRL_PWR, (Subject*)cfg.general.pwr());
+static button_data_t btn_sql = make_encoder_btn(sql_label_getter, CTRL_SQL, (Subject*)cfg.squelch());
+static button_data_t btn_rfg = make_encoder_btn(rfg_label_getter, CTRL_RFG, (Subject*)cfg.rfgain());
+static button_data_t btn_tx_pwr = make_encoder_btn(tx_power_label_getter, CTRL_PWR, (Subject*)cfg.pwr());
 static button_data_t btn_flt_low  = make_encoder_btn(filter_low_label_getter, CTRL_FILTER_LOW, (Subject*)cfg.filter.low());
 static button_data_t btn_flt_high = make_encoder_btn(filter_high_label_getter, CTRL_FILTER_HIGH, (Subject*)cfg.filter.high());
 static button_data_t btn_flt_bw   = make_encoder_btn(filter_bw_label_getter, CTRL_FILTER_BW, (Subject*)cfg.filter.bw());
-static button_data_t btn_mic_sel   = make_encoder_btn(mic_sel_label_getter, CTRL_MIC, (Subject*)cfg.general.mic());
-static button_data_t btn_hmic_gain = make_encoder_btn(h_mic_gain_label_getter, CTRL_HMIC, (Subject*)cfg.general.hmic());
-static button_data_t btn_imic_hain = make_encoder_btn(i_mic_gain_label_getter, CTRL_IMIC, (Subject*)cfg.general.imic());
-static button_data_t btn_moni_lvl  = make_encoder_btn(moni_level_label_getter, CTRL_MONI, (Subject*)cfg.general.moni());
+static button_data_t btn_mic_sel   = make_encoder_btn(mic_sel_label_getter, CTRL_MIC, (Subject*)cfg.mic());
+static button_data_t btn_hmic_gain = make_encoder_btn(h_mic_gain_label_getter, CTRL_HMIC, (Subject*)cfg.hmic());
+static button_data_t btn_imic_hain = make_encoder_btn(i_mic_gain_label_getter, CTRL_IMIC, (Subject*)cfg.imic());
+static button_data_t btn_moni_lvl  = make_encoder_btn(moni_level_label_getter, CTRL_MONI, (Subject*)cfg.moni());
 
 /* MFK */
 
 static button_data_t btn_zoom      = make_encoder_btn("Spectrum\nZoom", CTRL_SPECTRUM_FACTOR);
 static button_data_t btn_ant       = make_encoder_btn("Antenna", CTRL_ANT);
-static button_data_t btn_rit       = make_encoder_btn(rit_label_getter, CTRL_RIT, (Subject*)cfg.general.rit());
-static button_data_t btn_xit       = make_encoder_btn(xit_label_getter, CTRL_XIT, (Subject*)cfg.general.xit());
+static button_data_t btn_rit       = make_encoder_btn(rit_label_getter, CTRL_RIT, (Subject*)cfg.rit());
+static button_data_t btn_xit       = make_encoder_btn(xit_label_getter, CTRL_XIT, (Subject*)cfg.xit());
 static button_data_t btn_agc_hang  = {.type            = BTN_TEXT_FN,
                                       .label_fn        = agc_hang_label_getter,
                                       .press           = controls_toggle_agc_hang,
@@ -805,25 +805,25 @@ buttons_page_t *buttons_get_cur_page() {
 
 static const char * vol_label_getter() {
     static char buf[16];
-    sprintf(buf, "Volume:\n%i", cfg.general.volume()->get());
+    sprintf(buf, "Volume:\n%i", cfg.volume()->get());
     return buf;
 }
 
 static const char * sql_label_getter() {
     static char buf[16];
-    sprintf(buf, "Squelch:\n%i", cfg.general.squelch()->get());
+    sprintf(buf, "Squelch:\n%i", cfg.squelch()->get());
     return buf;
 }
 
 static const char * rfg_label_getter() {
     static char buf[16];
-    sprintf(buf, "RF gain:\n%i", cfg.general.rfgain()->get());
+    sprintf(buf, "RF gain:\n%i", cfg.rfgain()->get());
     return buf;
 }
 
 static const char * tx_power_label_getter() {
     static char buf[20];
-    sprintf(buf, "TX power:\n%0.1f W", cfg.general.pwr()->get());
+    sprintf(buf, "TX power:\n%0.1f W", cfg.pwr()->get());
     return buf;
 }
 
@@ -847,39 +847,39 @@ static const char * filter_bw_label_getter() {
 
 static const char * mic_sel_label_getter() {
     static char buf[22];
-    sprintf(buf, "MIC Sel:\n%s", format_mic_str_get((x6100_mic_sel_t)cfg.general.mic()->get()));
+    sprintf(buf, "MIC Sel:\n%s", format_mic_str_get((x6100_mic_sel_t)cfg.mic()->get()));
     return buf;
 }
 
 
 static const char * h_mic_gain_label_getter() {
     static char buf[22];
-    sprintf(buf, "H-Mic gain:\n%i", cfg.general.hmic()->get());
+    sprintf(buf, "H-Mic gain:\n%i", cfg.hmic()->get());
     return buf;
 }
 
 static const char * i_mic_gain_label_getter() {
     static char buf[22];
-    sprintf(buf, "I-Mic gain:\n%i", cfg.general.imic()->get());
+    sprintf(buf, "I-Mic gain:\n%i", cfg.imic()->get());
     return buf;
 }
 
 static const char * moni_level_label_getter() {
     static char buf[22];
-    sprintf(buf, "Moni level:\n%i", cfg.general.moni()->get());
+    sprintf(buf, "Moni level:\n%i", cfg.moni()->get());
     return buf;
 }
 
 
 static const char * rit_label_getter() {
     static char buf[22];
-    sprintf(buf, "RIT:\n%+i", cfg.general.rit()->get());
+    sprintf(buf, "RIT:\n%+i", cfg.rit()->get());
     return buf;
 }
 
 static const char * xit_label_getter() {
     static char buf[22];
-    sprintf(buf, "XIT:\n%+i", cfg.general.xit()->get());
+    sprintf(buf, "XIT:\n%+i", cfg.xit()->get());
     return buf;
 }
 

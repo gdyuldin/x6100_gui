@@ -60,7 +60,7 @@ static bar_tick_t level_items[] = {
 };
 
 static void on_show_meter_value_change(Subject *, void *) {
-    if (param_i_get(cfg.general.show_meter_value())) {
+    if (param_i_get(cfg.ui.show_meter_value())) {
         lv_obj_clear_flag(db_val_label, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(db_val_label, LV_OBJ_FLAG_HIDDEN);
@@ -175,7 +175,7 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
 
     lv_timer_create(update_db_label_cb, LV_DISP_DEF_REFR_PERIOD * 3, NULL);
 
-    subject_subscribe_delayed_and_notify((Subject *)cfg.general.show_meter_value(), on_show_meter_value_change, NULL);
+    subject_subscribe_delayed_and_notify((Subject *)cfg.ui.show_meter_value(), on_show_meter_value_change, NULL);
 
     return obj;
 }

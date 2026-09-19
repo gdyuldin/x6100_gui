@@ -133,8 +133,8 @@ static void low_power_timer_cb(lv_timer_t * timer) {
 }
 
 static void toggle_atu_enabled() {
-    bool new_atu_enabled = !param_i_get(cfg.general.atu_enabled());
-    param_i_set(cfg.general.atu_enabled(), new_atu_enabled);
+    bool new_atu_enabled = !param_i_get(cfg.atu_enabled());
+    param_i_set(cfg.atu_enabled(), new_atu_enabled);
     voice_say_text_fmt("Auto tuner %s", new_atu_enabled ? "On" : "Off");
 }
 
@@ -274,7 +274,7 @@ void main_screen_action(press_action_t action) {
 }
 
 static x6100_mode_t get_next_mode_am_fm(bool long_press) {
-    x6100_mode_t    mode = cparam_i_get(cfg.computed.mode());
+    x6100_mode_t    mode = cparam_i_get(cfg.cur.mode());
     switch (mode) {
         case x6100_mode_am:
             mode = x6100_mode_nfm;
@@ -288,7 +288,7 @@ static x6100_mode_t get_next_mode_am_fm(bool long_press) {
 }
 
 static x6100_mode_t get_next_mode_cw(bool long_press) {
-    x6100_mode_t    mode = cparam_i_get(cfg.computed.mode());
+    x6100_mode_t    mode = cparam_i_get(cfg.cur.mode());
     switch (mode) {
         case x6100_mode_cw:
             mode = x6100_mode_cwr;
@@ -302,7 +302,7 @@ static x6100_mode_t get_next_mode_cw(bool long_press) {
 }
 
 static x6100_mode_t get_next_mode_ssb(bool long_press) {
-    x6100_mode_t    mode = cparam_i_get(cfg.computed.mode());
+    x6100_mode_t    mode = cparam_i_get(cfg.cur.mode());
     switch (mode) {
         case x6100_mode_lsb_dig:
             if (long_press) {
@@ -387,27 +387,27 @@ static void change_mode(keypad_key_t key, keypad_state_t state) {
             break;
         }
     }
-    cparam_i_set(cfg.computed.mode(), next_mode);
+    cparam_i_set(cfg.cur.mode(), next_mode);
 }
 
 static void keypad_pre(const event_keypad_t *kp) {
-    int32_t pre = cparam_i_get(cfg.computed.pre());
-    int32_t att = cparam_i_get(cfg.computed.att());
+    int32_t pre = cparam_i_get(cfg.cur.pre());
+    int32_t att = cparam_i_get(cfg.cur.att());
 
     if (kp->state == KEYPAD_RELEASE) {
         pre = !pre;
-        cparam_i_set(cfg.computed.pre(), pre);
+        cparam_i_set(cfg.cur.pre(), pre);
         voice_say_text_fmt("Preamplifier %s", pre ? "On" : "Off");
 
-        if (param_i_get(cfg.view.mag_info())) {
+        if (param_i_get(cfg.ui.mag_info())) {
             msg_tiny_set_text_fmt("Pre: %s", pre ? "On" : "Off");
         }
     } else if (kp->state == KEYPAD_LONG) {
         att = !att;
-        cparam_i_set(cfg.computed.att(), att);
+        cparam_i_set(cfg.cur.att(), att);
         voice_say_text_fmt("Attenuator %s", att ? "On" : "Off");
 
-        if (param_i_get(cfg.view.mag_info())) {
+        if (param_i_get(cfg.ui.mag_info())) {
             msg_tiny_set_text_fmt("Att: %s", att ? "On" : "Off");
         }
     }
@@ -430,7 +430,7 @@ static void keypad_mode(const event_keypad_t *kp) {
 
 static void keypad_agc(const event_keypad_t *kp) {
     if (kp->state == KEYPAD_RELEASE) {
-        x6100_agc_t agc      = cparam_i_get(cfg.computed.agc());
+        x6100_agc_t agc      = cparam_i_get(cfg.cur.agc());
         const char *msg_text = NULL;
 
         switch (agc) {
@@ -458,9 +458,9 @@ static void keypad_agc(const event_keypad_t *kp) {
                 msg_text = "AGC: Off";
                 break;
         }
-        cparam_i_set(cfg.computed.agc(), agc);
+        cparam_i_set(cfg.cur.agc(), agc);
 
-        if (msg_text != NULL && param_i_get(cfg.view.mag_info())) {
+        if (msg_text != NULL && param_i_get(cfg.ui.mag_info())) {
             msg_tiny_set_text_fmt(msg_text);
         }
     } else if (kp->state == KEYPAD_LONG) {
@@ -470,7 +470,7 @@ static void keypad_agc(const event_keypad_t *kp) {
 
         spectrum_clear();
 
-        if (param_i_get(cfg.view.mag_info())) {
+        if (param_i_get(cfg.ui.mag_info())) {
             msg_tiny_set_text_fmt("Split: %s", new_split ? "On" : "Off");
         }
     }
@@ -488,8 +488,8 @@ static void keypad_atu(const event_keypad_t *kp) {
     if (kp->state == KEYPAD_RELEASE) {
         toggle_atu_enabled();
 
-        if (param_i_get(cfg.view.mag_info())) {
-            msg_tiny_set_text_fmt("ATU: %s", param_i_get(cfg.general.atu_enabled()) ? "On" : "Off");
+        if (param_i_get(cfg.ui.mag_info())) {
+            msg_tiny_set_text_fmt("ATU: %s", param_i_get(cfg.atu_enabled()) ? "On" : "Off");
         }
     } else if (kp->state == KEYPAD_LONG) {
         radio_start_atu();
@@ -519,7 +519,7 @@ static void keypad_group_page(const event_keypad_t *kp, ParamInt *long_action, b
 
 static void keypad_msg(const event_keypad_t *kp) {
     if (kp->state == KEYPAD_RELEASE) {
-        switch (cparam_i_get(cfg.computed.mode())) {
+        switch (cparam_i_get(cfg.cur.mode())) {
             case x6100_mode_cw:
             case x6100_mode_cwr:
                 if (!dialog_type_is_run(dialog_msg_cw)) {
@@ -560,7 +560,7 @@ static void keypad_ab(const event_keypad_t *kp) {
 
             spectrum_clear();
 
-            if (param_i_get(cfg.view.mag_info())) {
+            if (param_i_get(cfg.ui.mag_info())) {
                 const char *prefix     = param_i_get(cfg.band.split()) ? "SPL" : "VFO";
                 const char *vfo_id_str = new_vfo == X6100_VFO_A ? "A" : "B";
                 msg_tiny_set_text_fmt("%s: %s", prefix, vfo_id_str);
@@ -601,7 +601,7 @@ static void keypad_ptt(const event_keypad_t *kp) {
         case KEYPAD_PRESS:
             radio_set_ptt(true);
 
-            switch (cparam_i_get(cfg.computed.mode())) {
+            switch (cparam_i_get(cfg.cur.mode())) {
                 case x6100_mode_cw:
                 case x6100_mode_cwr:
                     radio_set_morse_key(true);
@@ -611,7 +611,7 @@ static void keypad_ptt(const event_keypad_t *kp) {
 
         case KEYPAD_RELEASE:
         case KEYPAD_LONG_RELEASE:
-            switch (cparam_i_get(cfg.computed.mode())) {
+            switch (cparam_i_get(cfg.cur.mode())) {
                 case x6100_mode_cw:
                 case x6100_mode_cwr:
                     radio_set_morse_key(false);
@@ -906,10 +906,10 @@ static void freq_shift(int16_t diff, uint16_t dt) {
         return;
     }
 
-    int32_t freq = cparam_i_get(cfg.computed.fg_freq());
+    int32_t freq = cparam_i_get(cfg.cur.fg_freq());
     int32_t df = diff * param_i_get(cfg.mode.freq_step()) * freq_accel(dt);
     freq = align_int(freq + df, abs(df));
-    cparam_i_set(cfg.computed.fg_freq(), freq);
+    cparam_i_set(cfg.cur.fg_freq(), freq);
 
     voice_say_freq(freq);
 }
@@ -1084,7 +1084,7 @@ void main_screen_keys_enable(bool value) {
 }
 
 void main_screen_set_freq(uint64_t freq) {
-    cparam_i_set(cfg.computed.fg_freq(), freq);
+    cparam_i_set(cfg.cur.fg_freq(), freq);
     event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
 }
 
@@ -1187,7 +1187,7 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
 }
 
 static void on_fg_freq_change(Subject *subj, void *user_data) {
-    if (param_i_get(cfg.view.mag_freq())) {
+    if (param_i_get(cfg.ui.mag_freq())) {
         int32_t f = subject_i_get(radio_fg_freq_subj);
 
         uint16_t mhz, khz, hz;

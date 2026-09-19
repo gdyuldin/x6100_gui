@@ -68,7 +68,7 @@ void cw_init() {
     cfg.cw.decoder()->subscribe_and_notify(on_val_bool_change, (void*)&cw_decoder);
     cfg.cw.tune()->subscribe_and_notify(on_val_bool_change, (void*)&cw_tune);
 
-    cfg.computed.mode()->subscribe_and_notify(on_cw_mode_change);
+    cfg.cur.mode()->subscribe_and_notify(on_cw_mode_change);
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
         dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, CW_CAPTURE_RATE);

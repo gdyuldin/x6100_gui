@@ -134,11 +134,11 @@ void indicators_init(lv_obj_t * parent, lv_coord_t h, lv_coord_t meter_w) {
 
 
     // Subscriptions
-    cfg.computed.att()->subscribe_delayed_and_notify(mark_non_zero, (void*)att_label);
-    cfg.computed.pre()->subscribe_delayed_and_notify(mark_non_zero, (void*)pre_label);
+    cfg.cur.att()->subscribe_delayed_and_notify(mark_non_zero, (void*)att_label);
+    cfg.cur.pre()->subscribe_delayed_and_notify(mark_non_zero, (void*)pre_label);
 
-    cfg.computed.agc()->subscribe_delayed_and_notify(mark_non_zero, (void*)agc_label);
-    cfg.computed.agc()->subscribe_delayed_and_notify(on_agc_change);
+    cfg.cur.agc()->subscribe_delayed_and_notify(mark_non_zero, (void*)agc_label);
+    cfg.cur.agc()->subscribe_delayed_and_notify(on_agc_change);
 
     cfg.dsp.nr()->subscribe_delayed_and_notify(mark_non_zero, (void*)nr_label);
     cfg.dsp.nb()->subscribe_delayed_and_notify(mark_non_zero, (void*)nb_label);
@@ -146,12 +146,12 @@ void indicators_init(lv_obj_t * parent, lv_coord_t h, lv_coord_t meter_w) {
 
     cfg.band.split()->subscribe_delayed_and_notify(mark_non_zero, (void*)spl_label);
 
-    cfg.general.atu_enabled()->subscribe_delayed(atu_label_update);
-    cfg.general.ant_id()->subscribe_delayed(atu_label_update);
+    cfg.atu_enabled()->subscribe_delayed(atu_label_update);
+    cfg.ant_id()->subscribe_delayed(atu_label_update);
     atu_network.loaded.subscribe_delayed_and_notify(atu_label_update);
 
-    cfg.general.rit()->subscribe_delayed_and_notify(mark_non_zero, (void*)rit_label);
-    cfg.general.xit()->subscribe_delayed_and_notify(mark_non_zero, (void*)xit_label);
+    cfg.rit()->subscribe_delayed_and_notify(mark_non_zero, (void*)rit_label);
+    cfg.xit()->subscribe_delayed_and_notify(mark_non_zero, (void*)xit_label);
 
     lv_msg_subscribe(MSG_WIFI_STATE_CHANGED, wifi_state_change_cb, NULL);
 }
@@ -235,13 +235,13 @@ static void mark_non_zero(Subject *subj, void *user_data) {
 }
 
 static void on_agc_change(Subject *subj, void *user_data) {
-    x6100_agc_t agc_val = (x6100_agc_t)cfg.computed.agc()->get();
+    x6100_agc_t agc_val = (x6100_agc_t)cfg.cur.agc()->get();
     lv_label_set_text(agc_label, agc_to_label(agc_val));
 }
 
 static void atu_label_update(Subject *subj, void * user_data) {
-    int32_t ant = cfg.general.ant_id()->get();
-    int32_t freq = cfg.computed.fg_freq()->get();
+    int32_t ant = cfg.ant_id()->get();
+    int32_t freq = cfg.cur.fg_freq()->get();
     lv_label_set_text_fmt(atu_label, "ATU%i", ant);
 
     lv_obj_clear_state(atu_label, ATU_STATE_OUT_OF_RANGE);
@@ -250,7 +250,7 @@ static void atu_label_update(Subject *subj, void * user_data) {
 
     if (cfg_transverter_shift_for(freq)) {
         lv_obj_add_state(atu_label, LV_STATE_DISABLED);
-    } else if (cfg.general.atu_enabled()->get()) {
+    } else if (cfg.atu_enabled()->get()) {
         lv_obj_add_state(atu_label, LV_STATE_CHECKED);
         if (!atu_network.loaded.get()) {
             lv_obj_add_state(atu_label, ATU_STATE_OUT_OF_RANGE);

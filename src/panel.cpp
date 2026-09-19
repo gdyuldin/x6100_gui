@@ -108,11 +108,11 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
     lv_anim_set_var(&dim_anim, obj);
     lv_anim_set_time(&dim_anim, 200);
 
-    prev_mode = (x6100_mode_t)cfg.computed.mode()->get();
+    prev_mode = (x6100_mode_t)cfg.cur.mode()->get();
 
-    cfg.computed.mode()->subscribe_delayed(update_visibility_cb);
+    cfg.cur.mode()->subscribe_delayed(update_visibility_cb);
     cfg.cw.decoder()->subscribe_delayed_and_notify(update_visibility_cb);
-    cfg.computed.fg_freq()->subscribe_delayed(on_freq_change);
+    cfg.cur.fg_freq()->subscribe_delayed(on_freq_change);
 
     info = lv_label_create(obj);
     lv_obj_add_style(info, &style.panels.info, 0);
@@ -143,7 +143,7 @@ void panel_clear() {
 }
 
 void panel_update_visibility(bool clear) {
-    x6100_mode_t    mode = (x6100_mode_t)cfg.computed.mode()->get();
+    x6100_mode_t    mode = (x6100_mode_t)cfg.cur.mode()->get();
     bool            on = false;
 
     switch (mode) {
@@ -183,7 +183,7 @@ static void update_line_count() {
 }
 
 static void update_visibility_cb(Subject *subj, void *user_data) {
-    x6100_mode_t cur_mode = (x6100_mode_t)cfg.computed.mode()->get();
+    x6100_mode_t cur_mode = (x6100_mode_t)cfg.cur.mode()->get();
     x6100_mode_t tmp_mode = prev_mode;
     bool clear = true;
 

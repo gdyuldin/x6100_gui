@@ -37,7 +37,7 @@ static float get_correction(void) {
     float alc        = 0.0f;
 
     if (g_ports->telemetry->tx_info_refresh(&msg_id, &alc, &pwr, NULL)) {
-        float target_pwr = LV_MIN(param_f_get(cfg.general.pwr()), MAX_PWR_W);
+        float target_pwr = LV_MIN(param_f_get(cfg.pwr()), MAX_PWR_W);
         if (alc > 0.5f) {
             correction = log10f(log10f(11.1f - alc)) * 20.0f - 0.38f;
         } else if (target_pwr - pwr > 0.5f) {
@@ -68,7 +68,7 @@ bool tx_worker_run(const char *tx_text, float base_gain_offset, tx_abort_fn_t ab
         return true; /* nothing to send; not an abort */
     }
 
-    if (param_f_get(cfg.general.pwr()) > MAX_PWR_W) {
+    if (param_f_get(cfg.pwr()) > MAX_PWR_W) {
         g_ports->radio->set_pwr(MAX_PWR_W);
     }
 
@@ -76,7 +76,7 @@ bool tx_worker_run(const char *tx_text, float base_gain_offset, tx_abort_fn_t ab
     float play_gain_offset = g_ports->audio->set_play_vol(gain_offset + 6.0f);
     gain_offset           -= play_gain_offset;
 
-    uint64_t radio_freq = cparam_i_get(cfg.computed.fg_freq());
+    uint64_t radio_freq = cparam_i_get(cfg.cur.fg_freq());
     g_ports->radio->set_freq((int32_t)radio_freq + (int32_t)param_i_get(cfg.ft8.tx_freq()) - SIGNAL_FREQ_HZ);
     g_ports->radio->set_modem(true);
 

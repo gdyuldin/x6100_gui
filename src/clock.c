@@ -66,7 +66,7 @@ static void show_time() {
     time_t      now;
     struct tm   *t;
 
-    int32_t clock_view = param_i_get(cfg.clock.view());
+    int32_t clock_view = param_i_get(cfg.ui.clock_view());
     if (clock_view == CLOCK_TIME_ALLWAYS) {
         set_state(CLOCK_TIME);
     } else if (clock_view == CLOCK_POWER_ALLWAYS) {
@@ -79,18 +79,18 @@ static void show_time() {
                 switch (state) {
                     case CLOCK_TIME:
                         set_state(CLOCK_POWER);
-                        timeout = ms + param_i_get(cfg.clock.power_timeout()) * 1000;
+                        timeout = ms + param_i_get(cfg.ui.clock_power_timeout()) * 1000;
                         break;
 
                     case CLOCK_POWER:
                         set_state(CLOCK_TIME);
-                        timeout = ms + param_i_get(cfg.clock.time_timeout()) * 1000;
+                        timeout = ms + param_i_get(cfg.ui.clock_time_timeout()) * 1000;
                         break;
                 }
             }
         } else {
             set_state(CLOCK_POWER);
-            timeout = ms + param_i_get(cfg.clock.tx_timeout()) * 1000;
+            timeout = ms + param_i_get(cfg.ui.clock_tx_timeout()) * 1000;
         }
     }
 
@@ -168,7 +168,7 @@ lv_obj_t * clock_init(lv_obj_t * parent) {
     lv_obj_center(obj);
 
     set_state(CLOCK_TIME);
-    timeout = get_time() + param_i_get(cfg.clock.time_timeout()) * 1000;
+    timeout = get_time() + param_i_get(cfg.ui.clock_time_timeout()) * 1000;
 
     show_time();
     lv_timer_create(show_time, 500, NULL);
@@ -176,10 +176,10 @@ lv_obj_t * clock_init(lv_obj_t * parent) {
     last_time_sync = get_last_sync_time();
     timer_time_sync = lv_timer_create(check_time_sync_cb, 200, NULL);
 
-    subject_subscribe_delayed((Subject *)cfg.clock.view(), on_clock_param_change, NULL);
-    subject_subscribe_delayed((Subject *)cfg.clock.time_timeout(), on_clock_param_change, NULL);
-    subject_subscribe_delayed((Subject *)cfg.clock.power_timeout(), on_clock_param_change, NULL);
-    subject_subscribe_delayed((Subject *)cfg.clock.tx_timeout(), on_clock_param_change, NULL);
+    subject_subscribe_delayed((Subject *)cfg.ui.clock_view(), on_clock_param_change, NULL);
+    subject_subscribe_delayed((Subject *)cfg.ui.clock_time_timeout(), on_clock_param_change, NULL);
+    subject_subscribe_delayed((Subject *)cfg.ui.clock_power_timeout(), on_clock_param_change, NULL);
+    subject_subscribe_delayed((Subject *)cfg.ui.clock_tx_timeout(), on_clock_param_change, NULL);
 }
 
 void clock_say_bat_info() {

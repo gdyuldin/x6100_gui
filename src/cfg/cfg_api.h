@@ -65,7 +65,7 @@ void        param_t_set(ParamText *p, const char *v); // NULL -> ""
 // --- ComputedParameter<T> set/get ---
 // Only set/get are provided: creation stays C++-only (ComputeFn/
 // ReverseFn are C++ callables, constructed by SettingsManager).
-//   cparam_i_set(cfg.computed.fg_freq(), 7100000);
+//   cparam_i_set(cfg.cur.fg_freq(), 7100000);
 
 void    cparam_i_set(ComputedParamInt *p, int32_t value);
 int32_t cparam_i_get(const ComputedParamInt *p);
@@ -149,35 +149,34 @@ int32_t cfg_mode_change_freq_step(bool up);
 // ->subscribe(). The member name in SettingsManager is shown in the comment.
 
 typedef struct {
-    ParamInt *(*volume)(void); /* p_volume */
-    ParamInt *(*squelch)(void); /* p_squelch */
-    ParamInt *(*rfgain)(void); /* p_rfgain */
-    ParamInt *(*rit)(void); /* p_rit */
-    ParamInt *(*xit)(void); /* p_xit */
-    ParamFloat *(*pwr)(void); /* p_pwr */
-    ParamInt *(*band_id)(void); /* p_band_id */
-    ParamInt *(*mic)(void); /* p_mic */
-    ParamInt *(*hmic)(void); /* p_hmic */
-    ParamInt *(*imic)(void); /* p_imic */
-    ParamInt *(*moni)(void); /* p_moni */
-    ParamInt *(*ant_id)(void); /* p_ant_id */
-    ParamInt *(*atu_enabled)(void); /* p_atu_enabled */
-    ParamInt *(*cat_baud)(void); /* p_cat_baud */
-    ParamInt *(*show_meter_value)(void); /* p_show_meter_values */
-} cfg_general_refs_t;
-
-typedef struct {
     ParamInt *(*auto_level_enabled)(void); /* p_auto_level_enabled */
     ParamFloat *(*auto_level_offset)(void); /* p_auto_level_offset */
     ParamInt *(*knob_info)(void); /* p_knob_info */
     ParamInt *(*spectrum_use_custom_color)(void); /* p_spectrum_use_custom_color */
     ParamInt *(*spectrum_color)(void); /* p_spectrum_color */
-    ParamInt *(*beta)(void); /* p_spectrum_beta */
-    ParamInt *(*peak)(void); /* p_spectrum_peak */
-    ParamInt *(*peak_hold)(void); /* p_spectrum_peak_hold */
-    ParamInt *(*peak_speed)(void); /* p_spectrum_peak_speed */
-    ParamInt *(*filled)(void); /* p_spectrum_filled */
-} cfg_spectrum_refs_t;
+    ParamInt *(*spectrum_beta)(void); /* p_spectrum_beta */
+    ParamInt *(*spectrum_peak)(void); /* p_spectrum_peak */
+    ParamInt *(*spectrum_peak_hold)(void); /* p_spectrum_peak_hold */
+    ParamInt *(*spectrum_peak_speed)(void); /* p_spectrum_peak_speed */
+    ParamInt *(*spectrum_filled)(void); /* p_spectrum_filled */
+
+    ParamInt *(*waterfall_center_line)(void); /* p_waterfall_center_line */
+
+    ParamInt *(*show_meter_value)(void); /* p_show_meter_values */
+
+    ParamInt *(*mag_freq)(void); /* p_mag_freq */
+    ParamInt *(*mag_info)(void); /* p_mag_info */
+    ParamInt *(*mag_alc)(void); /* p_mag_alc */
+
+    ParamInt *(*clock_view)(void); /* p_clock_view */
+    ParamInt *(*clock_time_timeout)(void); /* p_clock_time_timeout */
+    ParamInt *(*clock_power_timeout)(void); /* p_clock_power_timeout */
+    ParamInt *(*clock_tx_timeout)(void); /* p_clock_tx_timeout */
+
+    ParamInt *(*theme)(void); /* p_theme */
+    ParamInt *(*meter_color)(void); /* p_meter_color */
+    ParamInt *(*swr_color)(void); /* p_swr_color */
+} cfg_ui_refs_t;
 
 typedef struct {
     ParamInt *(*invert)(void); /* p_display_invert */
@@ -186,23 +185,6 @@ typedef struct {
     ParamInt *(*brightness_timeout)(void); /* p_brightness_timeout */
     ParamInt *(*brightness_buttons)(void); /* p_brightness_buttons */
 } cfg_display_refs_t;
-
-typedef struct {
-    ParamInt *(*view)(void); /* p_clock_view */
-    ParamInt *(*time_timeout)(void); /* p_clock_time_timeout */
-    ParamInt *(*power_timeout)(void); /* p_clock_power_timeout */
-    ParamInt *(*tx_timeout)(void); /* p_clock_tx_timeout */
-} cfg_clock_refs_t;
-
-typedef struct {
-    ParamInt *(*center_line)(void); /* p_waterfall_center_line */
-} cfg_waterfall_refs_t;
-
-typedef struct {
-    ParamInt *(*mag_freq)(void); /* p_mag_freq */
-    ParamInt *(*mag_info)(void); /* p_mag_info */
-    ParamInt *(*mag_alc)(void); /* p_mag_alc */
-} cfg_view_refs_t;
 
 typedef struct {
     ParamInt *(*mode)(void); /* p_voice_mode */
@@ -224,11 +206,6 @@ typedef struct {
     ParamInt *(*rate)(void); /* p_rtty_rate */
     ParamInt *(*reverse)(void); /* p_rtty_reverse */
 } cfg_rtty_refs_t;
-
-typedef struct {
-    ParamText *(*qth)(void); /* p_qth */
-    ParamText *(*callsign)(void); /* p_callsign */
-} cfg_station_refs_t;
 
 typedef struct {
     ParamInt *(*wifi_enabled)(void); /* p_wifi_enabled */
@@ -254,12 +231,6 @@ typedef struct {
     ParamInt *(*spmode)(void); /* p_spmode */
     ParamInt *(*freq_accel)(void); /* p_freq_accel */
 } cfg_radio_refs_t;
-
-typedef struct {
-    ParamInt *(*theme)(void); /* p_theme */
-    ParamInt *(*meter_color)(void); /* p_meter_color */
-    ParamInt *(*swr_color)(void); /* p_swr_color */
-} cfg_appearance_refs_t;
 
 typedef struct {
     ParamText *(*bind)(void); /* p_encoder_bind */
@@ -367,11 +338,11 @@ typedef struct {
 
 typedef struct {
     ComputedParamInt *(*fg_freq)(void); /* cp_fg_freq */
+    ComputedParamInt *(*bg_freq)(void); /* cp_bg_freq */
     ComputedParamInt *(*mode)(void); /* cp_cur_mode */
     ComputedParamInt *(*agc)(void); /* cp_cur_agc */
     ComputedParamInt *(*att)(void); /* cp_cur_att */
     ComputedParamInt *(*pre)(void); /* cp_cur_pre */
-    ComputedParamInt *(*bg_freq)(void); /* cp_bg_freq */
     ComputedParamInt *(*mode_lo_offset)(void); /* cp_mode_lo_offset */
 } cfg_computed_refs_t;
 
@@ -385,8 +356,26 @@ typedef struct {
 } cfg_transverter_refs_t;
 
 typedef struct {
-    cfg_general_refs_t general;
-    cfg_spectrum_refs_t spectrum;
+    ParamInt *(*volume)(void); /* p_volume */
+    ParamInt *(*squelch)(void); /* p_squelch */
+    ParamInt *(*rfgain)(void); /* p_rfgain */
+    ParamInt *(*rit)(void); /* p_rit */
+    ParamInt *(*xit)(void); /* p_xit */
+    ParamFloat *(*pwr)(void); /* p_pwr */
+    ParamInt *(*band_id)(void); /* p_band_id */
+    ParamInt *(*mic)(void); /* p_mic */
+    ParamInt *(*hmic)(void); /* p_hmic */
+    ParamInt *(*imic)(void); /* p_imic */
+    ParamInt *(*moni)(void); /* p_moni */
+    ParamInt *(*ant_id)(void); /* p_ant_id */
+    ParamInt *(*atu_enabled)(void); /* p_atu_enabled */
+    ParamInt *(*cat_baud)(void); /* p_cat_baud */
+
+    ParamText *(*qth)(void); /* p_qth */
+    ParamText *(*callsign)(void); /* p_callsign */
+
+
+    cfg_ui_refs_t ui;
     cfg_encoder_refs_t encoder;
     cfg_vox_refs_t vox;
     cfg_ft8_refs_t ft8;
@@ -397,20 +386,15 @@ typedef struct {
     cfg_band_refs_t band;
     cfg_mode_refs_t mode;
     cfg_filter_refs_t filter;
-    cfg_computed_refs_t computed;
+    cfg_computed_refs_t cur;
     cfg_transverter_refs_t transverter;
     cfg_display_refs_t display;
-    cfg_clock_refs_t clock;
-    cfg_waterfall_refs_t waterfall;
-    cfg_view_refs_t view;
     cfg_voice_refs_t voice;
     cfg_audio_refs_t audio;
     cfg_rtty_refs_t rtty;
-    cfg_station_refs_t station;
     cfg_network_refs_t network;
     cfg_keys_refs_t keys;
     cfg_radio_refs_t radio;
-    cfg_appearance_refs_t appearance;
 } cfg_refs_t;
 
 extern const cfg_refs_t cfg;

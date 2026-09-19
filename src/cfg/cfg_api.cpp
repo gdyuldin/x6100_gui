@@ -190,34 +190,52 @@ static ComputedParamInt *cfg_cur_filter_bw(void) { return &cfg_instance().cp_cur
 static ComputedParamInt *cfg_mode_lo_offset(void) { return &cfg_instance().cp_mode_lo_offset; }
 
 extern "C" const cfg_refs_t cfg = {
-    .general = {
-        .volume = &cfg_volume,
-        .squelch = &cfg_squelch,
-        .rfgain = &cfg_rfgain,
-        .rit = &cfg_rit,
-        .xit = &cfg_xit,
-        .pwr = &cfg_pwr,
-        .band_id = &cfg_band_id,
-        .mic = &cfg_mic,
-        .hmic = &cfg_hmic,
-        .imic = &cfg_imic,
-        .moni = &cfg_moni,
-        .ant_id = &cfg_ant_id,
-        .atu_enabled = &cfg_atu_enabled,
-        .cat_baud = &cfg_cat_baud,
-        .show_meter_value = &cfg_show_meter_values,
-    },
-    .spectrum = {
+    .volume = &cfg_volume,
+    .squelch = &cfg_squelch,
+    .rfgain = &cfg_rfgain,
+    .rit = &cfg_rit,
+    .xit = &cfg_xit,
+    .pwr = &cfg_pwr,
+    .band_id = &cfg_band_id,
+    .mic = &cfg_mic,
+    .hmic = &cfg_hmic,
+    .imic = &cfg_imic,
+    .moni = &cfg_moni,
+    .ant_id = &cfg_ant_id,
+    .atu_enabled = &cfg_atu_enabled,
+    .cat_baud = &cfg_cat_baud,
+
+    .qth = &cfg_qth,
+    .callsign = &cfg_callsign,
+
+    .ui = {
         .auto_level_enabled = &cfg_auto_level_enabled,
         .auto_level_offset = &cfg_auto_level_offset,
         .knob_info = &cfg_knob_info,
         .spectrum_use_custom_color = &cfg_spectrum_use_custom_color,
         .spectrum_color = &cfg_spectrum_color,
-        .beta = &cfg_spectrum_beta,
-        .peak = &cfg_spectrum_peak,
-        .peak_hold = &cfg_spectrum_peak_hold,
-        .peak_speed = &cfg_spectrum_peak_speed,
-        .filled = &cfg_spectrum_filled,
+        .spectrum_beta = &cfg_spectrum_beta,
+        .spectrum_peak = &cfg_spectrum_peak,
+        .spectrum_peak_hold = &cfg_spectrum_peak_hold,
+        .spectrum_peak_speed = &cfg_spectrum_peak_speed,
+        .spectrum_filled = &cfg_spectrum_filled,
+
+        .waterfall_center_line = &cfg_waterfall_center_line,
+
+        .show_meter_value = &cfg_show_meter_values,
+
+        .mag_freq = &cfg_mag_freq,
+        .mag_info = &cfg_mag_info,
+        .mag_alc = &cfg_mag_alc,
+
+        .clock_view = &cfg_clock_view,
+        .clock_time_timeout = &cfg_clock_time_timeout,
+        .clock_power_timeout = &cfg_clock_power_timeout,
+        .clock_tx_timeout = &cfg_clock_tx_timeout,
+
+        .theme = &cfg_theme,
+        .meter_color = &cfg_meter_color,
+        .swr_color = &cfg_swr_color,
     },
     .encoder = {
         .bind = &cfg_encoder_bind,
@@ -313,13 +331,13 @@ extern "C" const cfg_refs_t cfg = {
         .high = &cfg_cur_filter_high,
         .bw = &cfg_cur_filter_bw,
     },
-    .computed = {
+    .cur = {
         .fg_freq = &cfg_fg_freq,
+        .bg_freq = &cfg_bg_freq,
         .mode = &cfg_cur_mode,
         .agc = &cfg_cur_agc,
         .att = &cfg_cur_att,
         .pre = &cfg_cur_pre,
-        .bg_freq = &cfg_bg_freq,
         .mode_lo_offset = &cfg_mode_lo_offset,
     },
     .transverter = {
@@ -336,20 +354,6 @@ extern "C" const cfg_refs_t cfg = {
         .brightness_idle = &cfg_brightness_idle,
         .brightness_timeout = &cfg_brightness_timeout,
         .brightness_buttons = &cfg_brightness_buttons,
-    },
-    .clock = {
-        .view = &cfg_clock_view,
-        .time_timeout = &cfg_clock_time_timeout,
-        .power_timeout = &cfg_clock_power_timeout,
-        .tx_timeout = &cfg_clock_tx_timeout,
-    },
-    .waterfall = {
-        .center_line = &cfg_waterfall_center_line,
-    },
-    .view = {
-        .mag_freq = &cfg_mag_freq,
-        .mag_info = &cfg_mag_info,
-        .mag_alc = &cfg_mag_alc,
     },
     .voice = {
         .mode = &cfg_voice_mode,
@@ -368,10 +372,6 @@ extern "C" const cfg_refs_t cfg = {
         .shift = &cfg_rtty_shift,
         .rate = &cfg_rtty_rate,
         .reverse = &cfg_rtty_reverse,
-    },
-    .station = {
-        .qth = &cfg_qth,
-        .callsign = &cfg_callsign,
     },
     .network = {
         .wifi_enabled = &cfg_wifi_enabled,
@@ -394,11 +394,6 @@ extern "C" const cfg_refs_t cfg = {
         .line_out = &cfg_line_out,
         .spmode = &cfg_spmode,
         .freq_accel = &cfg_freq_accel,
-    },
-    .appearance = {
-        .theme = &cfg_theme,
-        .meter_color = &cfg_meter_color,
-        .swr_color = &cfg_swr_color,
     },
 };
 

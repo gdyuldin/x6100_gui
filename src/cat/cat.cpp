@@ -256,7 +256,7 @@ void cat_init(const app_ports_t *ports) {
 
         tcgetattr(fd_wire, &attr);
 
-        speed_t speed = (cfg.general.cat_baud()->get() >= 115200) ? B115200 : B19200;
+        speed_t speed = (cfg.cat_baud()->get() >= 115200) ? B115200 : B19200;
         cfsetispeed(&attr, speed);
         cfsetospeed(&attr, speed);
         cfmakeraw(&attr);
@@ -271,14 +271,14 @@ void cat_init(const app_ports_t *ports) {
         return;
     }
 
-    cfg.computed.fg_freq()->subscribe(on_fg_freq_change);
-    cfg.computed.mode()->subscribe(on_mode_change);
+    cfg.cur.fg_freq()->subscribe(on_fg_freq_change);
+    cfg.cur.mode()->subscribe(on_mode_change);
     cfg.band.current_vfo()->subscribe(on_vfo_change);
-    cfg.general.cat_baud()->subscribe(on_cat_baud_change);
+    cfg.cat_baud()->subscribe(on_cat_baud_change);
 
     // CI-V waterfall streaming notify: only if baud >= 115200
     // (LAN connection registration in cat/lan will override this)
-    if (cfg.general.cat_baud()->get() >= 115200) {
+    if (cfg.cat_baud()->get() >= 115200) {
         scope_streamer_set_notify(push_civ_notify);
     }
 
@@ -298,7 +298,7 @@ void cat_destruct() {
 }
 
 static void on_fg_freq_change(Subject *s, void *user_data) {
-    int32_t freq = cfg.computed.fg_freq()->get();
+    int32_t freq = cfg.cur.fg_freq()->get();
     scope_streamer_set_center_freq(freq);
     uint8_t buf[16];
     CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
@@ -309,7 +309,7 @@ static void on_mode_change(Subject *s, void *user_data) {
     uint8_t buf[16];
     CivTxPacker packer{buf, 0, LOCAL_ADDRESS};
     push_civ_notify(pack_mode_notify_01(
-        static_cast<x6100_mode_t>(cfg.computed.mode()->get()), packer));
+        static_cast<x6100_mode_t>(cfg.cur.mode()->get()), packer));
 }
 
 static void on_vfo_change(Subject *s, void *user_data) {
@@ -323,7 +323,7 @@ static void on_cat_baud_change(Subject *s, void *user_data) {
     if (fd_wire < 0) return;
     struct termios attr;
     tcgetattr(fd_wire, &attr);
-    speed_t speed = (cfg.general.cat_baud()->get() >= 115200) ? B115200 : B19200;
+    speed_t speed = (cfg.cat_baud()->get() >= 115200) ? B115200 : B19200;
     cfsetispeed(&attr, speed);
     cfsetospeed(&attr, speed);
     tcsetattr(fd_wire, 0, &attr);

@@ -330,8 +330,8 @@ void audio_set_play_mode(audio_play_mode_t mode) {
     {
     case AUDIO_PLAY_OFF:
         x6100_control_record_set(false);
-        x6100_control_hmic_set(param_i_get(cfg.general.hmic()));
-        x6100_control_imic_set(param_i_get(cfg.general.imic()));
+        x6100_control_hmic_set(param_i_get(cfg.hmic()));
+        x6100_control_imic_set(param_i_get(cfg.imic()));
         break;
 
     case AUDIO_PLAY_ON:

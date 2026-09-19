@@ -59,7 +59,7 @@ void cw_tune_init(lv_obj_t *parent)
     lv_obj_add_style(obj, &style.cw_tune, 0);
 
     lv_obj_add_event_cb(obj, update_cb, LV_EVENT_DRAW_MAIN, NULL);
-    subject_subscribe_delayed((Subject*)cfg.computed.mode(), update_visibility, NULL);
+    subject_subscribe_delayed((Subject*)cfg.cur.mode(), update_visibility, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg.cw.tune(), update_visibility, NULL);
 }
 
@@ -110,7 +110,7 @@ static void update_cb(lv_event_t * e) {
 }
 
 static void update_visibility(Subject *subj, void *user_data) {
-    x6100_mode_t mode = cparam_i_get(cfg.computed.mode());
+    x6100_mode_t mode = cparam_i_get(cfg.cur.mode());
     bool on = param_i_get(cfg.cw.tune()) && ((mode == x6100_mode_cw) || (mode == x6100_mode_cwr));
     if (on) {
         lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);

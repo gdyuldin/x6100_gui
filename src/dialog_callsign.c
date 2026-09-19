@@ -67,7 +67,7 @@ static bool edit_ok() {
             msg_schedule_text_fmt("Callsign is long, QTH will be omitted");
         }
     }
-    param_t_set(cfg.station.callsign(), callsign);
+    param_t_set(cfg.callsign(), callsign);
     dialog_destruct(&dialog);
     return true;
 }
@@ -91,7 +91,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_textarea_set_placeholder_text(text, "Callsign");
     lv_obj_add_event_cb(text, key_cb, LV_EVENT_KEY, NULL);
 
-    textarea_window_set(param_t_get(cfg.station.callsign()));
+    textarea_window_set(param_t_get(cfg.callsign()));
 }
 
 static void destruct_cb() {

@@ -318,8 +318,8 @@ void styles_init(themes_t theme) {
 
     styles_set_theme(theme);
 
-    subject_subscribe_delayed((Subject *)cfg.spectrum.spectrum_use_custom_color(), update_spectrum_color_cb, NULL);
-    subject_subscribe_delayed((Subject *)cfg.spectrum.spectrum_color(), update_spectrum_color_cb, NULL);
+    subject_subscribe_delayed((Subject *)cfg.ui.spectrum_use_custom_color(), update_spectrum_color_cb, NULL);
+    subject_subscribe_delayed((Subject *)cfg.ui.spectrum_color(), update_spectrum_color_cb, NULL);
 }
 
 void styles_update_meter_colors(meter_color_t mc)
@@ -377,9 +377,9 @@ static void set_spectrum_color(lv_color_t color) {
 }
 
 static void update_spectrum_color(skin_t *skin) {
-    if (param_i_get(cfg.spectrum.spectrum_use_custom_color())) {
+    if (param_i_get(cfg.ui.spectrum_use_custom_color())) {
         lv_color_t col;
-        col.full = param_i_get(cfg.spectrum.spectrum_color());
+        col.full = param_i_get(cfg.ui.spectrum_color());
         set_spectrum_color(col);
     } else {
         set_spectrum_color(skin->spectrum_color);
@@ -915,7 +915,7 @@ static void set_skin(skin_t *skin) {
     update_spectrum_color(skin);
 
     /* S-meter */
-    styles_update_meter_colors((meter_color_t)param_i_get(cfg.appearance.meter_color()));
+    styles_update_meter_colors((meter_color_t)param_i_get(cfg.ui.meter_color()));
 
     /* Waterfall */
     lv_style_set_line_color(&style.waterfall_middle_line, skin->wf_middle_line_color);

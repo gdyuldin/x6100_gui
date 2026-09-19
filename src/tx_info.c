@@ -87,7 +87,7 @@ static void update_tx_info(void *arg) {
     lv_bar_indicator_set_value(pwr_bar, pwr);
     lv_bar_indicator_set_value(swr_bar, vswr);
 
-    if (param_i_get(cfg.view.mag_alc()) && !dialog_run) {
+    if (param_i_get(cfg.ui.mag_alc()) && !dialog_run) {
         msg_tiny_set_text_fmt("ALC: %.1f", alc);
     }
 }
@@ -110,7 +110,7 @@ static void on_dialog_stop(void *s, lv_msg_t *msg) {
 
 static lv_color_t swr_bar_color_cb(float val) {
     if (val <= 2.0f) {
-        return param_i_get(cfg.appearance.swr_color()) == SWR_GRAY ? lv_color_hex(0xAAAAAA) : lv_color_hex(0x00CC00);
+        return param_i_get(cfg.ui.swr_color()) == SWR_GRAY ? lv_color_hex(0xAAAAAA) : lv_color_hex(0x00CC00);
     } else if (val <= 3.0f) {
         return lv_color_hex(0xAAAA00);
     } else {
@@ -180,10 +180,10 @@ lv_obj_t *tx_info_init(lv_obj_t *parent) {
     lv_msg_subscribe(MSG_DIALOG_START, on_dialog_start, NULL);
     lv_msg_subscribe(MSG_DIALOG_STOP, on_dialog_stop, NULL);
 
-    subject_subscribe((Subject*)cfg.computed.mode(), on_cur_mode_change, NULL);
+    subject_subscribe((Subject*)cfg.cur.mode(), on_cur_mode_change, NULL);
 
-    subject_subscribe_delayed((Subject*)cfg.view.mag_alc(), update_labels_visibility_cb, NULL);
-    subject_subscribe_delayed_and_notify((Subject*)cfg.general.show_meter_value(), update_labels_visibility_cb, NULL);
+    subject_subscribe_delayed((Subject*)cfg.ui.mag_alc(), update_labels_visibility_cb, NULL);
+    subject_subscribe_delayed_and_notify((Subject*)cfg.ui.show_meter_value(), update_labels_visibility_cb, NULL);
 
     lv_timer_create(update_labels_cb, LV_DISP_DEF_REFR_PERIOD * 3, NULL);
 
@@ -228,11 +228,11 @@ bool tx_info_refresh(uint8_t *prev_msg_id, float *alc_p, float *pwr_p, float *vs
 
 
 static void on_cur_mode_change(Subject *subj, void *user_data) {
-    cur_mode = cparam_i_get(cfg.computed.mode());
+    cur_mode = cparam_i_get(cfg.cur.mode());
 }
 
 static void update_labels_visibility_cb(Subject *, void *) {
-    bool small_alc_required = !param_i_get(cfg.view.mag_alc()) || dialog_run;
+    bool small_alc_required = !param_i_get(cfg.ui.mag_alc()) || dialog_run;
     if (small_alc_required) {
         lv_obj_clear_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
         // Hide VSWR
@@ -241,7 +241,7 @@ static void update_labels_visibility_cb(Subject *, void *) {
         lv_obj_add_flag(alc_label, LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (param_i_get(cfg.general.show_meter_value())) {
+    if (param_i_get(cfg.ui.show_meter_value())) {
         lv_obj_clear_flag(pwr_label, LV_OBJ_FLAG_HIDDEN);
         if (!small_alc_required) {
             lv_obj_clear_flag(vswr_label, LV_OBJ_FLAG_HIDDEN);

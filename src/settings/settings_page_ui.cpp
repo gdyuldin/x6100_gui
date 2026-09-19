@@ -14,7 +14,7 @@ static void make_clock(SettingsPage &page) {
 
     page.label("Clock view");
 
-    lv_obj_t *obj = page.dropdown_int(page.grid, *cfg.clock.view(), " Always Time \n Time and Power \n Always Power");
+    lv_obj_t *obj = page.dropdown_int(page.grid, *cfg.ui.clock_view(), " Always Time \n Time and Power \n Always Power");
 
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, page.row, 1);
@@ -25,21 +25,21 @@ static void make_clock(SettingsPage &page) {
     page.row++;
     page.label("Timeout Clock, Power, TX");
 
-    obj = page.spinbox_int(page.grid, *cfg.clock.time_timeout(), 1, 59);
+    obj = page.spinbox_int(page.grid, *cfg.ui.clock_time_timeout(), 1, 59);
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, page.row, 1);
     col += 2;
 
-    obj = page.spinbox_int(page.grid, *cfg.clock.power_timeout(), 1, 59);
+    obj = page.spinbox_int(page.grid, *cfg.ui.clock_power_timeout(), 1, 59);
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, page.row, 1);
     col += 2;
 
-    obj = page.spinbox_int(page.grid, *cfg.clock.tx_timeout(), 0, 10);
+    obj = page.spinbox_int(page.grid, *cfg.ui.clock_tx_timeout(), 0, 10);
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
@@ -219,7 +219,7 @@ static void make_mag(SettingsPage &page) {
     obj = page.cell(col, 3, SMALL_2);
     col += 2;
 
-    obj = page.switch_bool(obj, *cfg.view.mag_freq(), "Magnification of frequency");
+    obj = page.switch_bool(obj, *cfg.ui.mag_freq(), "Magnification of frequency");
     lv_obj_set_width(obj, SMALL_2 - 30);
 
     /* Info */
@@ -227,7 +227,7 @@ static void make_mag(SettingsPage &page) {
     obj = page.cell(col, 3, SMALL_2);
     col += 2;
 
-    obj = page.switch_bool(obj, *cfg.view.mag_info(), "Magnification of info");
+    obj = page.switch_bool(obj, *cfg.ui.mag_info(), "Magnification of info");
     lv_obj_set_width(obj, SMALL_2 - 30);
 
     /* ALC */
@@ -235,7 +235,7 @@ static void make_mag(SettingsPage &page) {
     obj = page.cell(col, 3, SMALL_2);
     col += 2;
 
-    obj = page.switch_bool(obj, *cfg.view.mag_alc(), "Magnification of A L C");
+    obj = page.switch_bool(obj, *cfg.ui.mag_alc(), "Magnification of A L C");
     lv_obj_set_width(obj, SMALL_2 - 30);
 
     page.row++;
@@ -279,13 +279,13 @@ static void make_auto_offset(SettingsPage &page) {
 
     /* On/off */
     obj           = page.cell(1, 3, SMALL_3);
-    auto_level_sw = page.switch_bool(obj, *cfg.spectrum.auto_level_enabled());
+    auto_level_sw = page.switch_bool(obj, *cfg.ui.auto_level_enabled());
     lv_obj_add_event_cb(auto_level_sw, auto_level_on_off_cb, LV_EVENT_VALUE_CHANGED, &page);
     lv_obj_set_width(auto_level_sw, SMALL_3 - 30);
 
     /* Offset */
     obj = page.cell(4, 3, SMALL_3);
-    obj = page.slider_float(obj, *cfg.spectrum.auto_level_offset(), -15.0f, 15.0f, AUTO_LEVEL_STEP, SMALL_3 - 120,
+    obj = page.slider_float(obj, *cfg.ui.auto_level_offset(), -15.0f, 15.0f, AUTO_LEVEL_STEP, SMALL_3 - 120,
                             "%0.1f");
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_FOCUSED, &page);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_DEFOCUSED, &page);
@@ -337,14 +337,14 @@ static void make_spectrum_fill_peak(SettingsPage &page) {
 
     obj = page.cell(1, 3, SMALL_3);
 
-    obj = page.switch_bool(obj, *cfg.spectrum.filled());
+    obj = page.switch_bool(obj, *cfg.ui.spectrum_filled());
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_FOCUSED, &page);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_DEFOCUSED, &page);
     lv_obj_set_width(obj, SMALL_3 - 30);
 
     obj = page.cell(4, 3, SMALL_3);
 
-    obj = page.switch_bool(obj, *cfg.spectrum.peak());
+    obj = page.switch_bool(obj, *cfg.ui.spectrum_peak());
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_FOCUSED, &page);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_DEFOCUSED, &page);
     lv_obj_set_width(obj, SMALL_3 - 30);
@@ -360,7 +360,7 @@ static void make_spectrum_beta_peak_hold_speed(SettingsPage &page) {
 
     page.label("Spec. beta, hold, speed");
 
-    obj = page.spinbox_int(page.grid, *cfg.spectrum.beta(), 0, 90);
+    obj = page.spinbox_int(page.grid, *cfg.ui.spectrum_beta(), 0, 90);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_FOCUSED, &page);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_DEFOCUSED, &page);
 
@@ -370,7 +370,7 @@ static void make_spectrum_beta_peak_hold_speed(SettingsPage &page) {
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, page.row, 1);
     col += 2;
 
-    obj = page.spinbox_int(page.grid, *cfg.spectrum.peak_hold(), 1, 10);
+    obj = page.spinbox_int(page.grid, *cfg.ui.spectrum_peak_hold(), 1, 10);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_FOCUSED, &page);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_DEFOCUSED, &page);
 
@@ -381,7 +381,7 @@ static void make_spectrum_beta_peak_hold_speed(SettingsPage &page) {
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, page.row, 1);
     col += 2;
 
-    obj = page.spinbox_int(page.grid, *cfg.spectrum.peak_speed(), 1, 30);
+    obj = page.spinbox_int(page.grid, *cfg.ui.spectrum_peak_speed(), 1, 30);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_FOCUSED, &page);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_DEFOCUSED, &page);
 
@@ -403,7 +403,7 @@ static void make_waterfall_line(SettingsPage &page) {
 
     obj = page.cell(4, 3, SMALL_3);
 
-    obj = page.switch_bool(obj, *cfg.waterfall.center_line(), "Waterfall center line");
+    obj = page.switch_bool(obj, *cfg.ui.waterfall_center_line(), "Waterfall center line");
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_FOCUSED, &page);
     lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_DEFOCUSED, &page);
     lv_obj_set_width(obj, SMALL_3 - 30);
@@ -418,7 +418,7 @@ static void make_knob_info(SettingsPage &page) {
 
     obj = page.cell(4, 3, SMALL_3);
 
-    obj = page.switch_bool(obj, *cfg.spectrum.knob_info());
+    obj = page.switch_bool(obj, *cfg.ui.knob_info());
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 
@@ -432,7 +432,7 @@ static void make_meter_label_info(SettingsPage &page) {
 
     obj = page.cell(4, 3, SMALL_3);
 
-    obj = page.switch_bool(obj, *cfg.general.show_meter_value());
+    obj = page.switch_bool(obj, *cfg.ui.show_meter_value());
 
     lv_obj_set_width(obj, SMALL_3 - 30);
 
@@ -483,7 +483,7 @@ static void rgb_color_update_cb(lv_event_t *e) {
             lv_label_set_text(label, label_buf);
         }
     }
-    cfg.spectrum.spectrum_color()->set(static_cast<int32_t>(col.full));
+    cfg.ui.spectrum_color()->set(static_cast<int32_t>(col.full));
 }
 
 /* Spectrum custom color toggle */
@@ -491,7 +491,7 @@ static void spectrum_custom_color_toggle_cb(lv_event_t *e) {
     lv_obj_t     *obj  = lv_event_get_target(e);
     SettingsPage *page = (SettingsPage *)lv_event_get_user_data(e);
     bool          on   = lv_obj_has_state(obj, LV_STATE_CHECKED);
-    cfg.spectrum.spectrum_use_custom_color()->set(on);
+    cfg.ui.spectrum_use_custom_color()->set(on);
 
     if (row_rgb_picker_items.cnt) {
         page->show_row(row_rgb_picker_items, on);
@@ -510,7 +510,7 @@ static void make_spectrum_custom_color_toggle(SettingsPage &page) {
     lv_obj_center(spectrum_color_sw);
     lv_obj_set_width(spectrum_color_sw, SMALL_3 - 30);
 
-    if (cfg.spectrum.spectrum_use_custom_color()->get()) {
+    if (cfg.ui.spectrum_use_custom_color()->get()) {
         lv_obj_add_state(spectrum_color_sw, LV_STATE_CHECKED);
     }
 
@@ -575,7 +575,7 @@ static void make_rgb_color_picker(SettingsPage &page) {
     const char  *labels[]   = {"R", "G", "B"};
     lv_palette_t palettes[] = {LV_PALETTE_RED, LV_PALETTE_GREEN, LV_PALETTE_BLUE};
 
-    int32_t full          = cfg.spectrum.spectrum_color()->get();
+    int32_t full          = cfg.ui.spectrum_color()->get();
     uint8_t init_values[] = {(uint8_t)((full >> 16) & 0xFF), (uint8_t)((full >> 8) & 0xFF), (uint8_t)(full & 0xFF)};
 
     for (int i = 0; i < 3; i++) {
@@ -620,18 +620,18 @@ static void make_rgb_color_picker(SettingsPage &page) {
 /***** THEME / COLORS *****/
 
 static void apply_theme() {
-    styles_set_theme((themes_t)cfg.appearance.theme()->get());
+    styles_set_theme((themes_t)cfg.ui.theme()->get());
 }
 
 static void apply_meter_color() {
-    styles_update_meter_colors((meter_color_t)cfg.appearance.meter_color()->get());
+    styles_update_meter_colors((meter_color_t)cfg.ui.meter_color()->get());
 }
 
 static void make_theme(SettingsPage &page) {
     page.label("Theme");
 
     lv_obj_t *obj =
-        page.dropdown_int(page.grid, *cfg.appearance.theme(), " Simple \n Black \n Flat", nullptr, apply_theme);
+        page.dropdown_int(page.grid, *cfg.ui.theme(), " Simple \n Black \n Flat", nullptr, apply_theme);
 
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, page.row, 1);
@@ -644,7 +644,7 @@ static void make_meter_color(SettingsPage &page) {
     page.label("Meter Color");
 
     lv_obj_t *obj =
-        page.dropdown_int(page.grid, *cfg.appearance.meter_color(), " Gray \n Colored", nullptr, apply_meter_color);
+        page.dropdown_int(page.grid, *cfg.ui.meter_color(), " Gray \n Colored", nullptr, apply_meter_color);
 
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, page.row, 1);
@@ -656,7 +656,7 @@ static void make_meter_color(SettingsPage &page) {
 static void make_swr_color(SettingsPage &page) {
     page.label("SWR Color");
 
-    lv_obj_t *obj = page.dropdown_int(page.grid, *cfg.appearance.swr_color(), " Gray \n Colored");
+    lv_obj_t *obj = page.dropdown_int(page.grid, *cfg.ui.swr_color(), " Gray \n Colored");
 
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, page.row, 1);

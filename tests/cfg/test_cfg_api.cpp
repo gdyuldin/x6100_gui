@@ -76,7 +76,7 @@ struct TestDbGuard {
 struct IntObserver {
     std::vector<int32_t> values;
     static void          cb(Subject * /*subj*/, void *user_data) {
-        static_cast<IntObserver *>(user_data)->values.push_back(param_i_get(cfg.general.volume()));
+        static_cast<IntObserver *>(user_data)->values.push_back(param_i_get(cfg.volume()));
     }
 };
 
@@ -101,19 +101,19 @@ TEST_CASE("cfg_api_init loads preseeded values through the accessors", "[cfg_api
 
     cfg_api_init(nullptr);
 
-    REQUIRE(cfg.general.volume() != nullptr);
-    REQUIRE(cfg.general.squelch() != nullptr);
-    REQUIRE(cfg.general.rfgain() != nullptr);
-    REQUIRE(cfg.general.rit() != nullptr);
-    REQUIRE(cfg.general.xit() != nullptr);
+    REQUIRE(cfg.volume() != nullptr);
+    REQUIRE(cfg.squelch() != nullptr);
+    REQUIRE(cfg.rfgain() != nullptr);
+    REQUIRE(cfg.rit() != nullptr);
+    REQUIRE(cfg.xit() != nullptr);
     REQUIRE(cfg.band.vfoa_freq() != nullptr);
     REQUIRE(cfg.band.vfob_freq() != nullptr);
     REQUIRE(cfg.band.current_vfo() != nullptr);
     REQUIRE(cfg.mode.freq_step() != nullptr);
-    REQUIRE(cfg.computed.fg_freq() != nullptr);
+    REQUIRE(cfg.cur.fg_freq() != nullptr);
 
     // Preseeded DB value is loaded through the C accessor.
-    REQUIRE(param_i_get(cfg.general.volume()) == 55);
+    REQUIRE(param_i_get(cfg.volume()) == 55);
     // A key with no DB row keeps its construction-time default.
     REQUIRE(param_i_get(cfg.mode.freq_step()) == 500);
 }
@@ -123,17 +123,17 @@ TEST_CASE("cfg accessor tree exposes the parameter handles", "[cfg_api]") {
     prime_band(db.db, 5);
     cfg_api_init(nullptr);
 
-    REQUIRE(cfg.general.volume() != nullptr);
+    REQUIRE(cfg.volume() != nullptr);
     REQUIRE(cfg.band.vfoa_freq() != nullptr);
     REQUIRE(cfg.filter.high() != nullptr);
-    REQUIRE(cfg.computed.mode() != nullptr);
+    REQUIRE(cfg.cur.mode() != nullptr);
     REQUIRE(cfg.transverter.t0_from() != nullptr);
 
     // In C++ the returned handle supports the Parameter<T> methods, and the
     // tree and the generic C functions address the same parameter.
-    cfg.general.volume()->set(42);
-    REQUIRE(cfg.general.volume()->get() == 42);
-    REQUIRE(param_i_get(cfg.general.volume()) == 42);
+    cfg.volume()->set(42);
+    REQUIRE(cfg.volume()->get() == 42);
+    REQUIRE(param_i_get(cfg.volume()) == 42);
 }
 
 TEST_CASE("parameter accessors are available for the extended global params", "[cfg_api]") {
@@ -146,13 +146,13 @@ TEST_CASE("parameter accessors are available for the extended global params", "[
     cfg_api_init(nullptr);
 
     // Int globals.
-    REQUIRE(cfg.general.band_id() != nullptr);
-    REQUIRE(cfg.general.mic() != nullptr);
-    REQUIRE(cfg.general.hmic() != nullptr);
-    REQUIRE(cfg.general.imic() != nullptr);
-    REQUIRE(cfg.general.moni() != nullptr);
-    REQUIRE(cfg.general.ant_id() != nullptr);
-    REQUIRE(cfg.general.atu_enabled() != nullptr);
+    REQUIRE(cfg.band_id() != nullptr);
+    REQUIRE(cfg.mic() != nullptr);
+    REQUIRE(cfg.hmic() != nullptr);
+    REQUIRE(cfg.imic() != nullptr);
+    REQUIRE(cfg.moni() != nullptr);
+    REQUIRE(cfg.ant_id() != nullptr);
+    REQUIRE(cfg.atu_enabled() != nullptr);
     REQUIRE(cfg.cw.key_tone() != nullptr);
     REQUIRE(cfg.cw.key_speed() != nullptr);
     REQUIRE(cfg.cw.key_mode() != nullptr);
@@ -181,8 +181,8 @@ TEST_CASE("parameter accessors are available for the extended global params", "[
     REQUIRE(cfg.dsp.tx_filter_low() != nullptr);
     REQUIRE(cfg.dsp.tx_filter_high() != nullptr);
     REQUIRE(cfg.dsp.cessb_on() != nullptr);
-    REQUIRE(cfg.spectrum.auto_level_enabled() != nullptr);
-    REQUIRE(cfg.spectrum.knob_info() != nullptr);
+    REQUIRE(cfg.ui.auto_level_enabled() != nullptr);
+    REQUIRE(cfg.ui.knob_info() != nullptr);
     REQUIRE(cfg.vox.on() != nullptr);
     REQUIRE(cfg.vox.gain() != nullptr);
     REQUIRE(cfg.vox.ag() != nullptr);
@@ -203,7 +203,7 @@ TEST_CASE("parameter accessors are available for the extended global params", "[
     REQUIRE(cfg.dsp.comp_makeup_offset() != nullptr);
     REQUIRE(cfg.dsp.output_gain() != nullptr);
     REQUIRE(cfg.dsp.cessb_power_up() != nullptr);
-    REQUIRE(cfg.spectrum.auto_level_offset() != nullptr);
+    REQUIRE(cfg.ui.auto_level_offset() != nullptr);
 
     // Text global.
     REQUIRE(cfg.encoder.bind() != nullptr);
@@ -224,11 +224,11 @@ TEST_CASE("parameter accessors are available for the extended global params", "[
     REQUIRE(cfg.band.vfob_agc() != nullptr);
 
     // Computed globals.
-    REQUIRE(cfg.computed.mode() != nullptr);
-    REQUIRE(cfg.computed.agc() != nullptr);
-    REQUIRE(cfg.computed.att() != nullptr);
-    REQUIRE(cfg.computed.pre() != nullptr);
-    REQUIRE(cfg.computed.bg_freq() != nullptr);
+    REQUIRE(cfg.cur.mode() != nullptr);
+    REQUIRE(cfg.cur.agc() != nullptr);
+    REQUIRE(cfg.cur.att() != nullptr);
+    REQUIRE(cfg.cur.pre() != nullptr);
+    REQUIRE(cfg.cur.bg_freq() != nullptr);
     REQUIRE(cfg.filter.low() != nullptr);
     REQUIRE(cfg.filter.high() != nullptr);
     REQUIRE(cfg.filter.bw() != nullptr);
@@ -252,9 +252,9 @@ TEST_CASE("cfg_api set runs the validator and persists via flush", "[cfg_api]") 
     // 150 is outside the 0..55 volume range -> clamped by the validator.
     // Set a distinct low value first so the clamped change is detected even if
     // a prior test in the same binary left the global volume at 55.
-    param_i_set(cfg.general.volume(), 10);
-    param_i_set(cfg.general.volume(), 150);
-    REQUIRE(param_i_get(cfg.general.volume()) == 55);
+    param_i_set(cfg.volume(), 10);
+    param_i_set(cfg.volume(), 150);
+    REQUIRE(param_i_get(cfg.volume()) == 55);
 
     // The value is queued, not yet in the DB.
     REQUIRE(store_load<int32_t>(StorageType::GLOBAL, 0, "vol") != 55);
@@ -264,7 +264,7 @@ TEST_CASE("cfg_api set runs the validator and persists via flush", "[cfg_api]") 
     REQUIRE(store_load<int32_t>(StorageType::GLOBAL, 0, "vol") == 55);
 }
 
-TEST_CASE("cfg.computed.fg_freq() mirrors the active VFO and writes back through reverse fn", "[cfg_api]") {
+TEST_CASE("cfg.cur.fg_freq() mirrors the active VFO and writes back through reverse fn", "[cfg_api]") {
     TestDbGuard db;
     prime_band(db.db, 5);
     REQUIRE(store_save<int32_t>(StorageType::BAND, 5, "vfoa_freq", 7'100'000) == SUCCESS);
@@ -276,10 +276,10 @@ TEST_CASE("cfg.computed.fg_freq() mirrors the active VFO and writes back through
     cfg_api_init(nullptr);
 
     // Active VFO = A (0) -> front-panel freq is vfoa_freq.
-    REQUIRE(cparam_i_get(cfg.computed.fg_freq()) == 7'100'000);
+    REQUIRE(cparam_i_get(cfg.cur.fg_freq()) == 7'100'000);
 
     // Reverse set writes back into the active VFO's freq.
-    cparam_i_set(cfg.computed.fg_freq(), 7'400'000);
-    REQUIRE(cparam_i_get(cfg.computed.fg_freq()) == 7'400'000);
+    cparam_i_set(cfg.cur.fg_freq(), 7'400'000);
+    REQUIRE(cparam_i_get(cfg.cur.fg_freq()) == 7'400'000);
     REQUIRE(param_i_get(cfg.band.vfoa_freq()) == 7'400'000);
 }

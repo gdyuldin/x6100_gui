@@ -151,7 +151,7 @@ int main(void) {
     audio_set_rec_vol(param_f_get(cfg.audio.rec_gain_db()));
     mfk_init();
     vol_init();
-    styles_init((themes_t)param_i_get(cfg.appearance.theme()));
+    styles_init((themes_t)param_i_get(cfg.ui.theme()));
 
     radio_init();
     audio_mixer_setup(x6100_control_get_base_ver());

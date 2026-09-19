@@ -193,10 +193,10 @@ static void gps_cb(void *s, lv_msg_t *m) {
         qth_pos_to_str(data.fix.latitude, data.fix.longitude, qth_val);
         lv_label_set_text(qth, qth_val);
 
-        const char *saved_qth = param_t_get(cfg.station.qth());
+        const char *saved_qth = param_t_get(cfg.qth());
         if ((strlen(saved_qth) == 0) || (strncmp(qth_val, saved_qth, strlen(saved_qth)) != 0)) {
-            param_t_set(cfg.station.qth(), qth_val);
-            msg_schedule_text_fmt("QTH updated: %s", param_t_get(cfg.station.qth()));
+            param_t_set(cfg.qth(), qth_val);
+            msg_schedule_text_fmt("QTH updated: %s", param_t_get(cfg.qth()));
         }
     } else {
         lv_label_set_text(lat, "N/A");

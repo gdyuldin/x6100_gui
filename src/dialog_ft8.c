@@ -209,11 +209,11 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
 
     char * canonized_call = util_canonize_callsign(remote_callsign, false);
     qso_log_record_t qso = qso_log_record_create(
-        param_t_get(cfg.station.callsign()),
+        param_t_get(cfg.callsign()),
         canonized_call,
         now, param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
-        s_snr, r_snr, cparam_i_get(cfg.computed.fg_freq()), NULL, NULL,
-        param_t_get(cfg.station.qth()), remote_grid
+        s_snr, r_snr, cparam_i_get(cfg.cur.fg_freq()), NULL, NULL,
+        param_t_get(cfg.qth()), remote_grid
     );
     free(canonized_call);
 
@@ -235,7 +235,7 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
 }
 
 static void worker_init() {
-    qso_processor = ftx_qso_processor_init(param_t_get(cfg.station.callsign()), param_t_get(cfg.station.qth()),
+    qso_processor = ftx_qso_processor_init(param_t_get(cfg.callsign()), param_t_get(cfg.qth()),
                                            save_qso,
                                            param_i_get(cfg.ft8.max_repeats()));
 
@@ -312,7 +312,7 @@ static void destruct_cb() {
     lm_set_freq(false);
     lm_set_band(false);
 
-    radio_set_pwr(param_f_get(cfg.general.pwr()));
+    radio_set_pwr(param_f_get(cfg.pwr()));
     adif_log_close(ft8_log);
 
     tx_worker_destruct();
@@ -516,7 +516,7 @@ static void construct_cb(lv_obj_t *parent) {
 
     lv_finder_set_range(finder, filter_low, filter_high);
 
-    qth_str_to_pos(param_t_get(cfg.station.qth()), &cur_lat, &cur_lon);
+    qth_str_to_pos(param_t_get(cfg.qth()), &cur_lat, &cur_lon);
 
     lm_set_ab(true);
     lm_set_mode(true);
@@ -533,13 +533,13 @@ static void construct_cb(lv_obj_t *parent) {
     /* Logger */
     ft8_log = adif_log_init("/mnt/ft_log.adi");
 
-    if (param_f_get(cfg.general.pwr()) > MAX_PWR) {
+    if (param_f_get(cfg.pwr()) > MAX_PWR) {
         radio_set_pwr(MAX_PWR);
         msg_schedule_text_fmt("Power was limited to %0.0fW", MAX_PWR);
     }
 
     // setup gain offset
-    float target_pwr = LV_MIN(param_f_get(cfg.general.pwr()), MAX_PWR);
+    float target_pwr = LV_MIN(param_f_get(cfg.pwr()), MAX_PWR);
     if (x6100_control_get_base_ver().rev >= 3) {
         // patched firmware has a true power control
         base_gain_offset = -9.4f;
@@ -628,14 +628,14 @@ static void tx_cq_en_dis_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
 
     if (!subject_i_get(cq_enabled)){
-        if (strlen(param_t_get(cfg.station.callsign())) == 0) {
+        if (strlen(param_t_get(cfg.callsign())) == 0) {
             msg_schedule_text_fmt("Call sign required");
             return;
         }
         subject_i_set(cq_enabled, true);
         subject_i_set(tx_enabled, true);
 
-        cq_make_message(param_t_get(cfg.station.callsign()), param_t_get(cfg.station.qth()), param_t_get(cfg.ft8.cq_modifier()), tx_msg.msg);
+        cq_make_message(param_t_get(cfg.callsign()), param_t_get(cfg.qth()), param_t_get(cfg.ft8.cq_modifier()), tx_msg.msg);
 
         struct timespec now;
         clock_gettime(CLOCK_REALTIME, &now);
@@ -667,7 +667,7 @@ static void tx_call_en_dis_cb(struct button_data_t *btn_data) {
         return;
 
     if (!subject_i_get(tx_enabled)) {
-        if (strlen(param_t_get(cfg.station.callsign())) == 0) {
+        if (strlen(param_t_get(cfg.callsign())) == 0) {
             msg_schedule_text_fmt("Call sign required");
             return;
         }
@@ -916,7 +916,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
         cell_data.worked_type = qso_log_search_worked(
             meta.call_de,
             param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
-            qso_log_freq_to_band(cparam_i_get(cfg.computed.fg_freq()))
+            qso_log_freq_to_band(cparam_i_get(cfg.cur.fg_freq()))
         );
     }
 
@@ -924,7 +924,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
     cell_data.meta = meta;
     cell_data.odd = s_info->odd;
-    if (param_t_get(cfg.station.qth())[0] != 0) {
+    if (param_t_get(cfg.qth())[0] != 0) {
         if (strlen(meta.grid) > 0) {
             double lat, lon;
             qth_str_to_pos(meta.grid, &lat, &lon);

@@ -169,13 +169,13 @@ void controls_toggle_vox(button_data_t *data) {
 }
 
 void controls_cw_zap(button_data_t *data) {
-    x6100_mode_t mode = (x6100_mode_t)(cfg.computed.mode()->get());
+    x6100_mode_t mode = (x6100_mode_t)(cfg.cur.mode()->get());
     if ((mode != x6100_mode_cw) && (mode != x6100_mode_cwr)) {
         return;
     }
     float tone_freq = cw_get_tone_freq();
     int32_t key_tone = cfg.cw.key_tone()->get();
-    int32_t freq = cfg.computed.fg_freq()->get();
+    int32_t freq = cfg.cur.fg_freq()->get();
     LV_LOG_USER("tone_freq: %f, key_tone: %i", tone_freq, key_tone);
     if (mode == x6100_mode_cw) {
         freq += tone_freq - key_tone;
@@ -183,7 +183,7 @@ void controls_cw_zap(button_data_t *data) {
         freq -= tone_freq - key_tone;
     }
     freq = (freq + 5) / 10 * 10;
-    cfg.computed.fg_freq()->set(freq);
+    cfg.cur.fg_freq()->set(freq);
 }
 
 void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
@@ -204,7 +204,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_RFG:
-            i = update_param(*cfg.general.rfgain(), diff);
+            i = update_param(*cfg.rfgain(), diff);
             snprintf(msg.data(), msg.capacity(), "RF gain: %i", i);
 
             if (diff) {
@@ -213,7 +213,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_SQL:
-            i = update_param(*cfg.general.squelch(), diff);
+            i = update_param(*cfg.squelch(), diff);
             snprintf(msg.data(), msg.capacity(), "Voice SQL: %i", i);
 
             if (diff) {
@@ -235,7 +235,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             i = cfg.filter.high()->get();
             if (diff) {
                 int32_t freq_step;
-                switch (cfg.computed.mode()->get()) {
+                switch (cfg.cur.mode()->get()) {
                 case x6100_mode_cw:
                 case x6100_mode_cwr:
                     freq_step = 10;
@@ -264,7 +264,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_PWR:
-            f = update_param(*cfg.general.pwr(), diff, 0.1f);
+            f = update_param(*cfg.pwr(), diff, 0.1f);
             snprintf(msg.data(), msg.capacity(), "Power: %0.1f W", f);
 
             if (diff) {
@@ -273,10 +273,10 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_MIC:
-            i = cfg.general.mic()->get();
+            i = cfg.mic()->get();
             // i range should be 0..2
             i = (i + diff + 3) % 3;
-            cfg.general.mic()->set(i);
+            cfg.mic()->set(i);
             s = format_mic_str_get((x6100_mic_sel_t)i);
             snprintf(msg.data(), msg.capacity(), "MIC: %s", s);
 
@@ -286,7 +286,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_HMIC:
-            i = update_param(*cfg.general.hmic(), diff);
+            i = update_param(*cfg.hmic(), diff);
             snprintf(msg.data(), msg.capacity(), "H-MIC gain: %i", i);
 
             if (diff) {
@@ -295,7 +295,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_IMIC:
-            i = update_param(*cfg.general.imic(), diff);
+            i = update_param(*cfg.imic(), diff);
             snprintf(msg.data(), msg.capacity(), "I-MIC gain: %i", i);
 
             if (diff) {
@@ -304,7 +304,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_MONI:
-            i = update_param(*cfg.general.moni(), diff);
+            i = update_param(*cfg.moni(), diff);
             snprintf(msg.data(), msg.capacity(), "Moni level: %i", i);
 
             if (diff) {
@@ -491,7 +491,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_ANT:
-            i = update_param(*cfg.general.ant_id(), diff);
+            i = update_param(*cfg.ant_id(), diff);
             snprintf(msg.data(), msg.capacity(), "Antenna: %i", i);
 
             if (diff) {
@@ -500,7 +500,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_RIT:
-            i = update_param(*cfg.general.rit(), diff, 10);
+            i = update_param(*cfg.rit(), diff, 10);
             snprintf(msg.data(), msg.capacity(), "RIT: %c%i", (i < 0 ? '-' : '+'), abs(i));
 
             if (diff) {
@@ -509,7 +509,7 @@ void controls_encoder_update(cfg_ctrl_t ctrl, int32_t diff, std::string &msg) {
             break;
 
         case CTRL_XIT:
-            i = update_param(*cfg.general.xit(), diff, 10);
+            i = update_param(*cfg.xit(), diff, 10);
             snprintf(msg.data(), msg.capacity(), "XIT: %c%i", (i < 0 ? '-' : '+'), abs(i));
 
             if (diff) {

@@ -330,14 +330,14 @@ void dsp_init() {
     cfg.band.if_shift()->subscribe(update_filters);
     cfg.filter.low()->subscribe(update_filters);
     cfg.filter.high()->subscribe_and_notify(update_filters);
-    cfg.computed.mode()->subscribe_and_notify(update_filters);
+    cfg.cur.mode()->subscribe_and_notify(update_filters);
 
-    cfg.computed.mode()->subscribe_and_notify(update_cur_mode);
+    cfg.cur.mode()->subscribe_and_notify(update_cur_mode);
 
-    cfg.computed.pre()->subscribe_and_notify(on_pre_att_change, &s_meter_pre);
-    cfg.computed.att()->subscribe_and_notify(on_pre_att_change, &s_meter_att);
+    cfg.cur.pre()->subscribe_and_notify(on_pre_att_change, &s_meter_pre);
+    cfg.cur.att()->subscribe_and_notify(on_pre_att_change, &s_meter_att);
 
-    cfg.computed.fg_freq()->subscribe(on_cur_freq_change);
+    cfg.cur.fg_freq()->subscribe(on_cur_freq_change);
     ready = true;
 }
 
@@ -544,7 +544,7 @@ static void update_s_meter(float *lin) {
     s_meter_db_raw.store(sum_db);
 
     // TODO: use subscription
-    meter_update(sum_db, param_i_get(cfg.spectrum.beta()) * 0.01f);
+    meter_update(sum_db, param_i_get(cfg.ui.spectrum_beta()) * 0.01f);
 }
 
 /* Noise floor and display levels from the full-resolution linear spectrum.
@@ -774,7 +774,7 @@ static void update_filters(Subject *subj, void *user_data) {
     auto low = cfg.filter.low()->get();
     auto high = cfg.filter.high()->get();
     auto if_shift = cfg.band.if_shift()->get();
-    auto mode = cfg.computed.mode()->get();
+    auto mode = cfg.cur.mode()->get();
     switch (mode) {
         case x6100_mode_lsb:
         case x6100_mode_lsb_dig:
@@ -796,7 +796,7 @@ static void update_filters(Subject *subj, void *user_data) {
 }
 
 static void update_cur_mode(Subject *subj, void *user_data) {
-    cur_mode = (x6100_mode_t)cfg.computed.mode()->get();
+    cur_mode = (x6100_mode_t)cfg.cur.mode()->get();
 }
 
 static void on_pre_att_change(Subject *subj, void *user_data) {
@@ -1078,8 +1078,8 @@ static void dsp_resolve_levels(bool tx, float *out_min, float *out_max) {
     if (tx) {
         *out_min = DSP_TX_LEVEL_MIN;
         *out_max = DSP_TX_LEVEL_MAX;
-    } else if (cfg.spectrum.auto_level_enabled()->get()) {
-        float offset = cfg.spectrum.auto_level_offset()->get();
+    } else if (cfg.ui.auto_level_enabled()->get()) {
+        float offset = cfg.ui.auto_level_offset()->get();
         *out_min = auto_min - offset;
         *out_max = auto_max - offset;
     } else {
