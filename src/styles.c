@@ -268,8 +268,8 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_color(&style.cw_tune, lv_color_black());
     lv_style_set_border_width(&style.cw_tune, 0);
     lv_style_set_opa(&style.cw_tune, LV_OPA_50);
-    lv_style_set_align(&style.cw_tune, LV_ALIGN_RIGHT_MID);
-    lv_style_set_translate_x(&style.cw_tune, -10);
+    lv_style_set_align(&style.cw_tune, LV_ALIGN_LEFT_MID);
+    lv_style_set_translate_x(&style.cw_tune, 80);
     lv_style_set_translate_y(&style.cw_tune, 10);
 
     /* RGB Picker Styles */
@@ -525,6 +525,7 @@ static void setup_skin_default(skin_t *skin) {
     skin->s_meter.mid   = lv_color_hex(0xAAAA00);
     skin->s_meter.high  = lv_color_hex(0xAA0000);
     skin->s_meter.peak  = lv_color_hex(0xAAAAAA);
+
 
     /* Setup background colors (transparent by default) */
     lv_color_t bg_fill_color  = {.full = 0};

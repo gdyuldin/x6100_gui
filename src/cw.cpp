@@ -72,6 +72,7 @@ void cw_init() {
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
         dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, CW_CAPTURE_RATE);
+        update_cw_active();
     }
 
     cw_detector = new CWDetector((float)CW_CAPTURE_RATE, 0.01f, 0.8f);

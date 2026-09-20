@@ -12,34 +12,42 @@
 #include "styles.h"
 #include "cfg/cfg_api.h"
 #include "pubsub_ids.h"
+#include "scheduler.h"
 
 #include <math.h>
 
 #include <aether_radio/x6100_control/control.h>
 
-#define BLOCK_W 5
-#define SPACING 4
+#define BLOCK_W 4
+#define SPACING 3
 #define N_BLOCKS 15
 #define WIDTH (N_BLOCKS * (BLOCK_W + SPACING) + SPACING)
-#define HEIGHT 40
+#define HEIGHT 30
 #define BLOCK_HZ 10
 
 static lv_draw_rect_dsc_t rect_dsc;
 static lv_draw_rect_dsc_t rect_active_dsc;
+static lv_color_t         active_color;
 
 static lv_color_t color_good;
 static lv_color_t color_fair;
 static lv_color_t color_bad;
 
-static lv_obj_t     *obj;
+static lv_anim_t fade_anim;
+static uint8_t   fade_mix = 0;
 
-static int8_t cur_freq=-100;
+static lv_obj_t *obj;
 
-static void update_cb(lv_event_t * e);
+static int8_t cur_freq = -100;
+
+static void draw_cb(lv_event_t * e);
 static void update_visibility(Subject *subj, void *user_data);
+static void fade_anim_cb(void * var, int32_t val);
+static void refresh_anim_cb(void *);
 
 void cw_tune_init(lv_obj_t *parent)
 {
+
     color_good = lv_color_hex(COLOR_LIGHT_GREEN);
     color_fair = lv_color_hex(COLOR_LIGHT_YELLOW);
     color_bad = lv_color_hex(COLOR_LIGHT_RED);
@@ -51,37 +59,48 @@ void cw_tune_init(lv_obj_t *parent)
 
     lv_draw_rect_dsc_init(&rect_active_dsc);
     rect_active_dsc.radius = 5;
-    rect_active_dsc.bg_opa = LV_OPA_70;
 
     obj = lv_obj_create(parent);
+    lv_obj_remove_style_all(obj);
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_height(obj, HEIGHT);
     lv_obj_set_width(obj, WIDTH);
     lv_obj_add_style(obj, &style.cw_tune, 0);
 
-    lv_obj_add_event_cb(obj, update_cb, LV_EVENT_DRAW_MAIN, NULL);
+    lv_anim_init(&fade_anim);
+    lv_anim_set_var(&fade_anim, obj);
+    lv_anim_set_exec_cb(&fade_anim, fade_anim_cb);
+    lv_anim_set_values(&fade_anim, 255, 0);
+    lv_anim_set_time(&fade_anim, 500);
+    lv_anim_set_delay(&fade_anim, 1000);
+
+    lv_obj_add_event_cb(obj, draw_cb, LV_EVENT_DRAW_MAIN, NULL);
     subject_subscribe_delayed((Subject*)cfg.cur.mode(), update_visibility, NULL);
     subject_subscribe_delayed_and_notify((Subject*)cfg.cw.tune(), update_visibility, NULL);
 }
 
 void cw_tune_set_freq(float hz) {
-    int8_t new_id = N_BLOCKS / 2 - roundf(hz / BLOCK_HZ);
+    int8_t new_id = roundf(hz / BLOCK_HZ);
+    if (LV_ABS(new_id) <= 1) {
+        active_color = color_good;
+    } else if (LV_ABS(new_id) <= 2) {
+        active_color = color_fair;
+    } else {
+        active_color = color_bad;
+    }
+    new_id += N_BLOCKS / 2;
     if (new_id < 0) new_id = 0;
     if (new_id > N_BLOCKS - 1) new_id = N_BLOCKS - 1;
 
-    if (LV_ABS(hz) <= 10) {
-        rect_active_dsc.bg_color = color_good;
-    } else if (LV_ABS(hz) <= 20) {
-        rect_active_dsc.bg_color = color_fair;
-    } else {
-        rect_active_dsc.bg_color = color_bad;
-    }
     if (cur_freq != new_id){
         cur_freq = new_id;
         event_send(obj, LV_EVENT_REFRESH, NULL);
     }
+    fade_mix = 255;
+    scheduler_put_noargs(refresh_anim_cb);
 }
 
-static void update_cb(lv_event_t * e) {
+static void draw_cb(lv_event_t * e) {
     int16_t x, h;
     int16_t y_b=HEIGHT - 1;
     int16_t w=BLOCK_W;
@@ -91,6 +110,8 @@ static void update_cb(lv_event_t * e) {
     lv_area_t coords, offset;
 
     lv_obj_get_coords(obj, &offset);
+    rect_active_dsc.bg_color = lv_color_mix(active_color, rect_dsc.bg_color, fade_mix);
+    rect_active_dsc.bg_opa = rect_dsc.bg_opa + (uint16_t)fade_mix * (LV_OPA_70 - rect_dsc.bg_opa) / 255;
 
     for (int16_t i = 0; i < N_BLOCKS; i++) {
         x = SPACING + i * (BLOCK_W + SPACING);
@@ -118,4 +139,14 @@ static void update_visibility(Subject *subj, void *user_data) {
         lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     }
 
+}
+
+static void fade_anim_cb(void * var, int32_t val) {
+    fade_mix = val;
+    lv_obj_invalidate(obj);
+}
+
+static void refresh_anim_cb(void *) {
+    lv_anim_del(&fade_anim, fade_anim_cb);
+    lv_anim_start(&fade_anim);
 }
