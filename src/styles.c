@@ -672,9 +672,17 @@ static void setup_skin_default(skin_t *skin) {
     }
 
     // TX info
+
+    // Recalculate color to preserve value
+    lv_grad_dsc_t tx_db_grad = top_bg_grad;
+    for (uint8_t i = 0; i < tx_db_grad.stops_count; i++)
+        tx_db_grad.stops[i].color = lv_color_darken(tx_db_grad.stops[i].color, 255-top_block_opa);
+    lv_grad_dsc_t tx_border_grad = top_border_grad;
+    for (uint8_t i = 0; i < tx_border_grad.stops_count; i++)
+        tx_border_grad.stops[i].color = lv_color_darken(tx_border_grad.stops[i].color, 255-top_block_opa);
     if (style_get_size(&style.tx_info, &w, &h)) {
-        render_grad_bg_with_border(w, h, &tx_info_bg_dsc, LV_OPA_COVER, border_width, radius, &top_bg_grad,
-                                   &top_border_grad);
+        render_grad_bg_with_border(w, h, &tx_info_bg_dsc, LV_OPA_COVER, border_width, radius, &tx_db_grad,
+                                   &tx_border_grad);
         skin->bg_img.tx_info = &tx_info_bg_dsc;
     } else {
         LV_LOG_ERROR("Unknown tx_info style size");
