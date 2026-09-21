@@ -19,9 +19,9 @@ float PowerDetector::get_raw_llr(float peak_power, float noise_power) {
 
     float instant_snr_lin = peak_power / noise_power;
 
-    // Strong click guard (SNR > 40 dB): force deep silence immediately
-    if (instant_snr_lin > 10000.0f) {
-        llr_ = -4.0f;
+    // Strong click guard (SNR > 50 dB): force deep silence immediately
+    if (instant_snr_lin > 100000.0f) {
+        llr_ = -3.99f;
         return llr_;
     }
 
@@ -30,7 +30,7 @@ float PowerDetector::get_raw_llr(float peak_power, float noise_power) {
     float current_llr = instant_snr_db - snr_threshold_db_;
 
     // Send with scaling to prevent single frame threshold changing
-    return current_llr * 0.25f;
+    return current_llr * 0.5f;
 }
 
 float PowerDetector::get_llr() const {

@@ -6,6 +6,8 @@
 
 namespace cw {
 
+constexpr float DOT_DASH_TH_K = 1.55f;
+
 // Robust histogram of mark/space durations with a Schmitt trigger, rectangular
 // convolution and centre-of-mass peak refinement. It adapts the dot/dash and
 // element/letter/word boundaries to the sender's speed and emits one Token at
@@ -28,13 +30,12 @@ class TimeClassifier {
     int   current_duration_ms_ = 0;
     float accumulated_llr_     = 0.0f;
     int   frame_count_         = 0;
-    int   sample_count_        = 0;
     int   idle_frames_counter  = 0;
 
     // Adaptive decision boundaries (start values for ~20 WPM)
-    int threshold_dot_dash_    = WPM_K * 2 / 20;
-    int threshold_elem_letter_ = WPM_K * 2 / 20;
-    int threshold_letter_word_ = WPM_K * 6 / 20;
+    float threshold_dot_dash_    = WPM_K * DOT_DASH_TH_K / 20;
+    float threshold_elem_letter_ = WPM_K * DOT_DASH_TH_K / 20;
+    float threshold_letter_word_ = WPM_K * 6.0f / 20;
 };
 
 } // namespace cw

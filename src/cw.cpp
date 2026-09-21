@@ -82,7 +82,6 @@ template <std::size_t NFFT> class SpgramReal {
         if (fft_ == NULL || buffer_ == NULL) {
             return false;
         }
-
         windowf_push(buffer_, sample);
         n_samples_++;
         if (n_samples_ < step_) {
@@ -169,7 +168,7 @@ static void cw_on_off_cb(bool val);
 namespace {
     SpgramReal<cw::FFT_SIZE> spgram{cw::FFT_SIZE / 4};
     cw::CwReceiver cw_receiver{panel_add_text, cw_on_off_cb};
-    FilterQueue<6> freq_queue{};
+    FilterQueue<3> freq_queue{};
 } // end namespace
 
 void cw_init() {
@@ -182,7 +181,7 @@ void cw_init() {
     cfg.cur.mode()->subscribe_and_notify(on_cw_mode_change);
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
-        dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, cw::SAMPLE_RATE);
+        dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, static_cast<uint32_t>(cw::SAMPLE_RATE));
         update_cw_active();
     }
 
@@ -288,6 +287,5 @@ static void update_cw_active() {
 
 void cw_on_off_cb(bool val) {
     peak_on = val;
-    printf("Peak: %i\n", val);
 }
 

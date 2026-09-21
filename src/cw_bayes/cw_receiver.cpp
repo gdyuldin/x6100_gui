@@ -74,10 +74,7 @@ float CwReceiver::process_fft_frame_raw_llr(const std::complex<float> *fft_outpu
         if (den < -1.5f) {
             float delta = 0.5f * (y1 - y3) / den;
             precise_bin = static_cast<float>(max_idx) + delta;
-
-            float precise_val_db = y2 - 0.25f * std::pow(y1 - y3, 2.0f) / den;
-            precise_max_val = std::pow(10.0f, precise_val_db / 10.0f);
-        }
+         }
     }
     out_precise_freq = precise_bin * SAMPLE_RATE / static_cast<float>(FFT_SIZE);
 

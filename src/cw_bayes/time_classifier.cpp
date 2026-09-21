@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace cw {
 
@@ -41,7 +42,7 @@ float TimeClassifier::find_precise_peak(const std::array<float, HIST_BINS> &hist
 }
 
 void TimeClassifier::update_thresholds() {
-    // Supports roughly 10-50 WPM (search windows above are tuned for that)
+    // Supports roughly 10-40 WPM (search windows above are tuned for that)
     // Search windows are in bins (1 bin = BIN_SIZE_MS ms):
     constexpr int min_dot = WPM_K / 50 / BIN_SIZE_MS;
     constexpr int max_dot = WPM_K / 10 / BIN_SIZE_MS;
@@ -53,29 +54,20 @@ void TimeClassifier::update_thresholds() {
     float dot_bin  = find_precise_peak(hist_on_, min_dot, max_dot);
     float dash_bin = find_precise_peak(hist_on_, min_dash, max_dash);
 
-    if (dot_bin > 0.0f && dash_bin > 0.0f && dash_bin > dot_bin) {
-        threshold_dot_dash_ = static_cast<int>(((dot_bin + dash_bin) / 2.0f) * BIN_SIZE_MS);
-    } else if (dot_bin > 0.0f) {
-        threshold_dot_dash_ = static_cast<int>(dot_bin * BIN_SIZE_MS * 2.0f);
+    if (dot_bin > 0.0f) {
+        float target_dot_dash = dot_bin * BIN_SIZE_MS * DOT_DASH_TH_K;
+        threshold_dot_dash_ += 0.9f * (target_dot_dash - threshold_dot_dash_);
     }
 
     float elem_space_bin   = find_precise_peak(hist_off_, min_dot, max_dot);
     float letter_space_bin = find_precise_peak(hist_off_, min_dash, max_dash);
     float word_space_bin   = find_precise_peak(hist_off_, min_space, max_space);
 
-    if (elem_space_bin > 0.0f && letter_space_bin > 0.0f && letter_space_bin > elem_space_bin) {
-        threshold_elem_letter_ = static_cast<int>(((elem_space_bin + letter_space_bin) / 2.0f) * BIN_SIZE_MS);
-    } else if (elem_space_bin > 0.0f) {
-        threshold_elem_letter_ = static_cast<int>(elem_space_bin * BIN_SIZE_MS * 2.0f);
-    }
+    if (elem_space_bin > 0.0f) {
+        float target_elem_letter = elem_space_bin * BIN_SIZE_MS * DOT_DASH_TH_K;
+        threshold_elem_letter_ += 0.9f * (target_elem_letter - threshold_elem_letter_);
 
-    if (letter_space_bin > 0.0f && word_space_bin > 0.0f && word_space_bin > letter_space_bin) {
-        threshold_letter_word_ = static_cast<int>(((letter_space_bin + word_space_bin) / 2.0f) * BIN_SIZE_MS);
-    } else if (elem_space_bin > 0.0f) {
-        // Fallback: letter/word boundary is about 5 element lengths, but the
-        // element space is the closest adapted anchor available when the longer
-        // spaces have not been seen yet.
-        threshold_letter_word_ = static_cast<int>(elem_space_bin * BIN_SIZE_MS * 5.0f);
+        threshold_letter_word_ = threshold_elem_letter_ * 3.5f;
     }
 }
 
@@ -83,16 +75,11 @@ void TimeClassifier::add_to_histogram(std::array<float, HIST_BINS> &hist, int du
     size_t bin = static_cast<size_t>(duration_ms / BIN_SIZE_MS);
     if (bin < HIST_BINS) {
         hist[bin] += weight;
-        sample_count_++;
 
-        // Forgetting mechanism (leak) to track QSO speed changes: after 180
-        // samples decay both histograms by 0.75
-        if (sample_count_ > 180) {
-            for (size_t i = 0; i < HIST_BINS; ++i) {
-                hist_on_[i] *= 0.75f;
-                hist_off_[i] *= 0.75f;
-            }
-            sample_count_ = 0;
+        // Forgetting mechanism (leak) to track QSO speed changes
+        for (size_t i = 0; i < HIST_BINS; ++i) {
+            hist_on_[i] *= 0.9f;
+            hist_off_[i] *= 0.9f;
         }
     }
 }
@@ -114,20 +101,19 @@ Token TimeClassifier::feed_frame_llr(float current_frame_llr) {
         frame_count_++;
         if (!is_now_on_) {
             // Handle long OFF
-            idle_frames_counter++;
+            float total_idle_time_ms = frame_count_ * BIN_SIZE_MS;
+            float dynamic_timeout_limit_ms = threshold_elem_letter_ * 5;
+            if (dynamic_timeout_limit_ms < 200.0f) dynamic_timeout_limit_ms = 200.0f;
 
-            // 200 * 8ms = 1.6s of silence
-            if (idle_frames_counter == 200) {
+            if (total_idle_time_ms >= dynamic_timeout_limit_ms) {
                 // reset
-                idle_frames_counter = 0;
+                frame_count_ = 0;
                 return CW_WORD_SPACE;
             }
-        } else {
-            idle_frames_counter = 0;
         }
     } else {
         // Physical switching edge: the interval is complete
-        if (current_duration_ms_ >= 15) {
+        if (current_duration_ms_ >= 20) {
             float mean_llr         = accumulated_llr_ / static_cast<float>(frame_count_);
             float mean_probability = 1.0f / (1.0f + std::exp(-mean_llr)); // exp() once per symbol
 
@@ -158,9 +144,7 @@ Token TimeClassifier::feed_frame_llr(float current_frame_llr) {
 }
 
 float TimeClassifier::get_current_wpm() const {
-    // Dot length is 1200/WPM ms and the dot/dash boundary sits at about two
-    // dots, so WPM = 2400 / boundary_ms.
-    return WPM_K * 2.0f / static_cast<float>(threshold_dot_dash_);
+    return WPM_K * DOT_DASH_TH_K / static_cast<float>(threshold_dot_dash_);
 }
 
 bool TimeClassifier::is_signal_active() const {

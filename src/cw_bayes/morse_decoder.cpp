@@ -92,6 +92,7 @@ void MorseDecoder::handle_token(Token token) {
             }
             append(' '); // Print the inter-word space
             tree_index_ = 0;
+            buffer_len_ = 0;
             break;
 
         case CW_ELEMENT_SPACE:
