@@ -1,11 +1,3 @@
-/*
- *  SPDX-License-Identifier: LGPL-2.1-or-later
- *
- *  Xiegu X6100 LVGL GUI
- *
- *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
- */
-
 #pragma once
 
 #include <array>
@@ -22,6 +14,7 @@ class TimeClassifier {
   public:
     Token feed_frame_llr(float current_frame_llr);
     float get_current_wpm() const;
+    bool is_signal_active() const;
 
   private:
     float find_precise_peak(const std::array<float, HIST_BINS> &hist, size_t start_bin, size_t end_bin) const;
@@ -36,11 +29,12 @@ class TimeClassifier {
     float accumulated_llr_     = 0.0f;
     int   frame_count_         = 0;
     int   sample_count_        = 0;
+    int   idle_frames_counter  = 0;
 
     // Adaptive decision boundaries (start values for ~20 WPM)
-    int threshold_dot_dash_    = 160;
-    int threshold_elem_letter_ = 160;
-    int threshold_letter_word_ = 480;
+    int threshold_dot_dash_    = WPM_K * 2 / 20;
+    int threshold_elem_letter_ = WPM_K * 2 / 20;
+    int threshold_letter_word_ = WPM_K * 6 / 20;
 };
 
 } // namespace cw

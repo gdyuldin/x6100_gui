@@ -24,8 +24,6 @@ extern "C" {
 #include <stdbool.h>
 #include <liquid/liquid.h>
 
-#define CW_CAPTURE_RATE 8000
-
 void cw_init();
 
 void cw_put_audio_samples(size_t n, float *samples);
@@ -34,56 +32,4 @@ float cw_get_tone_freq(void);
 
 #ifdef __cplusplus
 }
-
-
-/**
- * Chunked average class
- */
-template <std::size_t N>
-class ChunkedAverage {
-    std::array<float, N> data {0.0f};
-    size_t w=0;
-
-public:
-    void put(float val);
-    bool ready(void);
-    float get(void);
-};
-
-
-/**
- * CW detector class for detecting frequency of tone, also noise and signal levels
- */
-class CWDetector {
-    float fs;
-    float f0;
-    float mu;
-    float r;
-    float r2;
-
-    // Filter state
-    float x1       = 0.0f;
-    float x2       = 0.0f;
-    float y_notch1 = 0.0f;
-    float y_notch2 = 0.0f;
-    float y_peak1  = 0.0f;
-    float y_peak2  = 0.0f;
-    float a;
-
-    // Average instances
-    // freq averaging with 72 ms window
-    ChunkedAverage<72 * CW_CAPTURE_RATE / 1000 > avg_freq;
-    // signal averaging with 6ms window
-    ChunkedAverage<6 * CW_CAPTURE_RATE / 1000> avg_signal;
-    ChunkedAverage<6 * CW_CAPTURE_RATE / 1000> avg_noise;
-
-public:
-    CWDetector(float fs, float mu, float r);
-    void set_f0(int16_t tone);
-    void set_r(float r);
-    void put(float sample);
-    bool get_freq(float *freq);
-    bool get_signal_noise(float *sig_db, float *noise_db);
-};
-
 #endif

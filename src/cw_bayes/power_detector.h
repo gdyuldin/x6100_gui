@@ -1,11 +1,3 @@
-/*
- *  SPDX-License-Identifier: LGPL-2.1-or-later
- *
- *  Xiegu X6100 LVGL GUI
- *
- *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
- */
-
 #pragma once
 
 namespace cw {
@@ -23,7 +15,7 @@ class PowerDetector {
 
   private:
     float llr_               = -3.0f;
-    float snr_threshold_lin_ = 10.0f; // Default 10 dB
+    float snr_threshold_db_ = 10.0f; // Default 10 dB
 };
 
 } // namespace cw

@@ -1,11 +1,3 @@
-/*
- *  SPDX-License-Identifier: LGPL-2.1-or-later
- *
- *  Xiegu X6100 LVGL GUI
- *
- *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
- */
-
 #pragma once
 
 #include <array>
@@ -19,14 +11,14 @@
 namespace cw {
 
 // Morse binary-tree state machine. Consumes timing Tokens and emits decoded
-// text through EmitFn. Accumulated text is flushed through a small internal
+// text through EmitTextFn. Accumulated text is flushed through a small internal
 // buffer, so a future C caller can pass e.g. `void panel_add_text(const char*)`
 // as the callback.
 class MorseDecoder {
   public:
-    using EmitFn = std::function<void(const char *)>;
+    using EmitTextFn = std::function<void(const char *)>;
 
-    explicit MorseDecoder(EmitFn emit);
+    explicit MorseDecoder(EmitTextFn emit);
 
     void handle_token(Token token);
     void reset();
@@ -57,13 +49,16 @@ class MorseDecoder {
 
     bool check_and_handle_exceptions();
 
-    EmitFn               emit_;
-    size_t               tree_index_ = 0;
-    std::string          text_buffer_{};
+    EmitTextFn  emit_;
+    size_t      tree_index_ = 0;
+    std::string text_buffer_{};
 
     // Buffer for raw elements
     std::array<char, 12> raw_buffer_{};
     size_t buffer_len_ = 0;
+
+    // Last char to avoid spaces
+    char last_char = 'A';
 
     // Exceptions struct
     struct ExceptionPair {

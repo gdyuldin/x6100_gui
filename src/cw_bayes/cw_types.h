@@ -1,11 +1,3 @@
-/*
- *  SPDX-License-Identifier: LGPL-2.1-or-later
- *
- *  Xiegu X6100 LVGL GUI
- *
- *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
- */
-
 #pragma once
 
 #include <cstddef>
@@ -28,6 +20,7 @@ constexpr size_t FFT_SIZE      = 128;
 constexpr size_t SPECTRUM_SIZE = FFT_SIZE / 2 + 1;
 constexpr float  SAMPLE_RATE   = 4000.0f;
 constexpr size_t HIST_BINS     = 150;
-constexpr int    BIN_SIZE_MS   = 10;
+constexpr int    BIN_SIZE_MS   = 8;
+constexpr int    WPM_K         = 1200;  // dot ms = WPM_K / wpm
 
 } // namespace cw

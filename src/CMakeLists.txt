@@ -41,6 +41,7 @@ add_subdirectory(qth)
 add_subdirectory(cfg)
 add_subdirectory(cat)
 add_subdirectory(settings)
+add_subdirectory(cw_bayes)
 
 include_directories(utf8)
 include_directories(${CMAKE_SYSROOT}/usr/include/RHVoice/)
@@ -67,6 +68,7 @@ aether_x6100_control
 liquid
 RHVoice RHVoice_core RHVoice_audio
 ft8
+cw_bayes
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

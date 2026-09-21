@@ -1,11 +1,3 @@
-/*
- *  SPDX-License-Identifier: LGPL-2.1-or-later
- *
- *  Xiegu X6100 LVGL GUI
- *
- *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
- */
-
 #pragma once
 
 #include <array>
@@ -22,21 +14,35 @@ namespace cw {
 // sub-components (power detector, timing classifier, Morse decoder).
 class CwReceiver {
   public:
-    using EmitFn = MorseDecoder::EmitFn;
+    using EmitTextFn = MorseDecoder::EmitTextFn;
+    using EmitOnOffFn = std::function<void(bool)>;
 
-    CwReceiver(float hpf_hz, float lpf_hz, float initial_threshold_db, EmitFn emit);
+    static constexpr float DEFAULT_HPF_HZ       = 400.0f;
+    static constexpr float DEFAULT_LPF_HZ       = 1200.0f;
+    static constexpr float DEFAULT_THRESHOLD_DB = 10.0f;
 
-    // Must be called every BIN_SIZE_MS (10 ms) with SPECTRUM_SIZE complex bins
+    CwReceiver(EmitTextFn emit_text, EmitOnOffFn emit_on_off);
+
+    // Must be called every BIN_SIZE_MS with SPECTRUM_SIZE complex bins
     // (right half of a real FFT of FFT_SIZE).
     void process_audio_frame(const std::complex<float> *fft_output);
 
     float get_measured_wpm() const;
-    void  change_sensitivity(float db_val);
+    float get_tone_freq() const;
+    void  change_threshold(float db_val);
+    void  change_hpf_hz(float hz);
+    void  change_lpf_hz(float hz);
 
   private:
     // Returns the raw LLR of the frame and writes the precise peak frequency.
     float process_fft_frame_raw_llr(const std::complex<float> *fft_output, float &out_precise_freq);
 
+    // Recomputes the bin search region from hpf_hz_/lpf_hz_ and invalidates the
+    // frequency-jump history.
+    void update_search_region();
+
+    float                            hpf_hz_          = DEFAULT_HPF_HZ;
+    float                            lpf_hz_          = DEFAULT_LPF_HZ;
     size_t                           region_from_     = 0;
     size_t                           region_to_       = 0;
     int                              last_stable_bin_ = -1;
@@ -45,7 +51,10 @@ class CwReceiver {
     MorseDecoder                     decoder_;
     std::array<float, SPECTRUM_SIZE> power_spectrum_{};
     std::array<float, SPECTRUM_SIZE> median_buffer_{};
-    float                            current_freq_hz_ = 0.0f;
+    float                            current_freq_hz_   = 0.0f;
+    bool                             is_signal_detected = false;
+    EmitOnOffFn                      emit_on_off;
+    float                            th_lin = 10.0f;
 };
 
 } // namespace cw

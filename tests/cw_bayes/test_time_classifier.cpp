@@ -46,8 +46,8 @@ cw::Token classify_space(cw::TimeClassifier &tc, int on_frames, int off_frames) 
     return tc.feed_frame_llr(ON_LLR);
 }
 
-// 20 WPM: dot = 1200/20 = 60 ms = 6 frames of 10 ms, element space likewise.
-void adapt_20_wpm(cw::TimeClassifier &tc) {
+// 25 WPM: dot = 1200/20 = 48 ms = 6 frames of 8 ms, element space likewise.
+void adapt_25_wpm(cw::TimeClassifier &tc) {
     for (int rep = 0; rep < 20; ++rep) {
         feed(tc, true, 6);
         feed(tc, false, 6);
@@ -61,8 +61,8 @@ TEST_CASE("time classifier: 20 WPM dot and element space") {
     std::vector<cw::Token> tokens;
 
     for (int rep = 0; rep < 20; ++rep) {
-        feed(tc, true, 6, &tokens);
-        feed(tc, false, 6, &tokens);
+        feed(tc, true, 7, &tokens);
+        feed(tc, false, 7, &tokens);
     }
 
     REQUIRE(tokens.size() >= 4);
@@ -74,22 +74,22 @@ TEST_CASE("time classifier: 20 WPM dot and element space") {
         REQUIRE(tokens[i + 1] == cw::CW_ELEMENT_SPACE);
     }
 
-    // The adapted dot/dash boundary is ~120 ms -> 2400/120 = 20 WPM.
-    REQUIRE(tc.get_current_wpm() == Approx(20.0f).margin(3.0f));
+    // The adapted dot/dash boundary is ~112 ms -> 2400/112 = 21.42 WPM.
+    REQUIRE(tc.get_current_wpm() == Approx(21.0f).margin(3.0f));
 }
 
 TEST_CASE("time classifier: dot vs dash after adaptation") {
     cw::TimeClassifier tc;
-    adapt_20_wpm(tc);
-    REQUIRE(tc.get_current_wpm() == Approx(20.0f).margin(3.0f));
+    adapt_25_wpm(tc);
+    REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(3.0f));
 
-    REQUIRE(close_mark(tc, 6) == cw::CW_DOT);   // 60 ms
-    REQUIRE(close_mark(tc, 18) == cw::CW_DASH); // 180 ms
+    REQUIRE(close_mark(tc, 6) == cw::CW_DOT);   // 48 ms
+    REQUIRE(close_mark(tc, 18) == cw::CW_DASH); // 144 ms
 }
 
 TEST_CASE("time classifier: long spaces become letter and word spaces") {
     cw::TimeClassifier tc;
-    adapt_20_wpm(tc);
+    adapt_25_wpm(tc);
 
     // Adapted off thresholds: element/letter ~120 ms, letter/word ~300 ms.
     REQUIRE(classify_space(tc, 20, 15) == cw::CW_LETTER_SPACE); // 150 ms

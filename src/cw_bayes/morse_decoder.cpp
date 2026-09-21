@@ -1,21 +1,17 @@
-/*
- *  SPDX-License-Identifier: LGPL-2.1-or-later
- *
- *  Xiegu X6100 LVGL GUI
- *
- *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
- */
-
 #include "morse_decoder.h"
 
 #include <utility>
 
 namespace cw {
 
-MorseDecoder::MorseDecoder(EmitFn emit) : emit_(std::move(emit)) {
+MorseDecoder::MorseDecoder(EmitTextFn emit) : emit_(std::move(emit)) {
 }
 
 void MorseDecoder::append(char c) {
+    if (last_char == ' ' && c == ' ') {
+        return;
+    }
+    last_char = c;
     text_buffer_.push_back(c);
 }
 
@@ -65,7 +61,12 @@ void MorseDecoder::handle_token(Token token) {
             if (buffer_len_ > 0) {
                 if (!check_and_handle_exceptions()) {
                     if (tree_index_ > 0 && tree_index_ < morse_tree.size()) {
-                        append(morse_tree[tree_index_]);
+                        char c = morse_tree[tree_index_];
+                        if (c == ' ') {
+                            append(ERR);
+                        } else {
+                            append(morse_tree[tree_index_]);
+                        }
                     } else {
                         append(ERR);
                     }
@@ -80,7 +81,12 @@ void MorseDecoder::handle_token(Token token) {
             if (buffer_len_ > 0) {
                 if (!check_and_handle_exceptions()) {
                     if (tree_index_ > 0 && tree_index_ < morse_tree.size()) {
-                        append(morse_tree[tree_index_]);
+                        char c = morse_tree[tree_index_];
+                        if (c == ' ') {
+                            append(ERR);
+                        } else {
+                            append(morse_tree[tree_index_]);
+                        }
                     }
                 }
             }

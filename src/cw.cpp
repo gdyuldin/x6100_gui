@@ -7,10 +7,14 @@
  */
 #include "cw.h"
 
-#include "cfg/cfg_api.h"
+#include <array>
+#include <cmath>
+#include <complex>
+#include <cstddef>
 
-#include <math.h>
-#include <complex.h>
+#include "cfg/cfg_api.h"
+#include "cw_bayes/cw_receiver.h"
+
 
 extern "C" {
     #include "lvgl/lvgl.h"
@@ -21,21 +25,121 @@ extern "C" {
     #include "pubsub_ids.h"
 }
 
-typedef struct {
-    uint16_t    n;
-    float       val;
-} fft_item_t;
+// #define CW_CAPTURE_RATE 8000 // 48000 / 6
+
+template <std::size_t NFFT> class SpgramReal {
+
+    static constexpr std::size_t BINS = NFFT / 2 + 1;
+
+    const size_t step_;
+    windowf      buffer_ = NULL;
+    fftplan      fft_    = NULL;
+
+    size_t                   n_samples_ = 0;
+    std::array<cfloat, NFFT> buf_time_;
+    std::array<cfloat, NFFT> buf_freq_;
+    std::array<float, NFFT>  window_;
+    std::array<cfloat, BINS> fft_output_;
+
+  public:
+    SpgramReal(const SpgramReal &) = delete;
+    SpgramReal &operator=(const SpgramReal &) = delete;
+    SpgramReal(SpgramReal &&) = delete;
+    SpgramReal &operator=(SpgramReal &&) = delete;
+
+    SpgramReal(size_t step) : step_(step) {
+        fft_    = fft_create_plan(NFFT, buf_time_.data(), buf_freq_.data(), LIQUID_FFT_FORWARD, 0);
+        buffer_ = windowf_create(NFFT);
+
+        if (fft_ == NULL || buffer_ == NULL) {
+            LV_LOG_ERROR("cw: failed to create FFT plan/window");
+        }
+
+        /* Fill window with the same energy normalization as ChunkedSpgram
+         * (src/dsp.cpp): g = 1 / sqrtf(sum(w * w) * NFFT / window_size), and
+         * here the window covers the whole FFT (window_size == NFFT). */
+        float sum = 0.0f;
+        for (size_t i = 0; i < NFFT; i++) {
+            window_[i] = liquid_hann(i, NFFT);
+            sum += window_[i] * window_[i];
+        }
+        float g = 1.0f / sqrtf(sum);
+        // scale window
+        for (size_t i = 0; i < NFFT; i++)
+            window_[i] *= g;
+    };
+
+    ~SpgramReal() {
+        if (buffer_) {
+            windowf_destroy(buffer_);
+        }
+        if (fft_) {
+            fft_destroy_plan(fft_);
+        }
+    };
+
+    bool execute(float sample) {
+        if (fft_ == NULL || buffer_ == NULL) {
+            return false;
+        }
+
+        windowf_push(buffer_, sample);
+        n_samples_++;
+        if (n_samples_ < step_) {
+            return false;
+        }
+        n_samples_ = 0;
+
+        float *rc;
+        if (windowf_read(buffer_, &rc) != LIQUID_OK) {
+            return false;
+        }
+        for (size_t i = 0; i < NFFT; i++) {
+            buf_time_[i] = rc[i] * window_[i];
+        }
+        fft_execute(fft_);
+
+        /* Keep the non-negative half of the real-signal spectrum: bin 0 is DC,
+         * bin NFFT/2 is Nyquist. */
+        for (size_t i = 0; i < BINS; i++) {
+            fft_output_[i] = buf_freq_[i];
+        }
+        return true;
+    };
+    const std::array<cfloat, BINS> &get_fft_output() { return fft_output_; }
+};
+
+template <std::size_t N>
+class FilterQueue {
+    std::array<float, N> values;
+
+    size_t id = 0;
+    size_t count = 0;
+
+public:
+    void put(float val) {
+        values[id] = val;
+        id = (id + 1) % N;
+        if (count < N) {
+            count++;
+        }
+    }
+
+    std::optional<float> get() {
+        if (count == N) {
+            size_t mid_id = (id + N / 2) % N;
+            return {values[mid_id]};
+        }
+        return {};
+    }
+
+    void reset() {
+        count = 0;
+    }
+};
 
 static bool ready = false;
 
-static CWDetector *cw_detector;
-
-static float min_db = 50.0f;
-static float max_db = 50.0f;
-static float ema_sig_db = S1;
-static float ema_noise_db = S9;
-static float threshold_pulse;
-static float threshold_silence;
 static bool  peak_on = false;
 static size_t samples_counter = 0;
 static float tone_freq;
@@ -50,33 +154,43 @@ static int32_t filter_high;
 
 static uint32_t     dsp_audio_sub_id = AUDIO_SUB_INVALID;
 static x6100_mode_t mode;
+static uint8_t update_counter = 0;
 
 static void on_key_tone_change(Subject *subj, void *user_data);
-static void on_val_float_change(Subject *subj, void *user_data);
+static void on_threshold_change(Subject *subj, void *user_data);
 static void on_val_bool_change(Subject *subj, void *user_data);
 static void on_low_filter_change(Subject *subj, void *user_data);
 static void on_high_filter_change(Subject *subj, void *user_data);
 static void on_cw_mode_change(Subject *subj, void *user_data);
 static void update_cw_active();
 
+static void cw_on_off_cb(bool val);
+
+namespace {
+    SpgramReal<cw::FFT_SIZE> spgram{cw::FFT_SIZE / 4};
+    cw::CwReceiver cw_receiver{panel_add_text, cw_on_off_cb};
+    FilterQueue<6> freq_queue{};
+} // end namespace
 
 void cw_init() {
     cfg.cw.key_tone()->subscribe_and_notify(on_key_tone_change);
     tone_freq = key_tone;
-    cfg.cw.decoder_snr()->subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr);
-    cfg.cw.decoder_snr_gist()->subscribe_and_notify(on_val_float_change, (void*)&cw_decoder_snr_gist);
     cfg.cw.decoder()->subscribe_and_notify(on_val_bool_change, (void*)&cw_decoder);
     cfg.cw.tune()->subscribe_and_notify(on_val_bool_change, (void*)&cw_tune);
 
+    cfg.cw.decoder_snr()->subscribe_and_notify(on_threshold_change);
     cfg.cur.mode()->subscribe_and_notify(on_cw_mode_change);
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
-        dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, CW_CAPTURE_RATE);
+        dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, cw::SAMPLE_RATE);
         update_cw_active();
     }
 
-    cw_detector = new CWDetector((float)CW_CAPTURE_RATE, 0.01f, 0.8f);
-    cw_detector->set_f0(cfg.cw.key_tone()->get());
+    // 0.95 - 0.97
+    // cw_detector = new CWDetector((float)CW_CAPTURE_RATE, 0.95f);
+    // cfg.cw.key_tone()->subscribe_and_notify([](Subject *, void *) {
+    //     cw_detector->set_f0(cfg.cw.key_tone()->get());
+    // });
 
     cfg.filter.low()->subscribe_and_notify(on_low_filter_change);
     cfg.filter.high()->subscribe_and_notify(on_high_filter_change);
@@ -100,58 +214,35 @@ void cw_put_audio_samples(size_t n, float *samples) {
 
     for (size_t i = 0; i < n; i++)
     {
-        float avg_freq, sig_db, noise_db, sig_to_noise;
-        cw_detector->put(samples[i]);
-        if (cw_detector->get_signal_noise(&sig_db, &noise_db)) {
-
-            ema_sig_db += (sig_db - ema_sig_db) * 0.5f;
-
-            // track average noise level
-            ema_noise_db += (noise_db - ema_noise_db) * 0.05f;
-
-            float aligned_sig = ema_sig_db - ema_noise_db;
-
-            // track lower bound of the aligned signal
-            float k;
-            if (min_db > aligned_sig) {
-                k = 0.05f;
-            } else {
-                k = 0.001f;
-            }
-            min_db += (aligned_sig - min_db)*k;
-
-            // track upper bound of the aligned signal
-            k;
-            if (max_db < aligned_sig) {
-                k = 0.05f;
-            } else {
-                k = 0.001f;
-            }
-            max_db += (aligned_sig - max_db)*k;
-
-            // threshold_pulse = min_db + cw_decoder_snr;
-            threshold_pulse = LV_MAX(min_db + cw_decoder_snr, (min_db + max_db) * 0.5f);
-            threshold_silence = threshold_pulse - cw_decoder_snr_gist;
-
-            // Detect tones/silence
-            if (peak_on) {
-                if (aligned_sig < threshold_silence) {
-                    peak_on = false;
-                }
-            } else {
-                if (aligned_sig > threshold_pulse) {
-                    peak_on = true;
-                }
-            }
-            cw_decoder_signal(peak_on, samples_counter * 1000.0f / CW_CAPTURE_RATE);
-            samples_counter = 0;
+        if (!spgram.execute(samples[i])) {
+            continue;
         }
-        samples_counter++;
 
-        if (cw_detector->get_freq(&avg_freq)) {
-            tone_freq = avg_freq;
-            avg_freq = LV_CLAMP(filter_low, avg_freq, filter_high);
-            update_peak_freq(key_tone - avg_freq);
+        auto fft_output = spgram.get_fft_output();
+        cw_receiver.process_audio_frame(fft_output.data());
+
+        if (peak_on) {
+            float new_freq = cw_receiver.get_tone_freq();
+            if ((new_freq >= filter_low) && (new_freq <= filter_high)) {
+                freq_queue.put(new_freq);
+                auto filtered_freq = freq_queue.get();
+                if (filtered_freq) {
+                    new_freq = *filtered_freq;
+                    tone_freq += 0.5f * (new_freq - tone_freq);
+                }
+            }
+        } else {
+            freq_queue.reset();
+        }
+
+        update_counter++;
+        if (update_counter >= 12) {
+            update_counter = 0;
+            // printf("peak_on: %d, cw_receiver.get_tone_freq(): %f\n", peak_on, cw_receiver.get_tone_freq());
+            update_peak_freq(tone_freq - key_tone);
+            char buf[8];
+            snprintf(buf, 8, "WPM: %.0f", cw_receiver.get_measured_wpm());
+            panel_set_info(buf);
         }
     }
 }
@@ -164,22 +255,24 @@ static void on_key_tone_change(Subject *subj, void *user_data) {
     key_tone = cfg.cw.key_tone()->get();
 }
 
-static void on_val_float_change(Subject *subj, void *user_data) {
-    *(float*)user_data = static_cast<SubjectT<float>*>(subj)->get();
-}
-
 static void on_val_bool_change(Subject *subj, void *user_data) {
     *(bool*)user_data = static_cast<SubjectT<int32_t>*>(subj)->get();
     update_cw_active();
 }
 
+static void on_threshold_change(Subject *subj, void *user_data) {
+    cw_receiver.change_threshold(cfg.cw.decoder_snr()->get());
+}
 
 static void on_low_filter_change(Subject *subj, void *user_data) {
     filter_low = cfg.filter.low()->get();
+    cw_receiver.change_hpf_hz(filter_low);
+
 }
 
 static void on_high_filter_change(Subject *subj, void *user_data) {
     filter_high = cfg.filter.high()->get();
+    cw_receiver.change_lpf_hz(filter_high);
 }
 
 static void on_cw_mode_change(Subject *subj, void *user_data) {
@@ -193,93 +286,8 @@ static void update_cw_active() {
     dsp_audio_set_active(dsp_audio_sub_id, on);
 }
 
-/**
- * ChunkedAverage
- */
-
-template <std::size_t N> void ChunkedAverage<N>::put(float val) {
-    data[w] = val;
-    w = (w + 1) % data.size();
+void cw_on_off_cb(bool val) {
+    peak_on = val;
+    printf("Peak: %i\n", val);
 }
 
-template <std::size_t N> bool ChunkedAverage<N>::ready(void) {
-    return w == 0;
-}
-
-template <std::size_t N> float ChunkedAverage<N>::get(void) {
-    float sum = 0.0f;
-    for (auto &i : data) {
-        sum += i;
-    }
-    return sum / data.size();
-}
-
-/**
- * CWDetector
- */
-
-CWDetector::CWDetector(float fs, float mu, float r): fs(fs), mu(mu), r(r) {
-    r2 = r * r;
-}
-
-void CWDetector::set_f0(int16_t tone) {
-    f0 = tone;
-    // perhaps, we should not change it
-    a = -2.0f * cosf(2.0 * M_PIf * f0 / fs);
-}
-
-void CWDetector::set_r(float r) {
-    this->r = r;
-    this->r2 = r * r;
-}
-
-void CWDetector::put(float sample) {
-    // Get notch output
-    float y_notch = sample + a * x1 + x2 - r * a * y_notch1 - r2 * y_notch2;
-    float y_peak = (r - 1) * a * x1 + (r2 - 1) * x2 - r * a * y_peak1 - r2 * y_peak2;
-
-    auto psi = x1 - r * y_notch1;
-
-    // Update k using LMS rule
-    a = a - mu * y_notch * psi;
-    a = LV_CLAMP(-1.999f, a, 1.999f); // Stability boundary
-    // Exact analytical frequency extraction
-    float w = acosf(-a / 2.0f);
-
-    // Update states
-    x2 = x1;
-    x1 = sample;
-    y_notch2 = y_notch1;
-    y_notch1 = y_notch;
-    y_peak2 = y_peak1;
-    y_peak1 = y_peak;
-
-    // Store freq
-    float freq = w * fs / (2 * M_PIf);
-    avg_freq.put(freq);
-
-    // Store signal
-    avg_signal.put(y_peak * y_peak);
-    avg_noise.put(y_notch * y_notch);
-}
-
-
-bool CWDetector::get_freq(float *freq) {
-    if (avg_freq.ready()) {
-        *freq = avg_freq.get();
-        return true;
-    } else {
-        return false;
-    }
-}
-
-bool CWDetector::get_signal_noise(float *sig_db, float *noise_db) {
-    if (avg_signal.ready()) {
-        float sig = avg_signal.get();
-        *sig_db = 10.0f * log10f(LV_MAX(sig, 1e-12));
-        float noise = avg_noise.get();
-        *noise_db = 10.0f * log10f(LV_MAX(noise, 1e-12));
-        return true;
-    }
-    return false;
-}
