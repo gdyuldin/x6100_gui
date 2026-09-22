@@ -101,12 +101,38 @@ static int _3_update_spectrum_peak_hold() {
     return 0;
 }
 
+static int _4_convert_scaled_params_to_real() {
+    sqlite3 *db = cfg_db_get();
+    int rc;
+    /* Floats used to be stored as int * Scale. They are now REAL in engineering
+       units; divide legacy integer rows by the old scale. Rows already stored as
+       REAL (written by the buggy float path) are left untouched. */
+    rc = sqlite3_exec(db,
+        "UPDATE params SET val = CAST(val AS REAL) / 10.0 WHERE name='pwr' AND typeof(val)='integer';"
+        "UPDATE params SET val = CAST(val AS REAL) / 2.0  WHERE name='auto_level_offset' AND typeof(val)='integer';"
+        "UPDATE params SET val = CAST(val AS REAL) / 10.0 WHERE name='key_ratio' AND typeof(val)='integer';"
+        "UPDATE params SET val = CAST(val AS REAL) / 10.0 WHERE name='cw_decoder_snr_2' AND typeof(val)='integer';"
+        "UPDATE params SET val = CAST(val AS REAL) / 10.0 WHERE name='cw_decoder_snr_gist' AND typeof(val)='integer';"
+        "UPDATE params SET val = CAST(val AS REAL) / 5.0  WHERE name='output_gain' AND typeof(val)='integer';"
+        "UPDATE params SET val = CAST(val AS REAL) / 2.0  WHERE name='comp_threshold_offset' AND typeof(val)='integer';"
+        "UPDATE params SET val = CAST(val AS REAL) / 2.0  WHERE name='comp_makeup_offset' AND typeof(val)='integer';"
+        "UPDATE params SET val = CAST(val AS REAL) / 10.0 WHERE name='cessb_power_up' AND typeof(val)='integer';"
+        "UPDATE band_params SET val = CAST(val AS REAL) / 10.0 WHERE name='dac_offset' AND typeof(val)='integer';",
+        NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        printf("Cannot convert scaled params to REAL: %s\n", sqlite3_errmsg(db));
+        return 1;
+    }
+    return 0;
+}
+
 /* Migrations array */
 static int (*migrations[])() = {
     _0_init_migrations,
     _1_create_ftx_table,
     _2_update_atu_freq,
     _3_update_spectrum_peak_hold,
+    _4_convert_scaled_params_to_real,
 };
 
 int migrations_apply(void) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -74,11 +75,17 @@ class WriteSink {
 // NOT_FOUND handling: on load with rc == NOT_FOUND the parameter keeps its
 // current value; if an on_not_found callback is provided it is invoked
 // (e.g. to assign a default or trigger a cascade/compute).
-// Scale is a compile-time NTTP (defaults to 1000, e.g. MHz->Hz):
+// DbType/Scale are a generic mechanism (defaults to 1000, e.g. MHz->Hz):
 //   Parameter<float, int32_t>            -> value*1000 written, /1000 on load
 //   Parameter<float, int32_t, 10>        -> value*10 written, /10 on load
 //   Parameter<float, int32_t, 2>         -> value*2 written, /2 on load
 // When ValueType == DbType, Scale is unused (direct assignment).
+//
+// For float parameters use a single Parameter<float> plus the runtime
+// `quantize` field (0 = no rounding): the value is stored as REAL in
+// engineering units and rounded to the nearest 1/quantize at the storage
+// boundary only. The public handle type is ParamFloat and must match the
+// SettingsManager member type exactly (see cfg_api.cpp's param_ref).
 template <typename ValueType, typename DbType = ValueType, int32_t Scale = 1000>
 class Parameter : public SubjectT<ValueType>, public ParamBase {
   public:
@@ -92,12 +99,15 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
     // context_id    - initial context bound to this parameter (band_id/mode_id/
     //                 transverter_id). Defaults to 0; SettingsManager sets it
     //                 when loading a band/mode context.
+    // quantize      - rounding step at the storage boundary: round(value*N)/N.
+    //                 0 (default) disables rounding. Only meaningful for float
+    //                 parameters (ValueType == DbType); ignored otherwise.
     Parameter(const char *db_name, ValueType default_val, std::function<ValueType(ValueType)> validator,
               StorageType storage, WriteSink &sink, std::function<void()> on_not_found = {},
-              std::vector<ParamBase *> *group = nullptr, int context_id = 0)
+              std::vector<ParamBase *> *group = nullptr, int context_id = 0, int32_t quantize = 0)
         : SubjectT<ValueType>(default_val), db_name_(db_name), storage_(storage), sink_(sink),
           validator_(std::move(validator)), on_not_found_(std::move(on_not_found)), context_id_(context_id),
-          default_(default_val) {
+          default_(default_val), quantize_(quantize) {
         if (group) {
             group->push_back(this);
         }
@@ -106,9 +116,9 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
     // Constructor for min/max clamp validator
     Parameter(const char *db_name, ValueType default_val, ValueType min, ValueType max, StorageType storage,
               WriteSink &sink, std::vector<ParamBase *> *group = nullptr,
-              int context_id = 0)
+              int context_id = 0, int32_t quantize = 0)
         : SubjectT<ValueType>(default_val), db_name_(db_name), storage_(storage), sink_(sink), context_id_(context_id),
-          default_(default_val) {
+          default_(default_val), quantize_(quantize) {
         validator_ = [min, max](ValueType v) { return clip(v, min, max); };
         if (group) {
             group->push_back(this);
@@ -185,7 +195,7 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
   private:
     DbType to_db_value(const ValueType &v) const {
         if constexpr (std::is_same_v<ValueType, DbType>) {
-            return v;
+            return quantize_value(v);
         } else {
             // Scale is a compile-time constant (NTTP), so the multiply is
             // folded to an immediate operand with no runtime overhead.
@@ -195,10 +205,21 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
 
     ValueType from_db_value(const DbType &v) const {
         if constexpr (std::is_same_v<ValueType, DbType>) {
-            return v;
+            return quantize_value(v);
         } else {
             return static_cast<ValueType>(v) / static_cast<ValueType>(Scale);
         }
+    }
+
+    // Round to the nearest 1/quantize_ step. quantize_ == 0 disables rounding.
+    // Applied only at the storage boundary, never to the runtime value.
+    ValueType quantize_value(ValueType v) const {
+        if constexpr (std::is_floating_point_v<ValueType>) {
+            if (quantize_ > 0) {
+                return static_cast<ValueType>(std::round(static_cast<double>(v) * quantize_) / quantize_);
+            }
+        }
+        return v;
     }
 
     const char                         *db_name_;
@@ -208,6 +229,7 @@ class Parameter : public SubjectT<ValueType>, public ParamBase {
     std::function<void()>               on_not_found_;
     int                                 context_id_;
     ValueType                           default_;
+    int32_t                             quantize_;
 };
 
 #endif

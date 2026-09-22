@@ -72,8 +72,8 @@ class SettingsManager {
     // clang-format off
     Parameter<int32_t> p_volume{"vol", 30, 0, 55,
         StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<float, int32_t, 10> p_pwr{"pwr", 5.0f, 0.1f, 10.0f,
-        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float> p_pwr{"pwr", 5.0f, 0.1f, 10.0f,
+        StorageType::GLOBAL, pending_writes_, &global_params_, 0, 10};
     Parameter<int32_t> p_squelch{"sql", 0, 0, 100,
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_rfgain{"rfgain", 63, 0, 100,
@@ -107,8 +107,8 @@ class SettingsManager {
     // UI
     Parameter<int32_t> p_auto_level_enabled{"auto_level_enabled", true, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<float, int32_t, 2> p_auto_level_offset{"auto_level_offset", 0.0f, {},
-        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<float> p_auto_level_offset{"auto_level_offset", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_, 0, 5};
     Parameter<int32_t> p_display_invert{"invert", false, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_knob_info{"knob_info", true, 0, 1,
@@ -168,8 +168,8 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_qsk_time{"qsk_time", 100, 0, 1000,
         StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<float, int32_t, 10> p_key_ratio{"key_ratio", 3.0f, 2.5f, 4.5f,
-        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float> p_key_ratio{"key_ratio", 3.0f, 2.5f, 4.5f,
+        StorageType::GLOBAL, pending_writes_, &global_params_, 0, 10};
     Parameter<int32_t>            p_cw_peak_on{"cw_peak_on", false, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t>            p_cw_peak_q{"cw_peak_q", 1, 1, 16,
@@ -180,10 +180,10 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_cw_tune{"cw_tune", true, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<float, int32_t, 10> p_cw_decoder_snr{"cw_decoder_snr_2", 5.0f, 3.0f, 30.0f,
-        StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<float, int32_t, 10> p_cw_decoder_snr_gist{"cw_decoder_snr_gist", 1.0f, 0.0f, 30.0f,
-        StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<float> p_cw_decoder_snr{"cw_decoder_snr_2", 5.0f, 3.0f, 30.0f,
+        StorageType::GLOBAL, pending_writes_, &global_params_, 0, 10};
+    Parameter<float> p_cw_decoder_snr_gist{"cw_decoder_snr_gist", 1.0f, 0.0f, 30.0f,
+        StorageType::GLOBAL, pending_writes_, &global_params_, 0, 10};
 
     // AGC
     Parameter<int32_t> p_agc_hang{"agc_hang", false, 0, 1,
@@ -214,14 +214,14 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // DSP custom
-    Parameter<float, int32_t, 5> p_output_gain{"output_gain", 0.0f, {},
-        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<float> p_output_gain{"output_gain", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_, 0, 5};
     Parameter<int32_t>           p_comp{"comp", 4, 1, 8,
         StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<float, int32_t, 2> p_comp_threshold_offset{"comp_threshold_offset", 0.0f, {},
-        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
-    Parameter<float, int32_t, 2> p_comp_makeup_offset{"comp_makeup_offset", 0.0f, {},
-        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<float> p_comp_threshold_offset{"comp_threshold_offset", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_, 0, 2};
+    Parameter<float> p_comp_makeup_offset{"comp_makeup_offset", 0.0f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_, 0, 2};
     Parameter<int32_t>            p_fm_emphasis{"fm_emphasis", false, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t>            p_tx_filter_low{"tx_filter_low", 160, {},
@@ -230,8 +230,8 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
     Parameter<int32_t>            p_cessb_on{"cessb_on", false, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<float, int32_t, 10> p_cessb_power_up{"cessb_power_up", 3.7f, {},
-        StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<float> p_cessb_power_up{"cessb_power_up", 3.7f, {},
+        StorageType::GLOBAL, pending_writes_, {}, &global_params_, 0, 10};
 
     // --- GLOBAL params migrated from the legacy params module (stage 8.2) ---
     // DB keys are 1:1 with the legacy field names.
@@ -389,10 +389,10 @@ class SettingsManager {
         StorageType::BAND, pending_writes_, {}, &band_params_};
     Parameter<int32_t> p_band_tx_q_offset{"tx_q_offset", 0, {},
         StorageType::BAND, pending_writes_, {}, &band_params_};
-    // dB offset of the front panel audio chain (float, scaled x10 to an int
-    // in the DB: 0.2 dB <-> 2).
-    Parameter<float, int32_t, 10> p_band_dac_offset{"dac_offset", 0.0f, {},
-        StorageType::BAND, pending_writes_, {}, &band_params_};
+    // dB offset of the front panel audio chain (float, stored as REAL,
+    // quantized to 0.2 dB (quantize=5)).
+    Parameter<float> p_band_dac_offset{"dac_offset", 0.0f, {},
+        StorageType::BAND, pending_writes_, {}, &band_params_, 0, 5};
     // BAND VFO params (context_id = bands_id). These are NOT in the band
     // registry: load_band_vfo() loads them in explicit dependency order so the
     // DB restore/clamp rules can reference already-loaded siblings.

@@ -250,6 +250,36 @@ TEST_CASE("Parameter save/load text round-trip", "[parameter]") {
     REQUIRE(loaded.get() == "R2ABC");
 }
 
+TEST_CASE("Parameter float quantize rounds at the storage boundary", "[parameter]") {
+    MockWriteSink    sink;
+    Parameter<float> p("pwr", 5.0f, {}, StorageType::GLOBAL, sink, {}, nullptr, 0, 10);
+
+    p.set(3.74f);
+    REQUIRE(p.get() == Catch::Approx(3.74f)); // runtime keeps full precision
+    REQUIRE(sink.records.size() == 1);
+    REQUIRE(sink.records[0].kind == MockWriteSink::Record::Kind::Float);
+    REQUIRE(sink.records[0].value_float == Catch::Approx(3.7f));
+}
+
+TEST_CASE("Parameter float quantize round-trips through the DB", "[parameter][storage]") {
+    TestDbGuard      db;
+    MockWriteSink    sink;
+    Parameter<float> p("pwr", 5.0f, {}, StorageType::GLOBAL, sink, {}, nullptr, 0, 10);
+    p.set(2.46f);
+    REQUIRE(p.save() == SUCCESS);
+
+    Parameter<float> loaded("pwr", 0.0f, {}, StorageType::GLOBAL, sink, {}, nullptr, 0, 10);
+    REQUIRE(loaded.load() == SUCCESS);
+    REQUIRE(loaded.get() == Catch::Approx(2.5f));
+}
+
+TEST_CASE("Parameter float quantize=0 stores raw value", "[parameter]") {
+    MockWriteSink    sink;
+    Parameter<float> p("gain", 0.0f, {}, StorageType::GLOBAL, sink);
+    p.set(0.123456f);
+    REQUIRE(sink.records[0].value_float == Catch::Approx(0.123456f));
+}
+
 TEST_CASE("Parameter self-registers into a ParamBase group", "[parameter]") {
     MockWriteSink                 sink;
     std::vector<ParamBase *>      group;
