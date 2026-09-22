@@ -20,7 +20,7 @@ using Frame = std::array<std::complex<float>, cw::SPECTRUM_SIZE>;
 
 // Bin 18 sits inside the 300-900 Hz search region (bins 9-28 for a 4 kHz
 // sample rate and a 128-point FFT) and inside the default 400-1200 Hz region.
-constexpr size_t TONE_BIN   = 18;
+constexpr size_t TONE_BIN = 18;
 // Bin 50 (1562.5 Hz) is above the default LPF edge.
 constexpr size_t OUT_BIN    = 50;
 constexpr float  NOISE_AMP  = 1.0f;
@@ -42,11 +42,35 @@ void feed(cw::CwReceiver &rx, bool tone_on, int frames, size_t tone_bin = TONE_B
     }
 }
 
+// Elevated, non-uniform noise floor: bin i sits at NOISE_AMP + i * RAMP_STEP, so
+// the 25% percentile differs from both the median and the minimum. The tone is
+// stronger than SIGNAL_AMP so that, against the percentile floor (higher than
+// the old minimum-based estimate), the frame LLR still clears the +3.0 Schmitt
+// trigger.
+constexpr float NOISE_RAMP_STEP = 0.02f;
+constexpr float RAMP_SIGNAL_AMP = 20.0f;
+
+Frame make_ramp_frame(bool tone_on, size_t tone_bin = TONE_BIN) {
+    Frame f;
+    for (size_t i = 0; i < f.size(); ++i)
+        f[i] = std::complex<float>(NOISE_AMP + static_cast<float>(i) * NOISE_RAMP_STEP, 0.0f);
+    if (tone_on)
+        f[tone_bin] = std::complex<float>(RAMP_SIGNAL_AMP, 0.0f);
+    return f;
+}
+
+void feed_ramp(cw::CwReceiver &rx, bool tone_on, int frames, size_t tone_bin = TONE_BIN) {
+    for (int i = 0; i < frames; ++i) {
+        Frame f = make_ramp_frame(tone_on, tone_bin);
+        rx.process_audio_frame(f.data());
+    }
+}
+
 } // namespace
 
 TEST_CASE("cw receiver: decodes a synthetic letter and reports WPM") {
     std::string    out;
-    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool){});
+    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool) {});
     rx.change_hpf_hz(300.0f);
     rx.change_lpf_hz(900.0f);
     rx.change_threshold(12.0f);
@@ -65,7 +89,7 @@ TEST_CASE("cw receiver: decodes a synthetic letter and reports WPM") {
 
 TEST_CASE("cw receiver: change_threshold raises the decision point") {
     std::string    out;
-    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool){});
+    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool) {});
     rx.change_hpf_hz(300.0f);
     rx.change_lpf_hz(900.0f);
     rx.change_threshold(12.0f);
@@ -82,10 +106,9 @@ TEST_CASE("cw receiver: change_threshold raises the decision point") {
     REQUIRE(out.empty());
 }
 
-
 TEST_CASE("cw receiver: calling on_off") {
     bool           out;
-    cw::CwReceiver rx([](const char *) {}, [&out](bool val){ out=val; });
+    cw::CwReceiver rx([](const char *) {}, [&out](bool val) { out = val; });
     rx.change_hpf_hz(300.0f);
     rx.change_lpf_hz(900.0f);
     rx.change_threshold(12.0f);
@@ -97,12 +120,11 @@ TEST_CASE("cw receiver: calling on_off") {
     REQUIRE(out == false);
     feed(rx, true, 1);
     REQUIRE(out == true);
-
 }
 
 TEST_CASE("cw receiver: get_tone_freq reports the detected tone frequency") {
     std::string    out;
-    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool){});
+    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool) {});
 
     feed(rx, true, 1);
 
@@ -112,7 +134,7 @@ TEST_CASE("cw receiver: get_tone_freq reports the detected tone frequency") {
 
 TEST_CASE("cw receiver: default region decodes a tone inside it") {
     std::string    out;
-    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool){});
+    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool) {});
 
     // TONE_BIN (562.5 Hz) is inside DEFAULT_HPF_HZ/DEFAULT_LPF_HZ and the
     // default threshold is low enough to detect it.
@@ -125,7 +147,7 @@ TEST_CASE("cw receiver: default region decodes a tone inside it") {
 
 TEST_CASE("cw receiver: a tone outside the default region is not decoded") {
     std::string    out;
-    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool){});
+    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool) {});
 
     // OUT_BIN (1562.5 Hz) is above DEFAULT_LPF_HZ, so the detector only sees
     // noise.
@@ -138,7 +160,7 @@ TEST_CASE("cw receiver: a tone outside the default region is not decoded") {
 
 TEST_CASE("cw receiver: changing the search region retargets detection") {
     std::string    out;
-    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool){});
+    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool) {});
 
     // The tone is outside the default region: nothing is decoded.
     feed(rx, true, 6, OUT_BIN);
@@ -152,6 +174,23 @@ TEST_CASE("cw receiver: changing the search region retargets detection") {
     feed(rx, true, 6, OUT_BIN);
     feed(rx, false, 16, OUT_BIN);
     feed(rx, true, 1, OUT_BIN);
+
+    REQUIRE(out == "E");
+}
+
+TEST_CASE("cw receiver: decodes over a non-uniform elevated noise floor") {
+    std::string    out;
+    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool) {});
+    rx.change_hpf_hz(300.0f);
+    rx.change_lpf_hz(900.0f);
+    rx.change_threshold(12.0f);
+
+    // The 25% percentile of the ramp is well below the tone power, so the
+    // seeded EMA estimate keeps the detector open; "E" still decodes and the
+    // click guard is not triggered.
+    feed_ramp(rx, true, 6);
+    feed_ramp(rx, false, 16);
+    feed_ramp(rx, true, 1);
 
     REQUIRE(out == "E");
 }

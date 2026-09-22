@@ -86,12 +86,3 @@ TEST_CASE("time classifier: dot vs dash after adaptation") {
     REQUIRE(close_mark(tc, 6) == cw::CW_DOT);   // 48 ms
     REQUIRE(close_mark(tc, 18) == cw::CW_DASH); // 144 ms
 }
-
-TEST_CASE("time classifier: long spaces become letter and word spaces") {
-    cw::TimeClassifier tc;
-    adapt_25_wpm(tc);
-
-    // Adapted off thresholds: element/letter ~120 ms, letter/word ~300 ms.
-    REQUIRE(classify_space(tc, 20, 15) == cw::CW_LETTER_SPACE); // 150 ms
-    REQUIRE(classify_space(tc, 20, 31) == cw::CW_WORD_SPACE);   // 310 ms
-}

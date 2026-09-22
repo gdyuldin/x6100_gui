@@ -14,12 +14,14 @@ namespace cw {
 // sub-components (power detector, timing classifier, Morse decoder).
 class CwReceiver {
   public:
-    using EmitTextFn = MorseDecoder::EmitTextFn;
+    using EmitTextFn  = MorseDecoder::EmitTextFn;
     using EmitOnOffFn = std::function<void(bool)>;
 
-    static constexpr float DEFAULT_HPF_HZ       = 400.0f;
-    static constexpr float DEFAULT_LPF_HZ       = 1200.0f;
-    static constexpr float DEFAULT_THRESHOLD_DB = 10.0f;
+    static constexpr float DEFAULT_HPF_HZ        = 400.0f;
+    static constexpr float DEFAULT_LPF_HZ        = 1200.0f;
+    static constexpr float DEFAULT_THRESHOLD_DB  = 10.0f;
+    static constexpr float NOISE_PERCENTILE      = 0.25f;
+    static constexpr float NOISE_SMOOTHING_ALPHA = 0.15f;
 
     CwReceiver(EmitTextFn emit_text, EmitOnOffFn emit_on_off);
 
@@ -50,9 +52,10 @@ class CwReceiver {
     TimeClassifier                   classifier_;
     MorseDecoder                     decoder_;
     std::array<float, SPECTRUM_SIZE> power_spectrum_{};
-    std::array<float, SPECTRUM_SIZE> median_buffer_{};
-    float                            current_freq_hz_   = 0.0f;
-    bool                             is_signal_detected = false;
+    std::array<float, SPECTRUM_SIZE> noise_buffer_{};
+    float                            noise_power_smoothed_ = -1.0f; // < 0 => not seeded yet
+    float                            current_freq_hz_      = 0.0f;
+    bool                             is_signal_detected    = false;
     EmitOnOffFn                      emit_on_off;
     float                            th_lin = 10.0f;
 };
