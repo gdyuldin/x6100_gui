@@ -9,8 +9,7 @@
 
 #include <array>
 #include <cmath>
-#include <complex>
-#include <cstddef>
+#include <optional>
 
 #include "cfg/cfg_api.h"
 #include "cw_bayes/cw_receiver.h"
@@ -26,87 +25,6 @@ extern "C" {
 }
 
 // #define CW_CAPTURE_RATE 8000 // 48000 / 6
-
-template <std::size_t NFFT> class SpgramReal {
-
-    static constexpr std::size_t BINS = NFFT / 2 + 1;
-
-    const size_t step_;
-    windowf      buffer_ = NULL;
-    fftplan      fft_    = NULL;
-
-    size_t                   n_samples_ = 0;
-    std::array<cfloat, NFFT> buf_time_;
-    std::array<cfloat, NFFT> buf_freq_;
-    std::array<float, NFFT>  window_;
-    std::array<cfloat, BINS> fft_output_;
-
-  public:
-    SpgramReal(const SpgramReal &) = delete;
-    SpgramReal &operator=(const SpgramReal &) = delete;
-    SpgramReal(SpgramReal &&) = delete;
-    SpgramReal &operator=(SpgramReal &&) = delete;
-
-    SpgramReal(size_t step) : step_(step) {
-        fft_    = fft_create_plan(NFFT, buf_time_.data(), buf_freq_.data(), LIQUID_FFT_FORWARD, 0);
-        buffer_ = windowf_create(NFFT);
-
-        if (fft_ == NULL || buffer_ == NULL) {
-            LV_LOG_ERROR("cw: failed to create FFT plan/window");
-        }
-
-        /* Fill window with the same energy normalization as ChunkedSpgram
-         * (src/dsp.cpp): g = 1 / sqrtf(sum(w * w) * NFFT / window_size), and
-         * here the window covers the whole FFT (window_size == NFFT). */
-        float sum = 0.0f;
-        for (size_t i = 0; i < NFFT; i++) {
-            window_[i] = liquid_hann(i, NFFT);
-            sum += window_[i] * window_[i];
-        }
-        float g = 1.0f / sqrtf(sum);
-        // scale window
-        for (size_t i = 0; i < NFFT; i++)
-            window_[i] *= g;
-    };
-
-    ~SpgramReal() {
-        if (buffer_) {
-            windowf_destroy(buffer_);
-        }
-        if (fft_) {
-            fft_destroy_plan(fft_);
-        }
-    };
-
-    bool execute(float sample) {
-        if (fft_ == NULL || buffer_ == NULL) {
-            return false;
-        }
-        windowf_push(buffer_, sample);
-        n_samples_++;
-        if (n_samples_ < step_) {
-            return false;
-        }
-        n_samples_ = 0;
-
-        float *rc;
-        if (windowf_read(buffer_, &rc) != LIQUID_OK) {
-            return false;
-        }
-        for (size_t i = 0; i < NFFT; i++) {
-            buf_time_[i] = rc[i] * window_[i];
-        }
-        fft_execute(fft_);
-
-        /* Keep the non-negative half of the real-signal spectrum: bin 0 is DC,
-         * bin NFFT/2 is Nyquist. */
-        for (size_t i = 0; i < BINS; i++) {
-            fft_output_[i] = buf_freq_[i];
-        }
-        return true;
-    };
-    const std::array<cfloat, BINS> &get_fft_output() { return fft_output_; }
-};
 
 template <std::size_t N>
 class FilterQueue {
@@ -164,10 +82,10 @@ static void on_cw_mode_change(Subject *subj, void *user_data);
 static void update_cw_active();
 
 static void cw_on_off_cb(bool val);
+static void on_cw_frame();
 
 namespace {
-    SpgramReal<cw::FFT_SIZE> spgram{cw::FFT_SIZE / 4};
-    cw::CwReceiver cw_receiver{panel_add_text, cw_on_off_cb};
+    cw::CwReceiver cw_receiver{panel_add_text, cw_on_off_cb, on_cw_frame};
     FilterQueue<3> freq_queue{};
 } // end namespace
 
@@ -181,7 +99,7 @@ void cw_init() {
     cfg.cur.mode()->subscribe_and_notify(on_cw_mode_change);
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
-        dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, static_cast<uint32_t>(cw::SAMPLE_RATE));
+        dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, static_cast<uint32_t>(cw::CwReceiver::SAMPLE_RATE));
         update_cw_active();
     }
 
@@ -211,38 +129,32 @@ void cw_put_audio_samples(size_t n, float *samples) {
         return;
     }
 
-    for (size_t i = 0; i < n; i++)
-    {
-        if (!spgram.execute(samples[i])) {
-            continue;
-        }
+    cw_receiver.process_audio_frame(n, samples);
+}
 
-        auto fft_output = spgram.get_fft_output();
-        cw_receiver.process_audio_frame(fft_output.data());
-
-        if (peak_on) {
-            float new_freq = cw_receiver.get_tone_freq();
-            if ((new_freq >= filter_low) && (new_freq <= filter_high)) {
-                freq_queue.put(new_freq);
-                auto filtered_freq = freq_queue.get();
-                if (filtered_freq) {
-                    new_freq = *filtered_freq;
-                    tone_freq += 0.5f * (new_freq - tone_freq);
-                }
+static void on_cw_frame() {
+    if (peak_on) {
+        float new_freq = cw_receiver.get_tone_freq();
+        if ((new_freq >= filter_low) && (new_freq <= filter_high)) {
+            freq_queue.put(new_freq);
+            auto filtered_freq = freq_queue.get();
+            if (filtered_freq) {
+                new_freq = *filtered_freq;
+                tone_freq += 0.5f * (new_freq - tone_freq);
             }
-        } else {
-            freq_queue.reset();
         }
+    } else {
+        freq_queue.reset();
+    }
 
-        update_counter++;
-        if (update_counter >= 12) {
-            update_counter = 0;
-            // printf("peak_on: %d, cw_receiver.get_tone_freq(): %f\n", peak_on, cw_receiver.get_tone_freq());
-            update_peak_freq(tone_freq - key_tone);
-            char buf[8];
-            snprintf(buf, 8, "WPM: %.0f", cw_receiver.get_measured_wpm());
-            panel_set_info(buf);
-        }
+    update_counter++;
+    if (update_counter >= 12) {
+        update_counter = 0;
+        // printf("peak_on: %d, cw_receiver.get_tone_freq(): %f\n", peak_on, cw_receiver.get_tone_freq());
+        update_peak_freq(tone_freq - key_tone);
+        char buf[8];
+        snprintf(buf, 8, "WPM: %.0f", cw_receiver.get_measured_wpm());
+        panel_set_info(buf);
     }
 }
 

@@ -2,7 +2,7 @@
 
 #include <array>
 
-#include "cw_types.h"
+#include "cw_config.h"
 
 namespace cw {
 

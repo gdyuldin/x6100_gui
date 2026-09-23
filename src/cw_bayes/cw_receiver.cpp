@@ -6,8 +6,8 @@
 
 namespace cw {
 
-CwReceiver::CwReceiver(EmitTextFn emit_text, EmitOnOffFn emit_on_off)
-    : decoder_(std::move(emit_text)), emit_on_off(std::move(emit_on_off)) {
+CwReceiver::CwReceiver(EmitTextFn emit_text, EmitOnOffFn emit_on_off, FrameFn on_frame)
+    : decoder_(std::move(emit_text)), emit_on_off(std::move(emit_on_off)), on_frame_(std::move(on_frame)) {
     update_search_region();
     change_threshold(DEFAULT_THRESHOLD_DB);
 }
@@ -33,7 +33,7 @@ void CwReceiver::change_lpf_hz(float hz) {
     update_search_region();
 }
 
-float CwReceiver::process_fft_frame_raw_llr(const std::complex<float> *fft_output, float &out_precise_freq) {
+float CwReceiver::process_fft_frame_raw_llr(const ComplexSpectrum &fft_output, float &out_precise_freq) {
     // Power spectrum (I^2 + Q^2)
     for (size_t i = region_from_; i <= region_to_; ++i) {
         power_spectrum_[i] = std::norm(fft_output[i]);
@@ -52,14 +52,15 @@ float CwReceiver::process_fft_frame_raw_llr(const std::complex<float> *fft_outpu
     // Frame noise estimate: 25% percentile, then EMA-smoothed across frames.
     size_t region_length = region_to_ - region_from_ + 1;
     for (size_t i = 0; i < region_length; ++i) {
-        noise_buffer_[i] = power_spectrum_[region_from_ + i];
+        percentile_scratch_[i] = power_spectrum_[region_from_ + i];
     }
     size_t pct_offset = static_cast<size_t>(NOISE_PERCENTILE * static_cast<float>(region_length));
     if (pct_offset >= region_length) {
         pct_offset = region_length - 1;
     }
-    std::nth_element(noise_buffer_.begin(), noise_buffer_.begin() + pct_offset, noise_buffer_.begin() + region_length);
-    float noise_power_inst = noise_buffer_[pct_offset];
+    std::nth_element(percentile_scratch_.begin(), percentile_scratch_.begin() + pct_offset,
+                     percentile_scratch_.begin() + region_length);
+    float noise_power_inst = percentile_scratch_[pct_offset];
 
     if (noise_power_smoothed_ < 0.0f) {
         noise_power_smoothed_ = noise_power_inst;
@@ -104,7 +105,16 @@ float CwReceiver::process_fft_frame_raw_llr(const std::complex<float> *fft_outpu
     return detector_.get_raw_llr(precise_max_val, noise_power_smoothed_);
 }
 
-void CwReceiver::process_audio_frame(const std::complex<float> *fft_output) {
+void CwReceiver::process_audio_frame(size_t n, float *samples) {
+    for (size_t i = 0; i < n; ++i) {
+        if (!spgram_.execute(samples[i])) {
+            continue;
+        }
+        process_fft_frame(spgram_.get_fft_output());
+    }
+}
+
+void CwReceiver::process_fft_frame(const ComplexSpectrum &fft_output) {
     // Step 1: run the frame through the DSP. Yields the raw LLR and the precise
     // peak frequency (usable later for display or NCO tuning).
     float frame_llr = process_fft_frame_raw_llr(fft_output, current_freq_hz_);
@@ -121,6 +131,10 @@ void CwReceiver::process_audio_frame(const std::complex<float> *fft_output) {
     if (is_active != is_signal_detected) {
         is_signal_detected = is_active;
         emit_on_off(is_active);
+    }
+
+    if (on_frame_) {
+        on_frame_();
     }
 }
 

@@ -6,7 +6,7 @@
 #include <string_view>
 #include <string>
 
-#include "cw_types.h"
+#include "cw_config.h"
 
 namespace cw {
 
