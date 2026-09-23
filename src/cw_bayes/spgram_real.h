@@ -27,6 +27,7 @@ class SpgramReal {
     std::array<std::complex<float>, FFT_SIZE> buf_freq_;
     std::array<float, FFT_SIZE>               window_;
     ComplexSpectrum                           fft_output_;
+    RawHop                                    hop_raw_{};
 
   public:
     SpgramReal(const SpgramReal &)            = delete;
@@ -80,6 +81,14 @@ class SpgramReal {
         if (windowf_read(buffer_, &rc) != LIQUID_OK) {
             return false;
         }
+
+        /* Keep the newest HOP_SIZE raw (unwindowed) samples for the optional
+         * time-domain peak refinement. windowf_read returns the raw buffer, so
+         * the newest sample is the last element. */
+        for (size_t i = 0; i < HOP_SIZE; i++) {
+            hop_raw_[i] = rc[FFT_SIZE - HOP_SIZE + i];
+        }
+
         for (size_t i = 0; i < FFT_SIZE; i++) {
             buf_time_[i] = rc[i] * window_[i];
         }
@@ -93,6 +102,7 @@ class SpgramReal {
         return true;
     };
     const ComplexSpectrum &get_fft_output() { return fft_output_; }
+    const RawHop          &get_hop_raw() { return hop_raw_; }
 };
 
 } // namespace cw

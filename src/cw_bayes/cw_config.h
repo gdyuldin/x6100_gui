@@ -31,5 +31,6 @@ constexpr int    WPM_K         = 1200; // dot ms = WPM_K / wpm
 using ComplexSpectrum = std::array<std::complex<float>, SPECTRUM_SIZE>; // raw FFT (amplitudes)
 using PowerSpectrum   = std::array<float, SPECTRUM_SIZE>;               // |X|^2 per absolute bin
 using RegionScratch   = std::array<float, SPECTRUM_SIZE>; // nth_element copy; first region_length entries used
+using RawHop          = std::array<float, HOP_SIZE>;      // newest unwindowed audio of a frame
 
 } // namespace cw

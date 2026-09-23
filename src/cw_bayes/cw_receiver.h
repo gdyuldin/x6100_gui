@@ -43,11 +43,15 @@ class CwReceiver {
     void  change_lpf_hz(float hz);
 
   private:
-    // Runs the DSP pipeline on one ready-made spectrum.
-    void process_fft_frame(const ComplexSpectrum &fft_output);
+    // Runs the DSP pipeline on one ready-made spectrum. `raw_hop` is the newest
+    // unwindowed audio of the frame, reserved for the future time-domain peak
+    // refinement inserted right before detector_.get_raw_llr().
+    void process_fft_frame(const ComplexSpectrum &fft_output, const RawHop &raw_hop);
 
-    // Returns the raw LLR of the frame and writes the precise peak frequency.
-    float process_fft_frame_raw_llr(const ComplexSpectrum &fft_output, float &out_precise_freq);
+    // Frame estimate: finds the precise peak frequency (stored in
+    // current_freq_hz_) and the noise floor (stored in noise_power_smoothed_),
+    // and returns the signal level.
+    float analyze_frame(const ComplexSpectrum &fft_output);
 
     // Recomputes the bin search region from hpf_hz_/lpf_hz_ and invalidates the
     // frequency-jump history.

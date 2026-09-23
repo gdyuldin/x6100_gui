@@ -33,7 +33,7 @@ void CwReceiver::change_lpf_hz(float hz) {
     update_search_region();
 }
 
-float CwReceiver::process_fft_frame_raw_llr(const ComplexSpectrum &fft_output, float &out_precise_freq) {
+float CwReceiver::analyze_frame(const ComplexSpectrum &fft_output) {
     // Power spectrum (I^2 + Q^2)
     for (size_t i = region_from_; i <= region_to_; ++i) {
         power_spectrum_[i] = std::norm(fft_output[i]);
@@ -69,8 +69,7 @@ float CwReceiver::process_fft_frame_raw_llr(const ComplexSpectrum &fft_output, f
     }
 
     // Parabolic interpolation over 3 points in log scale
-    float precise_bin     = static_cast<float>(max_idx);
-    float precise_max_val = max_val;
+    float precise_bin = static_cast<float>(max_idx);
 
     if (max_idx > region_from_ && max_idx < region_to_) {
         float y1  = 10.0f * std::log10(power_spectrum_[max_idx - 1] + 1e-15f);
@@ -83,7 +82,7 @@ float CwReceiver::process_fft_frame_raw_llr(const ComplexSpectrum &fft_output, f
             precise_bin = static_cast<float>(max_idx) + delta;
         }
     }
-    out_precise_freq = precise_bin * SAMPLE_RATE / static_cast<float>(FFT_SIZE);
+    current_freq_hz_ = precise_bin * SAMPLE_RATE / static_cast<float>(FFT_SIZE);
 
     float instant_snr_lin  = max_val / noise_power_smoothed_;
     bool  is_strong_enough = (instant_snr_lin >= th_lin);
@@ -101,8 +100,7 @@ float CwReceiver::process_fft_frame_raw_llr(const ComplexSpectrum &fft_output, f
         last_stable_bin_ = static_cast<int>(max_idx);
     }
 
-    // 6. Raw LLR of the frame
-    return detector_.get_raw_llr(precise_max_val, noise_power_smoothed_);
+    return max_val;
 }
 
 void CwReceiver::process_audio_frame(size_t n, float *samples) {
@@ -110,14 +108,20 @@ void CwReceiver::process_audio_frame(size_t n, float *samples) {
         if (!spgram_.execute(samples[i])) {
             continue;
         }
-        process_fft_frame(spgram_.get_fft_output());
+        process_fft_frame(spgram_.get_fft_output(), spgram_.get_hop_raw());
     }
 }
 
-void CwReceiver::process_fft_frame(const ComplexSpectrum &fft_output) {
-    // Step 1: run the frame through the DSP. Yields the raw LLR and the precise
-    // peak frequency (usable later for display or NCO tuning).
-    float frame_llr = process_fft_frame_raw_llr(fft_output, current_freq_hz_);
+void CwReceiver::process_fft_frame(const ComplexSpectrum &fft_output, const RawHop &raw_hop) {
+    // Step 1: frame estimate. Finds the precise peak frequency (current_freq_hz_)
+    // and the noise floor (noise_power_smoothed_), and returns the signal level.
+    float signal_level = analyze_frame(fft_output);
+
+    // (future) refine signal_level here from raw_hop and current_freq_hz_ using
+    // a method of the new refinement class (no coarse power argument).
+    (void)raw_hop;
+
+    float frame_llr = detector_.get_raw_llr(signal_level, noise_power_smoothed_);
 
     // Step 2: feed the LLR to the adaptive timing block. It returns a token
     // only at the end of a physical interval (mark or space).
