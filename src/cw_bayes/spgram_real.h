@@ -43,15 +43,13 @@ class SpgramReal {
             fprintf(stderr, "cw: failed to create FFT plan/window\n");
         }
 
-        /* Fill window with the same energy normalization as ChunkedSpgram
-         * (src/dsp.cpp): g = 1 / sqrtf(sum(w * w) * NFFT / window_size), and
-         * here the window covers the whole FFT (window_size == FFT_SIZE). */
+        /* Fill window with the energy normalization */
         float sum = 0.0f;
         for (size_t i = 0; i < FFT_SIZE; i++) {
             window_[i] = liquid_hann(i, FFT_SIZE);
             sum += window_[i] * window_[i];
         }
-        float g = 1.0f / sqrtf(sum);
+        float g = 1.0f / sqrtf(sum) / std::sqrt(FFT_SIZE / 1.5f);
         // scale window
         for (size_t i = 0; i < FFT_SIZE; i++)
             window_[i] *= g;

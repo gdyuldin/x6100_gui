@@ -3,11 +3,13 @@
 #include <array>
 #include <complex>
 
+#include "coherent_tone_tracker.h"
 #include "cw_config.h"
 #include "morse_decoder.h"
 #include "power_detector.h"
 #include "spgram_real.h"
 #include "time_classifier.h"
+#include "tone_level_tracker.h"
 
 namespace cw {
 
@@ -25,9 +27,6 @@ class CwReceiver {
 
     static constexpr float DEFAULT_HPF_HZ        = 400.0f;
     static constexpr float DEFAULT_LPF_HZ        = 1200.0f;
-    static constexpr float DEFAULT_THRESHOLD_DB  = 10.0f;
-    static constexpr float NOISE_PERCENTILE      = 0.25f;
-    static constexpr float NOISE_SMOOTHING_ALPHA = 0.15f;
 
     CwReceiver(EmitTextFn emit_text, EmitOnOffFn emit_on_off, FrameFn on_frame = {});
 
@@ -44,36 +43,37 @@ class CwReceiver {
 
   private:
     // Runs the DSP pipeline on one ready-made spectrum. `raw_hop` is the newest
-    // unwindowed audio of the frame, reserved for the future time-domain peak
-    // refinement inserted right before detector_.get_raw_llr().
+    // unwindowed audio of the frame, fed to the coherent tone tracker.
     void process_fft_frame(const ComplexSpectrum &fft_output, const RawHop &raw_hop);
 
     // Frame estimate: finds the precise peak frequency (stored in
-    // current_freq_hz_) and the noise floor (stored in noise_power_smoothed_),
-    // and returns the signal level.
-    float analyze_frame(const ComplexSpectrum &fft_output);
+    // current_freq_hz_) and the noise floor (stored in noise_power_smoothed_).
+    void analyze_frame(const ComplexSpectrum &fft_output);
 
-    // Recomputes the bin search region from hpf_hz_/lpf_hz_ and invalidates the
-    // frequency-jump history.
+    // Recomputes the bin search region from hpf_hz_/lpf_hz_.
     void update_search_region();
 
-    float          hpf_hz_          = DEFAULT_HPF_HZ;
-    float          lpf_hz_          = DEFAULT_LPF_HZ;
-    size_t         region_from_     = 0;
-    size_t         region_to_       = 0;
-    int            last_stable_bin_ = -1;
-    PowerDetector  detector_;
-    TimeClassifier classifier_;
-    MorseDecoder   decoder_;
-    PowerSpectrum  power_spectrum_{};
-    RegionScratch  percentile_scratch_{};
-    float          noise_power_smoothed_ = -1.0f; // < 0 => not seeded yet
-    float          current_freq_hz_      = 0.0f;
-    bool           is_signal_detected    = false;
-    EmitOnOffFn    emit_on_off;
-    FrameFn        on_frame_;
-    float          th_lin = 10.0f;
-    SpgramReal     spgram_;
+    float               hpf_hz_                = DEFAULT_HPF_HZ;
+    float               lpf_hz_                = DEFAULT_LPF_HZ;
+    size_t              region_from_           = 0;
+    size_t              region_to_             = 0;
+    int                 last_stable_bin_       = -1;
+    int                 bin_candidate_         = -1;
+    int                 bin_candidate_counter_ = 0;
+    CoherentToneTracker tone_tracker_;
+    PowerDetector       detector_;
+    TimeClassifier      classifier_;
+    ToneLevelTracker    level_tracker_;
+    MorseDecoder        decoder_;
+    PowerSpectrum       power_spectrum_{};
+    RegionScratch       percentile_scratch_{};
+    float               noise_power_smoothed_ = -1.0f; // < 0 => not seeded yet
+    float               current_freq_hz_      = 0.0f;
+    bool                is_signal_detected    = false;
+    EmitOnOffFn         emit_on_off;
+    FrameFn             on_frame_;
+    float               th_lin = 10.0f;
+    SpgramReal          spgram_;
 };
 
 } // namespace cw

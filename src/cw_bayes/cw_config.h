@@ -18,13 +18,13 @@ enum Token {
 
 // Module-internal DSP constants. Only CwReceiver::SAMPLE_RATE is public: it is
 // the rate the receiver must be fed with. Everything else here is private to
-// cw_bayes and its tests.
+// cw_bayes and its tests. Component-specific tuning lives with the component
+// that uses it (see time_classifier.h / tone_level_tracker.h).
 constexpr float  SAMPLE_RATE   = 4000.0f;
 constexpr size_t FFT_SIZE      = 128;
 constexpr size_t HOP_SIZE      = FFT_SIZE / 4;                                    // one frame hop
 constexpr size_t SPECTRUM_SIZE = FFT_SIZE / 2 + 1;                                // non-negative half
 constexpr int    BIN_SIZE_MS   = static_cast<int>(HOP_SIZE * 1000 / SAMPLE_RATE); // ms per frame
-constexpr size_t HIST_BINS     = 150;
 constexpr int    WPM_K         = 1200; // dot ms = WPM_K / wpm
 
 // Spectrum types shared by SpgramReal, CwReceiver and the tests.

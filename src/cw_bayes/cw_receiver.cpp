@@ -9,13 +9,12 @@ namespace cw {
 CwReceiver::CwReceiver(EmitTextFn emit_text, EmitOnOffFn emit_on_off, FrameFn on_frame)
     : decoder_(std::move(emit_text)), emit_on_off(std::move(emit_on_off)), on_frame_(std::move(on_frame)) {
     update_search_region();
-    change_threshold(DEFAULT_THRESHOLD_DB);
+    change_threshold(10.0f);
 }
 
 void CwReceiver::update_search_region() {
     region_from_ = std::max(size_t(0), static_cast<size_t>(hpf_hz_ * static_cast<float>(FFT_SIZE) / SAMPLE_RATE));
     region_to_ = std::min(SPECTRUM_SIZE - 1, static_cast<size_t>(lpf_hz_ * static_cast<float>(FFT_SIZE) / SAMPLE_RATE));
-    last_stable_bin_ = -1;
 }
 
 void CwReceiver::change_threshold(float db_val) {
@@ -33,7 +32,7 @@ void CwReceiver::change_lpf_hz(float hz) {
     update_search_region();
 }
 
-float CwReceiver::analyze_frame(const ComplexSpectrum &fft_output) {
+void CwReceiver::analyze_frame(const ComplexSpectrum &fft_output) {
     // Power spectrum (I^2 + Q^2)
     for (size_t i = region_from_; i <= region_to_; ++i) {
         power_spectrum_[i] = std::norm(fft_output[i]);
@@ -54,7 +53,8 @@ float CwReceiver::analyze_frame(const ComplexSpectrum &fft_output) {
     for (size_t i = 0; i < region_length; ++i) {
         percentile_scratch_[i] = power_spectrum_[region_from_ + i];
     }
-    size_t pct_offset = static_cast<size_t>(NOISE_PERCENTILE * static_cast<float>(region_length));
+    // 25% percentile
+    size_t pct_offset = static_cast<size_t>(0.25f * static_cast<float>(region_length));
     if (pct_offset >= region_length) {
         pct_offset = region_length - 1;
     }
@@ -65,7 +65,7 @@ float CwReceiver::analyze_frame(const ComplexSpectrum &fft_output) {
     if (noise_power_smoothed_ < 0.0f) {
         noise_power_smoothed_ = noise_power_inst;
     } else {
-        noise_power_smoothed_ += NOISE_SMOOTHING_ALPHA * (noise_power_inst - noise_power_smoothed_);
+        noise_power_smoothed_ += 0.15f * (noise_power_inst - noise_power_smoothed_);
     }
 
     // Parabolic interpolation over 3 points in log scale
@@ -88,19 +88,38 @@ float CwReceiver::analyze_frame(const ComplexSpectrum &fft_output) {
     bool  is_strong_enough = (instant_snr_lin >= th_lin);
 
     // Frequency-jump guard (reset history when retuning to a new station)
-    if (last_stable_bin_ != -1) {
+    if (is_strong_enough) {
+        if (bin_candidate_ != -1 && std::abs(static_cast<int>(max_idx) - bin_candidate_) <= 1) {
+            bin_candidate_counter_++;
+        } else {
+            // new candidate
+            bin_candidate_         = static_cast<int>(max_idx);
+            bin_candidate_counter_ = 1;
+        }
+    } else {
+        // silence - reset
+        bin_candidate_         = -1;
+        bin_candidate_counter_ = 0;
+    }
+
+    // same bin was max for at least 3 frames
+    if (bin_candidate_counter_ >= 3) {
         bool is_frequency_jumped = std::abs(static_cast<int>(max_idx) - last_stable_bin_) >= 2;
 
-        if (is_frequency_jumped && is_strong_enough) {
-            detector_.reset();
+        if (is_frequency_jumped) {
+            tone_tracker_.set_freq(current_freq_hz_);
+            // Reset the level reference and the learned speed only on a real
+            // retune, not on the first frequency lock (last_stable_bin_ is
+            // still invalid there): a retune is almost always a new station.
+            if (last_stable_bin_ >= 0) {
+                level_tracker_.reset();
+                classifier_.reset_speed();
+            }
         }
-    }
 
-    if (is_strong_enough) {
         last_stable_bin_ = static_cast<int>(max_idx);
+        bin_candidate_counter_ = 0;
     }
-
-    return max_val;
 }
 
 void CwReceiver::process_audio_frame(size_t n, float *samples) {
@@ -113,21 +132,18 @@ void CwReceiver::process_audio_frame(size_t n, float *samples) {
 }
 
 void CwReceiver::process_fft_frame(const ComplexSpectrum &fft_output, const RawHop &raw_hop) {
-    // Step 1: frame estimate. Finds the precise peak frequency (current_freq_hz_)
-    // and the noise floor (noise_power_smoothed_), and returns the signal level.
-    float signal_level = analyze_frame(fft_output);
+    analyze_frame(fft_output);
 
-    // (future) refine signal_level here from raw_hop and current_freq_hz_ using
-    // a method of the new refinement class (no coarse power argument).
-    (void)raw_hop;
+    float signal_level = tone_tracker_.process(raw_hop, classifier_.is_signal_active());
+    float abs_llr   = detector_.get_raw_llr(signal_level, noise_power_smoothed_);
+    float norm_db   = level_tracker_.norm_db(signal_level);
 
-    float frame_llr = detector_.get_raw_llr(signal_level, noise_power_smoothed_);
+    Token token = classifier_.feed_frame(abs_llr, norm_db, level_tracker_.ref_valid());
 
-    // Step 2: feed the LLR to the adaptive timing block. It returns a token
-    // only at the end of a physical interval (mark or space).
-    Token token = classifier_.feed_frame_llr(frame_llr);
+    // Track the mark level only from the new classifier state, so the tracker
+    // and the classifier never disagree on what counts as a signal.
+    level_tracker_.observe(signal_level, classifier_.is_signal_active());
 
-    // Step 3: a formed token goes to the Morse tree
     if (token != CW_NONE) {
         decoder_.handle_token(token);
     }

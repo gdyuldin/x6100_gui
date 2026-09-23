@@ -3,6 +3,7 @@
 add_library(cw_bayes STATIC
     power_detector.cpp
     time_classifier.cpp
+    tone_level_tracker.cpp
     morse_decoder.cpp
     cw_receiver.cpp
 )

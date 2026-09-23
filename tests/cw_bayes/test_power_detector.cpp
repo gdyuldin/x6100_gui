@@ -1,5 +1,5 @@
-// Tests for cw::PowerDetector: LLR of a single frame, threshold changes, the
-// click guard and reset.
+// Tests for cw::PowerDetector: the frame LLR in dB relative to the configured
+// SNR threshold and its response to threshold changes.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -16,13 +16,14 @@ TEST_CASE("power detector: pure noise stays OFF") {
     }
 }
 
-TEST_CASE("power detector: reset restores the initial LLR state") {
+TEST_CASE("power detector: the user threshold is the zero crossing") {
     cw::PowerDetector det;
 
-    REQUIRE(det.get_llr() == Approx(-3.0f));
-    det.get_raw_llr(1.0f, 1.0f);
-    REQUIRE(det.get_llr() < -2.0f);
+    // 10 dB SNR; with a 10 dB threshold the LLR is zero.
+    det.set_threshold_db(10.0f);
+    REQUIRE(det.get_raw_llr(10.0f, 1.0f) == Approx(0.0f).margin(0.01f));
 
-    det.reset();
-    REQUIRE(det.get_llr() == Approx(-3.0f));
+    // Lowering the threshold raises the LLR by the same amount.
+    det.set_threshold_db(3.0f);
+    REQUIRE(det.get_raw_llr(10.0f, 1.0f) == Approx(7.0f).margin(0.01f));
 }
