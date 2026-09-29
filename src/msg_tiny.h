@@ -14,5 +14,9 @@
 #include "lvgl/lvgl.h"
 
 lv_obj_t * msg_tiny_init(lv_obj_t *align_base);
+
+/* Re-align the tiny message label to its base object (after the base moved/resized). */
+void msg_tiny_align(void);
+
 void msg_tiny_set_text_fmt(const char * fmt, ...);
 void msg_tiny_set_timeout(uint16_t x);

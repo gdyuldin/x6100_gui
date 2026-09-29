@@ -15,6 +15,9 @@
 
 lv_obj_t * msg_init(lv_obj_t *align_base);
 
+/* Re-align the message container to its base object (after the base moved/resized). */
+void msg_align(void);
+
 /// @brief Show or update message text
 /// @param fmt
 /// @param

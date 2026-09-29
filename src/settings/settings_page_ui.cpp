@@ -394,6 +394,20 @@ static void make_spectrum_beta_peak_hold_speed(SettingsPage &page) {
     page.row++;
 }
 
+/***** SPECTRUM HEIGHT *****/
+
+static void make_spectrum_height(SettingsPage &page) {
+    page.label("Spectrum height");
+
+    lv_obj_t *obj = page.cell(1, 6, SMALL_6);
+    obj           = page.slider_int(obj, *cfg.ui.spectrum_height(), 160, 260, 10, SMALL_6 - 120, "%d");
+
+    lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_FOCUSED, &page);
+    lv_obj_add_event_cb(obj, settings_change_bg_opa_cb, LV_EVENT_DEFOCUSED, &page);
+
+    page.row++;
+}
+
 /***** WATERFALL CENTER LINE *****/
 
 static void make_waterfall_line(SettingsPage &page) {
@@ -691,6 +705,7 @@ void make_ui_page(SettingsPage &page) {
 
     make_spectrum_fill_peak(page);
     make_spectrum_beta_peak_hold_speed(page);
+    make_spectrum_height(page);
     page.delimiter();
 
     make_waterfall_line(page);

@@ -13,6 +13,7 @@
 #include "events.h"
 
 static lv_obj_t     *obj;
+static lv_obj_t     *align_base;
 static char         buf[512];
 static lv_timer_t   *timer = NULL;
 static lv_anim_t    fade;
@@ -50,12 +51,22 @@ static void msg_update_cb(lv_event_t * e) {
     }
 }
 
-lv_obj_t * msg_tiny_init(lv_obj_t *align_base) {
+void msg_tiny_align(void) {
+    if (!obj || !align_base) {
+        return;
+    }
+    lv_obj_update_layout(obj);
+    lv_obj_align_to(obj, align_base, LV_ALIGN_CENTER, 0, TOP_BLOCK_SMALL_HEIGHT / 2);
+}
+
+lv_obj_t * msg_tiny_init(lv_obj_t *base) {
+    align_base = base;
+
     obj = lv_label_create(lv_layer_top());
 
     lv_obj_remove_style_all(obj);
     lv_obj_add_style(obj, &style.msg_tiny, 0);
-    lv_obj_align_to(obj, align_base, LV_ALIGN_CENTER, 0, TOP_BLOCK_SMALL_HEIGHT / 2);
+    msg_tiny_align();
 
     lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_opa(obj, 0, 0);

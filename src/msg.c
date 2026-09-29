@@ -20,6 +20,7 @@
 #define DURATION_LONG 4000
 
 static lv_obj_t     *container;
+static lv_obj_t     *align_base;
 static lv_obj_t     *obj;
 static lv_timer_t   *fade_out_timer=NULL;
 static lv_anim_t    fade;
@@ -96,12 +97,21 @@ static void create_msg(const char * fmt, enum msg_type_t type, uint16_t dur, va_
     event_send(obj, EVENT_MSG_UPDATE, (void*)msg);
 }
 
-lv_obj_t * msg_init(lv_obj_t *align_base) {
+void msg_align(void) {
+    if (!container || !align_base) {
+        return;
+    }
+    lv_obj_update_layout(container);
+    lv_obj_align_to(container, align_base, LV_ALIGN_CENTER, 0, -BTN_HEIGHT / 2);
+}
+
+lv_obj_t * msg_init(lv_obj_t *base) {
+    align_base = base;
+
     container = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(container);
     lv_obj_add_style(container, &style.msg, 0);
-    lv_obj_update_layout(container);
-    lv_obj_align_to(container, align_base, LV_ALIGN_CENTER, 0, -BTN_HEIGHT / 2);
+    msg_align();
 
     obj = lv_label_create(container);
     lv_obj_set_width(obj, lv_obj_get_width(container) - 20);

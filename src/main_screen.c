@@ -61,12 +61,12 @@
 #include <stdlib.h>
 
 
-static uint16_t     spectrum_height = (SCREEN_HEIGHT / 3);
 static lv_obj_t     *obj;
 
 static lv_obj_t     *top_container;
 static uint32_t     top_container_index;
 static lv_obj_t     *spectrum;
+static lv_obj_t     *waterfall;
 static lv_obj_t     *freq_bounds[2];
 static lv_obj_t     *meter;
 static lv_obj_t     *tx_info;
@@ -104,6 +104,9 @@ static void keypad_vm(const event_keypad_t *kp);
 static void on_fg_freq_change(Subject *subj, void *user_data);
 static void update_freq_boundaries(Subject *subj, void *user_data);
 static void update_zoom_on_if_shift_change(Subject *subj, void *user_data);
+
+static void apply_main_layout(void);
+static void on_spectrum_height_change(Subject *subj, void *user_data);
 
 static void lock_freq_cb(void * s, lv_msg_t * msg);
 static void on_dialog_start_cb(void *s, lv_msg_t *m);
@@ -1091,6 +1094,7 @@ void main_screen_set_freq(uint64_t freq) {
 
 lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     uint16_t y = 0;
+    uint16_t spectrum_height = (uint16_t)param_i_get(cfg.ui.spectrum_height());
 
     obj = overlay_scr;
 
@@ -1136,7 +1140,7 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     freq_bounds[1] = f;
 
     /* Waterfall */
-    lv_obj_t *waterfall = waterfall_init(overlay_scr, y, SCREEN_HEIGHT - y);
+    waterfall = waterfall_init(overlay_scr, y, SCREEN_HEIGHT - y);
 
     /* Konbs */
     knobs_init(obj);
@@ -1184,7 +1188,31 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
     subject_subscribe_delayed((Subject*)cfg.band.if_shift(), update_zoom_on_if_shift_change, NULL);
     subject_subscribe_delayed((Subject*)cfg.mode.zoom(), update_zoom_on_if_shift_change, NULL);
 
+    subject_subscribe_delayed_and_notify((Subject*)cfg.ui.spectrum_height(), on_spectrum_height_change, NULL);
+
     return obj;
+}
+
+static void apply_main_layout(void) {
+    lv_coord_t h = (lv_coord_t)param_i_get(cfg.ui.spectrum_height());
+    lv_coord_t y = INDICATORS_HEIGHT;
+
+    spectrum_set_geometry(y, h);
+    y += h;
+
+    lv_coord_t wf_h = SCREEN_HEIGHT - y;
+
+    waterfall_set_geometry(y, wf_h);
+
+    lv_coord_t panel_h = wf_h - (BAND_INFO_OFFSET_Y * 2 + BAND_INFO_HEIGHT) - (BTN_HEIGHT + PANEL_GAP_BOTTOM);
+    panel_set_height(LV_MAX(panel_h, 1));
+
+    msg_align();
+    msg_tiny_align();
+}
+
+static void on_spectrum_height_change(Subject *subj, void *user_data) {
+    apply_main_layout();
 }
 
 static void on_fg_freq_change(Subject *subj, void *user_data) {

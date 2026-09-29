@@ -18,6 +18,10 @@
 #define WATERFALL_NFFT DSP_MAX_NFFT
 
 lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h);
+
+/* Reposition/resize the waterfall strip. Rows are preallocated for the maximum
+ * height, so no reallocation happens here. */
+void waterfall_set_geometry(lv_coord_t y, lv_coord_t h);
 void waterfall_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint32_t width_hz, float min, float max);
 
 /* Pause/resume waterfall frame delivery (e.g. while FT8 owns the screen). The

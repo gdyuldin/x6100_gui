@@ -49,7 +49,6 @@ typedef struct {
         void *s_meter;
         void *tx_info;
         void *freq_info;
-        void *panel;
         void *dialog;
     } bg_img;
 
@@ -61,6 +60,15 @@ typedef struct {
         lv_color_t freq_info;
         lv_color_t clock;
     } bg_color;
+
+    // Panel background render parameters (the bitmap itself is re-rendered on resize).
+    struct {
+        lv_grad_dsc_t bg_grad;
+        lv_grad_dsc_t border_grad;
+        lv_opa_t      opa;
+        lv_coord_t    border_width;
+        lv_coord_t    radius;
+    } panel;
 } skin_t;
 
 
@@ -75,12 +83,18 @@ static skin_t skin_black;
 
 static skin_t *skin_current;
 
+static lv_img_dsc_t panel_bg_dsc;
+static lv_coord_t   panel_bg_w = DIALOG_WIDTH;
+static lv_coord_t   panel_bg_h = 182;
+
 
 static void setup_skin_default(skin_t *skin);
 static void setup_skin_flat(skin_t *skin);
 static void setup_skin_black(skin_t *skin);
 
 static void set_skin(skin_t *skin);
+
+static void render_panel_bg(skin_t *skin, lv_coord_t w, lv_coord_t h);
 
 static void update_spectrum_color_cb(Subject *subj, void *user_data);
 
@@ -157,7 +171,7 @@ void styles_init(themes_t theme) {
     // TODO: dynamic height
     lv_style_set_height(&style.panels.base, 182);
     lv_style_set_align(&style.panels.base, LV_ALIGN_BOTTOM_MID);
-    lv_style_set_translate_y(&style.panels.base, -BTN_HEIGHT - 10);
+    lv_style_set_translate_y(&style.panels.base, -BTN_HEIGHT - PANEL_GAP_BOTTOM);
     lv_style_set_pad_ver(&style.panels.base, 10);
     lv_style_set_pad_hor(&style.panels.base, 10);
     lv_style_set_radius(&style.panels.base, 0);
@@ -257,9 +271,9 @@ void styles_init(themes_t theme) {
     lv_style_set_bg_color(&style.cw_tune, lv_color_black());
     lv_style_set_border_width(&style.cw_tune, 0);
     lv_style_set_opa(&style.cw_tune, LV_OPA_50);
-    lv_style_set_align(&style.cw_tune, LV_ALIGN_LEFT_MID);
+    lv_style_set_align(&style.cw_tune, LV_ALIGN_TOP_LEFT);
     lv_style_set_translate_x(&style.cw_tune, 90);
-    lv_style_set_translate_y(&style.cw_tune, 10);
+    lv_style_set_translate_y(&style.cw_tune, 5 + TOP_BLOCK_SMALL_HEIGHT);
 
     /* RGB Picker Styles */
     lv_style_init(&style.rgb.preview_cont);
@@ -487,10 +501,28 @@ static void render_grad_bg_with_border(lv_coord_t w, lv_coord_t h, lv_img_dsc_t 
     }
 }
 
+static void render_panel_bg(skin_t *skin, lv_coord_t w, lv_coord_t h) {
+    render_grad_bg_with_border(w, h, &panel_bg_dsc, skin->panel.opa, skin->panel.border_width, skin->panel.radius,
+                               &skin->panel.bg_grad,
+                               skin->panel.border_width ? &skin->panel.border_grad : NULL);
+}
+
+void styles_panel_set_height(lv_coord_t h) {
+    panel_bg_h = h;
+
+    lv_style_set_height(&style.panels.base, panel_bg_h);
+
+    if (skin_current) {
+        render_panel_bg(skin_current, panel_bg_w, panel_bg_h);
+        lv_style_set_bg_img_src(&style.panels.base, &panel_bg_dsc);
+    }
+
+    lv_obj_invalidate(lv_scr_act());
+}
+
 static void setup_skin_default(skin_t *skin) {
     static lv_img_dsc_t btn_bg_dsc;
     static lv_img_dsc_t dialog_bg_dsc;
-    static lv_img_dsc_t panel_bg_dsc;
     static lv_img_dsc_t clock_bg_dsc;
     static lv_img_dsc_t freq_info_bg_dsc;
     static lv_img_dsc_t s_meter_bg_dsc;
@@ -597,14 +629,11 @@ static void setup_skin_default(skin_t *skin) {
     }
 
     // Panel
-    if (style_get_size(&style.panels.base, &w, &h)) {
-        render_grad_bg_with_border(w, h, &panel_bg_dsc, LV_OPA_80, border_width, radius, &dialog_bg_grad,
-                                   &dialog_border_grad);
-        skin->bg_img.panel = &panel_bg_dsc;
-    } else {
-        LV_LOG_ERROR("Unknown panel style size");
-        skin->bg_img.panel = NULL;
-    }
+    skin->panel.bg_grad      = dialog_bg_grad;
+    skin->panel.border_grad  = dialog_border_grad;
+    skin->panel.opa          = LV_OPA_80;
+    skin->panel.border_width = border_width;
+    skin->panel.radius       = radius;
 
     // Top panels
     lv_color_t    top_block_bg1_color     = lv_color_hex(0x5f7e97);
@@ -766,7 +795,6 @@ static void setup_skin_black(skin_t *skin) {
     static lv_img_dsc_t btn_bg_dsc;
     static lv_img_dsc_t msg_bg_dsc;
     static lv_img_dsc_t msg_tiny_bg_dsc;
-    static lv_img_dsc_t panel_bg_dsc;
     static lv_img_dsc_t clock_bg_dsc;
     static lv_img_dsc_t freq_info_bg_dsc;
     static lv_img_dsc_t s_meter_bg_dsc;
@@ -819,13 +847,11 @@ static void setup_skin_black(skin_t *skin) {
     }
 
     /* panel */
-    if (style_get_size(&style.panels.base, &w, &h)) {
-        render_grad_bg_with_border(w, h, &panel_bg_dsc, LV_OPA_90, 0, radius, &bg_grad, NULL);
-        skin->bg_img.panel = &panel_bg_dsc;
-    } else {
-        LV_LOG_ERROR("Unknown panel style size");
-        skin->bg_img.panel = NULL;
-    }
+    skin->panel.bg_grad      = bg_grad;
+    skin->panel.border_grad  = bg_grad;
+    skin->panel.opa          = LV_OPA_90;
+    skin->panel.border_width = 0;
+    skin->panel.radius       = radius;
 
     // Clock
     lv_opa_t top_block_opa = LV_OPA_80;
@@ -925,7 +951,8 @@ static void set_skin(skin_t *skin) {
     lv_style_set_bg_img_src(&style.tx_info, skin->bg_img.tx_info);
     lv_style_set_bg_img_src(&style.freq_info, skin->bg_img.freq_info);
     lv_style_set_bg_img_src(&style.clock, skin->bg_img.clock);
-    lv_style_set_bg_img_src(&style.panels.base, skin->bg_img.panel);
+    render_panel_bg(skin, panel_bg_w, panel_bg_h);
+    lv_style_set_bg_img_src(&style.panels.base, &panel_bg_dsc);
     lv_style_set_bg_img_src(&style.msg, skin->bg_img.msg);
     lv_style_set_bg_img_src(&style.msg_tiny, skin->bg_img.msg_tiny);
     lv_style_set_bg_img_src(&style.dialog.base, skin->bg_img.dialog);

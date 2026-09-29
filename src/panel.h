@@ -19,6 +19,8 @@ extern "C" {
 
 lv_obj_t * panel_init(lv_obj_t *parent);
 
+void panel_set_height(lv_coord_t h);
+
 void panel_hide();
 void panel_clear();
 void panel_update_visibility(bool clear);

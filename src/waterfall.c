@@ -31,6 +31,10 @@
 
 #define WIDTH SCREEN_WIDTH
 
+/* Rows are preallocated once for the largest possible strip so that resizing
+ * never reallocates the ring while the DSP thread writes into it. */
+#define WATERFALL_MAX_HEIGHT SCREEN_HEIGHT
+
 typedef struct {
     uint8_t values[WATERFALL_NFFT];
     uint32_t center_freq;
@@ -87,8 +91,8 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
     s_wf_x = y;
     s_wf_w = h;
 
-    wf_rows = calloc(h, sizeof(*wf_rows));
-    for (size_t i = 0; i < (size_t)h; i++) {
+    wf_rows = calloc(WATERFALL_MAX_HEIGHT, sizeof(*wf_rows));
+    for (size_t i = 0; i < WATERFALL_MAX_HEIGHT; i++) {
         wf_rows[i].center_freq = wf_center_freq;
         memset(wf_rows[i].values, 0, WATERFALL_NFFT);
     }
@@ -125,12 +129,26 @@ lv_obj_t * waterfall_init(lv_obj_t * overlay_parent, lv_coord_t y, lv_coord_t h)
     return obj;
 }
 
+void waterfall_set_geometry(lv_coord_t y, lv_coord_t h) {
+    if (h < 1 || h > WATERFALL_MAX_HEIGHT) {
+        return;
+    }
+
+    s_wf_x = y;
+    s_wf_w = h;
+
+    lv_obj_set_pos(obj, 0, y);
+    lv_obj_set_size(obj, WIDTH, h);
+
+    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
+}
+
 void waterfall_set_enabled(bool enabled) {
     dsp_frame_set_active(waterfall_sub_id, enabled);
 }
 
 static void scroll_down() {
-    last_row_id = (last_row_id + 1) % s_wf_w;
+    last_row_id = (last_row_id + 1) % WATERFALL_MAX_HEIGHT;
 }
 
 void waterfall_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint32_t width_hz, float min, float max) {
@@ -304,9 +322,9 @@ static void waterfall_render_rotated(uint32_t *buf, int stride) {
     uint32_t bandwidth = width_hz / zoom;
 
     // circular history oldest->newest; newest (last_row_id) -> column 0 (logical top)
-    for (uint16_t src_y = 0; src_y < s_wf_w; src_y++) {
-        int col = (int)(last_row_id - src_y + s_wf_w) % s_wf_w;
-        lerp_row_to_col(&wf_rows[src_y], wf_center_freq, bandwidth, buf, stride, col);
+    for (uint16_t col = 0; col < s_wf_w; col++) {
+        int row = (int)(last_row_id - col + WATERFALL_MAX_HEIGHT) % WATERFALL_MAX_HEIGHT;
+        lerp_row_to_col(&wf_rows[row], wf_center_freq, bandwidth, buf, stride, col);
     }
 
     lv_style_value_t style_val;

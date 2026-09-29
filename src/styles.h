@@ -27,6 +27,8 @@
 #define DIALOG_WIDTH (SCREEN_WIDTH - DIALOG_SPACING * 2)
 #define DIALOG_HEIGHT (SCREEN_HEIGHT - TOP_BLOCK_SMALL_HEIGHT - BTN_HEIGHT - DIALOG_SPACING * 2)
 #define BAND_INFO_HEIGHT 24
+#define BAND_INFO_OFFSET_Y 6
+#define PANEL_GAP_BOTTOM 6
 
 // COLORS
 
@@ -156,3 +158,7 @@ void styles_init(themes_t theme);
 void styles_set_theme(themes_t theme);
 
 void styles_update_meter_colors(meter_color_t mc);
+
+/* Resize the panel background: updates the shared panel style geometry and
+ * re-renders the pre-computed gradient bitmap for the current skin. */
+void styles_panel_set_height(lv_coord_t h);

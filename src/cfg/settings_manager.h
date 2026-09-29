@@ -267,6 +267,8 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_spectrum_filled{"spectrum_filled", true, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_spectrum_height{"spectrum_height", 160, 160, 260,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // Waterfall
     Parameter<int32_t> p_waterfall_center_line{"waterfall_center_line", true, 0, 1,

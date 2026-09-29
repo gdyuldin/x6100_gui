@@ -152,7 +152,7 @@ extern "C" lv_obj_t *band_info_init(lv_obj_t *parent) {
     obj   = lv_obj_create(parent);
 
     lv_obj_set_size(obj, LV_PCT(100), BAND_INFO_HEIGHT);
-    lv_obj_align(obj, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_align(obj, LV_ALIGN_TOP_MID, 0, BAND_INFO_OFFSET_Y);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_set_style_radius(obj, 0, 0);

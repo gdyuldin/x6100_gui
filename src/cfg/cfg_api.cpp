@@ -150,6 +150,7 @@ static ParamInt *cfg_spectrum_peak(void) { return param_ref<ParamInt>(cfg_instan
 static ParamInt *cfg_spectrum_peak_hold(void) { return param_ref<ParamInt>(cfg_instance().p_spectrum_peak_hold); }
 static ParamInt *cfg_spectrum_peak_speed(void) { return param_ref<ParamInt>(cfg_instance().p_spectrum_peak_speed); }
 static ParamInt *cfg_spectrum_filled(void) { return param_ref<ParamInt>(cfg_instance().p_spectrum_filled); }
+static ParamInt *cfg_spectrum_height(void) { return param_ref<ParamInt>(cfg_instance().p_spectrum_height); }
 static ParamInt *cfg_waterfall_center_line(void) { return param_ref<ParamInt>(cfg_instance().p_waterfall_center_line); }
 static ParamInt *cfg_mag_freq(void) { return param_ref<ParamInt>(cfg_instance().p_mag_freq); }
 static ParamInt *cfg_mag_info(void) { return param_ref<ParamInt>(cfg_instance().p_mag_info); }
@@ -234,6 +235,7 @@ extern "C" const cfg_refs_t cfg = {
         .spectrum_peak_hold = &cfg_spectrum_peak_hold,
         .spectrum_peak_speed = &cfg_spectrum_peak_speed,
         .spectrum_filled = &cfg_spectrum_filled,
+        .spectrum_height = &cfg_spectrum_height,
 
         .waterfall_center_line = &cfg_waterfall_center_line,
 

@@ -334,6 +334,16 @@ lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h) {
     return obj;
 }
 
+void spectrum_set_geometry(lv_coord_t y, lv_coord_t h) {
+    s_spec_x = y;
+    s_spec_w = h;
+
+    lv_obj_set_pos(obj, 0, y);
+    lv_obj_set_size(obj, SPECTRUM_NFFT, h);
+
+    __atomic_store_n(&s_cond_dirty, 1, __ATOMIC_RELEASE);
+}
+
 void spectrum_set_enabled(bool enabled) {
     dsp_frame_set_active(spectrum_sub_id, enabled);
 }

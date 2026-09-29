@@ -20,6 +20,10 @@
 #define SPECTRUM_NFFT SCREEN_WIDTH
 
 lv_obj_t *spectrum_init(lv_obj_t *overlay_parent, lv_coord_t y, lv_coord_t h);
+
+/* Reposition/resize the spectrum strip. Only the direct-render geometry changes;
+ * the NFFT-sized buffers are unaffected. */
+void spectrum_set_geometry(lv_coord_t y, lv_coord_t h);
 void      spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_freq, uint8_t fft_dec, float min, float max);
 void      spectrum_clear();
 

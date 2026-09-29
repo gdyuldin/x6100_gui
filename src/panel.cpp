@@ -121,6 +121,12 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
     return obj;
 }
 
+void panel_set_height(lv_coord_t h) {
+    styles_panel_set_height(h);
+    update_line_count();
+    truncate();
+}
+
 void panel_add_text(const char * text) {
     scheduler_put((void(*)(void*))panel_update_text_cb, (void*)text, strlen(text) + 1);
 }
