@@ -7,6 +7,7 @@
 #include "cw_config.h"
 #include "detector.h"
 #include "morse_decoder.h"
+#include "peak_filter_response.h"
 #include "spgram_real.h"
 #include "time_classifier.h"
 
@@ -45,6 +46,13 @@ class CwReceiver {
     void  change_hpf_hz(float hz);
     void  change_lpf_hz(float hz);
 
+    // Tells the receiver whether the external analog peak filter is in the audio
+    // path, and its centre/Q. The receiver then whitens the spectrum by the
+    // filter's known response before estimating noise, so the detector keeps a
+    // filter-independent SNR. `on == false` disables the correction and costs
+    // nothing (the default).
+    void change_peak_filter(bool on, float key_tone_hz, float q);
+
   private:
     friend struct CwReceiverDiagAccess;
 
@@ -63,6 +71,7 @@ class CwReceiver {
     Detector            detector_;
     TimeClassifier      classifier_;
     MorseDecoder        decoder_;
+    PeakFilterResponse  peak_filter_;
     PowerSpectrum       power_spectrum_{};
     RegionScratch       percentile_scratch_{};
     float               noise_bin_smoothed_    = -1.0f; // per-bin noise, < 0 => not seeded

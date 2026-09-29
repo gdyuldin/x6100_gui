@@ -76,6 +76,7 @@ static void on_val_bool_change(Subject *subj, void *user_data);
 static void on_low_filter_change(Subject *subj, void *user_data);
 static void on_high_filter_change(Subject *subj, void *user_data);
 static void on_cw_mode_change(Subject *subj, void *user_data);
+static void on_cw_peak_change(Subject *subj, void *user_data);
 static void update_cw_active();
 
 static void cw_on_off_cb(bool val);
@@ -108,6 +109,11 @@ void cw_init() {
 
     cfg.filter.low()->subscribe_and_notify(on_low_filter_change);
     cfg.filter.high()->subscribe_and_notify(on_high_filter_change);
+
+    // CW peak support
+    cfg.cw.key_tone()->subscribe(on_cw_peak_change);
+    cfg.cw.peak_on()->subscribe(on_cw_peak_change);
+    cfg.cw.peak_q()->subscribe_and_notify(on_cw_peak_change);
 
     ready = true;
 }
@@ -186,6 +192,13 @@ static void on_high_filter_change(Subject *subj, void *user_data) {
 static void on_cw_mode_change(Subject *subj, void *user_data) {
     mode = static_cast<x6100_mode_t>(static_cast<SubjectT<int32_t>*>(subj)->get());
     update_cw_active();
+}
+
+void on_cw_peak_change(Subject *subj, void *user_data) {
+    float key_tone = static_cast<float>(cfg.cw.key_tone()->get());
+    float q = static_cast<float>(cfg.cw.peak_q()->get());
+    bool on = cfg.cw.peak_on()->get();
+    cw_receiver.change_peak_filter(on, key_tone, q);
 }
 
 static void update_cw_active() {

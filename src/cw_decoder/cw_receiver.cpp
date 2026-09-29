@@ -31,10 +31,27 @@ void CwReceiver::change_lpf_hz(float hz) {
     update_search_region();
 }
 
+void CwReceiver::change_peak_filter(bool on, float key_tone_hz, float q) {
+    peak_filter_.configure(on, key_tone_hz, q);
+    // Whitening changes the units of the per-bin noise; re-seed the EMA so the
+    // detector does not mix pre- and post-filter estimates.
+    noise_bin_smoothed_ = -1.0f;
+    noise_integr_       = -1.0f;
+}
+
 FrameObservation CwReceiver::analyze_frame(const ComplexSpectrum &fft_output) {
-    // Power spectrum (I^2 + Q^2)
-    for (size_t i = region_from_; i <= region_to_; ++i) {
-        power_spectrum_[i] = std::norm(fft_output[i]);
+    // Power spectrum (I^2 + Q^2). When the external peak filter is active the
+    // bins are whitened by its known response, so the percentile noise estimate
+    // and the peak ratio are independent of the filter's colouring.
+    if (peak_filter_.enabled()) {
+        const std::array<float, SPECTRUM_SIZE> &h2 = peak_filter_.h2();
+        for (size_t i = region_from_; i <= region_to_; ++i) {
+            power_spectrum_[i] = std::norm(fft_output[i]) / h2[i];
+        }
+    } else {
+        for (size_t i = region_from_; i <= region_to_; ++i) {
+            power_spectrum_[i] = std::norm(fft_output[i]);
+        }
     }
 
     // Coarse maximum inside the search region
