@@ -96,8 +96,8 @@ static void create_msg(const char * fmt, enum msg_type_t type, uint16_t dur, va_
     event_send(obj, EVENT_MSG_UPDATE, (void*)msg);
 }
 
-lv_obj_t * msg_init(lv_obj_t *parent, lv_obj_t *align_base) {
-    container = lv_obj_create(parent);
+lv_obj_t * msg_init(lv_obj_t *align_base) {
+    container = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(container);
     lv_obj_add_style(container, &style.msg, 0);
     lv_obj_update_layout(container);

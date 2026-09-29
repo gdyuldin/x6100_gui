@@ -13,6 +13,6 @@
 
 #include "lvgl/lvgl.h"
 
-lv_obj_t * msg_tiny_init(lv_obj_t *parent, lv_obj_t *align_base);
+lv_obj_t * msg_tiny_init(lv_obj_t *align_base);
 void msg_tiny_set_text_fmt(const char * fmt, ...);
 void msg_tiny_set_timeout(uint16_t x);

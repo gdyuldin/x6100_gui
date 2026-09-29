@@ -62,7 +62,6 @@
 
 
 static uint16_t     spectrum_height = (SCREEN_HEIGHT / 3);
-static uint16_t     freq_height = 36;
 static lv_obj_t     *obj;
 
 static lv_obj_t     *top_container;
@@ -1165,8 +1164,8 @@ lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
 
     /* Panel (CW/RTTY) */
     panel_init(obj);
-    msg_init(obj, waterfall);
-    msg_tiny_init(obj, spectrum);
+    msg_init(waterfall);
+    msg_tiny_init(spectrum);
 
     /* CW tune */
     cw_tune_init(spectrum);

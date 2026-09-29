@@ -50,8 +50,8 @@ static void msg_update_cb(lv_event_t * e) {
     }
 }
 
-lv_obj_t * msg_tiny_init(lv_obj_t *parent, lv_obj_t *align_base) {
-    obj = lv_label_create(parent);
+lv_obj_t * msg_tiny_init(lv_obj_t *align_base) {
+    obj = lv_label_create(lv_layer_top());
 
     lv_obj_remove_style_all(obj);
     lv_obj_add_style(obj, &style.msg_tiny, 0);
