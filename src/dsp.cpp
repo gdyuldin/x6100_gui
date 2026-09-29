@@ -567,17 +567,13 @@ static void update_noise_and_levels(float *lin, uint16_t size, bool update_level
     size_t start = size * 0.04f;
     size_t stop = size * (1 - 0.04f);
 
-    float power_sum[stop - start - window_size];
-
     float running = 0.0f;
     for (size_t j = 0; j < window_size; j++)
         running += lin[start + j];
-    power_sum[0] = running;
     float min = running;
 
     for (size_t i = 1; i < stop - start - window_size; i++) {
         running += lin[start + i + window_size - 1] - lin[start + i - 1];
-        power_sum[i] = running;
         if (running < min) min = running;
     }
     min = LV_MAX(1e-12f, min);
@@ -621,7 +617,7 @@ static void update_noise_and_levels(float *lin, uint16_t size, bool update_level
         return;
     }
 
-    min -= 19.0f;
+    min -= 10.0f*log10f(window_size) + 5.0f;
 
     if (min < S_MIN) {
         min = S_MIN;
