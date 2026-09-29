@@ -180,7 +180,7 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_cw_tune{"cw_tune", true, 0, 1,
         StorageType::GLOBAL, pending_writes_, &global_params_};
-    Parameter<float> p_cw_decoder_snr{"cw_decoder_snr_2", 5.0f, 3.0f, 30.0f,
+    Parameter<float> p_cw_decoder_snr{"cw_decoder_snr_2", 8.0f, 5.0f, 30.0f,
         StorageType::GLOBAL, pending_writes_, &global_params_, 0, 10};
     Parameter<float> p_cw_decoder_snr_gist{"cw_decoder_snr_gist", 1.0f, 0.0f, 30.0f,
         StorageType::GLOBAL, pending_writes_, &global_params_, 0, 10};

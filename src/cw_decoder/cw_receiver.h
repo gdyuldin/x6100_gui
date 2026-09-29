@@ -13,7 +13,7 @@
 namespace cw {
 
 // Grants the WAV inspector access to the per-frame diagnostics without widening
-// the public interface. Defined only in the test tree (tests/cw_bayes/).
+// the public interface. Defined only in the test tree (tests/cw_decoder/).
 struct CwReceiverDiagAccess;
 
 // Application-facing entry point. Owns the FFT-frame DSP pipeline and the three

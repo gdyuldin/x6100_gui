@@ -7,7 +7,7 @@
 namespace cw {
 
 // Grants the tests access to the adaptation state without widening the class
-// interface. Defined only in the test tree (tests/cw_bayes/).
+// interface. Defined only in the test tree (tests/cw_decoder/).
 struct TimeClassifierTestAccess;
 
 // Duration-histogram size and resolution. The resolution is deliberately finer
@@ -27,7 +27,7 @@ constexpr float DOT_DASH_TH_K    = 2.0f;
 constexpr float ELEM_LETTER_TH_K = 2.0f;
 constexpr float LETTER_WORD_TH_K = 5.0f;
 
-// Histogram leak; measured by tests/cw_bayes/tools/hist_forget_sweep.cpp.
+// Histogram leak; measured by tests/cw_decoder/tools/hist_forget_sweep.cpp.
 constexpr float HIST_FORGET = 0.9f;
 
 // Splits a keyed envelope into Morse intervals. The ON/OFF decision (level,

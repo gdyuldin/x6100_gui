@@ -750,8 +750,8 @@ TEST_CASE("numeric validators clamp to the UI-derived ranges", "[manager][valida
     // Float scalars.
     mgr.p_key_ratio.set(10.0f);                 // 2.5..4.5
     REQUIRE(mgr.p_key_ratio.get() == 4.5f);
-    mgr.p_cw_decoder_snr.set(0.0f);             // 3.0..30.0
-    REQUIRE(mgr.p_cw_decoder_snr.get() == 3.0f);
+    mgr.p_cw_decoder_snr.set(0.0f);             // 5.0..30.0
+    REQUIRE(mgr.p_cw_decoder_snr.get() == 5.0f);
 }
 
 TEST_CASE("enum validators clamp to the documented bounds", "[manager][validators]") {

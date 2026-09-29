@@ -20,8 +20,8 @@ add_test(NAME test_ft8_qso COMMAND $<TARGET_FILE:test_ft8_qso> --colour-mode=ans
 
 add_subdirectory(cfg)
 
-add_subdirectory(../src/cw_bayes ${CMAKE_BINARY_DIR}/src/cw_bayes)
-add_subdirectory(cw_bayes)
+add_subdirectory(../src/cw_decoder ${CMAKE_BINARY_DIR}/src/cw_decoder)
+add_subdirectory(cw_decoder)
 
 add_subdirectory(../src/cat ${CMAKE_BINARY_DIR}/src/cat)
 add_executable(test_civ test_civ.cpp)

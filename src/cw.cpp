@@ -12,19 +12,16 @@
 #include <optional>
 
 #include "cfg/cfg_api.h"
-#include "cw_bayes/cw_receiver.h"
+#include "cw_decoder/cw_receiver.h"
 
 
 extern "C" {
     #include "lvgl/lvgl.h"
-    #include "cw_decoder.h"
     #include "panel.h"
     #include "meter.h"
     #include "cw_tune_ui.h"
     #include "pubsub_ids.h"
 }
-
-// #define CW_CAPTURE_RATE 8000 // 48000 / 6
 
 template <std::size_t N>
 class FilterQueue {

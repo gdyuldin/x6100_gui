@@ -1,9 +1,9 @@
 // Measurement tool for the histogram forgetting factor HIST_FORGET.
 //
 // Not a test: it is not registered with add_test (see
-// tests/cw_bayes/CMakeLists.txt) so ctest stays fast. Run it manually:
+// tests/cw_decoder/CMakeLists.txt) so ctest stays fast. Run it manually:
 //   cmake --build build_test --target hist_forget_sweep
-//   ./build_test/tests/cw_bayes/hist_forget_sweep
+//   ./build_test/tests/cw_decoder/hist_forget_sweep
 //
 // It drives cw::TimeClassifier directly with exact frame durations (no DSP) so
 // only the adaptation is measured, and reports for each candidate value:

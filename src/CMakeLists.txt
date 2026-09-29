@@ -21,7 +21,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     events.c msg.c msg_tiny.c keypad.c
     hkey.c clock.c
     meter.c band_info.cpp tx_info.c
-    audio.c mfk.cpp cw.cpp cw_decoder.c panel.cpp
+    audio.c mfk.cpp cw.cpp panel.cpp
     rtty.c screenshot.c display.cpp gps.c
     dialog.c dialog_swrscan.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
@@ -41,7 +41,7 @@ add_subdirectory(qth)
 add_subdirectory(cfg)
 add_subdirectory(cat)
 add_subdirectory(settings)
-add_subdirectory(cw_bayes)
+add_subdirectory(cw_decoder)
 
 include_directories(utf8)
 include_directories(${CMAKE_SYSROOT}/usr/include/RHVoice/)
@@ -68,7 +68,7 @@ aether_x6100_control
 liquid
 RHVoice RHVoice_core RHVoice_audio
 ft8
-cw_bayes
+cw_decoder
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

@@ -18,7 +18,7 @@ enum Token {
 
 // Module-internal DSP constants. Only CwReceiver::SAMPLE_RATE is public: it is
 // the rate the receiver must be fed with. Everything else here is private to
-// cw_bayes and its tests. Component-specific tuning lives with the component
+// cw_decoder and its tests. Component-specific tuning lives with the component
 // that uses it (see time_classifier.h / coherent_tone_tracker.h).
 constexpr float  SAMPLE_RATE   = 4000.0f;
 constexpr size_t FFT_SIZE      = 256;
