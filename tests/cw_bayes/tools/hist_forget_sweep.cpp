@@ -13,8 +13,8 @@
 //     frame jitter (stability);
 //   * the fraction of correctly classified dot/dash tokens.
 //
-// Tokens are emitted a little after their closing edge (deferred transition), so
-// they are collected over the whole stream rather than per edge.
+// A token is emitted on the frame that closes its interval, so they are
+// collected over the whole stream rather than per edge.
 
 #include <algorithm>
 #include <cmath>
@@ -29,10 +29,8 @@ using Access = cw::TimeClassifierTestAccess;
 
 namespace {
 
-constexpr float ON_LLR   = 8.0f;
-constexpr float OFF_LLR  = -8.0f;
-constexpr float ON_NORM  = 0.0f;
-constexpr float OFF_NORM = -20.0f;
+// The classifier frame is one coherent integrator hop.
+constexpr float FRAME_MS = static_cast<float>(cw::COHERENT_INTEGRATOR_HOP) * 1000.0f / cw::SAMPLE_RATE;
 
 constexpr float WPM_25_UNIT_MS = 1200.0f / 25.0f; // 48 ms = 6 frames
 constexpr float WPM_15_UNIT_MS = 1200.0f / 15.0f; // 80 ms = 10 frames
@@ -46,7 +44,7 @@ int jitter_frame(int frames) {
 
 void feed(cw::TimeClassifier &tc, bool on, int frames, std::vector<cw::Token> *out) {
     for (int i = 0; i < frames; ++i) {
-        const cw::Token t = tc.feed_frame(on ? ON_LLR : OFF_LLR, on ? ON_NORM : OFF_NORM, true);
+        const cw::Token t = tc.feed(on, FRAME_MS);
         if (out != nullptr && t != cw::CW_NONE)
             out->push_back(t);
     }

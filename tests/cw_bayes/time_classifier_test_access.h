@@ -15,12 +15,6 @@ struct TimeClassifierTestAccess {
 
     static const std::array<float, HIST_BINS> &hist(const TimeClassifier &tc) { return tc.hist_; }
 
-    static float current_duration_ms(const TimeClassifier &tc) { return tc.current_duration_ms_; }
-
-    static bool  is_pending(const TimeClassifier &tc) { return tc.pending_active_; }
-    static float pending_duration_ms(const TimeClassifier &tc) { return tc.pending_duration_ms_; }
-    static float closed_duration_ms(const TimeClassifier &tc) { return tc.closed_duration_ms_; }
-
     static void set_unit_ms(TimeClassifier &tc, float value) {
         tc.unit_ms_ = value;
         tc.update_boundaries();
@@ -35,7 +29,7 @@ struct TimeClassifierTestAccess {
 
     static void set_hist(TimeClassifier &tc, size_t bin, float value) { tc.hist_[bin] = value; }
 
-    static void add_sample(TimeClassifier &tc, float duration_ms, float weight) { tc.add_sample(duration_ms, weight); }
+    static void add_sample(TimeClassifier &tc, float duration_ms) { tc.add_sample(duration_ms); }
 };
 
 } // namespace cw

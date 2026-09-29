@@ -10,3 +10,12 @@ add_test(NAME test_cw_bayes COMMAND $<TARGET_FILE:test_cw_bayes> --colour-mode=a
 add_executable(hist_forget_sweep tools/hist_forget_sweep.cpp)
 target_include_directories(hist_forget_sweep PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(hist_forget_sweep PRIVATE cw_bayes)
+
+# Offline WAV inspector (not a test): reads a real 4000 Hz recording, runs the
+# real CwReceiver and writes decoded text plus an SVG timeline. The include dir
+# gives it the test-only diag access headers.
+# Run: cmake --build build_test --target cw_wav_inspect &&
+#      ./build_test/tests/cw_bayes/cw_wav_inspect <file.wav> <threshold_db>
+add_executable(cw_wav_inspect tools/cw_wav_inspect.cpp)
+target_include_directories(cw_wav_inspect PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(cw_wav_inspect PRIVATE cw_bayes)

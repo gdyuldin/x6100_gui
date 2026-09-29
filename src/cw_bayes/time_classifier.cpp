@@ -8,29 +8,6 @@ namespace cw {
 
 namespace {
 
-
-// Tuning of the classifier's adaptation, kept next to the code that uses it.
-constexpr float ABS_ON_DB = 4.0f; // (S - th_user) above which a mark may start
-
-// Asymmetric Schmitt levels for the mark envelope (dB below the tracked mark
-// level). Acquisition is level-independent (absolute gate), so a stale
-// reference cannot deafen the classifier to a weaker station; ON->OFF releases
-// at NORM_RELEASE_DB, and a half-confirmed OFF transition is cancelled only by
-// the shallower NORM_EDGE_ON_DB re-arm. The gap between the two is the
-// hysteresis that stops an envelope dithering across one level from stretching
-// a mark. Both are also the sub-frame interpolation levels for the matching
-// edge, so a front edge is placed where the envelope crosses NORM_EDGE_ON_DB
-// and a back edge where it crosses NORM_RELEASE_DB. The release level must stay
-// above ToneLevelTracker's LEVEL_ATTACK_DB, so a bounded click cannot cut a
-// mark.
-constexpr float NORM_EDGE_ON_DB = 4.5f;
-constexpr float NORM_RELEASE_DB = 9.0f;
-
-// Minimum interval for a committed state (ms), used for both the young-state
-// gate and the pending confirmation. Fixed in milliseconds, not derived from
-// the tracked unit: it is the classifier's debounce, independent of speed.
-constexpr float MIN_STATE_MS = 16.0f;
-
 // Triangular spread half-width, in histogram bins: a closed interval lands in a
 // band of +/-SPREAD_HALF_BINS around its duration instead of a single bin, so a
 // mark and its shortened space (offset by ~one frame each way) overlap even when
@@ -65,6 +42,12 @@ constexpr int MIN_RELOCK_SAMPLES = 8;
 
 // Smoothing of the unit between updates.
 constexpr float UNIT_EMA_GAIN = 0.3f;
+
+// End of a message: an OFF stretch with no following mark to close it. After
+// this many element/letter units of silence the pending character is flushed
+// with one word space; the floor keeps a slow station from waiting too long.
+constexpr float IDLE_WORD_K      = 5.0f;
+constexpr float IDLE_WORD_MIN_MS = 200.0f;
 
 } // namespace
 
@@ -114,7 +97,7 @@ void TimeClassifier::decay_histogram(std::array<float, HIST_BINS> &hist) {
         value *= hist_forget_;
 }
 
-void TimeClassifier::add_sample(float duration_ms, float weight) {
+void TimeClassifier::add_sample(float duration_ms) {
     // The leak runs once per sample regardless of whether the sample lands in
     // range: an out-of-range interval must still age the history.
     decay_histogram(hist_);
@@ -129,8 +112,8 @@ void TimeClassifier::add_sample(float duration_ms, float weight) {
     // trust a far speed candidate (see MIN_RELOCK_SAMPLES).
     hist_samples_++;
 
-    // Triangular kernel, normalised over the in-range bins so the added mass
-    // stays `weight` and the wider kernel does not bias the centroid.
+    // Triangular kernel, normalised over the in-range bins so every sample adds
+    // unit mass and the wider kernel does not bias the centroid.
     float norm = 0.0f;
     for (int k = -SPREAD_HALF_BINS; k <= SPREAD_HALF_BINS; ++k) {
         const int bin = center + k;
@@ -143,7 +126,7 @@ void TimeClassifier::add_sample(float duration_ms, float weight) {
         const int bin = center + k;
         if (bin < 0 || bin >= static_cast<int>(HIST_BINS))
             continue;
-        hist_[bin] += weight * static_cast<float>(SPREAD_HALF_BINS + 1 - std::abs(k)) / norm;
+        hist_[bin] += static_cast<float>(SPREAD_HALF_BINS + 1 - std::abs(k)) / norm;
     }
 }
 
@@ -214,35 +197,23 @@ float TimeClassifier::estimate_unit() const {
     return (sum / mass) * HIST_BIN_MS;
 }
 
-void TimeClassifier::reset_speed() {
-    hist_.fill(0.0f);
-    hist_samples_      = 0;
-    unit_ms_           = UNIT_MS_DEFAULT;
-    candidate_unit_ms_ = -1.0f;
-    relock_frames_     = 0;
-    // The previous envelope belongs to the old signal; do not interpolate the
-    // first post-reset edge across it, and drop any half-confirmed transition.
-    // The committed state is dropped too, so a retune during a mark cannot emit
-    // a mark measured across two different stations.
-    prev_norm_valid_     = false;
-    pending_active_      = false;
-    off_idle_ms_         = 0.0f;
-    idle_reported_       = false;
+void TimeClassifier::on_retune() {
+    // Drop the in-flight edge and the committed state so a mark is not measured
+    // across two stations. The learned speed (unit_ms_ and hist_) is kept: a
+    // retune is almost always the same operator resuming.
     is_now_on_           = false;
     current_duration_ms_ = 0.0f;
-    accumulated_llr_     = 0.0f;
-    frame_count_         = 0;
-    update_boundaries();
+    idle_reported_       = false;
 }
 
 // Runs the histogram update and token classification for one closed interval.
-Token TimeClassifier::classify_and_update(bool closed_on, float closed_duration_ms, float closed_probability) {
+Token TimeClassifier::classify_and_update(bool closed_on, float closed_duration_ms) {
     Token token;
     if (closed_on) {
-        add_sample(closed_duration_ms, closed_probability);
+        add_sample(closed_duration_ms);
         token = (closed_duration_ms < threshold_dot_dash_) ? CW_DOT : CW_DASH;
     } else {
-        add_sample(closed_duration_ms, 1.0f - closed_probability);
+        add_sample(closed_duration_ms);
         if (closed_duration_ms < threshold_elem_letter_)
             token = CW_ELEMENT_SPACE;
         else if (closed_duration_ms < threshold_letter_word_)
@@ -254,141 +225,34 @@ Token TimeClassifier::classify_and_update(bool closed_on, float closed_duration_
     return token;
 }
 
-// Emits CW_WORD_SPACE once an OFF stretch exceeds the idle limit.
-Token TimeClassifier::handle_off_idle() {
-    off_idle_ms_ += static_cast<float>(BIN_SIZE_MS);
-
-    float limit = threshold_elem_letter_ * 5.0f;
-    if (limit < 200.0f)
-        limit = 200.0f;
-
-    // Report the silence once per OFF stretch. Re-arming would emit a WORD_SPACE
-    // every `limit` while the station stays silent, flooding the decoder and the
-    // histogram with redundant boundaries.
-    if (!idle_reported_ && off_idle_ms_ >= limit) {
-        idle_reported_ = true;
-        // Route the idle word space through the normal classifier so its
-        // duration reaches the histogram and the unit stays consistent with the
-        // emitted token, instead of returning a token that bypasses adaptation.
-        const Token token = classify_and_update(false, off_idle_ms_, 0.0f);
-        off_idle_ms_      = 0.0f;
-        return token;
-    }
-    return CW_NONE;
-}
-
-Token TimeClassifier::feed_frame(float abs_llr, float norm_db, bool ref_valid) {
-    // ToneLevelTracker::norm_db() returns +/-INFINITY as "no reference"/"no
-    // power" sentinels; anything finite is a real level.
-    const bool  norm_finite = !std::isinf(norm_db);
-    const float prev_norm   = prev_norm_db_;
-    const bool  prev_valid  = prev_norm_valid_;
-    prev_norm_db_           = norm_db;
-    prev_norm_valid_        = norm_finite;
-
-    // Asymmetric Schmitt on the tracked level. Acquisition is level-independent
-    // (absolute gate only): a stale reference left over a gap must not deafen
-    // the classifier to a weaker station. Release and re-arm are relative, and
-    // the pending override below keeps their hysteresis sticky.
-    bool want = is_now_on_;
-    if (!is_now_on_) {
-        if (abs_llr > ABS_ON_DB)
-            want = true;
+Token TimeClassifier::feed(bool on, float ms) {
+    Token token = CW_NONE;
+    if (on != is_now_on_) {
+        // Skip closing the OFF interval when the end-of-message word space has
+        // already been reported for it; it was accounted for below.
+        if (is_now_on_ || !idle_reported_) {
+            token = classify_and_update(is_now_on_, current_duration_ms_);
+        }
+        is_now_on_           = on;
+        current_duration_ms_ = ms;
+        if (on) {
+            idle_reported_ = false;
+        }
     } else {
-        if (!ref_valid || !norm_finite || norm_db < -NORM_RELEASE_DB)
-            want = false;
-    }
-    if (pending_active_) {
-        // Do not cancel a transition on a mere re-cross of the level it just
-        // left: require the opposite crossing (NORM_EDGE_ON_DB to come back ON,
-        // the absolute gate to stay OFF). A closing mark also needs a live
-        // reference, since its release decision is relative.
-        if (!pending_level_)
-            want = (abs_llr > ABS_ON_DB) && ref_valid && norm_finite && (norm_db > -NORM_EDGE_ON_DB);
-        else
-            // Acquisition is level-independent: hold the ON pending while the
-            // absolute gate is up, so a weaker station after a stronger one
-            // (stale reference) is still heard.
-            want = (abs_llr > ABS_ON_DB);
-    }
-    if (want) {
-        off_idle_ms_   = 0.0f;
-        idle_reported_ = false;
+        current_duration_ms_ += ms;
     }
 
-    // Minimum interval for a committed state; used for both the young-state
-    // gate and the pending confirmation.
-    const float min_state_ms = MIN_STATE_MS;
-
-    if (pending_active_) {
-        if (want == pending_level_) {
-            pending_duration_ms_ += static_cast<float>(BIN_SIZE_MS);
-            pending_llr_ += abs_llr;
-            pending_count_++;
-            if (pending_duration_ms_ >= min_state_ms) {
-                const Token token    = classify_and_update(is_now_on_, closed_duration_ms_, closed_probability_);
-                is_now_on_           = pending_level_;
-                current_duration_ms_ = pending_duration_ms_;
-                accumulated_llr_     = pending_llr_;
-                frame_count_         = pending_count_;
-                pending_active_      = false;
-                return token;
-            }
-            return CW_NONE;
+    // No following mark has closed this OFF stretch: report the end of the
+    // message once, after the word gap, so the decoder emits the last character.
+    if (!is_now_on_ && !idle_reported_) {
+        const float limit = std::max(IDLE_WORD_K * threshold_elem_letter_, IDLE_WORD_MIN_MS);
+        if (current_duration_ms_ >= limit) {
+            idle_reported_       = true;
+            current_duration_ms_ = 0.0f;
+            token                = CW_WORD_SPACE;
         }
-        // Reverted before confirmation: merge the excursion back. Interpolate
-        // the re-arm crossing so the merged frame is not snapped to the
-        // committed state, which would bias the interval by up to a frame.
-        float rearm_frac = 0.0f;
-        if (prev_valid && norm_finite) {
-            const float denom    = norm_db - prev_norm;
-            const float rearm_db = is_now_on_ ? -NORM_EDGE_ON_DB : -NORM_RELEASE_DB;
-            if (std::fabs(denom) > 1e-3f)
-                rearm_frac = std::clamp((rearm_db - prev_norm) / denom, 0.0f, 1.0f);
-        }
-        pending_active_ = false;
-        current_duration_ms_ =
-            closed_duration_ms_ + pending_duration_ms_ + (1.0f - rearm_frac) * static_cast<float>(BIN_SIZE_MS);
-        accumulated_llr_ += abs_llr;
-        frame_count_++;
-        return is_now_on_ ? CW_NONE : handle_off_idle();
     }
-
-    if (want == is_now_on_) {
-        current_duration_ms_ += static_cast<float>(BIN_SIZE_MS);
-        accumulated_llr_ += abs_llr;
-        frame_count_++;
-        return is_now_on_ ? CW_NONE : handle_off_idle();
-    }
-
-    // Candidate transition: interpolate the crossing inside the current frame
-    // at the level that drives that direction of the Schmitt.
-    const float edge_level_db = want ? -NORM_EDGE_ON_DB : -NORM_RELEASE_DB;
-    float       edge_frac     = 0.0f;
-    if (prev_valid && norm_finite) {
-        const float denom = norm_db - prev_norm;
-        if (std::fabs(denom) > 1e-3f)
-            edge_frac = std::clamp((edge_level_db - prev_norm) / denom, 0.0f, 1.0f);
-    }
-    const float corrected_ms = current_duration_ms_ + edge_frac * static_cast<float>(BIN_SIZE_MS);
-
-    if (corrected_ms < min_state_ms) {
-        // Leaving a young committed state: a click, absorb the frame.
-        current_duration_ms_ += static_cast<float>(BIN_SIZE_MS);
-        accumulated_llr_ += abs_llr;
-        frame_count_++;
-        return is_now_on_ ? CW_NONE : handle_off_idle();
-    }
-
-    // Start the deferred transition; the closed interval waits for confirmation.
-    pending_active_      = true;
-    pending_level_       = want;
-    pending_duration_ms_ = (1.0f - edge_frac) * static_cast<float>(BIN_SIZE_MS);
-    pending_llr_         = abs_llr;
-    pending_count_       = 1;
-    closed_duration_ms_  = corrected_ms;
-    closed_probability_  = 1.0f / (1.0f + std::exp(-(accumulated_llr_ / static_cast<float>(frame_count_))));
-    return CW_NONE;
+    return token;
 }
 
 float TimeClassifier::get_current_wpm() const {

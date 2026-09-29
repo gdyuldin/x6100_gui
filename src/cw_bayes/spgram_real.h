@@ -14,11 +14,11 @@ namespace cw {
 
 // Streaming sliding-window FFT for the real-valued CW audio stream. Emits the
 // non-negative half of the spectrum (bin 0 = DC, bin SPECTRUM_SIZE-1 = Nyquist)
-// every HOP_SIZE input samples. Coupled to the module constants: it is not a
+// every FFT_HOP input samples. Coupled to the module constants: it is not a
 // reusable generic component.
 class SpgramReal {
 
-    const size_t step_   = HOP_SIZE;
+    const size_t step_   = FFT_HOP;
     windowf      buffer_ = NULL;
     fftplan      fft_    = NULL;
 
@@ -27,7 +27,6 @@ class SpgramReal {
     std::array<std::complex<float>, FFT_SIZE> buf_freq_;
     std::array<float, FFT_SIZE>               window_;
     ComplexSpectrum                           fft_output_;
-    RawHop                                    hop_raw_{};
 
   public:
     SpgramReal(const SpgramReal &)            = delete;
@@ -43,13 +42,13 @@ class SpgramReal {
             fprintf(stderr, "cw: failed to create FFT plan/window\n");
         }
 
-        /* Fill window with the energy normalization */
+        /* Fill window with the value normalization */
         float sum = 0.0f;
         for (size_t i = 0; i < FFT_SIZE; i++) {
             window_[i] = liquid_hann(i, FFT_SIZE);
-            sum += window_[i] * window_[i];
+            sum += window_[i];
         }
-        float g = 1.0f / sqrtf(sum) / std::sqrt(FFT_SIZE / 1.5f);
+        float g = 1.0f / sum;
         // scale window
         for (size_t i = 0; i < FFT_SIZE; i++)
             window_[i] *= g;
@@ -70,21 +69,14 @@ class SpgramReal {
         }
         windowf_push(buffer_, sample);
         n_samples_++;
-        if (n_samples_ < step_) {
+        if (n_samples_ < FFT_SIZE) {
             return false;
         }
-        n_samples_ = 0;
+        n_samples_ -= step_;
 
         float *rc;
         if (windowf_read(buffer_, &rc) != LIQUID_OK) {
             return false;
-        }
-
-        /* Keep the newest HOP_SIZE raw (unwindowed) samples for the optional
-         * time-domain peak refinement. windowf_read returns the raw buffer, so
-         * the newest sample is the last element. */
-        for (size_t i = 0; i < HOP_SIZE; i++) {
-            hop_raw_[i] = rc[FFT_SIZE - HOP_SIZE + i];
         }
 
         for (size_t i = 0; i < FFT_SIZE; i++) {
@@ -100,7 +92,6 @@ class SpgramReal {
         return true;
     };
     const ComplexSpectrum &get_fft_output() { return fft_output_; }
-    const RawHop          &get_hop_raw() { return hop_raw_; }
 };
 
 } // namespace cw

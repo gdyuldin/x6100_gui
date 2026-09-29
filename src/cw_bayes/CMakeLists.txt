@@ -1,9 +1,7 @@
 # CW Bayesian decoder module: standalone C++17 module depending on liquid-dsp
 # for the streaming audio FFT. It is compiled only from the test tree.
 add_library(cw_bayes STATIC
-    power_detector.cpp
     time_classifier.cpp
-    tone_level_tracker.cpp
     morse_decoder.cpp
     cw_receiver.cpp
 )

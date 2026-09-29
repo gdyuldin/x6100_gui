@@ -1,10 +1,7 @@
 // Tests for cw::TimeClassifier: adaptive unit tracking, dot/dash and
-// element/letter/word separation, sub-frame edge interpolation, the histogram
-// leak and the deferred-transition (pending) glitch merge.
-//
-// Token emission lags the closing edge by the confirmation window, so the
-// helpers feed a whole sequence and collect tokens over the stream instead of
-// reading the token of a single frame.
+// element/letter separation, the histogram leak and the retune reset. The
+// ON/OFF decision is made by cw::Detector, so the classifier is driven with
+// clean on/off intervals of a fixed frame duration.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -18,15 +15,9 @@ using Catch::Approx;
 
 namespace {
 
-constexpr float ON_LLR   = 8.0f; // abs_llr > ABS_ON_DB
-constexpr float OFF_LLR  = -8.0f;
-constexpr float ON_NORM  = 0.0f;   // envelope at the tracked mark level
-constexpr float OFF_NORM = -20.0f; // well below the OFF threshold
-
-// Asymmetric Schmitt levels mirrored from time_classifier.cpp (component-local
-// tuning, so the tests keep their own copies): ON->OFF release, OFF->ON re-arm.
-constexpr float RELEASE_DB = 9.0f;
-constexpr float ARM_DB     = 4.5f;
+// The classifier is fed once per coherent integrator hop (8 ms), which is also
+// the histogram resolution.
+constexpr float FRAME_MS = static_cast<float>(cw::COHERENT_INTEGRATOR_HOP) * 1000.0f / cw::SAMPLE_RATE;
 
 // Feeds a stream and records every non-empty token.
 struct Stream {
@@ -34,7 +25,7 @@ struct Stream {
     std::vector<cw::Token> tokens;
 
     cw::Token frame(bool on) {
-        cw::Token t = tc.feed_frame(on ? ON_LLR : OFF_LLR, on ? ON_NORM : OFF_NORM, true);
+        cw::Token t = tc.feed(on, FRAME_MS);
         if (t != cw::CW_NONE)
             tokens.push_back(t);
         return t;
@@ -54,23 +45,18 @@ struct Stream {
 void adapt_25_wpm(cw::TimeClassifier &tc) {
     for (int rep = 0; rep < 20; ++rep) {
         for (int i = 0; i < 6; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true);
+            tc.feed(true, FRAME_MS);
         for (int i = 0; i < 6; ++i)
-            tc.feed_frame(OFF_LLR, OFF_NORM, true);
+            tc.feed(false, FRAME_MS);
     }
 }
 
-// Feeds `on_frames` mark frames and drains the OFF side until the mark token is
-// emitted (the emission now lags the closing edge).
+// Feeds `on_frames` mark frames; the following OFF frame closes the mark and
+// returns its token.
 cw::Token close_mark(cw::TimeClassifier &tc, int on_frames) {
     for (int i = 0; i < on_frames; ++i)
-        tc.feed_frame(ON_LLR, ON_NORM, true);
-    for (int i = 0; i < 12; ++i) {
-        const cw::Token t = tc.feed_frame(OFF_LLR, OFF_NORM, true);
-        if (t == cw::CW_DOT || t == cw::CW_DASH)
-            return t;
-    }
-    return cw::CW_NONE;
+        tc.feed(true, FRAME_MS);
+    return tc.feed(false, FRAME_MS);
 }
 
 int count(const std::vector<cw::Token> &tokens, cw::Token want) {
@@ -113,110 +99,42 @@ TEST_CASE("time classifier: dot vs dash after adaptation") {
     REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
 
     REQUIRE(close_mark(tc, 6) == cw::CW_DOT);   // 48 ms
+    for (int i = 0; i < 5; ++i)
+        tc.feed(false, FRAME_MS); // finish the element space
     REQUIRE(close_mark(tc, 18) == cw::CW_DASH); // 144 ms
 }
 
-TEST_CASE("time classifier: mark ends at the level-relative release level") {
+TEST_CASE("time classifier: on_retune drops the edge but keeps the speed") {
     cw::TimeClassifier tc;
     adapt_25_wpm(tc);
+    REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
 
-    // Enter a mark, hold it, then cross below the release level: the mark must
-    // close.
-    tc.feed_frame(ON_LLR, ON_NORM, true);
-    for (int i = 0; i < 5; ++i)
-        tc.feed_frame(ON_LLR, ON_NORM, true);
-    tc.feed_frame(ON_LLR, -RELEASE_DB - 0.5f, true);
-
-    cw::Token mark = cw::CW_NONE;
-    for (int i = 0; i < 12 && mark == cw::CW_NONE; ++i) {
-        const cw::Token t = tc.feed_frame(OFF_LLR, OFF_NORM, true);
-        if (t == cw::CW_DOT || t == cw::CW_DASH)
-            mark = t;
-    }
-    REQUIRE(mark == cw::CW_DOT);
-}
-
-TEST_CASE("time classifier: acquisition ignores the level (absolute gate)") {
-    cw::TimeClassifier tc;
-    adapt_25_wpm(tc);
-
-    // Below the absolute gate: not armed.
-    for (int i = 0; i < 3; ++i) {
-        tc.feed_frame(-1.0f, 0.0f, true);
-        REQUIRE_FALSE(tc.is_signal_active());
-    }
-
-    // Above the absolute gate but far below the (stale) reference: still armed.
-    // This is the dialogue case: a weak station after a strong one, whose first
-    // frame is far below the kept reference and whose reference is then
-    // re-seeded on that first ON frame (so the following frames read ~0).
-    tc.feed_frame(ON_LLR, -30.0f, true);
-    for (int i = 0; i < 5; ++i)
-        tc.feed_frame(ON_LLR, ON_NORM, true);
-    REQUIRE(tc.is_signal_active());
-}
-
-// Regression: an envelope dithering just below the release level used to cancel
-// the pending OFF transition and re-arm, stretching the mark by a whole frame.
-TEST_CASE("time classifier: dithering near the threshold does not stretch a mark") {
-    cw::TimeClassifier tc;
-    adapt_25_wpm(tc);
-
-    // A clean 6-frame mark (48 ms at 25 WPM) closes to a DOT.
-    const cw::Token mark = close_mark(tc, 6);
-    REQUIRE(mark == cw::CW_DOT);
-    const float clean = cw::TimeClassifierTestAccess::closed_duration_ms(tc);
-
-    // The same mark, but one OFF frame dithers back up to just above the
-    // release level (-8 dB, i.e. the old single crossing level). The sticky
-    // pending must not cancel the closure, so the measured duration stays
-    // within half a frame of the clean one.
-    cw::TimeClassifier tc2;
-    adapt_25_wpm(tc2);
+    // Mid-mark retune: the in-flight mark is dropped, not measured across two
+    // stations, while the learned speed survives.
     for (int i = 0; i < 6; ++i)
-        tc2.feed_frame(ON_LLR, ON_NORM, true);
-    tc2.feed_frame(OFF_LLR, OFF_NORM, true);
-    tc2.feed_frame(OFF_LLR, -RELEASE_DB + 1.0f, true); // dither, still below arm
-    for (int i = 0; i < 12; ++i) {
-        const cw::Token t = tc2.feed_frame(OFF_LLR, OFF_NORM, true);
-        if (t == cw::CW_DOT || t == cw::CW_DASH)
-            break;
-    }
-    REQUIRE(cw::TimeClassifierTestAccess::closed_duration_ms(tc2) == Approx(clean).margin(4.0f));
+        tc.feed(true, FRAME_MS);
+    tc.on_retune();
+    REQUIRE_FALSE(tc.is_signal_active());
+    REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
+
+    REQUIRE(close_mark(tc, 6) == cw::CW_DOT);
 }
 
-// Schmitt behaviour: release is relative (-9 dB), while a half-confirmed OFF
-// transition is cancelled only by the shallower re-arm level (-4.5 dB).
-TEST_CASE("time classifier: asymmetric Schmitt hysteresis") {
-    SECTION("a re-arm above the release level cancels a pending OFF") {
-        cw::TimeClassifier tc;
-        adapt_25_wpm(tc);
+// The end of a message has no following mark to close the OFF interval, so the
+// classifier reports one word space after the word gap to flush the decoder.
+TEST_CASE("time classifier: a long silence reports one word space") {
+    cw::TimeClassifier tc;
+    for (int i = 0; i < 6; ++i)
+        tc.feed(true, FRAME_MS); // dot
+    REQUIRE(close_mark(tc, 0) == cw::CW_DOT);
 
-        // Open a mark and push the envelope well below the release level.
-        for (int i = 0; i < 7; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true);
-        tc.feed_frame(ON_LLR, -RELEASE_DB - 2.0f, true);
-        REQUIRE(cw::TimeClassifierTestAccess::is_pending(tc));
-
-        // A frame back above the arm level cancels the closure (glitch merge).
-        tc.feed_frame(ON_LLR, -ARM_DB + 1.0f, true);
-        REQUIRE_FALSE(cw::TimeClassifierTestAccess::is_pending(tc));
-        REQUIRE(tc.is_signal_active());
+    // 960 ms of silence, well over the ~600 ms word gap at the default speed.
+    int words = 0;
+    for (int i = 0; i < 120; ++i) {
+        if (tc.feed(false, FRAME_MS) == cw::CW_WORD_SPACE)
+            ++words;
     }
-
-    SECTION("a frame between the arm and release levels does not cancel") {
-        cw::TimeClassifier tc;
-        adapt_25_wpm(tc);
-
-        for (int i = 0; i < 7; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true);
-        tc.feed_frame(ON_LLR, -RELEASE_DB - 2.0f, true);
-        REQUIRE(cw::TimeClassifierTestAccess::is_pending(tc));
-
-        // -8 dB is above the release but below the arm: no cancellation.
-        tc.feed_frame(ON_LLR, -RELEASE_DB + 1.0f, true);
-        REQUIRE(cw::TimeClassifierTestAccess::is_pending(tc));
-    }
+    REQUIRE(words == 1);
 }
 
 // Regression: dash-heavy text at 30 WPM used to drag the dot/dash boundary to
@@ -227,13 +145,13 @@ TEST_CASE("time classifier: dash-heavy 30 WPM does not collapse the speed") {
     // to exercise the peak just above the old dot search window).
     for (int rep = 0; rep < 30; ++rep) {
         for (int i = 0; i < 5; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true); // dot
+            tc.feed(true, FRAME_MS); // dot
         for (int i = 0; i < 5; ++i)
-            tc.feed_frame(OFF_LLR, OFF_NORM, true); // element space
+            tc.feed(false, FRAME_MS); // element space
         for (int i = 0; i < 16; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true); // dash
+            tc.feed(true, FRAME_MS); // dash
         for (int i = 0; i < 5; ++i)
-            tc.feed_frame(OFF_LLR, OFF_NORM, true); // element space
+            tc.feed(false, FRAME_MS); // element space
     }
 
     REQUIRE(tc.get_current_wpm() == Approx(30.0f).margin(2.0f));
@@ -274,7 +192,7 @@ TEST_CASE("time classifier: dash-only 30 WPM after a slower station settles") {
         }
         s.off(15);
         REQUIRE(s.tc.get_current_wpm() > 24.0f); // catches the 10 WPM dash latch
-        REQUIRE(s.tc.get_current_wpm() == Approx(27.0f).margin(3.0f));
+        REQUIRE(s.tc.get_current_wpm() == Approx(30.0f).margin(3.0f));
     }
 
     // No dot may be emitted: the dashes must not be read as dots (O -> S/K).
@@ -290,13 +208,13 @@ TEST_CASE("time classifier: tracks a station changing speed") {
     // New station at 15 WPM: dot = 80 ms = 10 frames, dash = 240 ms = 30 frames.
     for (int rep = 0; rep < 30; ++rep) {
         for (int i = 0; i < 10; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true); // dot
+            tc.feed(true, FRAME_MS); // dot
         for (int i = 0; i < 10; ++i)
-            tc.feed_frame(OFF_LLR, OFF_NORM, true); // element space
+            tc.feed(false, FRAME_MS); // element space
         for (int i = 0; i < 30; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true); // dash
+            tc.feed(true, FRAME_MS); // dash
         for (int i = 0; i < 10; ++i)
-            tc.feed_frame(OFF_LLR, OFF_NORM, true); // element space
+            tc.feed(false, FRAME_MS); // element space
     }
 
     REQUIRE(tc.get_current_wpm() == Approx(15.0f).margin(2.0f));
@@ -307,9 +225,9 @@ TEST_CASE("time classifier: a single cluster still yields the right unit") {
         cw::TimeClassifier tc;
         for (int rep = 0; rep < 30; ++rep) {
             for (int i = 0; i < 6; ++i)
-                tc.feed_frame(ON_LLR, ON_NORM, true); // dot
+                tc.feed(true, FRAME_MS); // dot
             for (int i = 0; i < 6; ++i)
-                tc.feed_frame(OFF_LLR, OFF_NORM, true); // element space
+                tc.feed(false, FRAME_MS); // element space
         }
         REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
     }
@@ -318,97 +236,12 @@ TEST_CASE("time classifier: a single cluster still yields the right unit") {
         cw::TimeClassifier tc;
         for (int rep = 0; rep < 30; ++rep) {
             for (int i = 0; i < 18; ++i)
-                tc.feed_frame(ON_LLR, ON_NORM, true); // dash = 144 ms
+                tc.feed(true, FRAME_MS); // dash = 144 ms
             for (int i = 0; i < 6; ++i)
-                tc.feed_frame(OFF_LLR, OFF_NORM, true); // element space
+                tc.feed(false, FRAME_MS); // element space
         }
         REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
     }
-}
-
-TEST_CASE("time classifier: sub-frame edge interpolation") {
-    cw::TimeClassifier tc;
-    adapt_25_wpm(tc);
-    cw::TimeClassifierTestAccess::clear_histograms(tc);
-
-    // Mark: arm, then hold. The closing frame makes the release crossing sit at
-    // f = (-9 - 0) / (-16 - 0) = 0.5625 of the frame.
-    tc.feed_frame(ON_LLR, ON_NORM, true);
-    for (int i = 0; i < 5; ++i)
-        tc.feed_frame(ON_LLR, ON_NORM, true);
-    tc.feed_frame(ON_LLR, -16.0f, true);
-
-    cw::Token mark = cw::CW_NONE;
-    for (int i = 0; i < 12 && mark == cw::CW_NONE; ++i) {
-        const cw::Token t = tc.feed_frame(OFF_LLR, OFF_NORM, true);
-        if (t == cw::CW_DOT || t == cw::CW_DASH)
-            mark = t;
-    }
-    REQUIRE(mark == cw::CW_DOT);
-
-    // The ON front edge is placed where the envelope crossed the arm level in
-    // the first ON frame (0.775 frames in), so six frames give an interpolated
-    // mark of 6 - 0.775 = 5.225 frames = 41.8 ms before the closing frame; the
-    // release crossing then adds 0.5625 frames = 4.5 ms, for 46.3 ms (the
-    // whole-frame quantization would give 48 ms).
-    REQUIRE(cw::TimeClassifierTestAccess::closed_duration_ms(tc) == Approx(46.3f).margin(0.5f));
-}
-
-TEST_CASE("time classifier: a one-frame dropout inside a mark is merged") {
-    Stream s;
-    adapt_25_wpm(s.tc);
-
-    s.on(18);
-    s.off(1); // glitch
-    s.on(18);
-    s.off(12); // drain
-
-    // The trailing space of the warm-up closes when the dash starts; the glitch
-    // is merged so the dash is emitted whole and nothing else follows it.
-    REQUIRE(s.tokens.size() == 2);
-    REQUIRE(s.tokens[0] == cw::CW_ELEMENT_SPACE);
-    REQUIRE(s.tokens[1] == cw::CW_DASH);
-}
-
-TEST_CASE("time classifier: a one-frame pulse inside a space is merged") {
-    Stream s;
-    adapt_25_wpm(s.tc);
-
-    s.off(16);
-    s.on(1); // glitch
-    s.off(16);
-    s.off(8); // drain
-
-    REQUIRE(count(s.tokens, cw::CW_DOT) == 0);
-    REQUIRE(count(s.tokens, cw::CW_DASH) == 0);
-}
-
-// Regression: the idle path used to re-arm and emit a WORD_SPACE every limit
-// while the station stayed silent. A long silence is one word boundary.
-TEST_CASE("time classifier: a long silence reports one word space") {
-    cw::TimeClassifier tc;
-    adapt_25_wpm(tc);
-
-    // 200 OFF frames = 1600 ms, over 3x the ~480 ms idle limit at 25 WPM.
-    int words = 0;
-    for (int i = 0; i < 200; ++i) {
-        if (tc.feed_frame(OFF_LLR, OFF_NORM, true) == cw::CW_WORD_SPACE)
-            ++words;
-    }
-    REQUIRE(words == 1);
-}
-
-TEST_CASE("time classifier: 50 WPM dots are not suppressed") {
-    Stream s;
-    // 50 WPM: dot and element space are 24 ms = 3 frames.
-    for (int rep = 0; rep < 40; ++rep) {
-        s.on(3);
-        s.off(3);
-    }
-    s.off(8); // drain
-
-    require_dot_element_pairs(s.tokens);
-    REQUIRE(s.tc.get_current_wpm() == Approx(50.0f).margin(2.0f));
 }
 
 TEST_CASE("time classifier: the leak decays the histogram once per sample") {
@@ -417,8 +250,8 @@ TEST_CASE("time classifier: the leak decays the histogram once per sample") {
     cw::TimeClassifierTestAccess::set_hist(tc, 3, 1.0f);
     cw::TimeClassifierTestAccess::set_hist(tc, 40, 2.0f);
 
-    // 96 ms -> bin 24: the sample lands away from the seeded bins.
-    cw::TimeClassifierTestAccess::add_sample(tc, 96.0f, 1.0f);
+    // 96 ms -> bin 24 (HIST_BIN_MS = 4): the sample lands away from the seeded bins.
+    cw::TimeClassifierTestAccess::add_sample(tc, 96.0f);
 
     REQUIRE(cw::TimeClassifierTestAccess::hist(tc)[3] == Approx(cw::HIST_FORGET));
     REQUIRE(cw::TimeClassifierTestAccess::hist(tc)[40] == Approx(2.0f * cw::HIST_FORGET));
@@ -436,7 +269,7 @@ TEST_CASE("time classifier: an out-of-range interval still ages the history") {
 
     // 5000 ms -> bin 1250, outside HIST_BINS: no sample written, but the decay
     // must still apply (no gate bypasses it).
-    cw::TimeClassifierTestAccess::add_sample(tc, 5000.0f, 1.0f);
+    cw::TimeClassifierTestAccess::add_sample(tc, 5000.0f);
 
     REQUIRE(cw::TimeClassifierTestAccess::hist(tc)[0] == Approx(cw::HIST_FORGET));
 }
@@ -448,9 +281,9 @@ TEST_CASE("time classifier: a single dot cluster does not alias") {
     // 12 WPM: dot = 100 ms ~= 13 frames (104 ms), element space likewise.
     for (int rep = 0; rep < 30; ++rep) {
         for (int i = 0; i < 13; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true); // dot
+            tc.feed(true, FRAME_MS); // dot
         for (int i = 0; i < 13; ++i)
-            tc.feed_frame(OFF_LLR, OFF_NORM, true); // element space
+            tc.feed(false, FRAME_MS); // element space
     }
     REQUIRE(tc.get_current_wpm() < 20.0f); // catches the u/3 latch
     REQUIRE(tc.get_current_wpm() == Approx(12.0f).margin(2.0f));
@@ -464,9 +297,22 @@ TEST_CASE("time classifier: stretched mark and shortened space compensate") {
     // the space one frame short (56 ms), so the merged centroid stays at 60 ms.
     for (int rep = 0; rep < 40; ++rep) {
         for (int i = 0; i < 8; ++i)
-            tc.feed_frame(ON_LLR, ON_NORM, true);
+            tc.feed(true, FRAME_MS);
         for (int i = 0; i < 7; ++i)
-            tc.feed_frame(OFF_LLR, OFF_NORM, true);
+            tc.feed(false, FRAME_MS);
     }
     REQUIRE(tc.get_current_wpm() == Approx(20.0f).margin(2.0f));
+}
+
+TEST_CASE("time classifier: 50 WPM dots are not suppressed") {
+    Stream s;
+    // 50 WPM: dot and element space are 24 ms = 3 frames.
+    for (int rep = 0; rep < 40; ++rep) {
+        s.on(3);
+        s.off(3);
+    }
+    s.off(8); // drain
+
+    require_dot_element_pairs(s.tokens);
+    REQUIRE(s.tc.get_current_wpm() == Approx(50.0f).margin(2.0f));
 }

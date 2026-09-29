@@ -30,25 +30,25 @@ constexpr float LETTER_WORD_TH_K = 5.0f;
 // Histogram leak; measured by tests/cw_bayes/tools/hist_forget_sweep.cpp.
 constexpr float HIST_FORGET = 0.9f;
 
-// Splits a keyed envelope into Morse intervals. The unit is tracked from a
-// single histogram of all closed intervals (marks and spaces together): a mark
-// is stretched by the level crossing while the following space is shortened by
-// the same amount, so the two merge into one peak at the true unit. The unit is
-// the centre of mass of the lowest cluster, not a discrete bin, so a multimodal
-// cluster (dots, element spaces, jitter) averages out. An asymmetric Schmitt
-// decides ON/OFF: acquisition is level-independent (absolute gate), release is
-// level-relative, and a half-confirmed transition is cancelled only by the
-// opposite crossing, so brief glitches are merged back into the current symbol.
-// Each edge is interpolated between the two frames that bracket its own Schmitt
-// crossing (front edge at the arm level, back edge at the release level).
+// Splits a keyed envelope into Morse intervals. The ON/OFF decision (level,
+// hysteresis, glitch merge) is owned by the Detector; the classifier only
+// times the intervals it is given. The unit is tracked from a single histogram
+// of all closed intervals (marks and spaces together): the level crossing
+// stretches a mark while shortening the following space by the same amount, so
+// the two merge into one peak at the true unit. The unit is the centre of mass
+// of the lowest cluster, not a discrete bin, so a multimodal cluster (dots,
+// element spaces, jitter) averages out. A silence that outlives the word gap
+// with no following mark is the end of a message: it is reported once as a
+// word space so the decoder flushes the last character.
 class TimeClassifier {
   public:
-    Token feed_frame(float abs_llr, float norm_db, bool ref_valid);
+    Token feed(bool on, float ms);
     float get_current_wpm() const;
     bool  is_signal_active() const;
 
-    // Drops the learned histogram and restores the default unit.
-    void reset_speed();
+    // A retune is a new station: drop the in-flight edges and the committed
+    // state, but keep the learned speed and the histogram.
+    void on_retune();
 
   private:
     friend struct TimeClassifierTestAccess;
@@ -56,10 +56,9 @@ class TimeClassifier {
     void  update_unit();
     void  update_boundaries();
     void  decay_histogram(std::array<float, HIST_BINS> &hist);
-    void  add_sample(float duration_ms, float weight);
+    void  add_sample(float duration_ms);
     float estimate_unit() const;
-    Token classify_and_update(bool closed_on, float closed_duration_ms, float closed_probability);
-    Token handle_off_idle();
+    Token classify_and_update(bool closed_on, float closed_duration_ms);
 
     std::array<float, HIST_BINS> hist_{};
 
@@ -67,28 +66,13 @@ class TimeClassifier {
     // relock so a sparse post-rebuild histogram cannot start a speed hunt.
     int hist_samples_ = 0;
 
-    // Committed level: the value is_signal_active() reports.
+    // Committed state: the value is_signal_active() reports.
     bool  is_now_on_           = false;
     float current_duration_ms_ = 0.0f;
-    float accumulated_llr_     = 0.0f;
-    int   frame_count_         = 0;
 
-    // Deferred transition: candidate level and the interval it would close.
-    bool  pending_active_      = false;
-    bool  pending_level_       = false;
-    float pending_duration_ms_ = 0.0f;
-    float pending_llr_         = 0.0f;
-    int   pending_count_       = 0;
-    float closed_duration_ms_  = 0.0f;
-    float closed_probability_  = 0.0f;
-
-    float off_idle_ms_ = 0.0f;
-    // Latches the one-shot idle word space so a long silence is reported once.
-    bool  idle_reported_ = false;
-
-    // Previous frame envelope, for the sub-frame edge interpolation.
-    float prev_norm_db_    = 0.0f;
-    bool  prev_norm_valid_ = false;
+    // Latches the one-shot end-of-message word space so a long silence flushes
+    // the last character once; re-armed by the next mark.
+    bool idle_reported_ = false;
 
     float unit_ms_ = UNIT_MS_DEFAULT;
     // Fast re-lock: a candidate far from the current unit is committed after it
