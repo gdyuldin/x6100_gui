@@ -198,10 +198,11 @@ float TimeClassifier::estimate_unit() const {
 }
 
 void TimeClassifier::on_retune() {
-    // Drop the in-flight edge and the committed state so a mark is not measured
-    // across two stations. The learned speed (unit_ms_ and hist_) is kept: a
-    // retune is almost always the same operator resuming.
-    is_now_on_           = false;
+    // Keep is_now_on_ so the classifier stays in step with the Detector, which
+    // reports the next crossing itself; only the in-flight interval is dropped.
+    // A small timing error when the station changes is accepted. The learned
+    // speed (unit_ms_ and hist_) is kept: a retune is almost always the same
+    // operator resuming.
     current_duration_ms_ = 0.0f;
     idle_reported_       = false;
 }
@@ -225,21 +226,27 @@ Token TimeClassifier::classify_and_update(bool closed_on, float closed_duration_
     return token;
 }
 
-Token TimeClassifier::feed(bool on, float ms) {
+Token TimeClassifier::feed(int edge, float dt) {
     Token token = CW_NONE;
-    if (on != is_now_on_) {
+    if (edge != 0) {
+        // The crossing sits dt before the start of this hop: the closing
+        // interval ends there (giving dt back) and the new one opens with one
+        // full hop plus dt. dt is 0 for a crossing at the hop boundary.
         // Skip closing the OFF interval when the end-of-message word space has
         // already been reported for it; it was accounted for below.
         if (is_now_on_ || !idle_reported_) {
+            current_duration_ms_ -= dt;
+            if (current_duration_ms_ < 0.0f)
+                current_duration_ms_ = 0.0f;
             token = classify_and_update(is_now_on_, current_duration_ms_);
         }
-        is_now_on_           = on;
-        current_duration_ms_ = ms;
-        if (on) {
+        is_now_on_           = (edge > 0);
+        current_duration_ms_ = static_cast<float>(BIN_SIZE_MS) + dt;
+        if (edge > 0) {
             idle_reported_ = false;
         }
     } else {
-        current_duration_ms_ += ms;
+        current_duration_ms_ += static_cast<float>(BIN_SIZE_MS);
     }
 
     // No following mark has closed this OFF stretch: report the end of the

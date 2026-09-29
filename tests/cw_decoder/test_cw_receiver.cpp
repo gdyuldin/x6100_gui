@@ -141,8 +141,8 @@ TEST_CASE("cw receiver: dash-heavy 30 WPM does not collapse the reported speed")
         feed_ms(rx, false, 40);
     }
 
-    // The detector's edge interpolation shifts the measured intervals a little
-    // from the exact keying; the point is that the speed does not collapse.
+    // The split crossing keeps the measured intervals at the keyed length; the
+    // point is that the speed does not collapse.
     REQUIRE(rx.get_measured_wpm() > 24.0f);
     REQUIRE(rx.get_measured_wpm() == Approx(30.0f).margin(4.0f));
 }
@@ -155,14 +155,33 @@ TEST_CASE("cw receiver: reports 20 WPM") {
     rx.change_lpf_hz(900.0f);
     rx.change_threshold(5.0f);
 
-    // 20 WPM: dot = 60 ms, fed as 64 ms mark / 56 ms space so the pair averages
-    // back to the nominal unit.
+    // 20 WPM: dot = 60 ms, keyed symmetrically now that the crossing is split.
     for (int rep = 0; rep < 30; ++rep) {
-        feed_ms(rx, true, 64);
-        feed_ms(rx, false, 56);
+        feed_ms(rx, true, 60);
+        feed_ms(rx, false, 60);
     }
 
     REQUIRE(rx.get_measured_wpm() == Approx(20.0f).margin(3.0f));
+}
+
+// Regression: the transition hop used to be credited whole to the new interval,
+// inflating every element by the interpolation offset; a 25 WPM keyer read as
+// ~22 WPM. The split must recover the keyed speed.
+TEST_CASE("cw receiver: an exact 25 WPM stream reports 25 WPM") {
+    reset_audio();
+    std::string    out;
+    cw::CwReceiver rx([&out](const char *text) { out += text; }, [](bool) {});
+    rx.change_hpf_hz(300.0f);
+    rx.change_lpf_hz(900.0f);
+    rx.change_threshold(5.0f);
+
+    // 25 WPM: dot = element space = 48 ms.
+    for (int rep = 0; rep < 30; ++rep) {
+        feed_ms(rx, true, 48);
+        feed_ms(rx, false, 48);
+    }
+
+    REQUIRE(rx.get_measured_wpm() == Approx(25.0f).margin(1.5f));
 }
 
 TEST_CASE("cw receiver: a weak station after a strong one is still decoded") {
@@ -183,10 +202,10 @@ TEST_CASE("cw receiver: a weak station after a strong one is still decoded") {
     constexpr float STRONG_AMP = 30.0f; // power ratio 900
     constexpr float WEAK_AMP   = 8.0f;  // -11.5 dB from STRONG_AMP
 
-    // Strong station: 20 WPM, 64 ms marks / 56 ms spaces.
+    // Strong station: 20 WPM, symmetric 60 ms marks / spaces.
     for (int rep = 0; rep < 25; ++rep) {
-        feed_ms(rx, true, 64, TONE_BIN, STRONG_AMP);
-        feed_ms(rx, false, 56, TONE_BIN, STRONG_AMP);
+        feed_ms(rx, true, 60, TONE_BIN, STRONG_AMP);
+        feed_ms(rx, false, 60, TONE_BIN, STRONG_AMP);
     }
     const int strong_edges = on_edges;
     REQUIRE(strong_edges >= 20);
@@ -195,8 +214,8 @@ TEST_CASE("cw receiver: a weak station after a strong one is still decoded") {
     // ~12 dB above the weak marks, so acquisition relies on the absolute floor
     // and on the peak reference decaying while the detector is OFF.
     for (int rep = 0; rep < 25; ++rep) {
-        feed_ms(rx, true, 64, TONE_BIN, WEAK_AMP);
-        feed_ms(rx, false, 56, TONE_BIN, WEAK_AMP);
+        feed_ms(rx, true, 60, TONE_BIN, WEAK_AMP);
+        feed_ms(rx, false, 60, TONE_BIN, WEAK_AMP);
     }
     const int weak_edges = on_edges - strong_edges;
 

@@ -1,11 +1,13 @@
 // Tests for cw::TimeClassifier: adaptive unit tracking, dot/dash and
-// element/letter separation, the histogram leak and the retune reset. The
+// element/letter separation, the histogram leak and the retune handling. The
 // ON/OFF decision is made by cw::Detector, so the classifier is driven with
-// clean on/off intervals of a fixed frame duration.
+// clean edges of a whole-frame duration (crossing exactly at the hop boundary,
+// i.e. dt == 0). The sub-hop split has its own test.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <vector>
 
 #include "time_classifier.h"
@@ -15,17 +17,17 @@ using Catch::Approx;
 
 namespace {
 
-// The classifier is fed once per coherent integrator hop (8 ms), which is also
-// the histogram resolution.
-constexpr float FRAME_MS = static_cast<float>(cw::COHERENT_INTEGRATOR_HOP) * 1000.0f / cw::SAMPLE_RATE;
-
-// Feeds a stream and records every non-empty token.
+// Feeds the classifier edge by edge, tracking the level so a run in one state
+// carries the edge only on its first frame.
 struct Stream {
     cw::TimeClassifier     tc;
     std::vector<cw::Token> tokens;
+    bool                   state = false;
 
-    cw::Token frame(bool on) {
-        cw::Token t = tc.feed(on, FRAME_MS);
+    cw::Token frame(bool on, float dt = 0.0f) {
+        const int edge = (on != state) ? (on ? +1 : -1) : 0;
+        state          = on;
+        cw::Token t    = tc.feed(edge, dt);
         if (t != cw::CW_NONE)
             tokens.push_back(t);
         return t;
@@ -42,21 +44,18 @@ struct Stream {
 };
 
 // 25 WPM is 48 ms = 6 frames.
-void adapt_25_wpm(cw::TimeClassifier &tc) {
+void adapt_25_wpm(Stream &s) {
     for (int rep = 0; rep < 20; ++rep) {
-        for (int i = 0; i < 6; ++i)
-            tc.feed(true, FRAME_MS);
-        for (int i = 0; i < 6; ++i)
-            tc.feed(false, FRAME_MS);
+        s.on(6);
+        s.off(6);
     }
 }
 
 // Feeds `on_frames` mark frames; the following OFF frame closes the mark and
 // returns its token.
-cw::Token close_mark(cw::TimeClassifier &tc, int on_frames) {
-    for (int i = 0; i < on_frames; ++i)
-        tc.feed(true, FRAME_MS);
-    return tc.feed(false, FRAME_MS);
+cw::Token close_mark(Stream &s, int on_frames) {
+    s.on(on_frames);
+    return s.frame(false);
 }
 
 int count(const std::vector<cw::Token> &tokens, cw::Token want) {
@@ -81,7 +80,7 @@ void require_dot_element_pairs(const std::vector<cw::Token> &tokens) {
 
 TEST_CASE("time classifier: 21 WPM dot and element space") {
     Stream s;
-    adapt_25_wpm(s.tc);
+    adapt_25_wpm(s);
     // 7 frames = 56 ms -> ~21.4 WPM, a touch slower than the 25 WPM warm-up.
     for (int rep = 0; rep < 20; ++rep) {
         s.on(7);
@@ -94,44 +93,43 @@ TEST_CASE("time classifier: 21 WPM dot and element space") {
 }
 
 TEST_CASE("time classifier: dot vs dash after adaptation") {
-    cw::TimeClassifier tc;
-    adapt_25_wpm(tc);
-    REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
+    Stream s;
+    adapt_25_wpm(s);
+    REQUIRE(s.tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
 
-    REQUIRE(close_mark(tc, 6) == cw::CW_DOT);   // 48 ms
+    REQUIRE(close_mark(s, 6) == cw::CW_DOT); // 48 ms
     for (int i = 0; i < 5; ++i)
-        tc.feed(false, FRAME_MS); // finish the element space
-    REQUIRE(close_mark(tc, 18) == cw::CW_DASH); // 144 ms
+        s.frame(false);                        // finish the element space
+    REQUIRE(close_mark(s, 18) == cw::CW_DASH); // 144 ms
 }
 
-TEST_CASE("time classifier: on_retune drops the edge but keeps the speed") {
-    cw::TimeClassifier tc;
-    adapt_25_wpm(tc);
-    REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
+TEST_CASE("time classifier: on_retune keeps the state but keeps the speed") {
+    Stream s;
+    adapt_25_wpm(s);
+    REQUIRE(s.tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
 
-    // Mid-mark retune: the in-flight mark is dropped, not measured across two
-    // stations, while the learned speed survives.
-    for (int i = 0; i < 6; ++i)
-        tc.feed(true, FRAME_MS);
-    tc.on_retune();
-    REQUIRE_FALSE(tc.is_signal_active());
-    REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
+    // Mid-mark retune: the level stays committed so the classifier keeps step
+    // with the detector, which reports the next crossing itself. Only the
+    // in-flight interval is dropped, so the mark is re-measured from here.
+    s.on(6);
+    s.tc.on_retune();
+    REQUIRE(s.tc.is_signal_active());
+    REQUIRE(s.tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
 
-    REQUIRE(close_mark(tc, 6) == cw::CW_DOT);
+    REQUIRE(close_mark(s, 6) == cw::CW_DOT);
 }
 
 // The end of a message has no following mark to close the OFF interval, so the
 // classifier reports one word space after the word gap to flush the decoder.
 TEST_CASE("time classifier: a long silence reports one word space") {
-    cw::TimeClassifier tc;
-    for (int i = 0; i < 6; ++i)
-        tc.feed(true, FRAME_MS); // dot
-    REQUIRE(close_mark(tc, 0) == cw::CW_DOT);
+    Stream s;
+    s.on(6); // dot
+    REQUIRE(close_mark(s, 0) == cw::CW_DOT);
 
     // 960 ms of silence, well over the ~600 ms word gap at the default speed.
     int words = 0;
     for (int i = 0; i < 120; ++i) {
-        if (tc.feed(false, FRAME_MS) == cw::CW_WORD_SPACE)
+        if (s.frame(false) == cw::CW_WORD_SPACE)
             ++words;
     }
     REQUIRE(words == 1);
@@ -140,21 +138,17 @@ TEST_CASE("time classifier: a long silence reports one word space") {
 // Regression: dash-heavy text at 30 WPM used to drag the dot/dash boundary to
 // the dash peak and collapse the reported speed to ~9.
 TEST_CASE("time classifier: dash-heavy 30 WPM does not collapse the speed") {
-    cw::TimeClassifier tc;
+    Stream s;
     // 30 WPM: dot = 40 ms = 5 frames, dash = 120 ms = 15 frames (fed 16 = 128 ms
     // to exercise the peak just above the old dot search window).
     for (int rep = 0; rep < 30; ++rep) {
-        for (int i = 0; i < 5; ++i)
-            tc.feed(true, FRAME_MS); // dot
-        for (int i = 0; i < 5; ++i)
-            tc.feed(false, FRAME_MS); // element space
-        for (int i = 0; i < 16; ++i)
-            tc.feed(true, FRAME_MS); // dash
-        for (int i = 0; i < 5; ++i)
-            tc.feed(false, FRAME_MS); // element space
+        s.on(5);  // dot
+        s.off(5); // element space
+        s.on(16); // dash
+        s.off(5); // element space
     }
 
-    REQUIRE(tc.get_current_wpm() == Approx(30.0f).margin(2.0f));
+    REQUIRE(s.tc.get_current_wpm() == Approx(30.0f).margin(2.0f));
 }
 
 // Regression: a station that jumps from a slower mixed text to a dash-only
@@ -201,46 +195,38 @@ TEST_CASE("time classifier: dash-only 30 WPM after a slower station settles") {
 }
 
 TEST_CASE("time classifier: tracks a station changing speed") {
-    cw::TimeClassifier tc;
-    adapt_25_wpm(tc);
-    REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
+    Stream s;
+    adapt_25_wpm(s);
+    REQUIRE(s.tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
 
     // New station at 15 WPM: dot = 80 ms = 10 frames, dash = 240 ms = 30 frames.
     for (int rep = 0; rep < 30; ++rep) {
-        for (int i = 0; i < 10; ++i)
-            tc.feed(true, FRAME_MS); // dot
-        for (int i = 0; i < 10; ++i)
-            tc.feed(false, FRAME_MS); // element space
-        for (int i = 0; i < 30; ++i)
-            tc.feed(true, FRAME_MS); // dash
-        for (int i = 0; i < 10; ++i)
-            tc.feed(false, FRAME_MS); // element space
+        s.on(10);  // dot
+        s.off(10); // element space
+        s.on(30);  // dash
+        s.off(10); // element space
     }
 
-    REQUIRE(tc.get_current_wpm() == Approx(15.0f).margin(2.0f));
+    REQUIRE(s.tc.get_current_wpm() == Approx(15.0f).margin(2.0f));
 }
 
 TEST_CASE("time classifier: a single cluster still yields the right unit") {
     SECTION("dots only") {
-        cw::TimeClassifier tc;
+        Stream s;
         for (int rep = 0; rep < 30; ++rep) {
-            for (int i = 0; i < 6; ++i)
-                tc.feed(true, FRAME_MS); // dot
-            for (int i = 0; i < 6; ++i)
-                tc.feed(false, FRAME_MS); // element space
+            s.on(6);  // dot
+            s.off(6); // element space
         }
-        REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
+        REQUIRE(s.tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
     }
 
     SECTION("dashes only") {
-        cw::TimeClassifier tc;
+        Stream s;
         for (int rep = 0; rep < 30; ++rep) {
-            for (int i = 0; i < 18; ++i)
-                tc.feed(true, FRAME_MS); // dash = 144 ms
-            for (int i = 0; i < 6; ++i)
-                tc.feed(false, FRAME_MS); // element space
+            s.on(18); // dash = 144 ms
+            s.off(6); // element space
         }
-        REQUIRE(tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
+        REQUIRE(s.tc.get_current_wpm() == Approx(25.0f).margin(2.0f));
     }
 }
 
@@ -277,31 +263,77 @@ TEST_CASE("time classifier: an out-of-range interval still ages the history") {
 // Regression: a single cluster (dots and element spaces only) used to alias as
 // a phantom dash at u/3, dividing the unit by three and latching the speed.
 TEST_CASE("time classifier: a single dot cluster does not alias") {
-    cw::TimeClassifier tc;
+    Stream s;
     // 12 WPM: dot = 100 ms ~= 13 frames (104 ms), element space likewise.
     for (int rep = 0; rep < 30; ++rep) {
-        for (int i = 0; i < 13; ++i)
-            tc.feed(true, FRAME_MS); // dot
-        for (int i = 0; i < 13; ++i)
-            tc.feed(false, FRAME_MS); // element space
+        s.on(13);  // dot
+        s.off(13); // element space
     }
-    REQUIRE(tc.get_current_wpm() < 20.0f); // catches the u/3 latch
-    REQUIRE(tc.get_current_wpm() == Approx(12.0f).margin(2.0f));
+    REQUIRE(s.tc.get_current_wpm() < 20.0f); // catches the u/3 latch
+    REQUIRE(s.tc.get_current_wpm() == Approx(12.0f).margin(2.0f));
 }
 
-// The crossing stretches a mark and shortens the following space by the same
-// amount; the unified histogram must average them back to the true unit.
+// A mixed mark/space stream whose intervals are quantized a frame apart must
+// still resolve to the true unit: the unified histogram averages them back.
 TEST_CASE("time classifier: stretched mark and shortened space compensate") {
-    cw::TimeClassifier tc;
+    Stream s;
     // Nominal unit 60 ms (20 WPM): the mark is fed one frame long (64 ms) and
     // the space one frame short (56 ms), so the merged centroid stays at 60 ms.
     for (int rep = 0; rep < 40; ++rep) {
-        for (int i = 0; i < 8; ++i)
-            tc.feed(true, FRAME_MS);
-        for (int i = 0; i < 7; ++i)
-            tc.feed(false, FRAME_MS);
+        s.on(8);
+        s.off(7);
     }
-    REQUIRE(tc.get_current_wpm() == Approx(20.0f).margin(2.0f));
+    REQUIRE(s.tc.get_current_wpm() == Approx(20.0f).margin(2.0f));
+}
+
+// A crossing frame carries the offset behind the start of the reporting hop:
+// the closing interval gives the post-crossing part back and the new interval
+// opens with it, so each hop is counted exactly once.
+TEST_CASE("time classifier: the transition hop is split at the crossing offset") {
+    using Access = cw::TimeClassifierTestAccess;
+    cw::TimeClassifier tc;
+    Access::clear_histograms(tc);
+    constexpr float DT = 3.0f; // crossing 3 ms before the hop boundary
+
+    tc.feed(+1, 0.0f);
+    for (int i = 0; i < 2; ++i)
+        tc.feed(0, 0.0f);
+    REQUIRE(Access::current_duration_ms(tc) == Approx(3.0f * cw::BIN_SIZE_MS));
+
+    tc.feed(-1, DT); // falling edge
+    // The new OFF interval opens with one hop plus the offset.
+    REQUIRE(Access::current_duration_ms(tc) == Approx(cw::BIN_SIZE_MS + DT));
+
+    // The closing mark was shortened by the offset: 3*BIN - DT. Only one sample
+    // is in the histogram, so the bins around its centre hold one unit of mass.
+    const float closed = 3.0f * cw::BIN_SIZE_MS - DT;
+    const int   center = static_cast<int>(std::lround(closed / cw::HIST_BIN_MS));
+    float       mass   = 0.0f;
+    for (int bin = center - 4; bin <= center + 4; ++bin)
+        mass += Access::hist(tc)[bin];
+    REQUIRE(mass == Approx(1.0f).margin(0.01f));
+}
+
+// dt == 0 is a crossing exactly at the hop boundary: the opening interval takes
+// the whole hop and the closing one is not modified.
+TEST_CASE("time classifier: a zero crossing offset is a full hop") {
+    using Access = cw::TimeClassifierTestAccess;
+    cw::TimeClassifier tc;
+    Access::clear_histograms(tc);
+
+    tc.feed(+1, 0.0f);
+    for (int i = 0; i < 3; ++i)
+        tc.feed(0, 0.0f);
+    tc.feed(-1, 0.0f);
+
+    REQUIRE(Access::current_duration_ms(tc) == Approx(cw::BIN_SIZE_MS));
+
+    // Closing mark = 4*BIN, no split.
+    const int center = static_cast<int>(std::lround(4.0f * cw::BIN_SIZE_MS / cw::HIST_BIN_MS));
+    float     mass   = 0.0f;
+    for (int bin = center - 4; bin <= center + 4; ++bin)
+        mass += Access::hist(tc)[bin];
+    REQUIRE(mass == Approx(1.0f).margin(0.01f));
 }
 
 TEST_CASE("time classifier: 50 WPM dots are not suppressed") {

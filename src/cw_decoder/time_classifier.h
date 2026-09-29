@@ -32,17 +32,20 @@ constexpr float HIST_FORGET = 0.9f;
 
 // Splits a keyed envelope into Morse intervals. The ON/OFF decision (level,
 // hysteresis, glitch merge) is owned by the Detector; the classifier only
-// times the intervals it is given. The unit is tracked from a single histogram
-// of all closed intervals (marks and spaces together): the level crossing
-// stretches a mark while shortening the following space by the same amount, so
-// the two merge into one peak at the true unit. The unit is the centre of mass
-// of the lowest cluster, not a discrete bin, so a multimodal cluster (dots,
-// element spaces, jitter) averages out. A silence that outlives the word gap
-// with no following mark is the end of a message: it is reported once as a
-// word space so the decoder flushes the last character.
+// times the intervals it is given. The hop that contains a level crossing is
+// split at the crossing: its pre-crossing part closes the old interval and its
+// post-crossing part opens the new one, so each hop's time is counted exactly
+// once and marks and spaces merge into one histogram peak at the true unit.
+// The unit is the centre of mass of the lowest cluster, not a discrete bin, so
+// a multimodal cluster (dots, element spaces, jitter) averages out. A silence
+// that outlives the word gap with no following mark is the end of a message: it
+// is reported once as a word space so the decoder flushes the last character.
 class TimeClassifier {
   public:
-    Token feed(bool on, float ms);
+    // `edge` is the Detector's crossing for this frame: +1 OFF->ON, -1 ON->OFF,
+    // 0 held. `dt` (ms) is the crossing offset behind the start of the
+    // reporting hop (>= 0); it is used only when `edge != 0`.
+    Token feed(int edge, float dt);
     float get_current_wpm() const;
     bool  is_signal_active() const;
 

@@ -127,14 +127,13 @@ void CwReceiver::process_audio_frame(size_t n, float *samples) {
         float power = tone_tracker_.process(samples[i]);
         if (power >= 0.0f && noise_integr_ > 0.0f) {
             auto res = detector_.feed(power, noise_integr_);
-            Token token = classifier_.feed(res.on, res.dur);
+            Token token = classifier_.feed(res.edge, res.dt);
             if (token != CW_NONE) {
                 decoder_.handle_token(token);
             }
-            bool is_active = res.on;
-            if (is_active != is_signal_detected) {
-                is_signal_detected = is_active;
-                emit_on_off(is_active);
+            if (res.edge != 0) {
+                is_signal_detected = (res.edge > 0);
+                emit_on_off(is_signal_detected);
             }
 
             // Diagnostics for the offline inspector; written after the detector
@@ -144,7 +143,7 @@ void CwReceiver::process_audio_frame(size_t n, float *samples) {
             diag_nco_hz_    = tone_tracker_.get_freq_hz();
             diag_t_on_lin_  = detector_.on_threshold_lin();
             diag_t_off_lin_ = detector_.off_threshold_lin();
-            diag_is_active_ = is_active;
+            diag_is_active_ = is_signal_detected;
             diag_retuned_   = retuned;
             retuned         = false;
             if (on_frame_) {

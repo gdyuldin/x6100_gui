@@ -13,6 +13,8 @@ namespace cw {
 struct TimeClassifierTestAccess {
     static float unit_ms(const TimeClassifier &tc) { return tc.unit_ms_; }
 
+    static float current_duration_ms(const TimeClassifier &tc) { return tc.current_duration_ms_; }
+
     static const std::array<float, HIST_BINS> &hist(const TimeClassifier &tc) { return tc.hist_; }
 
     static void set_unit_ms(TimeClassifier &tc, float value) {
