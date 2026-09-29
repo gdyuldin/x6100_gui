@@ -24,7 +24,7 @@ constexpr float UNIT_MS_MAX     = static_cast<float>(WPM_K) / 10.0f; // 10 WPM
 // Morse boundaries as multiples of the unit (dot/dash 2u, element/letter 2u,
 // letter/word 5u).
 constexpr float DOT_DASH_TH_K    = 2.0f;
-constexpr float ELEM_LETTER_TH_K = 2.0f;
+constexpr float ELEM_LETTER_TH_K = 1.7f;  // make elem/letter K shorter to avoid combining letters
 constexpr float LETTER_WORD_TH_K = 5.0f;
 
 // Histogram leak; measured by tests/cw_decoder/tools/hist_forget_sweep.cpp.
