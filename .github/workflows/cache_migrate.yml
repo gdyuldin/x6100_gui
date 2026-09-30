@@ -7,14 +7,15 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     steps:
-      - name: Restore OLD ccache
+      - name: Restore intermediate ccache
         uses: actions/cache/restore@v4
         with:
           path: ~/.buildroot-ccache
-          key: Linux-ccache-2026-09-29-14;14;52
+          key: Linux-ccache-86db0f07a4096260b7a7d8a5272bdbde548568f3
 
-      - name: Save NEW ccache format
-        uses: actions/cache/save@v4
+      - name: Save via ccache-action
+        uses: hendrikmuhs/ccache-action@v1.2
+        env:
+          CCACHE_DIR: ~/.buildroot-ccache
         with:
-          path: ~/.buildroot-ccache
-          key: Linux-ccache-${{ github.sha }}
+          key: ${{ runner.os }}-ccache
