@@ -57,13 +57,11 @@ jobs:
     # Ccache
     - name: Ccache cache files
       uses: hendrikmuhs/ccache-action@v1.2
+      env:
+        CCACHE_DIR: ~/.buildroot-ccache
       with:
-        ccache-dir: ~/.buildroot-ccache
-        # New base key
         key: ${{ runner.os }}-ccache
-        # Restore from old or new
         restore-keys: |
-          Linux-ccache-2026-09-29-14;14;52
           ${{ runner.os }}-ccache-
 
     # Configure
