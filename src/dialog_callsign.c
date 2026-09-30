@@ -91,7 +91,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_textarea_set_placeholder_text(text, "Callsign");
     lv_obj_add_event_cb(text, key_cb, LV_EVENT_KEY, NULL);
 
-    textarea_window_set(param_t_get(cfg.callsign()));
+    textarea_window_set(PARAM_T_GET(cfg.callsign()));
 }
 
 static void destruct_cb() {

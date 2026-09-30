@@ -209,11 +209,11 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
 
     char * canonized_call = util_canonize_callsign(remote_callsign, false);
     qso_log_record_t qso = qso_log_record_create(
-        param_t_get(cfg.callsign()),
+        PARAM_T_GET(cfg.callsign()),
         canonized_call,
         now, param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
         s_snr, r_snr, cparam_i_get(cfg.cur.fg_freq()), NULL, NULL,
-        param_t_get(cfg.qth()), remote_grid
+        PARAM_T_GET(cfg.qth()), remote_grid
     );
     free(canonized_call);
 
@@ -235,7 +235,7 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
 }
 
 static void worker_init() {
-    qso_processor = ftx_qso_processor_init(param_t_get(cfg.callsign()), param_t_get(cfg.qth()),
+    qso_processor = ftx_qso_processor_init(PARAM_T_GET(cfg.callsign()), PARAM_T_GET(cfg.qth()),
                                            save_qso,
                                            param_i_get(cfg.ft8.max_repeats()));
 
@@ -516,7 +516,7 @@ static void construct_cb(lv_obj_t *parent) {
 
     lv_finder_set_range(finder, filter_low, filter_high);
 
-    qth_str_to_pos(param_t_get(cfg.qth()), &cur_lat, &cur_lon);
+    qth_str_to_pos(PARAM_T_GET(cfg.qth()), &cur_lat, &cur_lon);
 
     lm_set_ab(true);
     lm_set_mode(true);
@@ -628,14 +628,14 @@ static void tx_cq_en_dis_cb(struct button_data_t *btn_data) {
     if (disable_buttons) return;
 
     if (!subject_i_get(cq_enabled)){
-        if (strlen(param_t_get(cfg.callsign())) == 0) {
+        if (strlen(PARAM_T_GET(cfg.callsign())) == 0) {
             msg_schedule_text_fmt("Call sign required");
             return;
         }
         subject_i_set(cq_enabled, true);
         subject_i_set(tx_enabled, true);
 
-        cq_make_message(param_t_get(cfg.callsign()), param_t_get(cfg.qth()), param_t_get(cfg.ft8.cq_modifier()), tx_msg.msg);
+        cq_make_message(PARAM_T_GET(cfg.callsign()), PARAM_T_GET(cfg.qth()), PARAM_T_GET(cfg.ft8.cq_modifier()), tx_msg.msg);
 
         struct timespec now;
         clock_gettime(CLOCK_REALTIME, &now);
@@ -667,7 +667,7 @@ static void tx_call_en_dis_cb(struct button_data_t *btn_data) {
         return;
 
     if (!subject_i_get(tx_enabled)) {
-        if (strlen(param_t_get(cfg.callsign())) == 0) {
+        if (strlen(PARAM_T_GET(cfg.callsign())) == 0) {
             msg_schedule_text_fmt("Call sign required");
             return;
         }
@@ -780,8 +780,8 @@ static void keyboard_open() {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     );
 
-    if (strlen(param_t_get(cfg.ft8.cq_modifier())) > 0) {
-        textarea_window_set(param_t_get(cfg.ft8.cq_modifier()));
+    if (strlen(PARAM_T_GET(cfg.ft8.cq_modifier())) > 0) {
+        textarea_window_set(PARAM_T_GET(cfg.ft8.cq_modifier()));
     } else {
         lv_obj_t *text = textarea_window_text();
         lv_textarea_set_placeholder_text(text, " CQ modifier");
@@ -924,7 +924,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
     cell_data.meta = meta;
     cell_data.odd = s_info->odd;
-    if (param_t_get(cfg.qth())[0] != 0) {
+    if (PARAM_T_GET(cfg.qth())[0] != 0) {
         if (strlen(meta.grid) > 0) {
             double lat, lon;
             qth_str_to_pos(meta.grid, &lat, &lon);

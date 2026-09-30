@@ -7,6 +7,7 @@
 #include "cfg_api.h"
 
 #include <cstddef>
+#include <cstdio>
 #include <string>
 
 #include "atu.h"
@@ -92,10 +93,13 @@ void param_f_set(ParamFloat *p, float v) {
     p->set(v);
 }
 
-const char *param_t_get(const ParamText *p) {
-    static thread_local std::string buf;
-    buf = p->get();
-    return buf.c_str();
+char *param_t_get_into(const ParamText *p, char *dst, size_t n) {
+    if (!dst || n == 0) {
+        return dst;
+    }
+    std::string value = p->get();
+    snprintf(dst, n, "%s", value.c_str());
+    return dst;
 }
 
 void param_t_set(ParamText *p, const char *v) {

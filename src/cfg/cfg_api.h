@@ -18,9 +18,22 @@
 // the sqlite3 connection and table initialisation (avoids double-Init).
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "subject_api.h"
+
+// Upper bound for a text parameter copied into a PARAM_T_GET stack buffer.
+#define PARAM_TEXT_MAX 64
+
+// Copy the parameter's text into caller-owned storage (NUL-terminated,
+// truncated to n-1 chars) and return dst. Unlike the old shared-buffer
+// param_t_get, every call writes to its own destination, so several results can
+// coexist. C callers normally use PARAM_T_GET, which supplies a fresh stack
+// buffer per expansion.
+#ifndef __cplusplus
+#define PARAM_T_GET(p) param_t_get_into((p), (char[PARAM_TEXT_MAX]){0}, PARAM_TEXT_MAX)
+#endif
 
 #ifdef __cplusplus
 #include <string>
@@ -68,7 +81,7 @@ CPP_UNWANTED("Use modern C++ 'ParamFloat::set' instead.")
 void        param_f_set(ParamFloat *p, float v);
 
 CPP_UNWANTED("Use modern C++ 'ParamText::get' instead.")
-const char *param_t_get(const ParamText *p);          // borrowed: valid until next param_t_get on this thread
+char       *param_t_get_into(const ParamText *p, char *dst, size_t n); // dst owns the result
 
 CPP_UNWANTED("Use modern C++ 'ParamText::set' instead.")
 void        param_t_set(ParamText *p, const char *v); // NULL -> ""
