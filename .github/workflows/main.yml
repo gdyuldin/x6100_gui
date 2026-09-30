@@ -4,7 +4,7 @@ on:
   push:
     # Pattern matched against refs/tags
     tags:
-      - '*'           # Push events to every tag not containing /
+      - '**'           # Push events to every tag
 
 jobs:
   build:
@@ -55,19 +55,15 @@ jobs:
         sed -i "s,^X6100_GUI_GIT_SUBMODULES,# X6100_GUI_GIT_SUBMODULES,g" AetherX6100Buildroot/br2_external/package/x6100-gui/x6100_gui.mk
 
     # Ccache
-    - name: Prepare ccache timestamp
-      id: ccache_cache_timestamp
-      shell: cmake -P {0}
-      run: |
-        string(TIMESTAMP current_date "%Y-%m-%d-%H;%M;%S" UTC)
-        file(APPEND "$ENV{GITHUB_OUTPUT}" "timestamp=${current_date}")
-
     - name: Ccache cache files
-      uses: actions/cache@v4
+      uses: hendrikmuhs/ccache-action@v1.2
       with:
-        path: ~/.buildroot-ccache
-        key: ${{ runner.os }}-ccache-${{ steps.ccache_cache_timestamp.outputs.timestamp }}
+        ccache-dir: ~/.buildroot-ccache
+        # New base key
+        key: ${{ runner.os }}-ccache
+        # Restore from old or new
         restore-keys: |
+          Linux-ccache-2026-09-29-14;14;52
           ${{ runner.os }}-ccache-
 
     # Configure
@@ -100,8 +96,8 @@ jobs:
     # - name: 'Upload image'
     #   uses: actions/upload-artifact@v4
     #   with:
-    #     name: sdcard.img
-    #     path: AetherX6100Buildroot/build/images/sdcard.img
+    #     name: sdcard.${{ github.ref_name }}.img
+    #     path: AetherX6100Buildroot/build/images/sdcard.${{ github.ref_name }}.img
 
     # Create release
     - name: Release
