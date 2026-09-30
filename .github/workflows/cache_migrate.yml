@@ -1,0 +1,20 @@
+name: Migrate Old Ccache
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore OLD ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.buildroot-ccache
+          key: Linux-ccache-2026-09-29-14;14;52
+
+      - name: Save NEW ccache format
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.buildroot-ccache
+          key: Linux-ccache-${{ github.sha }}
