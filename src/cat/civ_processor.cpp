@@ -772,7 +772,7 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
                 return resp.set_ng().get_packet();
             case MEM_DM_FG:
                 // Payload: data mode, filter_id
-                mode = ci_mode_2_x_mode(mode, request.get_subcommand_data()[0]);
+                mode = ci_data_mode_2_x_mode(mode, request.get_subcommand_data()[0]);
                 cfg.cur.mode()->set(mode);
                 return resp.set_ok().get_packet();
 
