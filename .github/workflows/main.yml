@@ -56,12 +56,13 @@ jobs:
 
     # Ccache
     - name: Ccache cache files
-      uses: hendrikmuhs/ccache-action@v1.2
-      env:
-        CCACHE_DIR: ~/.buildroot-ccache
+      uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-ccache
+        path: ~/.buildroot-ccache
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
         restore-keys: |
+          Linux-ccache-${{ github.sha }}
+          Linux-ccache-
           ${{ runner.os }}-ccache-
 
     # Configure
