@@ -356,7 +356,7 @@ static void make_sp_mode(SettingsPage &page) {
     lv_obj_center(obj);
     lv_obj_add_event_cb(obj, sp_mode_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    if (!cfg.radio.spmode()->get()) {
+    if (cfg.radio.spmode()->get()) {
         lv_obj_add_state(obj, LV_STATE_CHECKED);
     }
 

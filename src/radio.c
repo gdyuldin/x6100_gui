@@ -481,6 +481,10 @@ static void radio_unlock() {
 static void on_change_bool(Subject *subj, void *user_data) {
     int32_t new_val = subject_i_get((SubjectInt*)subj);
     void (*fn)(bool) = (void (*)(bool))user_data;
+    if (fn == x6100_control_spmode_set) {
+        // function expect true for phone mode (not speaker)
+        new_val = !new_val;
+    }
     WITH_RADIO_LOCK(fn(new_val));
 }
 
