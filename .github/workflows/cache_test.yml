@@ -83,20 +83,49 @@ jobs:
       if: steps.cache-restore.outputs.cache-hit == 'true'
       run: |
         cd AetherX6100Buildroot
-        echo "Unpack cached host and ccache..."
+        echo "Unpack cached sdk and ccache..."
         tar --zstd -xf buildroot-cache.tar.zst
         mkdir -p ~/.buildroot-ccache
         mv ccache-dir/* ~/.buildroot-ccache/ || true
+
+        cd build
+
+        echo "=== Switch to External Toolchain ==="
+        sed -i '/BR2_TOOLCHAIN_BUILDROOT/d' .config
+
+        # Add external toolchain
+        cat << EOF >> .config
+        BR2_TOOLCHAIN_EXTERNAL=y
+        BR2_TOOLCHAIN_EXTERNAL_CUSTOM=y
+        BR2_TOOLCHAIN_EXTERNAL_PATH="${{ github.workspace }}/AetherX6100Buildroot/buildroot_sdk"
+
+        BR2_TOOLCHAIN_EXTERNAL_GLIBC=y
+        BR2_TOOLCHAIN_EXTERNAL_PREFIX="$(ARCH)-linux"
+        BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_ARCH_SUPPORTS=y
+        BR2_TOOLCHAIN_EXTERNAL_CUSTOM_PREFIX="$(ARCH)-linux"
+        BR2_TOOLCHAIN_EXTERNAL_GCC_12=y
+        BR2_TOOLCHAIN_EXTERNAL_HEADERS_6_1=y
+        BR2_TOOLCHAIN_EXTERNAL_CUSTOM_GLIBC=y
+        BR2_TOOLCHAIN_EXTERNAL_HAS_SSP=y
+        BR2_TOOLCHAIN_EXTERNAL_HAS_SSP_STRONG=y
+        BR2_TOOLCHAIN_EXTERNAL_CXX=y
+        BR2_TOOLCHAIN_EXTERNAL_INET_RPC=n
+
+        EOF
+        # update config
+        make olddefconfig
 
     # Build
     - name: Build
       run: |
         cd AetherX6100Buildroot/build
-        build/host/bin/ccache -M 7G || true  # Limit cache
+        build/host/bin/ccache -M 10G || true  # Limit cache
         make lame
         make mpg123
         make libsndfile-dirclean
-        make
+
+        # this command will build all packages and SDK
+        make sdk
 
     # Replace U-boot
     - name: Replace u-boot
@@ -139,12 +168,18 @@ jobs:
       if: always()
       run: |
         cd AetherX6100Buildroot
+
+        # Unpack SDK
+        echo "Unpack SDK..."
+        mkdir -p buildroot_sdk
+        tar -xzf build/images/*_sdk-buildroot.tar.gz -C buildroot_sdk --strip-components=1
+
         echo "Prepare cache..."
         mkdir -p ccache-dir
         cp -r ~/.buildroot-ccache/* ccache-dir/ || true
 
-        # Compress ccache and build/host
-        tar --zstd -cf buildroot-cache.tar.zst build/host ccache-dir
+        # Compress ccache and SDK
+        tar --zstd -cf buildroot-cache.tar.zst buildroot_sdk ccache-dir
 
         # Upload archive
         gh extension install actions/gh-actions-cache || true
