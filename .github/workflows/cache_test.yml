@@ -71,24 +71,20 @@ jobs:
     #       ${{ runner.os }}-ccache-
 
     - name: Restore Buildroot Cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       id: cache-restore
       with:
-        path: ./AetherX6100Buildroot/buildroot-cache.tar.zst
-        key: buildroot-cache-${{ github.sha }}
+        path: |
+          AetherX6100Buildroot/buildroot_sdk
+          ~/.buildroot-ccache
+        key: buildroot-cache-
         restore-keys: |
           buildroot-cache-
 
-    - name: Unpack Cache
+    - name: Config for SDK
       if: steps.cache-restore.outputs.cache-hit == 'true'
       run: |
-        cd AetherX6100Buildroot
-        echo "Unpack cached sdk and ccache..."
-        tar --zstd -xf buildroot-cache.tar.zst
-        mkdir -p ~/.buildroot-ccache
-        mv ccache-dir/* ~/.buildroot-ccache/ || true
-
-        cd build
+        cd AetherX6100Buildroot/build
 
         echo "=== Switch to External Toolchain ==="
         sed -i '/BR2_TOOLCHAIN_BUILDROOT/d' .config
@@ -124,8 +120,7 @@ jobs:
         make mpg123
         make libsndfile-dirclean
 
-        # this command will build all packages and SDK
-        make sdk
+        make
 
     # Replace U-boot
     - name: Replace u-boot
@@ -155,6 +150,10 @@ jobs:
 
 
     - name: Prune Cache
+      if: |
+        success() &&
+        github.event_name == 'workflow_dispatch' &&
+        github.ref_name == 'main'
       run: |
         cd AetherX6100Buildroot
         # Get stat
@@ -163,31 +162,31 @@ jobs:
         build/host/bin/ccache -c
 
 
-
-    - name: Pack and Save Cache back to Main
-      if: always()
+    - name: Prepare SDK
+      if: |
+        success() &&
+        github.event_name == 'workflow_dispatch' &&
+        github.ref_name == 'main' &&
+        steps.cache-restore.outputs.cache-hit != 'true'
       run: |
-        cd AetherX6100Buildroot
+        cd AetherX6100Buildroot/build
 
-        # Unpack SDK
+        echo "Build SDK..."
+        make sdk
+
+        cd ..
         echo "Unpack SDK..."
         mkdir -p buildroot_sdk
         tar -xzf build/images/*_sdk-buildroot.tar.gz -C buildroot_sdk --strip-components=1
 
-        echo "Prepare cache..."
-        mkdir -p ccache-dir
-        cp -r ~/.buildroot-ccache/* ccache-dir/ || true
-
-        # Compress ccache and SDK
-        tar --zstd -cf buildroot-cache.tar.zst buildroot_sdk ccache-dir
-
-        # Upload archive
-        gh extension install actions/gh-actions-cache || true
-        CACHE_KEY="buildroot-cache-${{ github.sha }}"
-
-        echo "Saving compressed cache to main: $CACHE_KEY"
-        gh actions-cache create ./buildroot-cache.tar.zst \
-          --key "$CACHE_KEY" \
-          --branch "main"
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Save Buildroot Cache back to Main
+      if: |
+        success() &&
+        github.event_name == 'workflow_dispatch' &&
+        github.ref_name == 'main'
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          AetherX6100Buildroot/buildroot_sdk
+          ~/.buildroot-ccache
+        key: buildroot-cache-${{ github.sha }}
