@@ -82,7 +82,7 @@ jobs:
           buildroot-cache-
 
     - name: Config for SDK
-      if: steps.cache-restore.outputs.cache-hit == 'true'
+      if: ${{ steps.cache-restore.outputs.cache-hit == 'true' }}
       run: |
         cd AetherX6100Buildroot/build
 
@@ -151,9 +151,11 @@ jobs:
 
     - name: Prune Cache
       if: |
-        success() &&
-        github.event_name == 'workflow_dispatch' &&
-        github.ref_name == 'main'
+        ${{
+          success() &&
+          github.event_name == 'workflow_dispatch' &&
+          github.ref_name == 'main'
+        }}
       run: |
         cd AetherX6100Buildroot
         # Get stat
@@ -164,10 +166,12 @@ jobs:
 
     - name: Prepare SDK
       if: |
-        success() &&
-        github.event_name == 'workflow_dispatch' &&
-        github.ref_name == 'main' &&
-        steps.cache-restore.outputs.cache-hit != 'true'
+        ${{
+          success() &&
+          github.event_name == 'workflow_dispatch' &&
+          github.ref_name == 'main' &&
+          steps.cache-restore.outputs.cache-hit != 'true'
+        }}
       run: |
         cd AetherX6100Buildroot/build
 
@@ -181,9 +185,11 @@ jobs:
 
     - name: Save Buildroot Cache back to Main
       if: |
-        success() &&
-        github.event_name == 'workflow_dispatch' &&
-        github.ref_name == 'main'
+        ${{
+          success() &&
+          github.event_name == 'workflow_dispatch' &&
+          github.ref_name == 'main'
+        }}
       uses: actions/cache/save@v5
       with:
         path: |
