@@ -82,7 +82,7 @@ jobs:
           buildroot-cache-
 
     - name: Config for SDK
-      if: ${{ steps.cache-restore.outputs.cache-hit == 'true' }}
+      if: ${{ steps.cache-restore.outputs.cache-matched-key != '' }}
       run: |
         cd AetherX6100Buildroot/build
 
@@ -170,7 +170,7 @@ jobs:
           success() &&
           github.event_name == 'workflow_dispatch' &&
           github.ref_name == 'main' &&
-          steps.cache-restore.outputs.cache-hit != 'true'
+          steps.cache-restore.outputs.cache-matched-key == ''
         }}
       run: |
         cd AetherX6100Buildroot/build
