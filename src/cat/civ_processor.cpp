@@ -331,62 +331,62 @@ uint8_t get_ci_band_id() {
     int32_t freq_khz = cfg.cur.fg_freq()->get() / 1000;
     switch (freq_khz) {
         case 1'800 ... 2'000:
-            return 1;
+            return 0x01;
         case 3'400 ... 4'100:
-            return 2;
+            return 0x02;
         case 6'900 ... 7'500:
-            return 3;
+            return 0x03;
         case 9'900 ... 10'500:
-            return 4;
+            return 0x04;
         case 13'900 ... 14'500:
-            return 5;
+            return 0x05;
         case 17'900 ... 18'500:
-            return 6;
+            return 0x06;
         case 20'900 ... 21'500:
-            return 7;
+            return 0x07;
         case 24'400 ... 25'100:
-            return 8;
+            return 0x08;
         case 28'000 ... 30'000:
-            return 9;
+            return 0x09;
         case 50'000 ... 54'000:
-            return 10;
+            return 0x10;
     }
     // Not in a band
-    return 15;
+    return 0x15;
 }
 
 void set_ci_band(uint8_t band) {
     // Band center frequencies (Hz) from the CI-V band table.
     int32_t freq;
     switch (band) {
-        case 1:
+        case 0x01:
             freq = 1'900'000;
             break;
-        case 2:
+        case 0x02:
             freq = 3'500'000;
             break;
-        case 3:
+        case 0x03:
             freq = 7'100'000;
             break;
-        case 4:
+        case 0x04:
             freq = 10'100'000;
             break;
-        case 5:
+        case 0x05:
             freq = 14'200'000;
             break;
-        case 6:
+        case 0x06:
             freq = 18'100'000;
             break;
-        case 7:
+        case 0x07:
             freq = 21'200'000;
             break;
-        case 8:
+        case 0x08:
             freq = 24'900'000;
             break;
-        case 9:
+        case 0x09:
             freq = 28'400'000;
             break;
-        case 10:
+        case 0x10:
             freq = 50'000'000;
             break;
         default:
