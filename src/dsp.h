@@ -62,11 +62,11 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples);
  * dsp_audio_unsubscribe() on a stale or already-removed id are safe no-ops.
  *
  * Audio callbacks run while an internal mutex is held, so they must never call
- * dsp_audio_subscribe_raw(), dsp_audio_subscribe_resampled(),
+ * dsp_audio_subscribe_raw(), dsp_audio_subscribe_float(),
  * dsp_audio_set_active() or dsp_audio_unsubscribe() (non-recursive mutex).
  */
 uint32_t dsp_audio_subscribe_raw(audio_raw_cb_t cb, bool exclusive);
-uint32_t dsp_audio_subscribe_resampled(audio_float_cb_t cb, uint32_t target_rate_hz);
+uint32_t dsp_audio_subscribe_float(audio_float_cb_t cb, uint32_t target_rate_hz);
 void dsp_audio_set_active(uint32_t id, bool active);
 void dsp_audio_unsubscribe(uint32_t id);
 

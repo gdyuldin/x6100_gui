@@ -73,8 +73,8 @@ static void port_audio_gain_db_transition(int16_t *buf, size_t samples, float ga
 
 /* DSP audio */
 
-static uint32_t port_dsp_audio_subscribe_resampled(dsp_audio_float_cb_t cb, uint32_t rate) {
-    return dsp_audio_subscribe_resampled(cb, rate);
+static uint32_t port_dsp_audio_subscribe_float(dsp_audio_float_cb_t cb, uint32_t rate) {
+    return dsp_audio_subscribe_float(cb, rate);
 }
 
 static void port_dsp_audio_set_active(uint32_t id, bool active) { dsp_audio_set_active(id, active); }
@@ -177,7 +177,7 @@ static const audio_port_t audio_port = {
 };
 
 static const dsp_audio_port_t dsp_audio_port = {
-    .subscribe_resampled = &port_dsp_audio_subscribe_resampled,
+    .subscribe_float = &port_dsp_audio_subscribe_float,
     .set_active = &port_dsp_audio_set_active,
     .unsubscribe = &port_dsp_audio_unsubscribe,
 };

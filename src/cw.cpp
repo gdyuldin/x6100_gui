@@ -97,7 +97,7 @@ void cw_init() {
     cfg.cur.mode()->subscribe_and_notify(on_cw_mode_change);
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
-        dsp_audio_sub_id = dsp_audio_subscribe_resampled(cw_put_audio_samples, static_cast<uint32_t>(cw::CwReceiver::SAMPLE_RATE));
+        dsp_audio_sub_id = dsp_audio_subscribe_float(cw_put_audio_samples, static_cast<uint32_t>(cw::CwReceiver::SAMPLE_RATE));
         update_cw_active();
     }
 

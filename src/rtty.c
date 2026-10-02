@@ -152,7 +152,7 @@ void rtty_init() {
     subject_subscribe_and_notify((Subject*)cfg.cur.mode(), on_cur_mode_change, NULL);
     init();
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
-        dsp_audio_sub_id = dsp_audio_subscribe_resampled(rtty_put_audio_samples, RTTY_CAPTURE_RATE);
+        dsp_audio_sub_id = dsp_audio_subscribe_float(rtty_put_audio_samples, RTTY_CAPTURE_RATE);
     }
 }
 

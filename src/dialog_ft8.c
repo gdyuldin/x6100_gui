@@ -526,7 +526,7 @@ static void construct_cb(lv_obj_t *parent) {
     worker_init();
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
-        dsp_audio_sub_id = dsp_audio_subscribe_resampled(audio_cb, FTX_CAPTURE_RATE);
+        dsp_audio_sub_id = dsp_audio_subscribe_float(audio_cb, FTX_CAPTURE_RATE);
     }
     dsp_audio_set_active(dsp_audio_sub_id, true);
 

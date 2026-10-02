@@ -40,10 +40,8 @@
 #define AUTH_USERNAME    "root"
 #define AUTH_PASSWORD    "root"
 
-// Audio port and resampling
+// Audio port
 #define AUDIO_PORT           50003
-#define AUDIO_RESAMPLE_FACTOR 3
-#define AUDIO_PACKET_SAMPLES 480
 
 enum AuthState {
     ST_LISTENING,
@@ -584,7 +582,7 @@ static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_
 
             // Register DSP callback to forward RX audio to network
             if (dsp_audio_sub_id == DSP_AUDIO_SUB_INVALID) {
-                dsp_audio_sub_id = g_ports->dsp_audio->subscribe_resampled(audio_lan_tx_cb, 16000);
+                dsp_audio_sub_id = g_ports->dsp_audio->subscribe_float(audio_lan_tx_cb, audio_rx_rate);
             }
             g_ports->dsp_audio->set_active(dsp_audio_sub_id, true);
 
@@ -623,7 +621,10 @@ static void process_audio_packet(const uint8_t *buf, size_t len, const sockaddr_
 // ---- Audio TX thread, callbacks, cleanup -----------------------------------
 
 static void cleanup_audio() {
-    g_ports->dsp_audio->set_active(dsp_audio_sub_id, false);
+    if (dsp_audio_sub_id != DSP_AUDIO_SUB_INVALID){
+        g_ports->dsp_audio->unsubscribe(dsp_audio_sub_id);
+        dsp_audio_sub_id = DSP_AUDIO_SUB_INVALID;
+    }
 
     if (wfview_player) {
         g_ports->audio->player_release(wfview_player);
@@ -636,24 +637,16 @@ static void cleanup_audio() {
 static void audio_lan_tx_cb(size_t n, float *samples) {
     if (!client_audio_valid) return;
 
-    static int16_t pkt_buf[AUDIO_PACKET_SAMPLES];
-    static float samples_buf[AUDIO_PACKET_SAMPLES];
-    static size_t ndec = 0;
+    int16_t pkt_buf[n];
+    vector_f_to_s16(samples, pkt_buf, n);
 
-    for (size_t i = 0; i < n; i++) {
-        samples_buf[ndec++] = samples[i];
-        if (ndec >= AUDIO_PACKET_SAMPLES) {
-            vector_f_to_s16(samples_buf, pkt_buf, AUDIO_PACKET_SAMPLES);
-            ndec = 0;
-            audio_packet_t hdr = make_audio_header(0, audio_send_seq++,
-                AUDIO_PACKET_SAMPLES * 2);
-            uint8_t out[sizeof(hdr) + AUDIO_PACKET_SAMPLES * 2];
-            std::memcpy(out, &hdr, sizeof(hdr));
-            std::memcpy(out + sizeof(hdr), pkt_buf, sizeof(pkt_buf));
-            sendto(fd_audio, out, sizeof(out), 0,
-                   (const sockaddr *)&client_audio, sizeof(client_audio));
-        }
-    }
+    audio_packet_t hdr = make_audio_header(0, audio_send_seq++,
+        n * 2);
+    uint8_t out[sizeof(hdr) + n * 2];
+    std::memcpy(out, &hdr, sizeof(hdr));
+    std::memcpy(out + sizeof(hdr), pkt_buf, sizeof(pkt_buf));
+    sendto(fd_audio, out, sizeof(out), 0,
+            (const sockaddr *)&client_audio, sizeof(client_audio));
 }
 
 // ---- CI-V port processing ------------------------------------------------

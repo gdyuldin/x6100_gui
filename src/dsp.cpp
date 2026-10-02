@@ -116,7 +116,7 @@ static std::atomic<float> s_meter_db_raw{S1};
 enum AudioSubKind {
     AUDIO_SUB_FREE = 0,
     AUDIO_SUB_RAW,
-    AUDIO_SUB_RESAMPLED,
+    AUDIO_SUB_FLOAT,
 };
 
 struct AudioSub {
@@ -843,12 +843,19 @@ uint32_t dsp_audio_subscribe_raw(audio_raw_cb_t cb, bool exclusive) {
     return AUDIO_SUB_INVALID;
 }
 
-uint32_t dsp_audio_subscribe_resampled(audio_float_cb_t cb, uint32_t target_rate_hz) {
+uint32_t dsp_audio_subscribe_float(audio_float_cb_t cb, uint32_t target_rate_hz) {
     if (!cb) {
         return AUDIO_SUB_INVALID;
     }
-
-    Resampler *resampler = new Resampler(AUDIO_CAPTURE_RATE / target_rate_hz);
+    Resampler *resampler = NULL;
+    if (target_rate_hz < AUDIO_CAPTURE_RATE) {
+        uint8_t N = AUDIO_CAPTURE_RATE / target_rate_hz;
+        if (target_rate_hz * N != AUDIO_CAPTURE_RATE) {
+            LV_LOG_WARN("Requested sample rate is not supported: %u\n", target_rate_hz);
+            return AUDIO_SUB_INVALID;
+        }
+        resampler = new Resampler(N);
+    }
 
     std::lock_guard<std::mutex> lock(subs_mutex);
 
@@ -857,15 +864,16 @@ uint32_t dsp_audio_subscribe_resampled(audio_float_cb_t cb, uint32_t target_rate
             continue;
         }
         subs[i].id        = alloc_sub_id();
-        subs[i].kind      = AUDIO_SUB_RESAMPLED;
+        subs[i].kind      = AUDIO_SUB_FLOAT;
         subs[i].float_cb  = cb;
         subs[i].rate_hz   = target_rate_hz;
         subs[i].resampler = resampler;
         subs[i].active.store(false, std::memory_order_relaxed);
         return subs[i].id;
     }
-
-    delete resampler;
+    if (resampler) {
+        delete resampler;
+    }
     return AUDIO_SUB_INVALID;
 }
 
@@ -898,9 +906,11 @@ void dsp_audio_unsubscribe(uint32_t id) {
 
         subs[i].active.store(false, std::memory_order_relaxed);
 
-        if (subs[i].kind == AUDIO_SUB_RESAMPLED) {
-            delete subs[i].resampler;
-            subs[i].resampler = nullptr;
+        if (subs[i].kind == AUDIO_SUB_FLOAT) {
+            if (subs[i].resampler) {
+                delete subs[i].resampler;
+                subs[i].resampler = nullptr;
+            }
             subs[i].float_cb  = nullptr;
         } else {
             subs[i].raw_cb = nullptr;
@@ -1044,7 +1054,7 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
     }
 
     for (size_t si = 0; si < MAX_AUDIO_SUBS; si++) {
-        if (subs[si].kind != AUDIO_SUB_RESAMPLED || subs[si].resampler == nullptr) {
+        if (subs[si].kind != AUDIO_SUB_FLOAT) {
             continue;
         }
         if (!subs[si].active.load(std::memory_order_acquire)) {
@@ -1052,17 +1062,22 @@ void dsp_put_audio_samples(size_t nsamples, int16_t *samples) {
         }
 
         Resampler *s = subs[si].resampler;
-        size_t decim = s->decim_factor();
-        size_t out_n = 0;
-        float scratch[nsamples / decim + 1];
+        if (!s) {
+            // No resample
+            subs[si].float_cb(nsamples, float_samples);
+        } else {
+            size_t decim = s->decim_factor();
+            size_t out_n = 0;
+            float scratch[nsamples / decim + 1];
 
-        for (size_t i = 0; i < nsamples; i++) {
-            if (s->feed(float_samples[i])) {
-                scratch[out_n++] = s->execute();
+            for (size_t i = 0; i < nsamples; i++) {
+                if (s->feed(float_samples[i])) {
+                    scratch[out_n++] = s->execute();
+                }
             }
-        }
-        if (out_n > 0) {
-            subs[si].float_cb(out_n, scratch);
+            if (out_n > 0) {
+                subs[si].float_cb(out_n, scratch);
+            }
         }
     }
 }
