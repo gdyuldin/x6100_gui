@@ -167,6 +167,7 @@ static void update_fg_freq(void) {
         lv_label_set_text_fmt(fg_mhz_label, "%i", mhz);
         lv_label_set_text_fmt(fg_khz_label, "%03i", khz);
     } else {
+        lv_label_set_text(fg_mhz_label, "");
         lv_label_set_text_fmt(fg_khz_label, "%i", khz);
     }
     lv_label_set_text_fmt(fg_hz_label, "%03i", hz);
