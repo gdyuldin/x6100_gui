@@ -43,6 +43,7 @@
 #include "qso_log.h"
 #include "scheduler.h"
 #include "wifi.h"
+#include "bt.h"
 #include "usb_devices.h"
 
 rotary_t  *vol;
@@ -163,6 +164,7 @@ int main(void) {
     cw_init();
     rtty_init();
     wifi_power_setup();
+    bt_power_setup();
     display_init();
     cat_init(&app_ports);
     cat_lan_init(&app_ports);
@@ -211,6 +213,7 @@ int main(void) {
     }
     display_invert(false);
     cat_lan_destruct();
+    bt_cleanup();
     wifi_cleanup();
     observer_delayed_shutdown();
     cfg_api_flush_all();

@@ -11,6 +11,7 @@
 // Messages IDs for UI part messaging (publishing/subscribing)
 enum msg_t {
     MSG_WIFI_STATE_CHANGED,
+    MSG_BT_STATE_CHANGED,
     MSG_USB_DEVICE_CHANGED,
     // Radio messages
     MSG_RADIO_RX,

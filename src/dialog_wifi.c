@@ -148,6 +148,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_t *param_cont;
     param_cont = lv_obj_create(cont);
     lv_obj_remove_style(param_cont, NULL, LV_STATE_ANY | LV_PART_MAIN);
+    lv_obj_set_style_pad_all(param_cont, 10, LV_PART_MAIN);
     lv_obj_set_size(param_cont, PARAMS_WIDTH, DIALOG_HEIGHT);
     lv_obj_set_flex_flow(param_cont, LV_FLEX_FLOW_COLUMN);
 

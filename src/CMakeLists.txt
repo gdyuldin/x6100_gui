@@ -30,7 +30,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     textarea_window.c cw_encoder.c buttons.cpp vol.cpp recorder.c
     voice.cpp cw_tune_ui.c adif.c qso_log.c scheduler.cpp
     format.c msg_cw_store.c
-    dialog_wifi.c wifi.cpp controls.cpp usb_devices.cpp
+    dialog_wifi.c wifi.cpp dialog_bt.c bt.cpp controls.cpp usb_devices.cpp
     knobs.cpp lock_manager.c indicators.cpp freq_info.cpp
 )
 
@@ -52,7 +52,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
-    libnm dbus-glib-1 sqlite3 libpng libgps sndfile libudev libpulse libpulse-simple alsa bluez
+    libnm dbus-glib-1 gio-2.0 sqlite3 libpng libgps sndfile libudev libpulse libpulse-simple alsa bluez
 )
 
 

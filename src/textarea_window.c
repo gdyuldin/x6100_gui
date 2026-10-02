@@ -97,13 +97,13 @@ lv_obj_t * textarea_window_open(textarea_window_cb_t ok, textarea_window_cb_t ca
     ok_cb = ok;
     cancel_cb = cancel;
 
-    window = lv_obj_create(lv_scr_act());
+    window = lv_obj_create(lv_layer_top());
 
     lv_obj_remove_style_all(window);
 
     lv_obj_add_style(window, &style.msg, 0);
     lv_obj_clear_flag(window, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_y(window, 80);
+    lv_obj_align(window, LV_ALIGN_TOP_MID, 0, TOP_BLOCK_SMALL_HEIGHT + 5);
 
     lv_obj_t * obj = lv_obj_create(window);
     lv_obj_set_layout(obj, LV_LAYOUT_FLEX);
