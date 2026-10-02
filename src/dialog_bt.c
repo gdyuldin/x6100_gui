@@ -14,6 +14,7 @@
 #include "lvgl/lvgl.h"
 
 #include "bt.h"
+#include "audio.h"
 #include "wifi.h"
 #include "styles.h"
 #include "buttons.h"
@@ -113,6 +114,7 @@ typedef enum {
     BT_ACT_DISCONNECT,
     BT_ACT_PAIR,
     BT_ACT_REMOVE,
+    BT_ACT_PROFILE,
 } bt_action_t;
 
 static bt_action_t pending_action = BT_ACT_NONE;
@@ -325,6 +327,17 @@ static void bt_pair_cb(button_data_t *btn_data) {
     LV_LOG_USER("BT UI pair pressed disable=%d sel=%s paired=%d", disable_buttons, sel_bdaddr, cur_dev_paired);
     if (disable_buttons || pending_action != BT_ACT_NONE || bt_is_busy())
         return;
+
+    if (audio_bt_profile_supported()) {
+        pending_action = BT_ACT_PROFILE;
+        audio_bt_profile_toggle();
+        if (!audio_bt_profile_switching()) {
+            pending_action = BT_ACT_NONE;
+        }
+        lv_msg_send(MSG_BT_STATE_CHANGED, NULL);
+        return;
+    }
+
     if (sel_bdaddr[0] == '\0')
         return;
     if (cur_dev_paired)
@@ -369,6 +382,8 @@ static const char *bt_action_text(bt_action_t action) {
         return "Pairing...";
     case BT_ACT_REMOVE:
         return "Removing...";
+    case BT_ACT_PROFILE:
+        return "Switching...";
     default:
         return "";
     }
@@ -397,6 +412,18 @@ static const char *bt_connect_label_getter() {
 }
 
 static const char *bt_pair_label_getter() {
+    if (audio_bt_profile_supported()) {
+        if (audio_bt_profile_switching() || pending_action == BT_ACT_PROFILE)
+            return "Switching...";
+        switch (audio_bt_profile_get()) {
+        case AUDIO_BT_PROFILE_A2DP:
+            return "Profile:\nA2DP";
+        case AUDIO_BT_PROFILE_HFP:
+            return "Profile:\nHSP/HFP";
+        default:
+            return "";
+        }
+    }
     if (sel_bdaddr[0] == '\0')
         return "";
     if (pending_action == BT_ACT_PAIR)
@@ -571,7 +598,11 @@ static void refresh_selected_state() {
 static void bt_state_changed_cb(void *s, lv_msg_t *m) {
     bt_status_t status = bt_get_status();
 
-    if (pending_action != BT_ACT_NONE && (!bt_is_busy() || status == BT_OFF)) {
+    if (pending_action == BT_ACT_PROFILE) {
+        if (!audio_bt_profile_switching()) {
+            pending_action = BT_ACT_NONE;
+        }
+    } else if (pending_action != BT_ACT_NONE && (!bt_is_busy() || status == BT_OFF)) {
         if (pending_action == BT_ACT_REMOVE) {
             sel_bdaddr[0]     = '\0';
             cur_dev_connected = false;

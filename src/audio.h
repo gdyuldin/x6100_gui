@@ -29,6 +29,12 @@ typedef enum {
 
 typedef struct audio_player_s audio_player_t;
 
+typedef enum {
+    AUDIO_BT_PROFILE_NONE = 0,
+    AUDIO_BT_PROFILE_A2DP,
+    AUDIO_BT_PROFILE_HFP,
+} audio_bt_profile_t;
+
 void audio_init();
 void audio_mixer_setup(x6100_base_ver_t base_ver);
 
@@ -50,6 +56,12 @@ float audio_set_play_vol(float db);
 float audio_set_rec_vol(float db);
 
 float audio_get_peak_db();
+
+bool               audio_bt_profile_supported();
+bool               audio_bt_profile_switching();
+audio_bt_profile_t audio_bt_profile_get();
+const char        *audio_bt_profile_text();
+void               audio_bt_profile_toggle();
 
 #ifdef __cplusplus
 }

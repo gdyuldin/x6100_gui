@@ -27,6 +27,9 @@
 
 #define AUDIO_RATE_MS   30
 
+#define PA_PROFILE_A2DP "a2dp_sink"
+#define PA_PROFILE_HFP "handsfree_head_unit"
+
 static pa_threaded_mainloop *mloop;
 static pa_mainloop_api      *mlapi;
 static pa_context           *ctx;
@@ -46,10 +49,48 @@ static pa_stream            *monitor_stm = NULL;
 
 static float                peak_db = -60.0f;
 
+typedef struct {
+    char               card_name[80];
+    bool               card_known;
+    bool               has_a2dp;
+    bool               has_hfp;
+    audio_bt_profile_t active;
+    bool               switching;
+} bt_profile_state_t;
+
+static bt_profile_state_t bt_prof;
+static pthread_mutex_t    bt_prof_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static bool card_refresh_pending = false;
+static bool card_query_inflight  = false;
+static bool card_list_found      = false;
+static bool card_subscribed      = false;
+
 static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name);
 static void record_monitor_setup();
 
+static void card_list_cb(pa_context *c, const pa_card_info *info, int eol, void *userdata);
+static void card_subscribe_cb(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata);
+static void set_profile_cb(pa_context *c, int success, void *userdata);
+static void audio_bt_refresh_locked();
+
 static void on_state_change(pa_context *c, void *userdata) {
+    pa_context_state_t state = pa_context_get_state(c);
+
+    if (state == PA_CONTEXT_READY) {
+        if (!card_subscribed) {
+            card_subscribed = true;
+            pa_context_set_subscribe_callback(c, card_subscribe_cb, NULL);
+            pa_operation *op = pa_context_subscribe(c, PA_SUBSCRIPTION_MASK_CARD, NULL, NULL);
+            if (op) {
+                pa_operation_unref(op);
+            }
+            audio_bt_refresh_locked();
+        }
+    } else if (state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED) {
+        card_subscribed = false;
+    }
+
     pa_threaded_mainloop_signal(mloop, 0);
 }
 
@@ -440,5 +481,202 @@ static void record_monitor_setup() {
     pa_stream_set_read_callback(monitor_stm, monitor_cb, NULL);
     pa_stream_connect_record(monitor_stm, capture_device, &attr,
                              PA_STREAM_DONT_MOVE | PA_STREAM_PEAK_DETECT | PA_STREAM_ADJUST_LATENCY);
+    pa_threaded_mainloop_unlock(mloop);
+}
+
+/* Bluetooth card profile */
+
+static void scan_card_profiles(const pa_card_info *info, bool *has_a2dp, bool *has_hfp, audio_bt_profile_t *active) {
+    *has_a2dp = false;
+    *has_hfp  = false;
+    *active   = AUDIO_BT_PROFILE_NONE;
+
+    for (uint32_t i = 0; i < info->n_profiles; i++) {
+        const char *name = NULL;
+        if (info->profiles2 && info->profiles2[i]) {
+            name = info->profiles2[i]->name;
+        } else if (info->profiles) {
+            name = info->profiles[i].name;
+        }
+        if (!name) {
+            continue;
+        }
+        if (strcmp(name, PA_PROFILE_A2DP) == 0) {
+            *has_a2dp = true;
+        }
+        if (strcmp(name, PA_PROFILE_HFP) == 0) {
+            *has_hfp = true;
+        }
+    }
+
+    const char *active_name = NULL;
+    if (info->active_profile2) {
+        active_name = info->active_profile2->name;
+    } else if (info->active_profile) {
+        active_name = info->active_profile->name;
+    }
+    if (active_name) {
+        if (strcmp(active_name, PA_PROFILE_A2DP) == 0) {
+            *active = AUDIO_BT_PROFILE_A2DP;
+        } else if (strcmp(active_name, PA_PROFILE_HFP) == 0) {
+            *active = AUDIO_BT_PROFILE_HFP;
+        }
+    }
+}
+
+static void card_cache_clear() {
+    pthread_mutex_lock(&bt_prof_mutex);
+    bt_prof.card_known = false;
+    bt_prof.has_a2dp   = false;
+    bt_prof.has_hfp    = false;
+    bt_prof.active     = AUDIO_BT_PROFILE_NONE;
+    pthread_mutex_unlock(&bt_prof_mutex);
+}
+
+static void card_list_cb(pa_context *c, const pa_card_info *info, int eol, void *userdata) {
+    if (eol < 0) {
+        card_cache_clear();
+        card_query_inflight = false;
+        return;
+    }
+
+    if (eol > 0) {
+        if (!card_list_found) {
+            card_cache_clear();
+        }
+        card_query_inflight = false;
+        if (card_refresh_pending) {
+            audio_bt_refresh_locked();
+        }
+        return;
+    }
+
+    if (card_list_found || !info || strncmp(info->name, "bluez_card.", 11) != 0) {
+        return;
+    }
+
+    bool               has_a2dp;
+    bool               has_hfp;
+    audio_bt_profile_t active;
+
+    scan_card_profiles(info, &has_a2dp, &has_hfp, &active);
+    if (!has_a2dp || !has_hfp) {
+        return;
+    }
+
+    pthread_mutex_lock(&bt_prof_mutex);
+    snprintf(bt_prof.card_name, sizeof(bt_prof.card_name), "%s", info->name);
+    bt_prof.card_known = true;
+    bt_prof.has_a2dp   = has_a2dp;
+    bt_prof.has_hfp    = has_hfp;
+    bt_prof.active     = active;
+    pthread_mutex_unlock(&bt_prof_mutex);
+    card_list_found = true;
+}
+
+static void card_subscribe_cb(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata) {
+    if ((t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) != PA_SUBSCRIPTION_EVENT_CARD) {
+        return;
+    }
+    audio_bt_refresh_locked();
+}
+
+static void audio_bt_refresh_locked() {
+    if (!ctx) {
+        return;
+    }
+    if (card_query_inflight) {
+        card_refresh_pending = true;
+        return;
+    }
+
+    card_query_inflight  = true;
+    card_refresh_pending = false;
+    card_list_found      = false;
+
+    pa_operation *op = pa_context_get_card_info_list(ctx, card_list_cb, NULL);
+    if (op) {
+        pa_operation_unref(op);
+    } else {
+        card_query_inflight = false;
+    }
+}
+
+static void set_profile_cb(pa_context *c, int success, void *userdata) {
+    pthread_mutex_lock(&bt_prof_mutex);
+    if (success) {
+        bt_prof.active = (audio_bt_profile_t)(uintptr_t)userdata;
+    }
+    bt_prof.switching = false;
+    pthread_mutex_unlock(&bt_prof_mutex);
+}
+
+bool audio_bt_profile_supported() {
+    pthread_mutex_lock(&bt_prof_mutex);
+    bool supported = bt_prof.card_known && bt_prof.has_a2dp && bt_prof.has_hfp;
+    pthread_mutex_unlock(&bt_prof_mutex);
+    return supported;
+}
+
+bool audio_bt_profile_switching() {
+    pthread_mutex_lock(&bt_prof_mutex);
+    bool switching = bt_prof.switching;
+    pthread_mutex_unlock(&bt_prof_mutex);
+    return switching;
+}
+
+audio_bt_profile_t audio_bt_profile_get() {
+    pthread_mutex_lock(&bt_prof_mutex);
+    audio_bt_profile_t active = bt_prof.active;
+    pthread_mutex_unlock(&bt_prof_mutex);
+    return active;
+}
+
+const char *audio_bt_profile_text() {
+    switch (audio_bt_profile_get()) {
+    case AUDIO_BT_PROFILE_A2DP:
+        return "A2DP";
+    case AUDIO_BT_PROFILE_HFP:
+        return "HSP/HFP";
+    default:
+        return "";
+    }
+}
+
+void audio_bt_profile_toggle() {
+    if (!ctx || !mloop) {
+        return;
+    }
+
+    char               card[80];
+    const char        *target;
+    audio_bt_profile_t target_id;
+
+    pthread_mutex_lock(&bt_prof_mutex);
+    if (!bt_prof.card_known || !bt_prof.has_a2dp || !bt_prof.has_hfp || bt_prof.switching) {
+        pthread_mutex_unlock(&bt_prof_mutex);
+        return;
+    }
+    snprintf(card, sizeof(card), "%s", bt_prof.card_name);
+    if (bt_prof.active == AUDIO_BT_PROFILE_A2DP) {
+        target    = PA_PROFILE_HFP;
+        target_id = AUDIO_BT_PROFILE_HFP;
+    } else {
+        target    = PA_PROFILE_A2DP;
+        target_id = AUDIO_BT_PROFILE_A2DP;
+    }
+    bt_prof.switching = true;
+    pthread_mutex_unlock(&bt_prof_mutex);
+
+    pa_threaded_mainloop_lock(mloop);
+    pa_operation *op =
+        pa_context_set_card_profile_by_name(ctx, card, target, set_profile_cb, (void *)(uintptr_t)target_id);
+    if (op) {
+        pa_operation_unref(op);
+    } else {
+        pthread_mutex_lock(&bt_prof_mutex);
+        bt_prof.switching = false;
+        pthread_mutex_unlock(&bt_prof_mutex);
+    }
     pa_threaded_mainloop_unlock(mloop);
 }
