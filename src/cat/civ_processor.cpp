@@ -316,6 +316,17 @@ uint8_t freq_step_to_ci(int32_t val) {
     return 0x02;
 }
 
+uint8_t x_cw_pitch_2_ci(int32_t key_tone) {
+    //  0000=300 Hz ~ 0128=600 Hz ~ 0255=900 Hz
+    return static_cast<float>(key_tone - 300) * 0.425f;
+}
+
+int32_t ci_cw_pitch_2_x(uint8_t val) {
+    float tone = 2.3529411764705883f * static_cast<float>(val) + 300;
+    // Round to 5
+    return std::round(tone / 5.0f) * 5;
+}
+
 // ============================================================================
 // VFO helpers
 // ============================================================================
@@ -576,6 +587,8 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
             case 0x07: //  [TWIN PBT] (PBT1) position
             case 0x08: //  [TWIN PBT] (PBT2) position
                 return after_cmd.append_byte(0x01).append_byte(0x28).get_packet();
+            case 0x09: // cw keytone
+                to_bcd_be(bcd, x_cw_pitch_2_ci(cfg.cw.key_tone()->get()), 3);
             case 0x0a: // Get Tx power
                 to_bcd_be(bcd, std::round(cfg.pwr()->get() * 255 / 10), 3);
                 break;
@@ -598,6 +611,8 @@ std::string_view handle_ctl_lvl_x14(const CivPacketView &request, CivTxPacker &r
             case 0x03: // Set SQL level
                 cfg.squelch()->set(bcd_val * 100 / 255);
                 break;
+            case 0x09: // cw keytone
+                cfg.cw.key_tone()->set(ci_cw_pitch_2_x(bcd_val));
             case 0x0a: // Set Tx power
                 {
                     float pwr = static_cast<float>(bcd_val) * 10.0f / 255.0f;

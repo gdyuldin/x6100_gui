@@ -42,7 +42,6 @@ extern "C" {
 #define CIV_SIZE               0x15
 #define AUDIO_PORT             50003
 #define AUDIO_SIZE             0x18
-#define AUDIO_RESAMPLE_FACTOR  3
 #define DATA_SIZE              0x15
 #define GUIDLEN                16
 
