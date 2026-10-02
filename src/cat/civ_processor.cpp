@@ -327,6 +327,74 @@ int32_t ci_cw_pitch_2_x(uint8_t val) {
     return std::round(tone / 5.0f) * 5;
 }
 
+uint8_t get_ci_band_id() {
+    int32_t freq_khz = cfg.cur.fg_freq()->get() / 1000;
+    switch (freq_khz) {
+        case 1'800 ... 2'000:
+            return 1;
+        case 3'400 ... 4'100:
+            return 2;
+        case 6'900 ... 7'500:
+            return 3;
+        case 9'900 ... 10'500:
+            return 4;
+        case 13'900 ... 14'500:
+            return 5;
+        case 17'900 ... 18'500:
+            return 6;
+        case 20'900 ... 21'500:
+            return 7;
+        case 24'400 ... 25'100:
+            return 8;
+        case 28'000 ... 30'000:
+            return 9;
+        case 50'000 ... 54'000:
+            return 10;
+    }
+    // Not in a band
+    return 15;
+}
+
+void set_ci_band(uint8_t band) {
+    // Band center frequencies (Hz) from the CI-V band table.
+    int32_t freq;
+    switch (band) {
+        case 1:
+            freq = 1'900'000;
+            break;
+        case 2:
+            freq = 3'500'000;
+            break;
+        case 3:
+            freq = 7'100'000;
+            break;
+        case 4:
+            freq = 10'100'000;
+            break;
+        case 5:
+            freq = 14'200'000;
+            break;
+        case 6:
+            freq = 18'100'000;
+            break;
+        case 7:
+            freq = 21'200'000;
+            break;
+        case 8:
+            freq = 24'900'000;
+            break;
+        case 9:
+            freq = 28'400'000;
+            break;
+        case 10:
+            freq = 50'000'000;
+            break;
+        default:
+            return;
+    }
+    cfg.cur.fg_freq()->set(freq);
+}
+
 // ============================================================================
 // VFO helpers
 // ============================================================================
@@ -769,6 +837,9 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
     if (data_size == 1) {
         auto after_cmd = resp.set_command(request.get_command()).set_subcommand(request.get_subcommand());
         switch (request.get_subcommand()) {
+            case MEM_BS_REG:
+                return after_cmd.append_byte(get_ci_band_id()).append_byte(0x02).get_packet();
+
             case MEM_IF_FW:
                 return after_cmd.append_byte(get_if_bandwidth()).get_packet();
 
@@ -780,6 +851,9 @@ std::string_view handle_ctl_mem_x1a(const CivPacketView &request, CivTxPacker &r
         }
     } else {
         switch (request.get_subcommand()) {
+            case MEM_BS_REG:
+                set_ci_band(request.get_subcommand_data()[0]);
+                return resp.set_ok().get_packet();
             // case MEM_IF_FW:
             //     cfg.filter.bw()->set(if_bandwidth_from_ci(request.get_subcommand_data()[0]));
             //     return resp.set_ok().get_packet();
