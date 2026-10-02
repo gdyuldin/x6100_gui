@@ -49,6 +49,9 @@ static void truncate() {
         }
         ptr++;
     }
+    if (ptr == buf) {
+        return;
+    }
     // Skip last empty line, if exists
     if (*(ptr - 1) == '\n') {
         count--;

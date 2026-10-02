@@ -374,22 +374,30 @@ void spectrum_data(const float *data_buf, uint16_t size, bool tx, uint32_t base_
         float  *to_clear_p   = NULL;
         int32_t copy_size    = 0;
 
-        if (shift > 0) {
-            src        = spectrum_smoothed + shift;
-            copy_size  = SPECTRUM_NFFT - shift;
-            to_clear_p = spectrum_smoothed + copy_size;
-        } else if (shift < 0) {
-            dst        = spectrum_smoothed - shift;
-            copy_size  = SPECTRUM_NFFT + shift;
-            to_clear_p = spectrum_smoothed;
+        if (LV_ABS(shift) >= SPECTRUM_NFFT) {
+            // Big gap, clear spectrum_smoothed
+            for (size_t i = 0; i < SPECTRUM_NFFT; i++) {
+                spectrum_smoothed[i] = S_MIN;
+            }
+        } else {
+            if (shift > 0) {
+                src        = spectrum_smoothed + shift;
+                copy_size  = SPECTRUM_NFFT - shift;
+                to_clear_p = spectrum_smoothed + copy_size;
+            } else if (shift < 0) {
+                dst        = spectrum_smoothed - shift;
+                copy_size  = SPECTRUM_NFFT + shift;
+                to_clear_p = spectrum_smoothed;
+            }
+            if (copy_size > 0) {
+                memmove(dst, src, copy_size * sizeof(*src));
+                float *stop = to_clear_p + LV_ABS(shift);
+                do {
+                    *to_clear_p++ = S_MIN;
+                } while (to_clear_p < stop);
+            }
         }
-        if (copy_size > 0) {
-            memmove(dst, src, copy_size * sizeof(*src));
-            float *stop = to_clear_p + LV_ABS(shift);
-            do {
-                *to_clear_p++ = S_MIN;
-            } while (to_clear_p < stop);
-        }
+
         spectrum_pan_prev_freq = base_lo_freq;
     }
 

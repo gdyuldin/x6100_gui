@@ -13,7 +13,7 @@ static inline void vector_s16_to_f(const int16_t *src, float *dst, size_t count)
     size_t i = 0;
 #ifdef __ARM_NEON
     float32x4_t v_scale = vdupq_n_f32(scale);
-    for (; i <= (count - 4); i += 4) {
+    for (; i + 4 <= count; i += 4) {
         int16x4_t   in16    = vld1_s16(&src[i]);
         int32x4_t   in32    = vmovl_s16(in16);
         float32x4_t out_f32 = vcvtq_f32_s32(in32);
@@ -32,7 +32,7 @@ static inline void vector_f_to_s16(const float *src, int16_t *dst, size_t count)
     size_t      i     = 0;
 #ifdef __ARM_NEON
     float32x4_t v_scale = vdupq_n_f32(scale);
-    for (; i <= (count - 4); i += 4) {
+    for (; i + 4 <= count; i += 4) {
         float32x4_t in_f32 = vld1q_f32(&src[i]);
         in_f32             = vmulq_f32(in_f32, v_scale);
         int32x4_t in32     = vcvtq_s32_f32(in_f32);
