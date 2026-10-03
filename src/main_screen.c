@@ -44,6 +44,7 @@
 #include "dialog_recorder.h"
 #include "dialog_callsign.h"
 #include "dialog_wifi.h"
+#include "dialog_wspr.h"
 #include "display.h"
 #include "buttons.h"
 #include "recorder.h"
@@ -196,6 +197,11 @@ void main_screen_start_app(press_action_t app_action) {
             voice_say_text_fmt("Wi-Fi window");
             break;
 
+        case ACTION_APP_WSPR:
+            dialog_construct(dialog_wspr, obj);
+            voice_say_text_fmt("WSPR window");
+            break;
+
         default:
             break;
     }
@@ -262,6 +268,7 @@ void main_screen_action(press_action_t action) {
         case ACTION_APP_SETTINGS:
         case ACTION_APP_RECORDER:
         case ACTION_APP_WIFI:
+        case ACTION_APP_WSPR:
             main_screen_start_app(action);
             break;
 
