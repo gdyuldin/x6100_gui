@@ -199,7 +199,8 @@ static void play_item() {
 
     play_state = true;
 
-    audio_player_t *player = audio_get_player(sfinfo.samplerate, sfinfo.channels);
+    audio_playback_t route  = audio_playback_begin();
+    audio_player_t  *player = audio_playback_get_player(route, sfinfo.samplerate, sfinfo.channels);
 
     while (play_state) {
         int res = sf_read_short(file, samples_buf, BUF_SIZE);
@@ -214,15 +215,14 @@ static void play_item() {
     sf_close(file);
     audio_player_wait(player);
     audio_player_release(player);
+    audio_playback_end(route);
 }
 
 static void * play_thread(void *arg) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    audio_set_play_mode(AUDIO_PLAY_ON);
     play_item();
-    audio_set_play_mode(AUDIO_PLAY_OFF);
 
     if (dialog.run) {
         scheduler_put_noargs(load_btn_page);

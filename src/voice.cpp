@@ -39,7 +39,7 @@ using namespace RHVoice;
 
 class audio_player: public client {
 public:
-    audio_player();
+    explicit audio_player(const char *device);
 
     bool play_speech(const short* samples_buf, std::size_t count);
     void finish();
@@ -48,11 +48,12 @@ private:
     audio::playback_stream stream;
 };
 
-audio_player::audio_player() {
+audio_player::audio_player(const char *device) {
     stream.set_sample_rate(24000);
     stream.set_buffer_size(512);
-    // TODO: handle audio routing on BT connection
-    // stream.set_device("pa_sink_name");
+    if (device) {
+        stream.set_device(device);
+    }
     stream.open();
 }
 
@@ -122,21 +123,26 @@ static void * say_thread(void *arg) {
     }
     strcpy(prev, buf);
 
-    audio_player                    player;
-    std::istringstream              text{ptr};
-    std::istreambuf_iterator<char>  text_start{text};
-    std::istreambuf_iterator<char>  text_end;
-    std::unique_ptr<document>       doc = document::create_from_plain_text(eng, text_start, text_end, content_text, profile);
+    audio_playback_t route = audio_playback_begin();
 
-    doc->speech_settings.relative.rate = cfg.voice.rate()->get() / 100.0;
-    doc->speech_settings.relative.pitch = cfg.voice.pitch()->get() / 100.0;
-    doc->speech_settings.relative.volume = cfg.voice.volume()->get() / 100.0;
-    doc->set_owner(player);
+    {
+        audio_player                    player(route == AUDIO_PLAYBACK_BT ? audio_playback_bt_sink() : nullptr);
+        std::istringstream              text{ptr};
+        std::istreambuf_iterator<char>  text_start{text};
+        std::istreambuf_iterator<char>  text_end;
+        std::unique_ptr<document>       doc =
+            document::create_from_plain_text(eng, text_start, text_end, content_text, profile);
 
-    audio_set_play_mode(AUDIO_PLAY_ON);
-    doc->synthesize();
-    player.finish();
-    audio_set_play_mode(AUDIO_PLAY_OFF);
+        doc->speech_settings.relative.rate = cfg.voice.rate()->get() / 100.0;
+        doc->speech_settings.relative.pitch = cfg.voice.pitch()->get() / 100.0;
+        doc->speech_settings.relative.volume = cfg.voice.volume()->get() / 100.0;
+        doc->set_owner(player);
+
+        doc->synthesize();
+        player.finish();
+    }
+
+    audio_playback_end(route);
 
     run = false;
     sure = false;

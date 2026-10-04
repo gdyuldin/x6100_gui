@@ -42,6 +42,12 @@ typedef enum {
     AUDIO_BT_PROFILE_HFP,
 } audio_bt_profile_t;
 
+/* Route for "listening" playback (media/TTS). */
+typedef enum {
+    AUDIO_PLAYBACK_LOCAL = 0, /* ALSA -> SDR speaker */
+    AUDIO_PLAYBACK_BT,        /* BT sink (radio loopback paused) */
+} audio_playback_t;
+
 void audio_init();
 void audio_mixer_setup(x6100_base_ver_t base_ver);
 
@@ -55,6 +61,17 @@ void audio_player_wait(audio_player_t *player);
 void audio_player_release(audio_player_t *player);
 
 void audio_set_play_mode(audio_play_mode_t mode);
+
+/* Begin/end "listening" playback. Returns the fixed route for this playback. */
+audio_playback_t audio_playback_begin(void);
+void             audio_playback_end(audio_playback_t route);
+
+/* BT sink name for external clients (RHVoice); NULL when BT is inactive. */
+const char *audio_playback_bt_sink(void);
+
+/* Player for the route: LOCAL reuses default_player, BT opens a stream on the
+ * current BT sink (falls back to local if BT dropped meanwhile). */
+audio_player_t *audio_playback_get_player(audio_playback_t route, uint32_t rate, uint32_t ch);
 
 void audio_gain_db(int16_t *buf, size_t samples, float gain, int16_t *out);
 void audio_gain_db_transition(int16_t *buf, size_t samples, float gain1, float gain2, int16_t *out);

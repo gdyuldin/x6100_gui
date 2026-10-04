@@ -122,7 +122,13 @@ static int             bt_sink_volume   = -1; /* 0..AUDIO_BT_SINK_VOLUME_MAX */
 static bool            bt_sink_mute     = false;
 static uint8_t         bt_sink_channels = 2;
 
-static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name);
+/* "Listening" playback tracking (media/TTS). */
+static pthread_mutex_t playback_mutex    = PTHREAD_MUTEX_INITIALIZER;
+static int             playback_refcount = 0;
+/* PA thread only (mainloop lock held): requested loopback pause state. */
+static bool loopback_pause_requested = false;
+
+static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name, const char *device);
 static void record_monitor_setup();
 
 static void card_list_cb(pa_context *c, const pa_card_info *info, int eol, void *userdata);
@@ -142,6 +148,8 @@ static void loopback_unload_all(void);
 static void bt_sink_state_refresh_locked(void);
 static void sink_volume_info_cb(pa_context *c, const pa_sink_info *info, int eol, void *userdata);
 static void bt_sink_cache_update(const pa_sink_info *info);
+static void loopback_apply_pause_locked(void);
+static void loopback_sink_input_info_cb(pa_context *c, const pa_sink_input_info *info, int eol, void *userdata);
 
 static void on_state_change(pa_context *c, void *userdata) {
     pa_context_state_t state = pa_context_get_state(c);
@@ -202,7 +210,7 @@ void audio_init() {
     LV_LOG_USER("Conected");
 
     /* Default player */
-    default_player.stream = player_stream_create(AUDIO_PLAY_RATE, 1, "X6100 GUI default player");
+    default_player.stream = player_stream_create(AUDIO_PLAY_RATE, 1, "X6100 GUI default player", default_play_device);
     if (!default_player.stream) {
         LV_LOG_ERROR("pa_stream_connect_playback() failed: %s", pa_strerror(pa_context_errno(ctx)));
     } else {
@@ -278,7 +286,7 @@ static void stream_write_callback(pa_stream *stream, size_t length, void *userda
     pa_threaded_mainloop_signal(mloop, 0);
 }
 
-static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name) {
+static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name, const char *device) {
     pa_buffer_attr  attr;
 
     pa_sample_spec  spec = {
@@ -296,7 +304,7 @@ static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const 
     pa_stream *stream = pa_stream_new(ctx, name, &spec, NULL);
 
     pa_threaded_mainloop_lock(mloop);
-    res = pa_stream_connect_playback(stream, default_play_device, &attr, PA_STREAM_ADJUST_LATENCY, NULL, NULL);
+    res = pa_stream_connect_playback(stream, device, &attr, PA_STREAM_ADJUST_LATENCY, NULL, NULL);
     if (res < 0) {
         return NULL;
     }
@@ -305,10 +313,10 @@ static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const 
     return stream;
 }
 
-audio_player_t *audio_create_player(uint32_t sample_rate, uint32_t ch) {
+static audio_player_t *audio_create_player_on(const char *device, uint32_t sample_rate, uint32_t ch) {
     audio_player_t *player = malloc(sizeof(audio_player_t));
     if (!player) return NULL;
-    player->stream = player_stream_create(sample_rate, ch, "X6100 GUI player");
+    player->stream = player_stream_create(sample_rate, ch, "X6100 GUI player", device);
     if (!player->stream) {
         LV_LOG_ERROR("pa_stream_connect_playback() failed: %s", pa_strerror(pa_context_errno(ctx)));
         return NULL;
@@ -322,9 +330,46 @@ audio_player_t *audio_create_player(uint32_t sample_rate, uint32_t ch) {
     return player;
 }
 
+audio_player_t *audio_create_player(uint32_t sample_rate, uint32_t ch) {
+    return audio_create_player_on(default_play_device, sample_rate, ch);
+}
+
 audio_player_t *audio_get_player(uint32_t sample_rate, uint32_t ch) {
     if ((sample_rate == AUDIO_PLAY_RATE) && (ch == 1)) return &default_player;
     return audio_create_player(sample_rate, ch);
+}
+
+static bool bt_sink_name_copy(char *out, size_t sz) {
+    bool ok = false;
+
+    pthread_mutex_lock(&bt_sink_mutex);
+    if (bt_sink_active && bt_sink_name[0] != '\0') {
+        snprintf(out, sz, "%s", bt_sink_name);
+        ok = true;
+    }
+    pthread_mutex_unlock(&bt_sink_mutex);
+    return ok;
+}
+
+const char *audio_playback_bt_sink(void) {
+    pthread_mutex_lock(&bt_sink_mutex);
+    const char *name = (bt_sink_active && bt_sink_name[0] != '\0') ? bt_sink_name : NULL;
+    pthread_mutex_unlock(&bt_sink_mutex);
+    return name;
+}
+
+audio_player_t *audio_playback_get_player(audio_playback_t route, uint32_t rate, uint32_t ch) {
+    if (route == AUDIO_PLAYBACK_BT) {
+        char device[256];
+
+        if (bt_sink_name_copy(device, sizeof(device))) {
+            audio_player_t *player = audio_create_player_on(device, rate, ch);
+            if (player) {
+                return player;
+            }
+        }
+    }
+    return audio_get_player(rate, ch);
 }
 
 int audio_player_send(audio_player_t *player, int16_t *samples_buf, size_t samples) {
@@ -1216,6 +1261,93 @@ static void loopback_loaded_cb(pa_context *c, uint32_t idx, void *userdata) {
     slot->pending    = false;
     LV_LOG_USER("BT loopback loaded: %s (module=%u)", slot->dev_name, idx);
     bt_sink_state_refresh_locked();
+    if (slot->kind == LOOPBACK_SINK && loopback_pause_requested) {
+        loopback_apply_pause_locked();
+    }
+}
+
+/* PA thread, mainloop lock held: mute/unmute the loaded sink loopback's
+ * sink-input (owner_module == module index). The playback stream itself has
+ * owner_module == PA_INVALID_INDEX and is skipped. */
+static void loopback_sink_input_info_cb(pa_context *c, const pa_sink_input_info *info, int eol, void *userdata) {
+    if (eol != 0 || !info) {
+        return;
+    }
+
+    bool match = false;
+
+    for (int i = 0; i < BT_LOOPBACK_MAX; i++) {
+        bt_loopback_t *slot = &bt_loopback[i];
+        if (slot->kind == LOOPBACK_SINK && !slot->pending && !slot->cancelled &&
+            slot->module_idx == info->owner_module) {
+            match = true;
+            break;
+        }
+    }
+    if (!match) {
+        return;
+    }
+
+    pa_operation *op = pa_context_set_sink_input_mute(c, info->index, loopback_pause_requested ? 1 : 0, NULL, NULL);
+    if (op) {
+        pa_operation_unref(op);
+    }
+}
+
+/* PA thread, mainloop lock held. */
+static void loopback_apply_pause_locked(void) {
+    if (!ctx) {
+        return;
+    }
+    pa_operation *op = pa_context_get_sink_input_info_list(ctx, loopback_sink_input_info_cb, NULL);
+    if (op) {
+        pa_operation_unref(op);
+    }
+}
+
+/* Pause/resume the sink loopback; acquires the mainloop lock. */
+static void loopback_pause(bool mute) {
+    if (!ctx || !mloop) {
+        return;
+    }
+    pa_threaded_mainloop_lock(mloop);
+    loopback_pause_requested = mute;
+    loopback_apply_pause_locked();
+    pa_threaded_mainloop_unlock(mloop);
+}
+
+audio_playback_t audio_playback_begin(void) {
+    if (!audio_bt_audio_active()) {
+        audio_set_play_mode(AUDIO_PLAY_ON);
+        return AUDIO_PLAYBACK_LOCAL;
+    }
+
+    pthread_mutex_lock(&playback_mutex);
+    bool first = (playback_refcount++ == 0);
+    pthread_mutex_unlock(&playback_mutex);
+
+    if (first) {
+        loopback_pause(true);
+    }
+    return AUDIO_PLAYBACK_BT;
+}
+
+void audio_playback_end(audio_playback_t route) {
+    if (route == AUDIO_PLAYBACK_LOCAL) {
+        audio_set_play_mode(AUDIO_PLAY_OFF);
+        return;
+    }
+
+    pthread_mutex_lock(&playback_mutex);
+    bool last = false;
+    if (playback_refcount > 0 && --playback_refcount == 0) {
+        last = true;
+    }
+    pthread_mutex_unlock(&playback_mutex);
+
+    if (last) {
+        loopback_pause(false);
+    }
 }
 
 bool audio_bt_audio_active(void) {
