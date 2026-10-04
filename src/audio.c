@@ -24,6 +24,7 @@
 #include "bt.h"
 #include "meter.h"
 #include "dsp.h"
+#include "scheduler.h"
 #include "cfg/cfg_api.h"
 
 #define AUDIO_RATE_MS   30
@@ -113,6 +114,14 @@ typedef struct {
 /* PA thread only (all access under the mainloop lock) */
 static bt_loopback_t bt_loopback[BT_LOOPBACK_MAX];
 
+/* BT sink state cache, read from the UI thread */
+static pthread_mutex_t bt_sink_mutex    = PTHREAD_MUTEX_INITIALIZER;
+static bool            bt_sink_active   = false;
+static char            bt_sink_name[256];
+static int             bt_sink_volume   = -1; /* 0..AUDIO_BT_SINK_VOLUME_MAX */
+static bool            bt_sink_mute     = false;
+static uint8_t         bt_sink_channels = 2;
+
 static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name);
 static void record_monitor_setup();
 
@@ -130,6 +139,9 @@ static void loopback_sink_info_cb(pa_context *c, const pa_sink_info *info, int e
 static void loopback_source_info_cb(pa_context *c, const pa_source_info *info, int eol, void *userdata);
 static void loopback_loaded_cb(pa_context *c, uint32_t idx, void *userdata);
 static void loopback_unload_all(void);
+static void bt_sink_state_refresh_locked(void);
+static void sink_volume_info_cb(pa_context *c, const pa_sink_info *info, int eol, void *userdata);
+static void bt_sink_cache_update(const pa_sink_info *info);
 
 static void on_state_change(pa_context *c, void *userdata) {
     pa_context_state_t state = pa_context_get_state(c);
@@ -154,6 +166,7 @@ static void on_state_change(pa_context *c, void *userdata) {
         bt_prof.via_off   = false;
         pthread_mutex_unlock(&bt_prof_mutex);
         memset(bt_loopback, 0, sizeof(bt_loopback));
+        bt_sink_state_refresh_locked();
     }
 
     pa_threaded_mainloop_signal(mloop, 0);
@@ -1012,6 +1025,7 @@ static void loopback_unload_all(void) {
         LV_LOG_USER("BT loopback unload before profile switch: %s (module=%u)", slot->dev_name, slot->module_idx);
         loopback_clear(slot);
     }
+    bt_sink_state_refresh_locked();
 }
 
 static void loopback_load(loopback_kind_t kind, uint32_t dev_idx, const char *name, const char *source,
@@ -1032,6 +1046,79 @@ static void loopback_load(loopback_kind_t kind, uint32_t dev_idx, const char *na
     } else {
         LV_LOG_ERROR("pa_context_load_module() failed: %s", pa_strerror(pa_context_errno(ctx)));
         loopback_clear(slot);
+    }
+}
+
+static int value_from_cvolume(const pa_cvolume *v) {
+    pa_volume_t avg = pa_cvolume_avg(v);
+    int         val = (int)(((uint64_t)avg * AUDIO_BT_SINK_VOLUME_MAX + PA_VOLUME_NORM / 2) / PA_VOLUME_NORM);
+
+    if (val < 0) {
+        val = 0;
+    } else if (val > AUDIO_BT_SINK_VOLUME_MAX) {
+        val = AUDIO_BT_SINK_VOLUME_MAX;
+    }
+    return val;
+}
+
+static void cvolume_from_value(int value, pa_cvolume *out) {
+    uint8_t channels = bt_sink_channels ? bt_sink_channels : 2;
+
+    pa_cvolume_set(out, channels, (pa_volume_t)((uint64_t)PA_VOLUME_NORM * value / AUDIO_BT_SINK_VOLUME_MAX));
+}
+
+/* PA thread: refresh the cached sink volume/mute and notify the UI thread about
+ * external (AVRCP) changes. Our own optimistic sets already updated the cache,
+ * so their PA echo compares equal here and produces no message. */
+static void bt_sink_cache_update(const pa_sink_info *info) {
+    pthread_mutex_lock(&bt_sink_mutex);
+    int   old_volume = bt_sink_volume;
+    bool  old_mute   = bt_sink_mute;
+    int   new_volume = value_from_cvolume(&info->volume);
+    bool  new_mute   = info->mute;
+
+    bt_sink_channels = info->volume.channels;
+    bt_sink_volume   = new_volume;
+    bt_sink_mute     = new_mute;
+    pthread_mutex_unlock(&bt_sink_mutex);
+
+    if (old_volume < 0 || abs(new_volume - old_volume) > AUDIO_BT_SINK_VOLUME_TOLERANCE) {
+        scheduler_msg_send(MSG_BT_SINK_VOLUME_CHANGED, (void *)(uintptr_t)new_volume);
+    }
+    if (new_mute != old_mute) {
+        scheduler_msg_send(MSG_BT_SINK_MUTE_CHANGED, (void *)(uintptr_t)new_mute);
+    }
+}
+
+/* PA thread, mainloop lock held: recompute the active sink from the loopback
+ * table and notify the UI thread on an active<->inactive edge. */
+static void bt_sink_state_refresh_locked(void) {
+    const char *name = NULL;
+
+    for (int i = 0; i < BT_LOOPBACK_MAX; i++) {
+        bt_loopback_t *slot = &bt_loopback[i];
+        if (slot->kind == LOOPBACK_SINK && !slot->pending && !slot->cancelled) {
+            name = slot->dev_name;
+            break;
+        }
+    }
+
+    bool active = (name != NULL);
+
+    pthread_mutex_lock(&bt_sink_mutex);
+    bool changed = (bt_sink_active != active);
+    bt_sink_active = active;
+    if (active) {
+        snprintf(bt_sink_name, sizeof(bt_sink_name), "%s", name);
+    } else {
+        bt_sink_name[0] = '\0';
+        bt_sink_volume  = -1;
+        bt_sink_mute    = false;
+    }
+    pthread_mutex_unlock(&bt_sink_mutex);
+
+    if (changed) {
+        scheduler_msg_send(MSG_BT_AUDIO_STATE_CHANGED, (void *)(uintptr_t)active);
     }
 }
 
@@ -1063,6 +1150,11 @@ static void loopback_device_event(loopback_kind_t kind, unsigned type, uint32_t 
             pa_operation_unref(op);
         }
         loopback_clear(slot);
+        bt_sink_state_refresh_locked();
+    } else if (type == PA_SUBSCRIPTION_EVENT_CHANGE && kind == LOOPBACK_SINK) {
+        if (loopback_find(kind, idx)) {
+            pa_context_get_sink_info_by_index(ctx, idx, sink_volume_info_cb, NULL);
+        }
     }
 }
 
@@ -1073,7 +1165,22 @@ static void loopback_sink_info_cb(pa_context *c, const pa_sink_info *info, int e
     if (strncmp(info->name, PA_BT_SINK_PREFIX, sizeof(PA_BT_SINK_PREFIX) - 1) != 0) {
         return;
     }
+
+    pthread_mutex_lock(&bt_sink_mutex);
+    snprintf(bt_sink_name, sizeof(bt_sink_name), "%s", info->name);
+    pthread_mutex_unlock(&bt_sink_mutex);
+    bt_sink_cache_update(info);
+
     loopback_load(LOOPBACK_SINK, info->index, info->name, capture_device, info->name);
+}
+
+/* One-shot from a CHANGE event: refresh the cache only, does not call
+ * loopback_load (external volume/mute changes must not re-route audio). */
+static void sink_volume_info_cb(pa_context *c, const pa_sink_info *info, int eol, void *userdata) {
+    if (eol != 0 || !info) {
+        return;
+    }
+    bt_sink_cache_update(info);
 }
 
 static void loopback_source_info_cb(pa_context *c, const pa_source_info *info, int eol, void *userdata) {
@@ -1092,6 +1199,7 @@ static void loopback_loaded_cb(pa_context *c, uint32_t idx, void *userdata) {
     if (idx == PA_INVALID_INDEX) {
         LV_LOG_ERROR("module-loopback load failed: %s", pa_strerror(pa_context_errno(ctx)));
         loopback_clear(slot);
+        bt_sink_state_refresh_locked();
         return;
     }
     if (slot->cancelled) {
@@ -1101,9 +1209,88 @@ static void loopback_loaded_cb(pa_context *c, uint32_t idx, void *userdata) {
             pa_operation_unref(op);
         }
         loopback_clear(slot);
+        bt_sink_state_refresh_locked();
         return;
     }
     slot->module_idx = idx;
     slot->pending    = false;
     LV_LOG_USER("BT loopback loaded: %s (module=%u)", slot->dev_name, idx);
+    bt_sink_state_refresh_locked();
+}
+
+bool audio_bt_audio_active(void) {
+    pthread_mutex_lock(&bt_sink_mutex);
+    bool active = bt_sink_active;
+    pthread_mutex_unlock(&bt_sink_mutex);
+    return active;
+}
+
+int audio_bt_sink_volume_get(void) {
+    pthread_mutex_lock(&bt_sink_mutex);
+    int value = bt_sink_volume;
+    pthread_mutex_unlock(&bt_sink_mutex);
+    return value;
+}
+
+void audio_bt_sink_volume_set(int value) {
+    char    name[256];
+    pa_cvolume cv;
+
+    if (value < 0) {
+        value = 0;
+    } else if (value > AUDIO_BT_SINK_VOLUME_MAX) {
+        value = AUDIO_BT_SINK_VOLUME_MAX;
+    }
+
+    pthread_mutex_lock(&bt_sink_mutex);
+    if (!bt_sink_active || bt_sink_name[0] == '\0') {
+        pthread_mutex_unlock(&bt_sink_mutex);
+        return;
+    }
+    snprintf(name, sizeof(name), "%s", bt_sink_name);
+    cvolume_from_value(value, &cv);
+    bt_sink_volume = value;
+    pthread_mutex_unlock(&bt_sink_mutex);
+
+    if (!ctx || !mloop) {
+        return;
+    }
+
+    pa_threaded_mainloop_lock(mloop);
+    pa_operation *op = pa_context_set_sink_volume_by_name(ctx, name, &cv, NULL, NULL);
+    if (op) {
+        pa_operation_unref(op);
+    }
+    pa_threaded_mainloop_unlock(mloop);
+}
+
+bool audio_bt_sink_muted(void) {
+    pthread_mutex_lock(&bt_sink_mutex);
+    bool muted = bt_sink_mute;
+    pthread_mutex_unlock(&bt_sink_mutex);
+    return muted;
+}
+
+void audio_bt_sink_mute_set(bool mute) {
+    char name[256];
+
+    pthread_mutex_lock(&bt_sink_mutex);
+    if (!bt_sink_active || bt_sink_name[0] == '\0') {
+        pthread_mutex_unlock(&bt_sink_mutex);
+        return;
+    }
+    snprintf(name, sizeof(name), "%s", bt_sink_name);
+    bt_sink_mute = mute;
+    pthread_mutex_unlock(&bt_sink_mutex);
+
+    if (!ctx || !mloop) {
+        return;
+    }
+
+    pa_threaded_mainloop_lock(mloop);
+    pa_operation *op = pa_context_set_sink_mute_by_name(ctx, name, mute ? 1 : 0, NULL, NULL);
+    if (op) {
+        pa_operation_unref(op);
+    }
+    pa_threaded_mainloop_unlock(mloop);
 }

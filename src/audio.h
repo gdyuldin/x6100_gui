@@ -21,6 +21,13 @@ extern "C" {
 #define AUDIO_PLAY_RATE     (48000)
 #define AUDIO_CAPTURE_RATE  (48000)
 
+/* BT sink volume shares the radio's 0..55 UI scale. */
+#define AUDIO_BT_SINK_VOLUME_MAX 55
+
+/* Allowed round-trip error when comparing the cached sink volume with a new
+ * 0..55 value (PA scaling may move it by one step). */
+#define AUDIO_BT_SINK_VOLUME_TOLERANCE 1
+
 typedef enum {
     AUDIO_PLAY_OFF,      // No play, BASE will not stream audio from mic or this app
     AUDIO_PLAY_ON,       // Play mode, BASE will stream audio from this app. Both mic gain set to minimal
@@ -62,6 +69,16 @@ bool               audio_bt_profile_switching();
 audio_bt_profile_t audio_bt_profile_get();
 const char        *audio_bt_profile_text();
 void               audio_bt_profile_toggle();
+
+/* Radio/PC audio is currently routed to a BT sink (module-loopback loaded). */
+bool audio_bt_audio_active(void);
+
+/* BT sink volume in the radio's 0..AUDIO_BT_SINK_VOLUME_MAX scale. */
+int  audio_bt_sink_volume_get(void);      /* -1 when no BT sink is active */
+void audio_bt_sink_volume_set(int value); /* clamps to 0..MAX */
+
+bool audio_bt_sink_muted(void);
+void audio_bt_sink_mute_set(bool mute);
 
 #ifdef __cplusplus
 }

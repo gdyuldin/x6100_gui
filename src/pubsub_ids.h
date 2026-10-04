@@ -12,6 +12,9 @@
 enum msg_t {
     MSG_WIFI_STATE_CHANGED,
     MSG_BT_STATE_CHANGED,
+    MSG_BT_AUDIO_STATE_CHANGED,   /* payload: (void*)(uintptr_t)active */
+    MSG_BT_SINK_VOLUME_CHANGED,   /* payload: (void*)(uintptr_t)0..55 */
+    MSG_BT_SINK_MUTE_CHANGED,     /* payload: (void*)(uintptr_t)muted */
     MSG_USB_DEVICE_CHANGED,
     // Radio messages
     MSG_RADIO_RX,

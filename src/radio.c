@@ -13,6 +13,7 @@
 
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <pthread.h>
 #include <string.h>
@@ -31,6 +32,7 @@
 #include "cw.h"
 #include "pubsub_ids.h"
 #include "scheduler.h"
+#include "audio.h"
 
 /*********************
  *      DEFINES
@@ -98,6 +100,11 @@ static void on_change_uint16(Subject *subj, void *user_data);
 static void on_change_uint8(Subject *subj, void *user_data);
 static void on_change_int8(Subject *subj, void *user_data);
 
+static void on_volume_change(Subject *subj, void *user_data);
+static void on_bt_audio_state(void *s, lv_msg_t *msg);
+static void on_bt_sink_volume_changed(void *s, lv_msg_t *msg);
+static void on_bt_sink_mute_changed(void *s, lv_msg_t *msg);
+
 static void recover_processing_audio_inputs();
 static bool radio_tick();
 static void * radio_thread(void *arg);
@@ -123,6 +130,7 @@ static uint64_t         prev_time;
 static uint64_t         idle_time;
 static bool             mute = false;
 static bool             low_power = false;
+static bool             bt_audio_active = false;
 
 static pthread_mutex_t  swrscan_cb_mux = PTHREAD_MUTEX_INITIALIZER;
 static radio_swrscan_cb_t swrscan_cb = NULL;
@@ -246,7 +254,7 @@ void radio_start() {
     subject_subscribe((Subject*)cfg.filter.high(), on_high_filter_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg.cur.mode(), on_high_filter_change, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg.volume(), on_change_uint8, x6100_control_rxvol_set);
+    subject_subscribe_and_notify((Subject*)cfg.volume(), on_volume_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg.squelch(), on_change_uint8, x6100_control_sql_set);
     subject_subscribe_and_notify((Subject*)cfg.pwr(), on_change_float, x6100_control_txpwr_set);
     subject_subscribe_and_notify((Subject*)cfg.dsp.output_gain(), on_change_float, x6100_control_adc_dac_gain_set);
@@ -322,6 +330,10 @@ void radio_start() {
         x6100_control_bf16_flow_set(true);
     }
 
+    lv_msg_subscribe(MSG_BT_AUDIO_STATE_CHANGED, on_bt_audio_state, NULL);
+    lv_msg_subscribe(MSG_BT_SINK_VOLUME_CHANGED, on_bt_sink_volume_changed, NULL);
+    lv_msg_subscribe(MSG_BT_SINK_MUTE_CHANGED, on_bt_sink_mute_changed, NULL);
+
     prev_time = get_time();
     idle_time = prev_time;
 
@@ -369,7 +381,12 @@ uint16_t radio_change_vol(int16_t df) {
         return vol;
     }
 
-    mute = false;
+    if (mute) {
+        mute = false;
+        if (bt_audio_active) {
+            audio_bt_sink_mute_set(false);
+        }
+    }
 
     uint16_t new_val = limit(vol + df, 0, 55);
 
@@ -382,6 +399,22 @@ uint16_t radio_change_vol(int16_t df) {
 
 void radio_change_mute() {
     mute = !mute;
+
+    if (bt_audio_active) {
+        if (mute) {
+            audio_bt_sink_mute_set(true);
+        } else {
+            audio_bt_sink_mute_set(false);
+
+            int32_t vol = param_i_get(cfg.volume());
+            if (audio_bt_sink_volume_get() != vol) {
+                audio_bt_sink_volume_set(vol);
+            }
+        }
+        WITH_RADIO_LOCK(x6100_control_rxvol_set(0));
+        return;
+    }
+
     x6100_control_rxvol_set(mute ? 0 : param_i_get(cfg.volume()));
 }
 
@@ -498,6 +531,78 @@ static void on_change_uint8(Subject *subj, void *user_data) {
     int32_t new_val = subject_i_get((SubjectInt*)subj);
     void (*fn)(uint8_t) = (void (*)(uint8_t))user_data;
     WITH_RADIO_LOCK(fn(new_val));
+}
+
+static void on_volume_change(Subject *subj, void *user_data) {
+    int32_t new_val = subject_i_get((SubjectInt*)subj);
+
+    if (!bt_audio_active) {
+        WITH_RADIO_LOCK(x6100_control_rxvol_set(new_val));
+        return;
+    }
+
+    /* Keep BASE silent; the encoder drives the BT sink. */
+    WITH_RADIO_LOCK(x6100_control_rxvol_set(0));
+
+    if (mute) {
+        return;
+    }
+    if (audio_bt_sink_muted()) {
+        audio_bt_sink_mute_set(false);
+    }
+    int32_t cur = audio_bt_sink_volume_get();
+    if (cur < 0 || abs(cur - new_val) > AUDIO_BT_SINK_VOLUME_TOLERANCE) {
+        audio_bt_sink_volume_set(new_val);
+    }
+}
+
+static void on_bt_audio_state(void *s, lv_msg_t *msg) {
+    bool active = (bool)(uintptr_t)lv_msg_get_payload(msg);
+
+    bt_audio_active = active;
+
+    if (active) {
+        WITH_RADIO_LOCK(x6100_control_rxvol_set(0));
+
+        if (mute) {
+            audio_bt_sink_mute_set(true);
+        } else {
+            audio_bt_sink_mute_set(false);
+            audio_bt_sink_volume_set(param_i_get(cfg.volume()));
+        }
+    } else {
+        WITH_RADIO_LOCK(x6100_control_rxvol_set(mute ? 0 : param_i_get(cfg.volume())));
+    }
+}
+
+/* External (AVRCP) sink volume change: clears mute and mirrors the value into
+ * cfg.volume, which is the single source of truth for the UI. */
+static void on_bt_sink_volume_changed(void *s, lv_msg_t *msg) {
+    int32_t new_val = (int32_t)(uintptr_t)lv_msg_get_payload(msg);
+
+    if (!bt_audio_active) {
+        return;
+    }
+
+    mute = false;
+
+    if (audio_bt_sink_muted()) {
+        audio_bt_sink_mute_set(false);
+    }
+
+    int32_t vol = param_i_get(cfg.volume());
+    if (abs(vol - new_val) > AUDIO_BT_SINK_VOLUME_TOLERANCE) {
+        param_i_set(cfg.volume(), new_val);
+    }
+}
+
+static void on_bt_sink_mute_changed(void *s, lv_msg_t *msg) {
+    bool muted = (bool)(uintptr_t)lv_msg_get_payload(msg);
+
+    if (!bt_audio_active) {
+        return;
+    }
+    mute = muted;
 }
 
 
