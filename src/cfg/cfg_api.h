@@ -206,6 +206,7 @@ typedef struct {
     ParamInt *(*theme)(void); /* p_theme */
     ParamInt *(*meter_color)(void); /* p_meter_color */
     ParamInt *(*swr_color)(void); /* p_swr_color */
+    ParamInt *(*digi_compact)(void); /* p_digi_text_compact */
 } cfg_ui_refs_t;
 
 typedef struct {

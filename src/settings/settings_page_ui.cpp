@@ -679,6 +679,21 @@ static void make_swr_color(SettingsPage &page) {
     page.row++;
 }
 
+/***** DECODER TEXT SIZE *****/
+
+static void make_digi_text(SettingsPage &page) {
+    page.label("Decoder text");
+
+    lv_obj_t *obj = page.dropdown_int(page.grid, *cfg.ui.digi_compact(), " Large \n Compact",
+                                      "Decoder text size");
+
+    lv_obj_set_size(obj, SMALL_6, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, page.row, 1);
+    lv_obj_center(obj);
+
+    page.row++;
+}
+
 /***** PAGE *****/
 
 void make_ui_page(SettingsPage &page) {
@@ -709,6 +724,9 @@ void make_ui_page(SettingsPage &page) {
     page.delimiter();
 
     make_waterfall_line(page);
+    page.delimiter();
+
+    make_digi_text(page);
     page.delimiter();
 
     make_knob_info(page);

@@ -375,6 +375,8 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
     Parameter<int32_t> p_swr_color{"swr_color", SWR_GRAY, {},
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_digi_text_compact{"digi_text_compact", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // --- BAND params (`band_params` table) ---
     Parameter<int32_t> p_band_current_vfo{"vfo", (int32_t)X6100_VFO_A, 0, 1,

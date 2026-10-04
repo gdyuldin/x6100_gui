@@ -94,6 +94,19 @@ static void panel_update_info_cb(const char *text) {
     lv_label_set_text(info, text);
 }
 
+/* Settings > Interface > Decoder text: compact (sony_28, 8 lines in
+ * the 162 px of the panel) or the stock font (sony_38, 5 lines).
+ * Follows the setting live; the oldest lines go if they no longer
+ * fit. */
+static void text_size_cb(Subject *subj, void *user_data) {
+    const lv_font_t *font = cfg.ui.digi_compact()->get() ? &sony_28 : &sony_38;
+
+    lv_obj_set_style_text_font(obj, font, LV_PART_MAIN);
+    update_line_count();
+    truncate();
+    lv_label_set_text_static(obj, buf);
+}
+
 lv_obj_t * panel_init(lv_obj_t *parent) {
     obj = lv_label_create(parent);
 
@@ -116,6 +129,7 @@ lv_obj_t * panel_init(lv_obj_t *parent) {
     cfg.cur.mode()->subscribe_delayed(update_visibility_cb);
     cfg.cw.decoder()->subscribe_delayed_and_notify(update_visibility_cb);
     cfg.cur.fg_freq()->subscribe_delayed(on_freq_change);
+    cfg.ui.digi_compact()->subscribe_delayed_and_notify(text_size_cb);
 
     info = lv_label_create(obj);
     lv_obj_add_style(info, &style.panels.info, 0);

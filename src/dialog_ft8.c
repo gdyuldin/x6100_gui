@@ -488,6 +488,16 @@ static void construct_cb(lv_obj_t *parent) {
     /* Table */
 
     table_view_build(dialog.obj, 13, 13 + 55, WIDTH, 325 - 55);
+
+    /* Settings > Interface > Decoder text. Compact: 12 rows, sony_28
+     * (line height 20) with 1 px padding = 22 px rows in the 270 px
+     * table. Large: 8 rows, the dialog font as it is (sony_36 + 3 + 3 =
+     * 34 px). Read when the window opens. */
+    if (param_i_get(cfg.ui.digi_compact())) {
+        lv_obj_set_style_text_font(table, &sony_28, LV_PART_ITEMS);
+        lv_obj_set_style_pad_top(table, 1, LV_PART_ITEMS);
+        lv_obj_set_style_pad_bottom(table, 1, LV_PART_ITEMS);
+    }
     table_view_set_press_cb(on_table_press);
     table_view_actions_t tv_actions = {
         .on_close      = on_table_close,
