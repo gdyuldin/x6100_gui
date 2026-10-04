@@ -21,6 +21,7 @@
 
 #include "lvgl/lvgl.h"
 #include "audio.h"
+#include "bt.h"
 #include "meter.h"
 #include "dsp.h"
 #include "cfg/cfg_api.h"
@@ -29,6 +30,20 @@
 
 #define PA_PROFILE_A2DP "a2dp_sink"
 #define PA_PROFILE_HFP "handsfree_head_unit"
+#define PA_PROFILE_OFF "off"
+
+/* A2DP transport Acquire() can fail with EIO (bluez drops the device's A2DP
+ * endpoints); recover by reconnecting the device, then retrying the profile. */
+#define BT_RECOVER_TICK_MS        500
+#define BT_RECOVER_DISCONNECT_MS  2000
+#define BT_RECOVER_CONNECT_MS     8000
+#define BT_RECOVER_MAX            2
+
+#define PA_LOOPBACK_MODULE "module-loopback"
+#define PA_LOOPBACK_ARGS "source=%s sink=%s latency_msec=40 adjust_time=10 source_dont_move=true sink_dont_move=true"
+#define PA_BT_SINK_PREFIX "bluez_sink."
+#define PA_BT_SOURCE_PREFIX "bluez_source."
+#define BT_LOOPBACK_MAX 8
 
 static pa_threaded_mainloop *mloop;
 static pa_mainloop_api      *mlapi;
@@ -56,15 +71,47 @@ typedef struct {
     bool               has_hfp;
     audio_bt_profile_t active;
     bool               switching;
+    bool               via_off;
+    audio_bt_profile_t target;
+    bool               recover;
+    int                recover_attempts;
 } bt_profile_state_t;
 
 static bt_profile_state_t bt_prof;
 static pthread_mutex_t    bt_prof_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+typedef enum {
+    BT_RECOVER_IDLE = 0,
+    BT_RECOVER_WAIT_DISCONNECT,
+    BT_RECOVER_WAIT_CONNECT,
+} bt_recover_state_t;
+
+static bt_recover_state_t bt_recover_state = BT_RECOVER_IDLE;
+static char               bt_recover_bdaddr[18];
+static uint32_t           bt_recover_ticks = 0;
+
 static bool card_refresh_pending = false;
 static bool card_query_inflight  = false;
 static bool card_list_found      = false;
 static bool card_subscribed      = false;
+
+typedef enum {
+    LOOPBACK_NONE = 0,
+    LOOPBACK_SINK,
+    LOOPBACK_SOURCE,
+} loopback_kind_t;
+
+typedef struct {
+    loopback_kind_t kind;
+    uint32_t        dev_idx;
+    uint32_t        module_idx;
+    bool            pending;
+    bool            cancelled;
+    char            dev_name[256];
+} bt_loopback_t;
+
+/* PA thread only (all access under the mainloop lock) */
+static bt_loopback_t bt_loopback[BT_LOOPBACK_MAX];
 
 static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const char *name);
 static void record_monitor_setup();
@@ -72,16 +119,29 @@ static void record_monitor_setup();
 static void card_list_cb(pa_context *c, const pa_card_info *info, int eol, void *userdata);
 static void card_subscribe_cb(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata);
 static void set_profile_cb(pa_context *c, int success, void *userdata);
+static void set_profile_off_cb(pa_context *c, int success, void *userdata);
+static void bt_recover_timer_cb(lv_timer_t *t);
+static void profile_retry_a2dp_now(void);
+static void card_name_to_bdaddr(const char *card_name, char *out, size_t sz);
 static void audio_bt_refresh_locked();
+
+static void loopback_device_event(loopback_kind_t kind, unsigned type, uint32_t idx);
+static void loopback_sink_info_cb(pa_context *c, const pa_sink_info *info, int eol, void *userdata);
+static void loopback_source_info_cb(pa_context *c, const pa_source_info *info, int eol, void *userdata);
+static void loopback_loaded_cb(pa_context *c, uint32_t idx, void *userdata);
+static void loopback_unload_all(void);
 
 static void on_state_change(pa_context *c, void *userdata) {
     pa_context_state_t state = pa_context_get_state(c);
+
+    LV_LOG_USER("BT PA context state=%d", state);
 
     if (state == PA_CONTEXT_READY) {
         if (!card_subscribed) {
             card_subscribed = true;
             pa_context_set_subscribe_callback(c, card_subscribe_cb, NULL);
-            pa_operation *op = pa_context_subscribe(c, PA_SUBSCRIPTION_MASK_CARD, NULL, NULL);
+            pa_operation *op = pa_context_subscribe(
+                c, PA_SUBSCRIPTION_MASK_CARD | PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE, NULL, NULL);
             if (op) {
                 pa_operation_unref(op);
             }
@@ -89,6 +149,11 @@ static void on_state_change(pa_context *c, void *userdata) {
         }
     } else if (state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED) {
         card_subscribed = false;
+        pthread_mutex_lock(&bt_prof_mutex);
+        bt_prof.switching = false;
+        bt_prof.via_off   = false;
+        pthread_mutex_unlock(&bt_prof_mutex);
+        memset(bt_loopback, 0, sizeof(bt_loopback));
     }
 
     pa_threaded_mainloop_signal(mloop, 0);
@@ -160,6 +225,8 @@ void audio_init() {
     pa_threaded_mainloop_unlock(mloop);
 
     record_monitor_setup();
+
+    lv_timer_create(bt_recover_timer_cb, BT_RECOVER_TICK_MS, NULL);
 }
 
 void audio_mixer_setup(x6100_base_ver_t base_ver) {
@@ -486,21 +553,37 @@ static void record_monitor_setup() {
 
 /* Bluetooth card profile */
 
+static const char *profile_available_text(int available) {
+    switch (available) {
+    case PA_PORT_AVAILABLE_YES:
+        return "yes";
+    case PA_PORT_AVAILABLE_NO:
+        return "no";
+    default:
+        return "unknown";
+    }
+}
+
 static void scan_card_profiles(const pa_card_info *info, bool *has_a2dp, bool *has_hfp, audio_bt_profile_t *active) {
     *has_a2dp = false;
     *has_hfp  = false;
     *active   = AUDIO_BT_PROFILE_NONE;
 
     for (uint32_t i = 0; i < info->n_profiles; i++) {
-        const char *name = NULL;
+        const char *name      = NULL;
+        int         available = PA_PORT_AVAILABLE_UNKNOWN;
+
         if (info->profiles2 && info->profiles2[i]) {
-            name = info->profiles2[i]->name;
+            name      = info->profiles2[i]->name;
+            available = info->profiles2[i]->available;
         } else if (info->profiles) {
             name = info->profiles[i].name;
         }
         if (!name) {
             continue;
         }
+        LV_LOG_USER("BT card %s profile[%u] name=%s available=%s", info->name, i, name,
+                    profile_available_text(available));
         if (strcmp(name, PA_PROFILE_A2DP) == 0) {
             *has_a2dp = true;
         }
@@ -522,25 +605,35 @@ static void scan_card_profiles(const pa_card_info *info, bool *has_a2dp, bool *h
             *active = AUDIO_BT_PROFILE_HFP;
         }
     }
+    LV_LOG_USER("BT card %s active_profile=%s has_a2dp=%d has_hfp=%d", info->name,
+                active_name ? active_name : "(none)", *has_a2dp, *has_hfp);
 }
 
 static void card_cache_clear() {
     pthread_mutex_lock(&bt_prof_mutex);
+    bool was_known  = bt_prof.card_known;
+    bool was_a2dp   = bt_prof.has_a2dp;
+    bool was_hfp    = bt_prof.has_hfp;
+    int  was_active = bt_prof.active;
     bt_prof.card_known = false;
     bt_prof.has_a2dp   = false;
     bt_prof.has_hfp    = false;
     bt_prof.active     = AUDIO_BT_PROFILE_NONE;
     pthread_mutex_unlock(&bt_prof_mutex);
+    LV_LOG_USER("BT card cache clear (was known=%d a2dp=%d hfp=%d active=%d)", was_known, was_a2dp, was_hfp,
+                was_active);
 }
 
 static void card_list_cb(pa_context *c, const pa_card_info *info, int eol, void *userdata) {
     if (eol < 0) {
+        LV_LOG_WARN("BT card list failed: %s", pa_strerror(pa_context_errno(c)));
         card_cache_clear();
         card_query_inflight = false;
         return;
     }
 
     if (eol > 0) {
+        LV_LOG_USER("BT card list end: found=%d pending=%d", card_list_found, card_refresh_pending);
         if (!card_list_found) {
             card_cache_clear();
         }
@@ -555,12 +648,15 @@ static void card_list_cb(pa_context *c, const pa_card_info *info, int eol, void 
         return;
     }
 
+    LV_LOG_USER("BT bluez card found: name=%s", info->name);
+
     bool               has_a2dp;
     bool               has_hfp;
     audio_bt_profile_t active;
 
     scan_card_profiles(info, &has_a2dp, &has_hfp, &active);
     if (!has_a2dp || !has_hfp) {
+        LV_LOG_USER("BT card %s skipped: has_a2dp=%d has_hfp=%d", info->name, has_a2dp, has_hfp);
         return;
     }
 
@@ -572,13 +668,22 @@ static void card_list_cb(pa_context *c, const pa_card_info *info, int eol, void 
     bt_prof.active     = active;
     pthread_mutex_unlock(&bt_prof_mutex);
     card_list_found = true;
+    LV_LOG_USER("BT card %s accepted: active=%d", info->name, active);
 }
 
 static void card_subscribe_cb(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata) {
-    if ((t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) != PA_SUBSCRIPTION_EVENT_CARD) {
-        return;
+    unsigned facility = t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK;
+    unsigned type     = t & PA_SUBSCRIPTION_EVENT_TYPE_MASK;
+
+    LV_LOG_USER("BT PA event: facility=%u type=%u idx=%u", facility, type, idx);
+
+    if (facility == PA_SUBSCRIPTION_EVENT_CARD) {
+        audio_bt_refresh_locked();
+    } else if (facility == PA_SUBSCRIPTION_EVENT_SINK) {
+        loopback_device_event(LOOPBACK_SINK, type, idx);
+    } else if (facility == PA_SUBSCRIPTION_EVENT_SOURCE) {
+        loopback_device_event(LOOPBACK_SOURCE, type, idx);
     }
-    audio_bt_refresh_locked();
 }
 
 static void audio_bt_refresh_locked() {
@@ -586,6 +691,7 @@ static void audio_bt_refresh_locked() {
         return;
     }
     if (card_query_inflight) {
+        LV_LOG_USER("BT card refresh deferred (query inflight)");
         card_refresh_pending = true;
         return;
     }
@@ -598,17 +704,172 @@ static void audio_bt_refresh_locked() {
     if (op) {
         pa_operation_unref(op);
     } else {
+        LV_LOG_ERROR("BT get_card_info_list failed: %s", pa_strerror(pa_context_errno(ctx)));
         card_query_inflight = false;
     }
 }
 
 static void set_profile_cb(pa_context *c, int success, void *userdata) {
+    audio_bt_profile_t target = (audio_bt_profile_t)(uintptr_t)userdata;
     pthread_mutex_lock(&bt_prof_mutex);
     if (success) {
-        bt_prof.active = (audio_bt_profile_t)(uintptr_t)userdata;
+        bt_prof.active           = target;
+        bt_prof.recover          = false;
+        bt_prof.recover_attempts = 0;
+    } else if (target == AUDIO_BT_PROFILE_A2DP) {
+        bt_prof.recover = true;
     }
     bt_prof.switching = false;
+    bt_prof.via_off   = false;
     pthread_mutex_unlock(&bt_prof_mutex);
+    if (success) {
+        LV_LOG_USER("BT set profile ok: target=%d", target);
+    } else {
+        LV_LOG_ERROR("BT set profile failed: target=%d error=%s", target, pa_strerror(pa_context_errno(c)));
+    }
+}
+
+static void set_profile_a2dp_step(pa_context *c) {
+    char               card[80];
+    audio_bt_profile_t target;
+
+    pthread_mutex_lock(&bt_prof_mutex);
+    if (!bt_prof.switching || !bt_prof.via_off) {
+        pthread_mutex_unlock(&bt_prof_mutex);
+        return;
+    }
+    snprintf(card, sizeof(card), "%s", bt_prof.card_name);
+    target = bt_prof.target;
+    pthread_mutex_unlock(&bt_prof_mutex);
+
+    LV_LOG_USER("BT switching to a2dp after off: card=%s target=%d", card, target);
+
+    pa_operation *op =
+        pa_context_set_card_profile_by_name(c, card, PA_PROFILE_A2DP, set_profile_cb, (void *)(uintptr_t)target);
+    if (op) {
+        pa_operation_unref(op);
+    } else {
+        LV_LOG_ERROR("BT set_card_profile (a2dp after off) op rejected: card=%s error=%s", card,
+                     pa_strerror(pa_context_errno(c)));
+        pthread_mutex_lock(&bt_prof_mutex);
+        bt_prof.switching = false;
+        bt_prof.via_off   = false;
+        pthread_mutex_unlock(&bt_prof_mutex);
+    }
+}
+
+static void set_profile_off_cb(pa_context *c, int success, void *userdata) {
+    LV_LOG_USER("BT set profile off step done: success=%d, switching to a2dp", success);
+    set_profile_a2dp_step(c);
+}
+
+static void card_name_to_bdaddr(const char *card_name, char *out, size_t sz) {
+    const char *p = card_name;
+    if (strncmp(p, "bluez_card.", 11) == 0) {
+        p += 11;
+    }
+    size_t i = 0;
+    while (*p && i + 1 < sz) {
+        out[i++] = (*p == '_') ? ':' : *p;
+        p++;
+    }
+    out[i] = '\0';
+}
+
+/* Force the card back to a2dp_sink after a reconnect (UI thread). */
+static void profile_retry_a2dp_now(void) {
+    char card[80];
+
+    if (!ctx || !mloop) {
+        return;
+    }
+    pthread_mutex_lock(&bt_prof_mutex);
+    if (!bt_prof.card_known || bt_prof.switching) {
+        pthread_mutex_unlock(&bt_prof_mutex);
+        return;
+    }
+    snprintf(card, sizeof(card), "%s", bt_prof.card_name);
+    bt_prof.switching = true;
+    bt_prof.via_off   = false;
+    bt_prof.target    = AUDIO_BT_PROFILE_A2DP;
+    pthread_mutex_unlock(&bt_prof_mutex);
+
+    pa_threaded_mainloop_lock(mloop);
+    pa_operation *op = pa_context_set_card_profile_by_name(ctx, card, PA_PROFILE_A2DP, set_profile_cb,
+                                                           (void *)(uintptr_t)AUDIO_BT_PROFILE_A2DP);
+    if (op) {
+        pa_operation_unref(op);
+    } else {
+        LV_LOG_ERROR("BT set_card_profile (recover) op rejected: card=%s error=%s", card,
+                     pa_strerror(pa_context_errno(ctx)));
+        pthread_mutex_lock(&bt_prof_mutex);
+        bt_prof.switching = false;
+        pthread_mutex_unlock(&bt_prof_mutex);
+    }
+    pa_threaded_mainloop_unlock(mloop);
+}
+
+/* Runs on the UI thread (LVGL timer): reconnect the device after a failed A2DP
+ * switch, then retry the profile. bt_* must only be called from this thread. */
+static void bt_recover_timer_cb(lv_timer_t *t) {
+    switch (bt_recover_state) {
+    case BT_RECOVER_IDLE: {
+        char bdaddr[18] = "";
+
+        if (bt_is_busy()) {
+            return;
+        }
+        pthread_mutex_lock(&bt_prof_mutex);
+        if (!bt_prof.recover || !bt_prof.card_known) {
+            pthread_mutex_unlock(&bt_prof_mutex);
+            return;
+        }
+        if (bt_prof.recover_attempts >= BT_RECOVER_MAX) {
+            LV_LOG_WARN("BT profile recover: giving up after %d attempts", bt_prof.recover_attempts);
+            bt_prof.recover = false;
+            pthread_mutex_unlock(&bt_prof_mutex);
+            return;
+        }
+        bt_prof.recover = false;
+        bt_prof.recover_attempts++;
+        card_name_to_bdaddr(bt_prof.card_name, bdaddr, sizeof(bdaddr));
+        int attempt = bt_prof.recover_attempts;
+        pthread_mutex_unlock(&bt_prof_mutex);
+
+        if (bdaddr[0] == '\0') {
+            return;
+        }
+        snprintf(bt_recover_bdaddr, sizeof(bt_recover_bdaddr), "%s", bdaddr);
+        LV_LOG_USER("BT profile recover: disconnect %s (attempt %d)", bt_recover_bdaddr, attempt);
+        bt_disconnect(bt_recover_bdaddr);
+        bt_recover_state = BT_RECOVER_WAIT_DISCONNECT;
+        bt_recover_ticks = 0;
+        return;
+    }
+
+    case BT_RECOVER_WAIT_DISCONNECT:
+        if (++bt_recover_ticks * BT_RECOVER_TICK_MS < BT_RECOVER_DISCONNECT_MS) {
+            return;
+        }
+        if (bt_is_busy()) {
+            return;
+        }
+        LV_LOG_USER("BT profile recover: connect %s", bt_recover_bdaddr);
+        bt_connect(bt_recover_bdaddr);
+        bt_recover_state = BT_RECOVER_WAIT_CONNECT;
+        bt_recover_ticks = 0;
+        return;
+
+    case BT_RECOVER_WAIT_CONNECT:
+        bt_recover_ticks++;
+        if ((!bt_is_busy() && bt_get_status() == BT_CONNECTED) ||
+            bt_recover_ticks * BT_RECOVER_TICK_MS >= BT_RECOVER_CONNECT_MS) {
+            LV_LOG_USER("BT profile recover: retry a2dp");
+            profile_retry_a2dp_now();
+            bt_recover_state = BT_RECOVER_IDLE;
+        }
+        return;
+    }
 }
 
 bool audio_bt_profile_supported() {
@@ -645,38 +906,204 @@ const char *audio_bt_profile_text() {
 
 void audio_bt_profile_toggle() {
     if (!ctx || !mloop) {
+        LV_LOG_WARN("BT profile toggle ignored: ctx=%p mloop=%p", (void *)ctx, (void *)mloop);
         return;
     }
 
     char               card[80];
     const char        *target;
     audio_bt_profile_t target_id;
+    bool               via_off;
 
     pthread_mutex_lock(&bt_prof_mutex);
     if (!bt_prof.card_known || !bt_prof.has_a2dp || !bt_prof.has_hfp || bt_prof.switching) {
+        LV_LOG_WARN("BT profile toggle blocked: known=%d a2dp=%d hfp=%d switching=%d active=%d", bt_prof.card_known,
+                    bt_prof.has_a2dp, bt_prof.has_hfp, bt_prof.switching, bt_prof.active);
         pthread_mutex_unlock(&bt_prof_mutex);
         return;
     }
     snprintf(card, sizeof(card), "%s", bt_prof.card_name);
+    bt_prof.recover          = false;
+    bt_prof.recover_attempts = 0;
     if (bt_prof.active == AUDIO_BT_PROFILE_A2DP) {
         target    = PA_PROFILE_HFP;
         target_id = AUDIO_BT_PROFILE_HFP;
+        via_off   = false;
     } else {
         target    = PA_PROFILE_A2DP;
         target_id = AUDIO_BT_PROFILE_A2DP;
+        /* Going from HFP to A2DP requires an explicit "off" step, otherwise
+         * bluez leaves the card in the off profile and A2DP cannot be activated. */
+        via_off   = (bt_prof.active == AUDIO_BT_PROFILE_HFP);
     }
     bt_prof.switching = true;
+    bt_prof.via_off   = via_off;
+    bt_prof.target    = target_id;
     pthread_mutex_unlock(&bt_prof_mutex);
 
+    LV_LOG_USER("BT profile toggle: card=%s active->target=%s (id=%d) via_off=%d", card, target, target_id, via_off);
+
     pa_threaded_mainloop_lock(mloop);
-    pa_operation *op =
-        pa_context_set_card_profile_by_name(ctx, card, target, set_profile_cb, (void *)(uintptr_t)target_id);
+    loopback_unload_all();
+    pa_operation *op = pa_context_set_card_profile_by_name(
+        ctx, card, via_off ? PA_PROFILE_OFF : target, via_off ? set_profile_off_cb : set_profile_cb,
+        (void *)(uintptr_t)target_id);
     if (op) {
         pa_operation_unref(op);
     } else {
+        LV_LOG_ERROR("BT set_card_profile op rejected: card=%s target=%s error=%s", card, target,
+                     pa_strerror(pa_context_errno(ctx)));
         pthread_mutex_lock(&bt_prof_mutex);
         bt_prof.switching = false;
+        bt_prof.via_off   = false;
         pthread_mutex_unlock(&bt_prof_mutex);
     }
     pa_threaded_mainloop_unlock(mloop);
+}
+
+/* Bluetooth loopback routing */
+
+static bt_loopback_t *loopback_find(loopback_kind_t kind, uint32_t dev_idx) {
+    for (int i = 0; i < BT_LOOPBACK_MAX; i++) {
+        if (bt_loopback[i].kind == kind && bt_loopback[i].dev_idx == dev_idx) {
+            return &bt_loopback[i];
+        }
+    }
+    return NULL;
+}
+
+static bt_loopback_t *loopback_alloc(loopback_kind_t kind, uint32_t dev_idx, const char *name) {
+    for (int i = 0; i < BT_LOOPBACK_MAX; i++) {
+        if (bt_loopback[i].kind == LOOPBACK_NONE) {
+            bt_loopback[i].kind    = kind;
+            bt_loopback[i].dev_idx = dev_idx;
+            bt_loopback[i].pending = true;
+            snprintf(bt_loopback[i].dev_name, sizeof(bt_loopback[i].dev_name), "%s", name);
+            return &bt_loopback[i];
+        }
+    }
+    LV_LOG_WARN("loopback table is full");
+    return NULL;
+}
+
+static void loopback_clear(bt_loopback_t *slot) {
+    memset(slot, 0, sizeof(*slot));
+}
+
+/* Unload every loopback before a card profile switch: a loopback holding the
+ * bluez sink/source blocks bluez from reconfiguring the card, which then falls
+ * back to the "off" profile and A2DP cannot be activated. Must be called with
+ * the mainloop lock held; PA executes the unload before the following switch. */
+static void loopback_unload_all(void) {
+    for (int i = 0; i < BT_LOOPBACK_MAX; i++) {
+        bt_loopback_t *slot = &bt_loopback[i];
+        if (slot->kind == LOOPBACK_NONE) {
+            continue;
+        }
+        if (slot->pending) {
+            slot->cancelled = true;
+            LV_LOG_USER("BT loopback unload before profile switch: %s (pending)", slot->dev_name);
+            continue;
+        }
+        pa_operation *op = pa_context_unload_module(ctx, slot->module_idx, NULL, NULL);
+        if (op) {
+            pa_operation_unref(op);
+        }
+        LV_LOG_USER("BT loopback unload before profile switch: %s (module=%u)", slot->dev_name, slot->module_idx);
+        loopback_clear(slot);
+    }
+}
+
+static void loopback_load(loopback_kind_t kind, uint32_t dev_idx, const char *name, const char *source,
+                          const char *sink) {
+    bt_loopback_t *slot = loopback_alloc(kind, dev_idx, name);
+    if (!slot) {
+        return;
+    }
+
+    char args[512];
+    snprintf(args, sizeof(args), PA_LOOPBACK_ARGS, source, sink);
+
+    LV_LOG_USER("BT loopback load: kind=%d dev=%s args=%s", kind, name, args);
+
+    pa_operation *op = pa_context_load_module(ctx, PA_LOOPBACK_MODULE, args, loopback_loaded_cb, slot);
+    if (op) {
+        pa_operation_unref(op);
+    } else {
+        LV_LOG_ERROR("pa_context_load_module() failed: %s", pa_strerror(pa_context_errno(ctx)));
+        loopback_clear(slot);
+    }
+}
+
+static void loopback_device_event(loopback_kind_t kind, unsigned type, uint32_t idx) {
+    if (!ctx) {
+        return;
+    }
+
+    if (type == PA_SUBSCRIPTION_EVENT_NEW) {
+        if (loopback_find(kind, idx)) {
+            return;
+        }
+        if (kind == LOOPBACK_SINK) {
+            pa_context_get_sink_info_by_index(ctx, idx, loopback_sink_info_cb, NULL);
+        } else {
+            pa_context_get_source_info_by_index(ctx, idx, loopback_source_info_cb, NULL);
+        }
+    } else if (type == PA_SUBSCRIPTION_EVENT_REMOVE) {
+        bt_loopback_t *slot = loopback_find(kind, idx);
+        if (!slot) {
+            return;
+        }
+        if (slot->pending) {
+            slot->cancelled = true;
+            return;
+        }
+        pa_operation *op = pa_context_unload_module(ctx, slot->module_idx, NULL, NULL);
+        if (op) {
+            pa_operation_unref(op);
+        }
+        loopback_clear(slot);
+    }
+}
+
+static void loopback_sink_info_cb(pa_context *c, const pa_sink_info *info, int eol, void *userdata) {
+    if (eol != 0 || !info) {
+        return;
+    }
+    if (strncmp(info->name, PA_BT_SINK_PREFIX, sizeof(PA_BT_SINK_PREFIX) - 1) != 0) {
+        return;
+    }
+    loopback_load(LOOPBACK_SINK, info->index, info->name, capture_device, info->name);
+}
+
+static void loopback_source_info_cb(pa_context *c, const pa_source_info *info, int eol, void *userdata) {
+    if (eol != 0 || !info) {
+        return;
+    }
+    if (strncmp(info->name, PA_BT_SOURCE_PREFIX, sizeof(PA_BT_SOURCE_PREFIX) - 1) != 0) {
+        return;
+    }
+    loopback_load(LOOPBACK_SOURCE, info->index, info->name, info->name, default_play_device);
+}
+
+static void loopback_loaded_cb(pa_context *c, uint32_t idx, void *userdata) {
+    bt_loopback_t *slot = userdata;
+
+    if (idx == PA_INVALID_INDEX) {
+        LV_LOG_ERROR("module-loopback load failed: %s", pa_strerror(pa_context_errno(ctx)));
+        loopback_clear(slot);
+        return;
+    }
+    if (slot->cancelled) {
+        LV_LOG_USER("BT loopback loaded after cancel, unloading: %s (module=%u)", slot->dev_name, idx);
+        pa_operation *op = pa_context_unload_module(ctx, idx, NULL, NULL);
+        if (op) {
+            pa_operation_unref(op);
+        }
+        loopback_clear(slot);
+        return;
+    }
+    slot->module_idx = idx;
+    slot->pending    = false;
+    LV_LOG_USER("BT loopback loaded: %s (module=%u)", slot->dev_name, idx);
 }

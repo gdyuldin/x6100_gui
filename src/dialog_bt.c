@@ -28,6 +28,11 @@
 
 #define PARAMS_WIDTH 300
 
+/* Experimental: switch the BT headset profile (A2DP <-> HSP/HFP) from the 4th
+ * button. Disabled by default, so the button keeps its normal Pair behaviour.
+ * Set to 1 to enable; see BT_PROFILE_SWITCH.md for status and known issues. */
+#define BT_PROFILE_SWITCH 0
+
 #define SIZE_OF_ARRAY(arr) (sizeof(arr) / sizeof(*arr))
 
 static void construct_cb(lv_obj_t *parent);
@@ -324,19 +329,26 @@ static void bt_connect_cb(button_data_t *btn_data) {
 }
 
 static void bt_pair_cb(button_data_t *btn_data) {
-    LV_LOG_USER("BT UI pair pressed disable=%d sel=%s paired=%d", disable_buttons, sel_bdaddr, cur_dev_paired);
+    LV_LOG_USER("BT UI pair pressed disable=%d sel=%s paired=%d pending=%d busy=%d", disable_buttons, sel_bdaddr,
+                cur_dev_paired, pending_action, bt_is_busy());
     if (disable_buttons || pending_action != BT_ACT_NONE || bt_is_busy())
         return;
 
+#if BT_PROFILE_SWITCH
     if (audio_bt_profile_supported()) {
+        LV_LOG_USER("BT UI profile switch: supported=%d active=%d switching=%d", audio_bt_profile_supported(),
+                    audio_bt_profile_get(), audio_bt_profile_switching());
         pending_action = BT_ACT_PROFILE;
         audio_bt_profile_toggle();
+        LV_LOG_USER("BT UI profile toggle done: active=%d switching=%d", audio_bt_profile_get(),
+                    audio_bt_profile_switching());
         if (!audio_bt_profile_switching()) {
             pending_action = BT_ACT_NONE;
         }
         lv_msg_send(MSG_BT_STATE_CHANGED, NULL);
         return;
     }
+#endif
 
     if (sel_bdaddr[0] == '\0')
         return;
@@ -412,6 +424,7 @@ static const char *bt_connect_label_getter() {
 }
 
 static const char *bt_pair_label_getter() {
+#if BT_PROFILE_SWITCH
     if (audio_bt_profile_supported()) {
         if (audio_bt_profile_switching() || pending_action == BT_ACT_PROFILE)
             return "Switching...";
@@ -424,6 +437,7 @@ static const char *bt_pair_label_getter() {
             return "";
         }
     }
+#endif
     if (sel_bdaddr[0] == '\0')
         return "";
     if (pending_action == BT_ACT_PAIR)
@@ -599,6 +613,8 @@ static void bt_state_changed_cb(void *s, lv_msg_t *m) {
     bt_status_t status = bt_get_status();
 
     if (pending_action == BT_ACT_PROFILE) {
+        LV_LOG_USER("BT UI state change: profile pending, switching=%d active=%d", audio_bt_profile_switching(),
+                    audio_bt_profile_get());
         if (!audio_bt_profile_switching()) {
             pending_action = BT_ACT_NONE;
         }
