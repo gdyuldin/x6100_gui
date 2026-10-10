@@ -43,6 +43,7 @@ static cell_data_t           *s_row_cell[TABLE_MAX_ROWS_INTERNAL]; /* row -> poo
 static lv_obj_t              *s_table      = NULL;
 static table_view_press_cb_t  s_press_cb   = NULL;
 static table_view_actions_t   s_actions    = {0};
+static table_view_info_t      s_info       = TABLE_INFO_COUNTRY_KM;
 
 static inline cell_data_t *row_cell(uint16_t r) {
     if (r >= TABLE_MAX_ROWS_INTERNAL) return NULL;
@@ -222,6 +223,34 @@ static void draw_part_begin_cb(lv_event_t *e) {
     }
 }
 
+static lv_coord_t text_width(const char *text, const lv_draw_label_dsc_t *ld) {
+    lv_point_t size;
+
+    lv_txt_get_size(&size, text, ld->font, ld->letter_space, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    return size.x;
+}
+
+/* The sender's country, right-aligned up to `right`: the name when it fits
+ * after the message (`text_end`), else its prefix, else nothing. Measured
+ * with the table's own font, so it holds for both row sizes (Settings >
+ * Decoder text) and for FT4 as for FT8. */
+static void draw_country(lv_obj_draw_part_dsc_t *dsc, const cell_data_t *cd, lv_area_t *area,
+                         lv_coord_t right, lv_coord_t text_end) {
+    const char *choice[2] = { cd->country, cd->cty_prefix };
+
+    for (int i = 0; i < 2; i++) {
+        if (choice[i][0] == '\0') continue;
+
+        lv_coord_t w = text_width(choice[i], dsc->label_dsc);
+        if (right - w < text_end + 16) continue;
+
+        area->x1 = right - w;
+        area->x2 = right;
+        lv_draw_label(dsc->draw_ctx, dsc->label_dsc, area, choice[i], NULL);
+        return;
+    }
+}
+
 static void draw_part_end_cb(lv_event_t *e) {
     lv_obj_t               *obj = lv_event_get_target(e);
     lv_obj_draw_part_dsc_t *dsc = lv_event_get_draw_part_dsc(e);
@@ -255,11 +284,27 @@ static void draw_part_end_cb(lv_event_t *e) {
     snprintf(buf, sizeof(buf), "%i dB", cd->meta.local_snr);
     lv_draw_label(dsc->draw_ctx, dsc->label_dsc, &area, buf, NULL);
 
-    if (cd->dist > 0) {
+    /* Country: left of the distance, or where the distance would be. */
+    lv_coord_t right    = area.x1 - 10;
+    lv_coord_t text_end = dsc->draw_area->x1 + lv_obj_get_style_pad_left(obj, LV_PART_ITEMS) +
+                          text_width(cd->text, dsc->label_dsc);
+
+    bool miles = (s_info == TABLE_INFO_MI) || (s_info == TABLE_INFO_COUNTRY_MI);
+
+    if (s_info != TABLE_INFO_COUNTRY && cd->dist > 0) {
         area.x2 = area.x1 - 10;
         area.x1 = area.x2 - 200;
-        snprintf(buf, sizeof(buf), "%i km", cd->dist);
+        if (miles) {
+            snprintf(buf, sizeof(buf), "%i mi", (int)(cd->dist * 0.621371f + 0.5f));
+        } else {
+            snprintf(buf, sizeof(buf), "%i km", cd->dist);
+        }
         lv_draw_label(dsc->draw_ctx, dsc->label_dsc, &area, buf, NULL);
+        right = area.x2 - text_width(buf, dsc->label_dsc) - 16;
+    }
+
+    if (s_info >= TABLE_INFO_COUNTRY) {
+        draw_country(dsc, cd, &area, right, text_end);
     }
 }
 
@@ -347,6 +392,10 @@ lv_obj_t *table_view_obj(void) {
 
 void table_view_set_press_cb(table_view_press_cb_t cb) {
     s_press_cb = cb;
+}
+
+void table_view_set_info(table_view_info_t info) {
+    s_info = (info <= TABLE_INFO_COUNTRY_MI) ? info : TABLE_INFO_COUNTRY_KM;
 }
 
 void table_view_set_actions(const table_view_actions_t *actions) {
