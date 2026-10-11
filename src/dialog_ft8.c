@@ -45,6 +45,7 @@
 #include "ft8/worker.h"
 #include "adif.h"
 #include "qso_log.h"
+#include "dxcc.h"
 #include "scheduler.h"
 
 #include <stdlib.h>
@@ -513,6 +514,8 @@ static void construct_cb(lv_obj_t *parent) {
         .on_vol_change = on_table_vol_change,
     };
     table_view_set_actions(&tv_actions);
+    /* Settings > Interface > FT8/FT4 info: distance, country or both. */
+    table_view_set_info((table_view_info_t)param_i_get(cfg.ui.ft8_info()));
 
     /* Map */
 
@@ -966,6 +969,8 @@ static bool msg_call_to(const char *text, char *call, size_t size) {
 static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, float freq_hz, float time_sec) {
 
     ftx_msg_meta_t meta;
+    /* The parser fills call_de only for the messages it knows. */
+    memset(&meta, 0, sizeof(meta));
     meta.freq_hz = freq_hz;
     meta.time_sec = time_sec;
     char * old_msg = strdup(tx_msg.msg);
@@ -1036,6 +1041,16 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     cell_data.cell_type = cell_type;
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
     cell_data.meta = meta;
+    /* Country of the sender, from the call (cty.dat), as in JTDX. */
+    cell_data.country[0]    = '\0';
+    cell_data.cty_prefix[0] = '\0';
+    if (meta.type != FXT_MSG_TYPE_OTHER && meta.call_de[0] != '\0') {
+        const char *name, *prefix;
+        if (dxcc_lookup(meta.call_de, &name, &prefix)) {
+            snprintf(cell_data.country, sizeof(cell_data.country), "%s", name);
+            snprintf(cell_data.cty_prefix, sizeof(cell_data.cty_prefix), "%s", prefix);
+        }
+    }
     cell_data.odd = s_info->odd;
     if (PARAM_T_GET(cfg.qth())[0] != 0) {
         if (strlen(meta.grid) > 0) {
