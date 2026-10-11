@@ -47,6 +47,18 @@ double value(const char *sql) {
 
 double pwr() { return value("SELECT val FROM params WHERE name = 'pwr'"); }
 
+// The version every card ends at: the last migration, whichever that is
+// (other features add theirs after 1.0's 4).
+int latest_version() {
+    sqlite3 *card = g_db;
+    make_card(1, false);
+    REQUIRE(migrations_apply() == 0);
+    int v = (int)value("SELECT id FROM version");
+    sqlite3_close(g_db);
+    g_db = card;
+    return v;
+}
+
 // What the GUI does at every start (cfg_db_open).
 void start_ours() {
     REQUIRE(js8_db_before_migrations(g_db) == 0);
@@ -57,6 +69,8 @@ void start_ours() {
 } // namespace
 
 TEST_CASE("every card gets R1CBU 1.0's settings conversion exactly once", "[js8][db]") {
+    const int latest = latest_version();
+    REQUIRE(latest >= 4);
     SECTION("a card from the JS8 test builds 2-4 (version 5): converted, never twice") {
         make_card(5, true);
         exec("INSERT INTO params VALUES('pwr', 3), ('output_gain', 44), ('js8_speed', 2);"
@@ -66,7 +80,7 @@ TEST_CASE("every card gets R1CBU 1.0's settings conversion exactly once", "[js8]
         CHECK(value("SELECT val FROM params WHERE name = 'output_gain'") == 8.8);
         CHECK(value("SELECT val FROM band_params WHERE name = 'dac_offset'") == -5.2);
         CHECK(value("SELECT val FROM params WHERE name = 'js8_speed'") == 2); // ours kept as they are
-        CHECK(value("SELECT id FROM version") == 4);
+        CHECK(value("SELECT id FROM version") == latest);
         exec("UPDATE params SET val = 5.0 WHERE name = 'pwr'"); // stored as INTEGER 5
         start_ours();
         CHECK(pwr() == 5.0);
@@ -98,7 +112,7 @@ TEST_CASE("every card gets R1CBU 1.0's settings conversion exactly once", "[js8]
     SECTION("a new card (version 1): the lists, nothing to convert") {
         make_card(1, true);
         start_ours();
-        CHECK(value("SELECT id FROM version") == 4);
+        CHECK(value("SELECT id FROM version") == latest);
         CHECK(value("SELECT COUNT(*) FROM digital_modes WHERE type IN (2, 3)") == 13);
     }
     sqlite3_close(g_db);
