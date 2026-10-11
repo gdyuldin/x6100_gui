@@ -17,13 +17,14 @@ target_sources(${PROJECT_NAME} PUBLIC
     main.c main_screen.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
     app_ports.cpp
-    waterfall.c rotary.cpp keyboard.c encoder.c
+    waterfall.c rotary.cpp keyboard.c kbd_rollover.c encoder.c
     events.c msg.c msg_tiny.c keypad.c
     hkey.c clock.c
     meter.c band_info.cpp tx_info.c
     audio.c mfk.cpp cw.cpp panel.cpp
     rtty.c screenshot.c display.cpp gps.c
     dialog.c dialog_swrscan.c
+    dxcc.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
     dialog_psk.c psk_rx.c psk_tx.c psk_spec.c psk_macro.c digi_qso.c
     ft8_ui/table_view.c
