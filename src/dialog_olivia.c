@@ -147,7 +147,9 @@ static lv_obj_t   *finder = NULL;
 static lv_obj_t   *text_box = NULL;
 static lv_obj_t   *line_lbl[TXT_SHOW];
 
-/* Received text font: sony_28 fits about 9 lines in the box. */
+/* Received text font, from Settings > Interface > Decoder text, read when
+ * the window opens: Compact sony_28 (about 9 lines in the box), Large
+ * sony_36, the dialog font (6 lines). */
 static const lv_font_t *txt_font = &sony_28;
 
 static lv_timer_t *status_timer = NULL;
@@ -1447,6 +1449,8 @@ static void construct_cb(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(text_box, LV_OPA_70, 0);
     lv_obj_set_style_pad_all(text_box, TEXT_PAD, 0);
     lv_obj_clear_flag(text_box, LV_OBJ_FLAG_SCROLLABLE);
+
+    txt_font = param_i_get(cfg.ui.digi_compact()) ? &sony_28 : &sony_36;
 
     for (int i = 0; i < TXT_SHOW; i++) {
         lv_obj_t *lbl = lv_label_create(text_box);
