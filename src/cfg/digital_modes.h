@@ -13,11 +13,14 @@
 extern "C" {
 #endif
 
-// Protocol type as stored in the digital_modes.type column (0 = FT8, 1 = FT4).
-// Values are part of the DB format and must not be changed.
+// Protocol type as stored in the digital_modes.type column (0 = FT8, 1 = FT4,
+// 2 = JS8, 3 = JS8 on GhostNet's frequencies). Values are part of the DB
+// format and must not be changed.
 typedef enum {
     CFG_DIG_TYPE_FT8,
     CFG_DIG_TYPE_FT4,
+    CFG_DIG_TYPE_JS8,
+    CFG_DIG_TYPE_JS8_GHOSTNET,
 } cfg_digital_type_t;
 
 // Load the next (dir > 0), closest (dir == 0) or previous (dir < 0) digital

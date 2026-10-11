@@ -25,10 +25,13 @@ extern "C" {
 
 typedef struct {
     lv_img_t        obj;
-    lv_img_dsc_t    *dsc;
+    lv_img_dsc_t    *dsc;       /* the image LVGL draws: a window into ring */
 
     uint32_t        line_len;
     uint8_t         *line_buf;
+
+    uint8_t         *ring;      /* 2 x height lines: each line is also kept one height below */
+    uint32_t        head;       /* ring line of the newest row, 0 .. height - 1 */
 
     lv_color_t      *palette;
     uint16_t        palette_cnt;

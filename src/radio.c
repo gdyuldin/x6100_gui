@@ -20,6 +20,7 @@
 #include <aether_radio/x6100_control/low/flow.h>
 #include <aether_radio/x6100_control/low/gpio.h>
 
+#include "audio.h"
 #include "cfg/cfg_api.h"
 #include "cfg/db.h"
 #include "globals.h"
@@ -432,6 +433,22 @@ void radio_set_pwr(float d) {
     WITH_RADIO_LOCK(x6100_control_txpwr_set(d));
 }
 
+void radio_set_tx_filter(uint16_t low, uint16_t high) {
+    radio_lock();
+    x6100_control_tx_filter_low_set(low);
+    x6100_control_tx_filter_high_set(high);
+    radio_unlock();
+}
+
+void radio_set_rx_dsp_off(bool off) {
+    radio_lock();
+    x6100_control_nr_set(!off && param_i_get(cfg.dsp.nr()));
+    x6100_control_nb_set(!off && param_i_get(cfg.dsp.nb()));
+    x6100_control_dnf_set(!off && param_i_get(cfg.dsp.dnf()));
+    x6100_control_dnf_update_set(!off && param_i_get(cfg.dsp.dnf_auto()));
+    radio_unlock();
+}
+
 x6100_vfo_t radio_toggle_vfo() {
     x6100_vfo_t new_vfo = (param_i_get(cfg.band.current_vfo()) == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A;
 
@@ -459,6 +476,10 @@ void radio_set_ptt(bool tx) {
 
 void radio_set_modem(bool tx) {
     WITH_RADIO_LOCK(x6100_control_modem_set(tx));
+}
+
+void radio_speaker_play(bool on) {
+    WITH_RADIO_LOCK(audio_set_play_mode(on ? AUDIO_PLAY_ON : AUDIO_PLAY_OFF));
 }
 
 void radio_set_morse_key(bool on) {
