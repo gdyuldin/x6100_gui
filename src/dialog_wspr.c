@@ -331,6 +331,9 @@ static void slot_time_str(char *out, size_t out_sz)
     snprintf(out, out_sz, "%02d%02d", tm_utc.tm_hour, tm_utc.tm_min);
 }
 
+/* Settings > Interface > Decoder text, read when the window opens. */
+static bool compact;
+
 static void on_spot(const wspr_spot_t *spot, void *ctx)
 {
     cell_data_t cd;
@@ -347,9 +350,15 @@ static void on_spot(const wspr_spot_t *spot, void *ctx)
      * SNR and distance are drawn separately by table_view, right
      * aligned, so they must not be repeated in the text.
      */
-    snprintf(cd.text, sizeof(cd.text), "%s  %-6s %-4s %2d dBm  %.1f Hz",
-             when, spot->callsign, spot->locator, spot->power_dbm,
-             (double)spot->freq_hz);
+    if (compact) {
+        snprintf(cd.text, sizeof(cd.text), "%s  %-6s %-4s %2d dBm  %.1f Hz",
+                 when, spot->callsign, spot->locator, spot->power_dbm,
+                 (double)spot->freq_hz);
+    } else {
+        /* Large: the audio offset does not fit before the distance. */
+        snprintf(cd.text, sizeof(cd.text), "%s %-6s %-4s %2d dBm",
+                 when, spot->callsign, spot->locator, spot->power_dbm);
+    }
 
     cd.meta.local_snr = (int16_t)lroundf(spot->snr_db);
 
@@ -728,16 +737,20 @@ static void construct_cb(lv_obj_t *parent)
                      WF_HEIGHT - TABLE_TOP);
 
     /*
-     * table_view inherits the dialog font (sony_36, 34 px rows), which
-     * fits only 8 rows and runs the spot text into the km column. sony_28
-     * with 1 px cell padding gives 22 px rows: 12 full rows in the 270 px
-     * table, and the longest normal line (about 495 px) ends before the
-     * distance (from about 500 px). FT8 keeps its own look; only this
-     * table is restyled.
+     * Settings > Interface > Decoder text, as in FT8.
+     * Large: the dialog font (sony_36, 34 px rows), 8 rows in the 270 px
+     * table; the row leaves out the audio offset, so a normal line
+     * (about 455 px) ends before even a 5-digit distance (468 px).
+     * Compact: sony_28 with 1 px cell padding, 22 px rows, 12 rows, the
+     * full line. table_view leaves the distance out of a row whose text
+     * would run into it.
      */
-    lv_obj_set_style_text_font(table, &sony_28, LV_PART_ITEMS);
-    lv_obj_set_style_pad_top(table, 1, LV_PART_ITEMS);
-    lv_obj_set_style_pad_bottom(table, 1, LV_PART_ITEMS);
+    compact = param_i_get(cfg.ui.digi_compact()) != 0;
+    if (compact) {
+        lv_obj_set_style_text_font(table, &sony_28, LV_PART_ITEMS);
+        lv_obj_set_style_pad_top(table, 1, LV_PART_ITEMS);
+        lv_obj_set_style_pad_bottom(table, 1, LV_PART_ITEMS);
+    }
     table_view_set_press_cb(NULL);
     {
         table_view_actions_t tv_actions = {
