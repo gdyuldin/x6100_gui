@@ -97,6 +97,7 @@ static void on_change_int32(Subject *subj, void *user_data);
 static void on_change_uint16(Subject *subj, void *user_data);
 static void on_change_uint8(Subject *subj, void *user_data);
 static void on_change_int8(Subject *subj, void *user_data);
+static void on_volume_change(Subject *subj, void *user_data);
 
 static void recover_processing_audio_inputs();
 static bool radio_tick();
@@ -246,7 +247,7 @@ void radio_start() {
     subject_subscribe((Subject*)cfg.filter.high(), on_high_filter_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg.cur.mode(), on_high_filter_change, NULL);
 
-    subject_subscribe_and_notify((Subject*)cfg.volume(), on_change_uint8, x6100_control_rxvol_set);
+    subject_subscribe_and_notify((Subject*)cfg.volume(), on_volume_change, NULL);
     subject_subscribe_and_notify((Subject*)cfg.squelch(), on_change_uint8, x6100_control_sql_set);
     subject_subscribe_and_notify((Subject*)cfg.pwr(), on_change_float, x6100_control_txpwr_set);
     subject_subscribe_and_notify((Subject*)cfg.dsp.output_gain(), on_change_float, x6100_control_adc_dac_gain_set);
@@ -363,6 +364,39 @@ bool radio_check_freq(int32_t freq) {
     return cfg_is_valid_hw_freq(freq);
 }
 
+/* Bluetooth listening: see radio_set_volume_sink() in radio.h. The
+ * mutex keeps a volume change and the hand-over from crossing, so the
+ * speaker can never be left at a volume while the headphones play. */
+static pthread_mutex_t   vol_sink_mux = PTHREAD_MUTEX_INITIALIZER;
+static radio_vol_sink_t  vol_sink = NULL;
+
+static void on_volume_change(Subject *subj, void *user_data) {
+    int32_t new_val = subject_i_get((SubjectInt*)subj);
+
+    (void)user_data;
+    pthread_mutex_lock(&vol_sink_mux);
+    if (vol_sink) {
+        vol_sink(new_val);
+        new_val = 0;
+    }
+    WITH_RADIO_LOCK(x6100_control_rxvol_set(new_val));
+    pthread_mutex_unlock(&vol_sink_mux);
+}
+
+void radio_set_volume_sink(radio_vol_sink_t fn) {
+    int32_t vol;
+
+    pthread_mutex_lock(&vol_sink_mux);
+    vol_sink = fn;
+    vol = mute ? 0 : param_i_get(cfg.volume());
+    if (fn) {
+        fn(vol);
+        vol = 0;
+    }
+    WITH_RADIO_LOCK(x6100_control_rxvol_set(vol));
+    pthread_mutex_unlock(&vol_sink_mux);
+}
+
 uint16_t radio_change_vol(int16_t df) {
     int32_t vol = param_i_get(cfg.volume());
     if (df == 0) {
@@ -381,8 +415,15 @@ uint16_t radio_change_vol(int16_t df) {
 }
 
 void radio_change_mute() {
+    pthread_mutex_lock(&vol_sink_mux);
     mute = !mute;
-    x6100_control_rxvol_set(mute ? 0 : param_i_get(cfg.volume()));
+    if (vol_sink) {
+        /* Bluetooth listening: mute the headphones, speaker stays 0. */
+        vol_sink(mute ? 0 : param_i_get(cfg.volume()));
+    } else {
+        x6100_control_rxvol_set(mute ? 0 : param_i_get(cfg.volume()));
+    }
+    pthread_mutex_unlock(&vol_sink_mux);
 }
 
 void radio_start_atu() {
