@@ -193,6 +193,7 @@ static ParamInt *cfg_theme(void) { return param_ref<ParamInt>(cfg_instance().p_t
 static ParamInt *cfg_meter_color(void) { return param_ref<ParamInt>(cfg_instance().p_meter_color); }
 static ParamInt *cfg_ft8_info(void) { return param_ref<ParamInt>(cfg_instance().p_ft8_info); }
 static ParamInt *cfg_swr_color(void) { return param_ref<ParamInt>(cfg_instance().p_swr_color); }
+static ParamInt *cfg_digi_compact(void) { return param_ref<ParamInt>(cfg_instance().p_digi_text_compact); }
 
 // --- Computed params (current operating state, not persisted) ---
 static ComputedParamInt *cfg_fg_freq(void) { return param_ref<ComputedParamInt>(cfg_instance().cp_fg_freq); }
@@ -255,6 +256,7 @@ extern "C" const cfg_refs_t cfg = {
         .meter_color = &cfg_meter_color,
         .ft8_info = &cfg_ft8_info,
         .swr_color = &cfg_swr_color,
+        .digi_compact = &cfg_digi_compact,
     },
     .encoder = {
         .bind = &cfg_encoder_bind,
