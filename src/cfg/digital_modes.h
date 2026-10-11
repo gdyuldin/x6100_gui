@@ -13,11 +13,13 @@
 extern "C" {
 #endif
 
-// Protocol type as stored in the digital_modes.type column (0 = FT8, 1 = FT4).
-// Values are part of the DB format and must not be changed.
+// Protocol type as stored in the digital_modes.type column. Values are part
+// of the DB format: each is written out and never reused or changed.
 typedef enum {
-    CFG_DIG_TYPE_FT8,
-    CFG_DIG_TYPE_FT4,
+    CFG_DIG_TYPE_FT8 = 0,
+    CFG_DIG_TYPE_FT4 = 1,
+    /* 2 and 3: JS8 (randal007) */
+    CFG_DIG_TYPE_FT2 = 4,
 } cfg_digital_type_t;
 
 // Load the next (dir > 0), closest (dir == 0) or previous (dir < 0) digital
