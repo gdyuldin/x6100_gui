@@ -101,9 +101,16 @@ static void panel_update_info_cb(const char *text) {
 static void text_size_cb(Subject *subj, void *user_data) {
     const lv_font_t *font = cfg.ui.digi_compact()->get() ? &sony_28 : &sony_38;
 
+    size_t len;
+
     lv_obj_set_style_text_font(obj, font, LV_PART_MAIN);
     update_line_count();
-    truncate();
+    /* truncate() cuts one line per call: Compact -> Large can leave
+     * three too many. */
+    do {
+        len = strlen(buf);
+        truncate();
+    } while (strlen(buf) != len);
     lv_label_set_text_static(obj, buf);
 }
 
