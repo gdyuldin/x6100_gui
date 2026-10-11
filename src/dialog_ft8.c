@@ -37,6 +37,7 @@
 #include "ft8/audio_worker.h"
 #include "ft8/cq_scheduler.h"
 #include "ft8_ui/table_view.h"
+#include "ft8_ui/map_view.h"
 #include "ft8/tx_worker.h"
 #include "widgets/lv_waterfall.h"
 #include "widgets/lv_finder.h"
@@ -89,6 +90,9 @@ static ftx_tx_msg_t tx_msg;
  * `table` so existing fade/group/anim call sites need no rename. */
 #define table (table_view_obj())
 
+/* Object that receives MFK keys: the map when it is shown, else the table */
+#define focus_obj (map_shown ? map_view_obj() : table)
+
 static lv_timer_t *timer = NULL;
 static lv_anim_t   fade;
 static bool        fade_run        = false;
@@ -96,6 +100,8 @@ static bool        disable_buttons = false;
 
 static lv_obj_t *finder;
 static lv_obj_t *waterfall;
+
+static bool      map_shown = false;
 
 /* Audio capture, decimation, FFT, decoder thread and stop-flag plumbing
  * all live in ft8/audio_worker.c. The dialog just creates/destroys the
@@ -135,6 +141,7 @@ static const char * tx_cq_label_getter();
 static const char * tx_call_label_getter();
 static const char * hold_freq_label_getter();
 static const char * auto_label_getter();
+static const char * map_label_getter();
 
 static void show_cq_all_cb(struct button_data_t *btn_data);
 static void mode_ft4_ft8_cb(struct button_data_t *btn_data);
@@ -145,6 +152,8 @@ static void hold_tx_freq_cb(struct button_data_t *btn_data);
 static void mode_auto_cb(struct button_data_t *btn_data);
 static void cq_modifier_cb(struct button_data_t *btn_data);
 static void time_sync(struct button_data_t *btn_data);
+static void map_toggle_cb(struct button_data_t *btn_data);
+static void map_home_cb(struct button_data_t *btn_data);
 
 static void force_save_qso(struct button_data_t *btn_data);
 
@@ -178,21 +187,23 @@ static button_data_t button_page_2 = { .type=BTN_TEXT, .label = "(Page: 2:3)", .
 static button_data_t button_hold_freq = { .type=BTN_TEXT_FN, .label_fn = hold_freq_label_getter, .press = hold_tx_freq_cb };
 static button_data_t button_auto_en_dis = { .type=BTN_TEXT_FN, .label_fn = auto_label_getter, .press = mode_auto_cb };
 static button_data_t button_force_save = { .type=BTN_TEXT, .label = "Force QSO\nsave", .press = force_save_qso };
+static button_data_t button_map = { .type=BTN_TEXT_FN, .label_fn = map_label_getter, .press = map_toggle_cb };
 
 static button_data_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:3)", .press = button_next_page_cb, .next=&btn_page_1};
 static button_data_t button_cq_mod = { .type=BTN_TEXT, .label = "CQ\nModifier", .press = cq_modifier_cb };
 static button_data_t button_time_sync = { .type=BTN_TEXT, .label = "Time\nSync", .press = time_sync };
+static button_data_t button_map_home = { .type=BTN_TEXT, .label = "Map\nHome", .press = map_home_cb };
 
 static buttons_page_t btn_page_1 = {
     {&button_page_1, &button_show_cq_all, &button_mode_ft4_ft8, &button_tx_cq_en_dis, &button_tx_call_en_dis}
 };
 
 static buttons_page_t btn_page_2 = {
-    {&button_page_2, &button_hold_freq, &button_auto_en_dis, &button_force_save}
+    {&button_page_2, &button_hold_freq, &button_auto_en_dis, &button_force_save, &button_map}
 };
 
 static buttons_page_t btn_page_3 = {
-    {&button_page_3, &button_cq_mod, &button_time_sync}
+    {&button_page_3, &button_cq_mod, &button_time_sync, &button_map_home}
 };
 
 static dialog_t dialog = {
@@ -302,6 +313,7 @@ static void destruct_cb() {
     keyboard_close();
     worker_done();
     table_view_destroy();
+    map_view_destroy();
 
     waterfall_set_enabled(true);
     spectrum_set_enabled(true);
@@ -341,6 +353,7 @@ static void load_band(int8_t dir) {
 /// @brief Clean waterfall and table
 static void clean_screen() {
     table_view_reset();
+    map_view_clear();
     lv_waterfall_clear_data(waterfall);
 
     int32_t *c = malloc(sizeof(int32_t));
@@ -373,6 +386,12 @@ static void msg_timer(lv_timer_t *t) {
 
 static void fade_anim(void * obj, int32_t v) {
     lv_obj_set_style_opa_layered(obj, v, 0);
+
+    /* The map covers the waterfall as well, fade it together with the table */
+    lv_obj_t *map = map_view_obj();
+    if (map) {
+        lv_obj_set_style_opa_layered(map, v, 0);
+    }
 }
 
 static void fade_ready(lv_anim_t * a) {
@@ -498,6 +517,19 @@ static void construct_cb(lv_obj_t *parent) {
     /* Settings > Interface > FT8/FT4 info: distance, country or both. */
     table_view_set_info((table_view_info_t)param_i_get(cfg.ui.ft8_info()));
 
+    /* Map */
+
+    map_view_set_home(PARAM_T_GET(cfg.qth()));
+    map_view_build(dialog.obj, 13, 13, WIDTH, 325);
+    map_view_actions_t map_actions = {
+        .on_close      = on_table_close,
+        .on_vol_change = on_table_vol_change,
+    };
+    map_view_set_actions(&map_actions);
+    if (!map_shown) {
+        lv_obj_add_flag(map_view_obj(), LV_OBJ_FLAG_HIDDEN);
+    }
+
     /* Fade */
 
     lv_anim_init(&fade);
@@ -508,7 +540,7 @@ static void construct_cb(lv_obj_t *parent) {
 
     /* * */
 
-    lv_group_add_obj(keyboard_group, table);
+    lv_group_add_obj(keyboard_group, focus_obj);
     lv_group_set_editing(keyboard_group, true);
 
     mem_save(MEM_BACKUP_ID);
@@ -590,6 +622,10 @@ const char *auto_label_getter() {
     static char buf[32];
     sprintf(buf, "Auto:\n%s", param_i_get(cfg.ft8.auto_mode()) ? "Enabled": "Disabled");
     return buf;
+}
+
+const char *map_label_getter() {
+    return map_shown ? "Show:\nTable" : "Show:\nMap";
 }
 
 static void show_cq_all_cb(struct button_data_t *btn_data) {
@@ -721,6 +757,37 @@ static void time_sync(struct button_data_t *btn_data) {
     }
 }
 
+static void set_map_shown(bool shown) {
+    lv_group_remove_obj(focus_obj);
+    map_shown = shown;
+
+    if (map_shown) {
+        lv_obj_clear_flag(map_view_obj(), LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(map_view_obj(), LV_OBJ_FLAG_HIDDEN);
+    }
+
+    lv_group_add_obj(keyboard_group, focus_obj);
+    lv_group_set_editing(keyboard_group, true);
+}
+
+static void map_toggle_cb(struct button_data_t *btn_data) {
+    if (disable_buttons) return;
+
+    set_map_shown(!map_shown);
+    buttons_refresh(btn_data);
+}
+
+/* "Show: Map/Table" is on another page, its label follows when that page is loaded */
+static void map_home_cb(struct button_data_t *btn_data) {
+    if (disable_buttons) return;
+
+    if (!map_shown) {
+        set_map_shown(true);
+    }
+    map_view_go_home();
+}
+
 static void force_save_qso(struct button_data_t *btn_data) {
     if (ftx_qso_processor_can_save_qso(qso_processor)) {
         ftx_qso_processor_force_save_qso(qso_processor);
@@ -774,7 +841,7 @@ static void on_table_vol_change(int32_t delta) {
 }
 
 static void keyboard_open() {
-    lv_group_remove_obj(table);
+    lv_group_remove_obj(focus_obj);
     textarea_window_open(keyboard_ok_cb, keyboard_cancel_cb);
     lv_obj_t *text = textarea_window_text();
 
@@ -794,7 +861,7 @@ static void keyboard_open() {
 
 static void keyboard_close() {
     textarea_window_close();
-    lv_group_add_obj(keyboard_group, table);
+    lv_group_add_obj(keyboard_group, focus_obj);
     lv_group_set_editing(keyboard_group, true);
     disable_buttons = false;
 }
@@ -879,6 +946,23 @@ static void add_tx_text(const char * text) {
     scheduler_put(table_view_add_msg_cb, &cell_data, sizeof(cell_data_t));
 }
 
+/*
+ * Addressee of a "CALL1 CALL2 ..." message: the first word, without the <> of a
+ * hashed call. False for an unresolved hash ("<...>").
+ */
+static bool msg_call_to(const char *text, char *call, size_t size) {
+    while (*text == ' ') text++;
+    if (*text == '<') text++;
+
+    size_t n = 0;
+    while (text[n] != '\0' && text[n] != ' ' && text[n] != '>' && n + 1 < size) {
+        call[n] = text[n];
+        n++;
+    }
+    call[n] = '\0';
+    return n > 0 && strstr(call, "...") == NULL;
+}
+
 /**
  * Parse and add RX messages to the table
  */
@@ -905,6 +989,41 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     }
     free(old_msg);
 
+    qso_log_search_worked_t worked_type = SEARCH_WORKED_NO;
+    if (meta.type == FTX_MSG_TYPE_CQ) {
+        worked_type = qso_log_search_worked(
+            meta.call_de,
+            param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
+            qso_log_freq_to_band(cparam_i_get(cfg.cur.fg_freq()))
+        );
+    }
+
+    if (meta.grid[0] != '\0') {
+        map_station_t st;
+        strncpy(st.call, meta.call_de, sizeof(st.call) - 1);
+        st.call[sizeof(st.call) - 1] = '\0';
+        strncpy(st.grid, meta.grid, sizeof(st.grid) - 1);
+        st.grid[sizeof(st.grid) - 1] = '\0';
+        if (meta.to_me) {
+            st.kind = MAP_STATION_TO_ME;
+        } else if (meta.type == FTX_MSG_TYPE_CQ) {
+            st.kind = (worked_type == SEARCH_WORKED_NO) ? MAP_STATION_CQ : MAP_STATION_WORKED;
+        } else {
+            st.kind = MAP_STATION_OTHER;
+        }
+        scheduler_put(map_view_add_station_cb, &st, sizeof(st));
+    }
+
+    /* Messages between two stations, for the arcs on the map */
+    if (meta.type >= FTX_MSG_TYPE_GRID && meta.type <= FTX_MSG_TYPE_73) {
+        map_qso_t qso = {0};
+        if (msg_call_to(text, qso.call_to, sizeof(qso.call_to))) {
+            strncpy(qso.call_de, meta.call_de, sizeof(qso.call_de) - 1);
+            qso.to_me = meta.to_me;
+            scheduler_put(map_view_add_qso_cb, &qso, sizeof(qso));
+        }
+    }
+
     ft8_cell_type_t cell_type;
     if (meta.to_me) {
         cell_type = CELL_RX_TO_ME;
@@ -917,13 +1036,7 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     }
 
     cell_data_t  cell_data;
-    if (meta.type == FTX_MSG_TYPE_CQ) {
-        cell_data.worked_type = qso_log_search_worked(
-            meta.call_de,
-            param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? MODE_FT8 : MODE_FT4,
-            qso_log_freq_to_band(cparam_i_get(cfg.cur.fg_freq()))
-        );
-    }
+    cell_data.worked_type = worked_type;
 
     cell_data.cell_type = cell_type;
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
