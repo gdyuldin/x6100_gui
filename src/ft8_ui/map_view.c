@@ -24,13 +24,23 @@
  *  LAT_LIMIT_N..LAT_LIMIT_S.
  *
  *  MFK press cycles what MFK rotation does: longitude, latitude (zoomed in
- *  only) and zoom. The current mode is shown in the top right corner.
+ *  only) and zoom. Like the knob info of the main screen, the bottom left
+ *  corner shows what MFK rotation changes and its value, e.g. "Zoom: 3x".
  *
  *  Land, sea, borders and the Maidenhead field and square lines are rendered
  *  into a canvas on every change; grid labels, stations, the mode indicator
  *  and the legend are drawn on top in LV_EVENT_DRAW_POST. Zoomed in far enough
  *  for the squares, their digits are shown as rulers along the top and left
  *  edge (like on a paper map) instead of in every square.
+ *
+ *  The night side is darkened, with a gradient across the twilight band (the
+ *  greyline, sun 0..12 degrees below the horizon), and the subsolar point is
+ *  marked. The sun position is updated and the canvas redrawn every minute.
+ *
+ *  Stations exchanging messages are joined by a dashed arc: the great circle
+ *  (the direction the signal takes) lifted towards the top of the screen as a
+ *  sketch of the skywave hop over the ionosphere. Arcs fade out until QSO_TTL
+ *  after the last message of the pair; arcs to the own station are red.
  */
 
 #define LAT_TOP         80.0f
@@ -44,7 +54,23 @@
 #define RULER_W         14          /* width of the left square ruler */
 #define MAX_STATIONS    128
 #define STATION_TTL     (30 * 60)   /* seconds */
-#define MAX_CROSS       128         /* polygon edge crossings per row, at most 255 */
+#define MAX_CROSS       240         /* polygon edge crossings per row, at most 255 */
+#define NIGHT_DARK      160         /* darkening of the night side, of 255 */
+#define TWILIGHT_SIN    0.2079f     /* sin(12 deg), the twilight band below the horizon */
+#define SUN_UPDATE_MS   60000
+#define SUN_COLOR       0xFFD000
+#define DEG             ((float)M_PI / 180.0f)
+#define MAX_QSOS        32
+#define QSO_TTL         120         /* seconds since the last message of a pair */
+#define DASH_ON         6           /* px */
+#define DASH_OFF        4
+#define COLOR_QSO       0x80D0FF
+#define COLOR_QSO_ME    0xFF4040
+#define ARC_POINTS      48          /* samples along a QSO arc */
+#define ARC_LIFT        0.15f       /* arc height, part of the chord */
+#define ARC_LIFT_MIN    6.0f        /* px */
+#define ARC_LIFT_MAX    60.0f
+#define ARC_MARGIN      4.0f        /* px, arcs are lowered to stay inside the top of the map */
 
 #define COLOR_SEA       0x0B1E33
 #define COLOR_LAND      0x2B4A2B
@@ -57,6 +83,11 @@
 
 extern lv_font_t sony_10;
 extern lv_font_t sony_12;
+extern lv_font_t sony_24;
+
+/* Same colors as the knob info of the main screen (knobs.cpp) */
+#define KNOB_ACTIVE     "70ff70"
+#define KNOB_INACTIVE   "b0b0b0"
 
 typedef enum {
     MODE_LON = 0,
@@ -72,6 +103,13 @@ typedef struct {
     time_t             heard;
 } station_t;
 
+typedef struct {
+    char   a[13];
+    char   b[13];
+    bool   a_is_me;
+    time_t heard;
+} qso_t;
+
 /* Bounding box of a land ring, 0.1 degree */
 typedef struct {
     int16_t lon0, lon1;
@@ -85,7 +123,7 @@ typedef struct {
     int   idx[CALLS_PER_SPOT];
 } spot_t;
 
-static const uint8_t zoom_levels[] = {1, 2, 3, 4, 6};
+static const uint8_t zoom_levels[] = {1, 2, 3, 4, 6, 8, 12};
 #define ZOOM_COUNT ((int)(sizeof(zoom_levels) / sizeof(zoom_levels[0])))
 
 static lv_obj_t           *s_obj    = NULL;
@@ -102,10 +140,15 @@ static float               s_center_lat;
 static int                 s_zoom;          /* index into zoom_levels */
 static map_mode_t          s_mode;
 
+static float               s_sun_lat, s_sun_lon;    /* subsolar point */
+static float              *s_sun_cos = NULL;        /* per column, cos(lon - sun lon) */
+static lv_timer_t         *s_sun_timer = NULL;
+
 static bool                s_home_valid = false;
 static float               s_home_lat, s_home_lon;
 
 static station_t           s_stations[MAX_STATIONS];
+static qso_t               s_qsos[MAX_QSOS];
 static map_view_actions_t  s_actions = {0};
 
 static void event_cb(lv_event_t *e);
@@ -357,12 +400,100 @@ static void render_lines(const int16_t (*p)[2], const uint16_t *len, uint16_t co
     }
 }
 
+/*
+ * Subsolar point from the low precision solar formulas of the Astronomical
+ * Almanac (about 0.01 degree). Double precision, the day count times the
+ * sidereal rate needs it; this runs once a minute.
+ */
+static void update_sun(time_t now) {
+    double n   = now / 86400.0 - 10957.5;                       /* days since J2000.0 */
+    double rad = M_PI / 180.0;
+
+    double l   = fmod(280.460 + 0.9856474 * n, 360.0);          /* mean longitude */
+    double g   = fmod(357.528 + 0.9856003 * n, 360.0) * rad;    /* mean anomaly */
+    double lam = (l + 1.915 * sin(g) + 0.020 * sin(2 * g)) * rad;
+    double eps = (23.439 - 0.0000004 * n) * rad;
+
+    double ra   = atan2(cos(eps) * sin(lam), cos(lam)) / rad;
+    double gmst = fmod(280.46061837 + 360.98564736629 * n, 360.0);
+
+    s_sun_lat = (float)(asin(sin(eps) * sin(lam)) / rad);
+    s_sun_lon = wrap_lon((float)fmod(ra - gmst, 360.0));
+}
+
+/*
+ * The panel is wired with 6 bits per channel (lcd_rgb666_pins) and the low two
+ * bits are dropped, which turns the twilight gradient over the dark sea into
+ * visible steps. Ordered dithering spreads them over a 4x4 pattern instead.
+ */
+static const uint8_t bayer4[4][4] = {
+    {0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5},
+};
+
+/* v16 is the wanted 8 bit value in 1/16 steps, t16 the threshold (0..3.75 steps) */
+static uint8_t dither6(uint32_t v16, uint32_t t16) {
+    uint32_t v = (v16 + t16) >> 4;
+    return (v > 255) ? 252 : (v & 0xFC);
+}
+
+static lv_color_t darken(lv_color_t c, uint8_t dark, int x, int y) {
+#if LV_COLOR_DEPTH == 32
+    uint32_t keep = 255 - dark;
+    uint32_t t16  = bayer4[y & 3][x & 3] * 4;
+
+    c.ch.red   = dither6(c.ch.red * keep * 16 / 255, t16);
+    c.ch.green = dither6(c.ch.green * keep * 16 / 255, t16);
+    c.ch.blue  = dither6(c.ch.blue * keep * 16 / 255, t16);
+    return c;
+#else
+    return lv_color_mix(lv_color_black(), c, dark);
+#endif
+}
+
+/*
+ * Darken by the sun elevation h: sin(h) = sin(lat) sin(decl) + cos(lat) cos(decl) cos(lon - sun lon),
+ * split into a per row and a per column part so a pixel costs one multiply-add.
+ */
+static void render_night(void) {
+    float sin_d = sinf(s_sun_lat * DEG);
+    float cos_d = cosf(s_sun_lat * DEG);
+
+    for (lv_coord_t x = 0; x < s_w; x++) {
+        float lon = s_center_lon + (x + 0.5f - s_w / 2.0f) / s_ppd;
+        s_sun_cos[x] = cosf((lon - s_sun_lon) * DEG);
+    }
+
+    for (lv_coord_t y = 0; y < s_h; y++) {
+        float lat = s_center_lat - (y + 0.5f - s_h / 2.0f) / s_ppd;
+        float a   = sinf(lat * DEG) * sin_d;
+        float b   = cosf(lat * DEG) * cos_d;
+
+        /* Whole row in daylight */
+        if (a - fabsf(b) >= 0.0f) continue;
+
+        lv_color_t *row = &s_buf[y * s_w];
+        for (lv_coord_t x = 0; x < s_w; x++) {
+            float e = a + b * s_sun_cos[x];
+            if (e >= 0.0f) continue;
+
+            uint8_t dark = (e <= -TWILIGHT_SIN) ? NIGHT_DARK : (uint8_t)(NIGHT_DARK * -e / TWILIGHT_SIN);
+            row[x] = darken(row[x], dark, x, y);
+        }
+    }
+}
+
 static void render(void) {
     render_land();
     render_grid();
     render_lines(world_admin1_pts, world_admin1_len, world_admin1_count, COLOR_ADMIN1);
     render_lines(world_border_pts, world_border_len, world_border_count, COLOR_BORDER);
+    render_night();
     lv_obj_invalidate(s_obj);
+}
+
+static void sun_timer_cb(lv_timer_t *t) {
+    update_sun(time(NULL));
+    render();
 }
 
 /* -------- Overlay ------------------------------------------------------ */
@@ -431,6 +562,158 @@ static int kind_rank(map_station_kind_t kind) {
 
 static bool squares_shown(void) {
     return s_ppd >= SQUARE_LINE_PX;
+}
+
+/* Position of a QSO end: the own station or a plotted one */
+static bool qso_end(const char *call, bool is_me, time_t now, float *lat, float *lon) {
+    if (is_me) {
+        *lat = s_home_lat;
+        *lon = s_home_lon;
+        return s_home_valid;
+    }
+    for (int i = 0; i < MAX_STATIONS; i++) {
+        const station_t *st = &s_stations[i];
+        if (st->call[0] != '\0' && strcmp(st->call, call) == 0 && now - st->heard <= STATION_TTL) {
+            *lat = st->lat;
+            *lon = st->lon;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Dashes along one straight piece of the arc, phase carries the pattern over pieces */
+static void dash_piece(lv_draw_ctx_t *draw_ctx, const lv_draw_line_dsc_t *dsc,
+                       float x0, float y0, float x1, float y1, float *phase) {
+    float len    = hypotf(x1 - x0, y1 - y0);
+    float period = DASH_ON + DASH_OFF;
+    float pos    = 0.0f;
+
+    while (pos < len) {
+        float in   = fmodf(*phase, period);
+        float step = LV_MIN((in < DASH_ON ? DASH_ON : period) - in, len - pos);
+
+        if (in < DASH_ON) {
+            lv_point_t p0 = {
+                s_obj->coords.x1 + (lv_coord_t)lroundf(x0 + (x1 - x0) * pos / len),
+                s_obj->coords.y1 + (lv_coord_t)lroundf(y0 + (y1 - y0) * pos / len),
+            };
+            lv_point_t p1 = {
+                s_obj->coords.x1 + (lv_coord_t)lroundf(x0 + (x1 - x0) * (pos + step) / len),
+                s_obj->coords.y1 + (lv_coord_t)lroundf(y0 + (y1 - y0) * (pos + step) / len),
+            };
+            lv_draw_line(draw_ctx, dsc, &p0, &p1);
+        }
+        pos    += step;
+        *phase += step;
+    }
+}
+
+/*
+ * Path between two stations: the great circle (the direction the signal takes)
+ * lifted into an arc that rises towards the top of the screen, as a sketch of
+ * the skywave going up to the ionosphere and back, not the ground track. The
+ * lift is a half sine of ARC_LIFT of the chord, so short paths curve as well.
+ */
+static void draw_arc(lv_draw_ctx_t *draw_ctx, float lat0, float lon0, float lat1, float lon1,
+                     uint32_t color, lv_opa_t opa) {
+    float v0[3] = { cosf(lat0 * DEG) * cosf(lon0 * DEG), cosf(lat0 * DEG) * sinf(lon0 * DEG), sinf(lat0 * DEG) };
+    float v1[3] = { cosf(lat1 * DEG) * cosf(lon1 * DEG), cosf(lat1 * DEG) * sinf(lon1 * DEG), sinf(lat1 * DEG) };
+    float dot   = LV_CLAMP(-1.0f, v0[0] * v1[0] + v0[1] * v1[1] + v0[2] * v1[2], 1.0f);
+    float d     = acosf(dot);
+
+    /* Same point, or antipodes where the path is undefined */
+    if (d < 0.001f || d > (float)M_PI - 0.001f) return;
+
+    float xs[ARC_POINTS + 1], ys[ARC_POINTS + 1];
+    float sin_d = sinf(d);
+    float world = 360.0f * s_ppd;
+
+    /* Great circle points, x unwrapped so the path is continuous across the date line */
+    for (int i = 0; i <= ARC_POINTS; i++) {
+        float t  = (float)i / ARC_POINTS;
+        float k0 = sinf((1.0f - t) * d) / sin_d;
+        float k1 = sinf(t * d) / sin_d;
+        float x  = k0 * v0[0] + k1 * v1[0];
+        float y  = k0 * v0[1] + k1 * v1[1];
+        float z  = k0 * v0[2] + k1 * v1[2];
+
+        xs[i] = lon_to_x(atan2f(y, x) / DEG);
+        ys[i] = lat_to_y(atan2f(z, sqrtf(x * x + y * y)) / DEG);
+
+        if (i > 0) {
+            while (xs[i] - xs[i - 1] > world / 2) xs[i] -= world;
+            while (xs[i] - xs[i - 1] < -world / 2) xs[i] += world;
+        }
+    }
+
+    /* Lift perpendicular to the chord, towards the top (east for a north-south chord) */
+    float cx  = xs[ARC_POINTS] - xs[0];
+    float cy  = ys[ARC_POINTS] - ys[0];
+    float len = sqrtf(cx * cx + cy * cy);
+    if (len < 1.0f) return;
+
+    float nx = cy / len, ny = -cx / len;
+    if (ny > 0.0f || (ny == 0.0f && nx < 0.0f)) {
+        nx = -nx;
+        ny = -ny;
+    }
+    float lift = LV_CLAMP(ARC_LIFT_MIN, len * ARC_LIFT, ARC_LIFT_MAX);
+
+    /* Lower the arc where it would rise out of the top of the map (only where the path itself is inside) */
+    for (int i = 1; i < ARC_POINTS; i++) {
+        float up = -ny * sinf((float)M_PI * i / ARC_POINTS);
+        if (up > 0.0f && ys[i] >= ARC_MARGIN) {
+            lift = LV_MIN(lift, (ys[i] - ARC_MARGIN) / up);
+        }
+    }
+
+    for (int i = 1; i < ARC_POINTS; i++) {
+        float h = lift * sinf((float)M_PI * i / ARC_POINTS);
+        xs[i] += nx * h;
+        ys[i] += ny * h;
+    }
+
+    lv_draw_line_dsc_t dsc;
+    lv_draw_line_dsc_init(&dsc);
+    dsc.color       = lv_color_hex(color);
+    dsc.width       = 2;
+    dsc.opa         = opa;
+    dsc.round_start = 1;
+    dsc.round_end   = 1;
+
+    float min_x = xs[0], max_x = xs[0];
+    for (int i = 1; i <= ARC_POINTS; i++) {
+        min_x = LV_MIN(min_x, xs[i]);
+        max_x = LV_MAX(max_x, xs[i]);
+    }
+
+    /* A path leaving one side of the map comes back on the other */
+    for (int k = -1; k <= 1; k++) {
+        float shift = k * world;
+        float phase = 0.0f;
+
+        if (max_x + shift < 0 || min_x + shift >= s_w) continue;
+
+        for (int i = 1; i <= ARC_POINTS; i++) {
+            dash_piece(draw_ctx, &dsc, xs[i - 1] + shift, ys[i - 1], xs[i] + shift, ys[i], &phase);
+        }
+    }
+}
+
+static void draw_qsos(lv_draw_ctx_t *draw_ctx, time_t now) {
+    for (int i = 0; i < MAX_QSOS; i++) {
+        const qso_t *q   = &s_qsos[i];
+        time_t       age = now - q->heard;
+        float        lat0, lon0, lat1, lon1;
+
+        if (q->a[0] == '\0' || age > QSO_TTL) continue;
+        if (!qso_end(q->a, q->a_is_me, now, &lat0, &lon0) || !qso_end(q->b, false, now, &lat1, &lon1)) continue;
+
+        /* Fade from full to 40% over the lifetime */
+        lv_opa_t opa = LV_OPA_COVER - (lv_opa_t)(age * (LV_OPA_COVER - LV_OPA_40) / QSO_TTL);
+        draw_arc(draw_ctx, lat0, lon0, lat1, lon1, q->a_is_me ? COLOR_QSO_ME : COLOR_QSO, opa);
+    }
 }
 
 /* Strips holding the square rulers, relative to the map */
@@ -657,42 +940,88 @@ static void draw_calls(lv_draw_ctx_t *draw_ctx, time_t now) {
     }
 }
 
-static void draw_mode(lv_draw_ctx_t *draw_ctx, lv_area_t *area) {
+/* "104E" / "35N", the degree sign is not in the font */
+static void format_deg(char *buf, size_t size, float deg, char pos, char neg) {
+    int d = (int)lroundf(deg);
+    if (d == 0) {
+        snprintf(buf, size, "0");
+    } else {
+        snprintf(buf, size, "%i%c", abs(d), d > 0 ? pos : neg);
+    }
+}
+
+/*
+ * MFK info in the style of the main screen knob info: what rotation changes
+ * and its current value, the value highlighted as it is being edited. With
+ * draw false only the area is computed (to keep call labels clear of it).
+ */
+static void knob_info(lv_draw_ctx_t *draw_ctx, lv_coord_t bottom, lv_area_t *area, bool draw) {
     static const char *names[] = {
-        [MODE_LON]  = "< Lon >",
-        [MODE_LAT]  = "^ Lat v",
-        [MODE_ZOOM] = "- Zoom +",
+        [MODE_LON]  = "Lon",
+        [MODE_LAT]  = "Lat",
+        [MODE_ZOOM] = "Zoom",
     };
 
-    lv_draw_label_dsc_t label;
-    char                buf[32];
+    char val[16];
+    char buf[64];
 
+    switch (s_mode) {
+        case MODE_LON:
+            format_deg(val, sizeof(val), s_center_lon, 'E', 'W');
+            break;
+        case MODE_LAT:
+            format_deg(val, sizeof(val), s_center_lat, 'N', 'S');
+            break;
+        default:
+            snprintf(val, sizeof(val), "%ix", zoom_levels[s_zoom]);
+            break;
+    }
+    snprintf(buf, sizeof(buf), LV_SYMBOL_DOWN " #" KNOB_INACTIVE " %s:# #" KNOB_ACTIVE " %s#", names[s_mode], val);
+
+    lv_draw_label_dsc_t label;
     lv_draw_label_dsc_init(&label);
-    label.font  = &sony_16;
+    label.font  = &sony_24;
     label.align = LV_TEXT_ALIGN_LEFT;
     label.color = lv_color_white();
+    label.flag  = LV_TEXT_FLAG_RECOLOR;
 
-    snprintf(buf, sizeof(buf), "MFK: %s   %ix", names[s_mode], zoom_levels[s_zoom]);
-    lv_coord_t w = text_width(label.font, buf) + 12;
+    lv_point_t size;
+    lv_txt_get_size(&size, buf, label.font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_RECOLOR);
 
-    area->x1 = s_w - w;
-    area->y1 = 0;
-    area->x2 = s_w - 1;
-    area->y2 = label.font->line_height + 5;
+    /* Right of the latitude ruler when it is shown */
+    lv_coord_t x = squares_shown() ? RULER_W + 4 : 6;
 
-    draw_box(draw_ctx, area, LV_OPA_70);
-    draw_text(draw_ctx, &label, area->x1 + 6, 3, w, buf);
+    area->x1 = x;
+    area->x2 = x + size.x + 10 - 1;
+    area->y2 = bottom;
+    area->y1 = bottom - label.font->line_height - 6 + 1;
+
+    if (!draw) return;
+
+    lv_draw_rect_dsc_t bg;
+    lv_draw_rect_dsc_init(&bg);
+    bg.bg_color = lv_color_black();
+    bg.bg_opa   = LV_OPA_60;
+    bg.radius   = 8;
+
+    lv_area_t abs = *area;
+    lv_area_move(&abs, s_obj->coords.x1, s_obj->coords.y1);
+    lv_draw_rect(draw_ctx, &bg, &abs);
+    draw_text(draw_ctx, &label, area->x1 + 5, area->y1 + 3, size.x + 2, buf);
 }
 
 static void draw_overlay(lv_event_t *e) {
     lv_draw_ctx_t       *draw_ctx = lv_event_get_draw_ctx(e);
     lv_draw_label_dsc_t  label;
-    char                 buf[96];
+    char                 buf[128];
 
     draw_grid_labels(draw_ctx);
 
-    /* Stations, most important kinds on top */
+    /* Arcs below the dots */
     time_t now   = time(NULL);
+    draw_qsos(draw_ctx, now);
+
+    /* Stations, most important kinds on top */
     int    count = 0;
     bool   calls = zoom_levels[s_zoom] >= CALLS_ZOOM;
 
@@ -719,25 +1048,30 @@ static void draw_overlay(lv_event_t *e) {
         }
     }
 
+    float sun_x = lon_to_x(s_sun_lon);
+    float sun_y = lat_to_y(s_sun_lat);
+    if (sun_x >= 0 && sun_x < s_w && sun_y >= 0 && sun_y < s_h) {
+        draw_dot(draw_ctx, sun_x, sun_y, 7, SUN_COLOR);
+    }
+
     if (s_home_valid) {
         draw_dot(draw_ctx, lon_to_x(s_home_lon), lat_to_y(s_home_lat), 6, 0xFFFFFF);
         draw_dot(draw_ctx, lon_to_x(s_home_lon), lat_to_y(s_home_lat), 2, 0x000000);
     }
 
-    /* Mode indicator and legend, call labels keep clear of them */
-    lv_area_t mode_area;
-    draw_mode(draw_ctx, &mode_area);
-
+    /* Legend and MFK info, call labels keep clear of them */
     lv_area_t legend = {
         .x1 = 0,
         .y1 = s_h - label.font->line_height - 6,
         .x2 = s_w - 1,
         .y2 = s_h - 1,
     };
+    lv_area_t knob;
+    knob_info(draw_ctx, legend.y1 - 3, &knob, false);
 
     if (calls) {
         s_taken_n = 0;
-        take_area(&mode_area);
+        take_area(&knob);
         take_area(&legend);
         if (squares_shown()) {
             lv_area_t top, left;
@@ -750,8 +1084,10 @@ static void draw_overlay(lv_event_t *e) {
 
     draw_box(draw_ctx, &legend, LV_OPA_70);
     label.flag = LV_TEXT_FLAG_RECOLOR;
-    snprintf(buf, sizeof(buf), "#00DD00 CQ#   #6A8A40 Worked#   #E0C000 Other#   #FF4040 To me#      Stations: %i", count);
+    snprintf(buf, sizeof(buf), "#00DD00 CQ#   #6A8A40 Worked#   #E0C000 Other#   #FF4040 To me#   #FFD000 Sun#      Stations: %i", count);
     draw_text(draw_ctx, &label, 8, s_h - label.font->line_height - 3, s_w - 16, buf);
+
+    knob_info(draw_ctx, legend.y1 - 3, &knob, true);
 }
 
 /* -------- LVGL event plumbing ------------------------------------------ */
@@ -843,6 +1179,7 @@ void map_view_build(lv_obj_t *parent, lv_coord_t x, lv_coord_t y, lv_coord_t w, 
     s_cross    = malloc(sizeof(int16_t) * MAX_CROSS * h);
     s_cross_n  = malloc(h);
     s_land_box = malloc(sizeof(box_t) * world_land_count);
+    s_sun_cos  = malloc(sizeof(float) * w);
 
     const int16_t (*p)[2] = world_land_pts;
     for (uint16_t r = 0; r < world_land_count; r++) {
@@ -873,10 +1210,17 @@ void map_view_build(lv_obj_t *parent, lv_coord_t x, lv_coord_t y, lv_coord_t w, 
 
     s_center_lon = s_home_valid ? s_home_lon : 0.0f;
     clamp_lat();
+    update_sun(time(NULL));
     render();
+
+    s_sun_timer = lv_timer_create(sun_timer_cb, SUN_UPDATE_MS, NULL);
 }
 
 void map_view_destroy(void) {
+    if (s_sun_timer) {
+        lv_timer_del(s_sun_timer);
+        s_sun_timer = NULL;
+    }
     if (s_obj) {
         lv_obj_del(s_obj);
         s_obj    = NULL;
@@ -886,10 +1230,12 @@ void map_view_destroy(void) {
     free(s_cross);
     free(s_cross_n);
     free(s_land_box);
+    free(s_sun_cos);
     s_buf      = NULL;
     s_cross    = NULL;
     s_cross_n  = NULL;
     s_land_box = NULL;
+    s_sun_cos  = NULL;
     memset(&s_actions, 0, sizeof(s_actions));
 }
 
@@ -931,6 +1277,7 @@ void map_view_go_home(void) {
 
 void map_view_clear(void) {
     memset(s_stations, 0, sizeof(s_stations));
+    memset(s_qsos, 0, sizeof(s_qsos));
     if (s_obj) lv_obj_invalidate(s_obj);
 }
 
@@ -965,4 +1312,35 @@ void map_view_add_station(const map_station_t *st) {
 
 void map_view_add_station_cb(void *data) {
     map_view_add_station((const map_station_t *)data);
+}
+
+void map_view_add_qso(const map_qso_t *qso) {
+    if (!qso || qso->call_to[0] == '\0' || qso->call_de[0] == '\0' || strcmp(qso->call_to, qso->call_de) == 0) return;
+
+    /* Same pair (either way round) updates its slot, otherwise take a free or the oldest one */
+    qso_t *slot = &s_qsos[0];
+    for (int i = 0; i < MAX_QSOS; i++) {
+        qso_t *cur = &s_qsos[i];
+        if ((strcmp(cur->a, qso->call_to) == 0 && strcmp(cur->b, qso->call_de) == 0) ||
+            (strcmp(cur->a, qso->call_de) == 0 && strcmp(cur->b, qso->call_to) == 0)) {
+            slot = cur;
+            break;
+        }
+        if (cur->heard < slot->heard) {
+            slot = cur;
+        }
+    }
+
+    strncpy(slot->a, qso->call_to, sizeof(slot->a) - 1);
+    slot->a[sizeof(slot->a) - 1] = '\0';
+    strncpy(slot->b, qso->call_de, sizeof(slot->b) - 1);
+    slot->b[sizeof(slot->b) - 1] = '\0';
+    slot->a_is_me = qso->to_me;
+    slot->heard   = time(NULL);
+
+    if (s_obj) lv_obj_invalidate(s_obj);
+}
+
+void map_view_add_qso_cb(void *data) {
+    map_view_add_qso((const map_qso_t *)data);
 }

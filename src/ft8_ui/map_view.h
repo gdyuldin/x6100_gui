@@ -7,8 +7,9 @@
 /*
  *  World map with Maidenhead fields; decoded stations are plotted by their
  *  grid. MFK press cycles what MFK rotation does: scroll the longitude,
- *  scroll the latitude (zoomed in only) or zoom (1x..6x). Zoomed in, the
- *  Maidenhead squares and the calls of all stations are shown.
+ *  scroll the latitude (zoomed in only) or zoom (1x..12x). Zoomed in, the
+ *  Maidenhead squares and the calls of all stations are shown. Stations
+ *  exchanging messages are joined by a dashed great circle arc.
  *
  *  Usage (UI thread only unless noted):
  *      map_view_build(parent, x, y, w, h);
@@ -47,6 +48,13 @@ typedef struct {
     map_station_kind_t kind;
 } map_station_t;
 
+/* Two stations exchanging messages ("CALL_TO CALL_DE ...") */
+typedef struct {
+    char call_to[13];
+    char call_de[13];
+    bool to_me;                       /* call_to is the own call */
+} map_qso_t;
+
 typedef struct {
     void (*on_close)(void);           /* LV_KEY_ESC */
     void (*on_vol_change)(int32_t d); /* KEY_VOL_*_EDIT/SELECT */
@@ -64,13 +72,18 @@ void map_view_set_home(const char *grid);
 /* Center the view on the own position, the zoom stays. */
 void map_view_go_home(void);
 
-/* Forget all plotted stations (band change). */
+/* Forget all plotted stations and arcs (band change). */
 void map_view_clear(void);
 
 void map_view_add_station(const map_station_t *st);
 
 /* Trampoline that matches scheduler_fn_t signature. */
 void map_view_add_station_cb(void *data);
+
+/* Arc between both stations while they keep exchanging messages, both ends
+ * need a known grid (the own end is the home position). */
+void map_view_add_qso(const map_qso_t *qso);
+void map_view_add_qso_cb(void *data);
 
 #ifdef __cplusplus
 }

@@ -943,6 +943,23 @@ static void add_tx_text(const char * text) {
     scheduler_put(table_view_add_msg_cb, &cell_data, sizeof(cell_data_t));
 }
 
+/*
+ * Addressee of a "CALL1 CALL2 ..." message: the first word, without the <> of a
+ * hashed call. False for an unresolved hash ("<...>").
+ */
+static bool msg_call_to(const char *text, char *call, size_t size) {
+    while (*text == ' ') text++;
+    if (*text == '<') text++;
+
+    size_t n = 0;
+    while (text[n] != '\0' && text[n] != ' ' && text[n] != '>' && n + 1 < size) {
+        call[n] = text[n];
+        n++;
+    }
+    call[n] = '\0';
+    return n > 0 && strstr(call, "...") == NULL;
+}
+
 /**
  * Parse and add RX messages to the table
  */
@@ -990,6 +1007,16 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
             st.kind = MAP_STATION_OTHER;
         }
         scheduler_put(map_view_add_station_cb, &st, sizeof(st));
+    }
+
+    /* Messages between two stations, for the arcs on the map */
+    if (meta.type >= FTX_MSG_TYPE_GRID && meta.type <= FTX_MSG_TYPE_73) {
+        map_qso_t qso = {0};
+        if (msg_call_to(text, qso.call_to, sizeof(qso.call_to))) {
+            strncpy(qso.call_de, meta.call_de, sizeof(qso.call_de) - 1);
+            qso.to_me = meta.to_me;
+            scheduler_put(map_view_add_qso_cb, &qso, sizeof(qso));
+        }
     }
 
     ft8_cell_type_t cell_type;
