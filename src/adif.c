@@ -237,6 +237,7 @@ static void write_mode(FILE *fd, qso_log_mode_t mode) {
         case MODE_SSB:
             mode_str = "SSB";
             // submode_str = "USB";
+            break;
         case MODE_AM:
             mode_str = "AM";
             break;
