@@ -6,7 +6,9 @@
 
 /*
  *  World map with Maidenhead fields; decoded stations are plotted by their
- *  grid. MFK rotation scrolls the longitude, MFK press returns to home.
+ *  grid. MFK press cycles what MFK rotation does: scroll the longitude,
+ *  scroll the latitude (zoomed in only) or zoom (1x..6x). Zoomed in, the
+ *  Maidenhead squares and the calls of all stations are shown.
  *
  *  Usage (UI thread only unless noted):
  *      map_view_build(parent, x, y, w, h);
@@ -58,6 +60,9 @@ void map_view_set_actions(const map_view_actions_t *actions);
 
 /* Own position, empty or invalid grid hides the home marker. */
 void map_view_set_home(const char *grid);
+
+/* Center the view on the own position, the zoom stays. */
+void map_view_go_home(void);
 
 /* Forget all plotted stations (band change). */
 void map_view_clear(void);

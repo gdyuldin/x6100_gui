@@ -152,6 +152,7 @@ static void mode_auto_cb(struct button_data_t *btn_data);
 static void cq_modifier_cb(struct button_data_t *btn_data);
 static void time_sync(struct button_data_t *btn_data);
 static void map_toggle_cb(struct button_data_t *btn_data);
+static void map_home_cb(struct button_data_t *btn_data);
 
 static void force_save_qso(struct button_data_t *btn_data);
 
@@ -190,6 +191,7 @@ static button_data_t button_map = { .type=BTN_TEXT_FN, .label_fn = map_label_get
 static button_data_t button_page_3 = { .type=BTN_TEXT, .label = "(Page: 3:3)", .press = button_next_page_cb, .next=&btn_page_1};
 static button_data_t button_cq_mod = { .type=BTN_TEXT, .label = "CQ\nModifier", .press = cq_modifier_cb };
 static button_data_t button_time_sync = { .type=BTN_TEXT, .label = "Time\nSync", .press = time_sync };
+static button_data_t button_map_home = { .type=BTN_TEXT, .label = "Map\nHome", .press = map_home_cb };
 
 static buttons_page_t btn_page_1 = {
     {&button_page_1, &button_show_cq_all, &button_mode_ft4_ft8, &button_tx_cq_en_dis, &button_tx_call_en_dis}
@@ -200,7 +202,7 @@ static buttons_page_t btn_page_2 = {
 };
 
 static buttons_page_t btn_page_3 = {
-    {&button_page_3, &button_cq_mod, &button_time_sync}
+    {&button_page_3, &button_cq_mod, &button_time_sync, &button_map_home}
 };
 
 static dialog_t dialog = {
@@ -383,6 +385,12 @@ static void msg_timer(lv_timer_t *t) {
 
 static void fade_anim(void * obj, int32_t v) {
     lv_obj_set_style_opa_layered(obj, v, 0);
+
+    /* The map covers the waterfall as well, fade it together with the table */
+    lv_obj_t *map = map_view_obj();
+    if (map) {
+        lv_obj_set_style_opa_layered(map, v, 0);
+    }
 }
 
 static void fade_ready(lv_anim_t * a) {
@@ -746,11 +754,9 @@ static void time_sync(struct button_data_t *btn_data) {
     }
 }
 
-static void map_toggle_cb(struct button_data_t *btn_data) {
-    if (disable_buttons) return;
-
+static void set_map_shown(bool shown) {
     lv_group_remove_obj(focus_obj);
-    map_shown = !map_shown;
+    map_shown = shown;
 
     if (map_shown) {
         lv_obj_clear_flag(map_view_obj(), LV_OBJ_FLAG_HIDDEN);
@@ -760,7 +766,23 @@ static void map_toggle_cb(struct button_data_t *btn_data) {
 
     lv_group_add_obj(keyboard_group, focus_obj);
     lv_group_set_editing(keyboard_group, true);
+}
+
+static void map_toggle_cb(struct button_data_t *btn_data) {
+    if (disable_buttons) return;
+
+    set_map_shown(!map_shown);
     buttons_refresh(btn_data);
+}
+
+/* "Show: Map/Table" is on another page, its label follows when that page is loaded */
+static void map_home_cb(struct button_data_t *btn_data) {
+    if (disable_buttons) return;
+
+    if (!map_shown) {
+        set_map_shown(true);
+    }
+    map_view_go_home();
 }
 
 static void force_save_qso(struct button_data_t *btn_data) {
