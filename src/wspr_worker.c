@@ -66,7 +66,10 @@ struct wspr_worker_s {
 
     pthread_t       thread;
     atomic_bool     stop_req;
-    atomic_bool     thread_running;
+    /* Set by wspr_worker_start() once pthread_create() succeeds and
+     * cleared by the join, both on the caller's thread: the worker
+     * may not have run yet when the window is closed again. */
+    bool            started;
     pthread_mutex_t sleep_mux;
     pthread_cond_t  sleep_cv;
 
@@ -279,7 +282,6 @@ static void *worker_main(void *arg)
     float prev_sec = -1.0f;
     bool tx_fired = false;
 
-    atomic_store(&w->thread_running, true);
     restart_collection(w);
 
     while (!atomic_load(&w->stop_req)) {
@@ -336,7 +338,6 @@ static void *worker_main(void *arg)
             msleep_interruptible(w, 100);
     }
 
-    atomic_store(&w->thread_running, false);
     return NULL;
 }
 
@@ -387,7 +388,6 @@ wspr_worker_t *wspr_worker_create(int audio_sample_rate, double center_hz,
         w->spec_ok = true;
 
     atomic_store(&w->stop_req, false);
-    atomic_store(&w->thread_running, false);
 
     return w;
 }
@@ -396,10 +396,13 @@ int wspr_worker_start(wspr_worker_t *w)
 {
     if (!w)
         return -1;
+    if (w->started)
+        return 0;
 
     atomic_store(&w->stop_req, false);
     if (pthread_create(&w->thread, NULL, worker_main, w) != 0)
         return -1;
+    w->started = true;
 
     return 0;
 }
@@ -414,10 +417,10 @@ void wspr_worker_stop(wspr_worker_t *w)
     pthread_cond_broadcast(&w->sleep_cv);
     pthread_mutex_unlock(&w->sleep_mux);
 
-    if (atomic_load(&w->thread_running))
+    if (w->started) {
         pthread_join(w->thread, NULL);
-
-    atomic_store(&w->thread_running, false);
+        w->started = false;
+    }
 }
 
 void wspr_worker_destroy(wspr_worker_t *w)
