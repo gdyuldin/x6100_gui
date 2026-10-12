@@ -810,6 +810,14 @@ static void destruct_cb(void)
     }
 
     /*
+     * The beacon is switched off with the window: opening WSPR again
+     * must never start transmitting until the operator asks for it.
+     * Not in wspr_app_set_active(false), which a band change also
+     * calls.
+     */
+    wspr_app_set_tx_period(0);
+
+    /*
      * Order matters: stop the application first. It aborts any
      * transmission in progress and joins the worker thread, so no
      * callback can arrive after the table has been destroyed.
