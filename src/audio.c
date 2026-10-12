@@ -112,7 +112,10 @@ void audio_init() {
 
     pa_threaded_mainloop_lock(mloop);
     pa_stream_set_read_callback(capture_stm, read_callback, NULL);
-    res = pa_stream_connect_record(capture_stm, capture_device, &attr, PA_STREAM_ADJUST_LATENCY);
+    /* DONT_MOVE: module-switch-on-connect would otherwise move the
+     * receiver audio to a Bluetooth headset microphone. */
+    res = pa_stream_connect_record(capture_stm, capture_device, &attr,
+                                   PA_STREAM_DONT_MOVE | PA_STREAM_ADJUST_LATENCY);
     if (res < 0) {
         LV_LOG_ERROR("pa_stream_connect_record() failed: %s", pa_strerror(pa_context_errno(ctx)));
     }
@@ -175,7 +178,10 @@ static pa_stream *player_stream_create(uint32_t sample_rate, uint32_t ch, const 
     pa_stream *stream = pa_stream_new(ctx, name, &spec, NULL);
 
     pa_threaded_mainloop_lock(mloop);
-    res = pa_stream_connect_playback(stream, default_play_device, &attr, PA_STREAM_ADJUST_LATENCY, NULL, NULL);
+    /* DONT_MOVE: this is the modem TX audio; moved to a Bluetooth
+     * speaker the transmitter got nothing. */
+    res = pa_stream_connect_playback(stream, default_play_device, &attr,
+                                     PA_STREAM_DONT_MOVE | PA_STREAM_ADJUST_LATENCY, NULL, NULL);
     if (res < 0) {
         return NULL;
     }
@@ -204,6 +210,49 @@ audio_player_t *audio_create_player(uint32_t sample_rate, uint32_t ch) {
 audio_player_t *audio_get_player(uint32_t sample_rate, uint32_t ch) {
     if ((sample_rate == AUDIO_PLAY_RATE) && (ch == 1)) return &default_player;
     return audio_create_player(sample_rate, ch);
+}
+
+/* Bluetooth listening plays TTS, the voice message preview and
+ * recordings on the headphones' sink instead of the radio's codec.
+ * DONT_MOVE: if the headphones go away the stream ends rather than
+ * landing on the modulator input. */
+audio_player_t *audio_create_player_on(const char *device, uint32_t sample_rate, uint32_t ch) {
+    pa_buffer_attr  attr;
+    pa_sample_spec  spec = {
+        .format = PA_SAMPLE_S16NE,
+        .rate = sample_rate,
+        .channels = ch
+    };
+    audio_player_t *player;
+    pa_stream      *stream;
+
+    if (!device || !ctx || !mloop) return NULL;
+
+    memset(&attr, 0xff, sizeof(attr));
+    attr.fragsize = pa_usec_to_bytes(AUDIO_RATE_MS * PA_USEC_PER_MSEC, &spec);
+    attr.tlength = attr.fragsize * 8;
+
+    player = malloc(sizeof(audio_player_t));
+    if (!player) return NULL;
+
+    pa_threaded_mainloop_lock(mloop);
+    stream = pa_stream_new(ctx, "X6100 GUI BT player", &spec, NULL);
+    if (!stream ||
+        pa_stream_connect_playback(stream, device, &attr,
+                                   PA_STREAM_DONT_MOVE | PA_STREAM_ADJUST_LATENCY, NULL, NULL) < 0) {
+        if (stream) pa_stream_unref(stream);
+        pa_threaded_mainloop_unlock(mloop);
+        free(player);
+        LV_LOG_ERROR("BT player on %s failed", device);
+        return NULL;
+    }
+    pa_stream_set_write_callback(stream, stream_write_callback, NULL);
+    pa_stream_cork(stream, 1, NULL, NULL);
+    pa_threaded_mainloop_unlock(mloop);
+
+    player->stream = stream;
+    player->is_paused = true;
+    return player;
 }
 
 int audio_player_send(audio_player_t *player, int16_t *samples_buf, size_t samples) {

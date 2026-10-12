@@ -373,8 +373,14 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
     Parameter<int32_t> p_meter_color{"meter_color", METER_GRAY, {},
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    /* FT8/FT4 table, right side: 0 km, 1 mi, 2 country, 3 country + km,
+     * 4 country + mi (table_view_info_t). */
+    Parameter<int32_t> p_ft8_info{"ft8_info", 3, 0, 4,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_swr_color{"swr_color", SWR_GRAY, {},
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_digi_text_compact{"digi_text_compact", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // --- BAND params (`band_params` table) ---
     Parameter<int32_t> p_band_current_vfo{"vfo", (int32_t)X6100_VFO_A, 0, 1,
@@ -398,9 +404,9 @@ class SettingsManager {
     // BAND VFO params (context_id = bands_id). These are NOT in the band
     // registry: load_band_vfo() loads them in explicit dependency order so the
     // DB restore/clamp rules can reference already-loaded siblings.
-    Parameter<int32_t> p_band_vfoa_freq{"vfoa_freq", 14'100'000, 0, 500'000'000,
+    Parameter<int32_t> p_band_vfoa_freq{"vfoa_freq", 14'100'000, 100'000, 500'000'000,
         StorageType::BAND, pending_writes_};
-    Parameter<int32_t> p_band_vfob_freq{"vfob_freq", 14'150'000, 0, 500'000'000,
+    Parameter<int32_t> p_band_vfob_freq{"vfob_freq", 14'150'000, 100'000, 500'000'000,
         StorageType::BAND, pending_writes_};
     Parameter<int32_t> p_band_vfoa_mode{"vfoa_mode", x6100_mode_usb, (int32_t)x6100_mode_lsb, (int32_t)x6100_mode_nfm,
         StorageType::BAND, pending_writes_};
@@ -530,8 +536,8 @@ class SettingsManager {
     int current_mode_group_id() const { return mode_group_id_; }
 
     // Hardware-usable frequency range limits (in Hz). HF is the native
-    // 0.5-55 MHz band; anything above must be covered by a transverter.
-    static constexpr int32_t HF_MIN_FREQ = 500'000;
+    // 0.1-55 MHz band; anything above must be covered by a transverter.
+    static constexpr int32_t HF_MIN_FREQ = 100'000;
     static constexpr int32_t HF_MAX_FREQ = 55'000'000;
 
     // -- VFO operations --

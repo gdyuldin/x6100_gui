@@ -26,6 +26,9 @@ static void notify_device_added(void *) {
 static void notify_device_removed(void *) {
     lv_msg_send(MSG_USB_DEVICE_CHANGED, (void *)USB_DEV_REMOVED);
 }
+static void notify_input_changed(void *) {
+    lv_msg_send(MSG_INPUT_DEVICE_CHANGED, NULL);
+}
 
 static void *wait_new_device(void *) {
     while (app_is_running) {
@@ -41,8 +44,13 @@ static void *wait_new_device(void *) {
         if (ret > 0 && FD_ISSET(fd, &fds)) {
             struct udev_device *dev = udev_monitor_receive_device(mon);
             if (dev) {
-                const char *action = udev_device_get_action(dev);
-                if (action && strcmp(action, "add") == 0) {
+                const char *action    = udev_device_get_action(dev);
+                const char *subsystem = udev_device_get_subsystem(dev);
+                if (subsystem && strcmp(subsystem, "input") == 0) {
+                    /* A Bluetooth keyboard has no USB event of its own */
+                    if (action && (strcmp(action, "add") == 0 || strcmp(action, "remove") == 0))
+                        scheduler_put_noargs(notify_input_changed);
+                } else if (action && strcmp(action, "add") == 0) {
                     scheduler_put_noargs(notify_device_added);
                 } else if (action && strcmp(action, "remove") == 0) {
                     scheduler_put_noargs(notify_device_removed);
@@ -71,6 +79,7 @@ void usb_devices_monitor_init() {
     }
 
     udev_monitor_filter_add_match_subsystem_devtype(mon, "usb", NULL);
+    udev_monitor_filter_add_match_subsystem_devtype(mon, "input", NULL);
     udev_monitor_enable_receiving(mon);
     fd = udev_monitor_get_fd(mon);
 

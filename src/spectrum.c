@@ -479,6 +479,8 @@ static void update_filters(Subject *subj, void *user_data) {
 }
 
 static void update_dnf(Subject *subj, void *user_data) {
+    // Schedule invalidation on next loop
+    lv_async_call((void (*)(void *))lv_obj_invalidate, obj);
     int32_t en = subject_i_get((SubjectInt*)cfg.dsp.dnf());
     if (!en) {
         dnf_show = false;
@@ -496,7 +498,7 @@ static void update_dnf(Subject *subj, void *user_data) {
     }
     dnf_show = true;
     dnf_width = subject_i_get((SubjectInt*)cfg.dsp.dnf_width());
-    int32_t center = subject_i_get((SubjectInt*)cfg.dsp.dnf_auto());
+    int32_t center = subject_i_get((SubjectInt*)cfg.dsp.dnf_center());
     switch (mode)
     {
     case x6100_mode_lsb:
@@ -509,7 +511,6 @@ static void update_dnf(Subject *subj, void *user_data) {
         dnf_center = center;
         break;
     }
-    lv_obj_invalidate(obj);
 }
 
 
