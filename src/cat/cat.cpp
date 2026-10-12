@@ -149,6 +149,13 @@ static void cat_thread() {
     // mask 00:00:00:00:00:00
     for(int i=0; i<6; i++) addr.rc_bdaddr.b[i] = 0;
 
+    // Paired (bonded) devices only: CAT can key the transmitter. The
+    // kernel default lets anyone in range connect without pairing.
+    // New devices pair through the Bluetooth window.
+    struct bt_security sec = {};
+    sec.level = BT_SECURITY_MEDIUM;
+    setsockopt(fd_bt_sock, SOL_BLUETOOTH, BT_SECURITY, &sec, sizeof(sec));
+
     bind(fd_bt_sock, (struct sockaddr *)&addr, sizeof(addr));
     listen(fd_bt_sock, 1);
     fcntl(fd_bt_sock, F_SETFL, O_NONBLOCK);
