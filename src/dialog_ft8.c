@@ -501,9 +501,21 @@ static void set_freq(uint32_t freq) {
 }
 
 static void rotary_cb(int32_t diff) {
-    uint32_t abs_diff = abs(diff);
-    if (abs_diff > 3) {
-        diff *= (abs_diff < 6) ? 5 : 10;
+    /* Faster turns move further: 4-5 clicks within 30 ms move 5 Hz each,
+     * 6 or more 10 Hz. The knob used to be read every 30 ms and handed
+     * over as the sum of its clicks; now every click comes on its own, so
+     * a single diff never got past 3 and the TX frequency moved 1 Hz a
+     * click however fast the knob turned. Count the clicks per 30 ms. */
+    static uint32_t window_ms;
+    static uint32_t window_clicks;
+
+    if (lv_tick_elaps(window_ms) >= 30) {
+        window_ms     = lv_tick_get();
+        window_clicks = 0;
+    }
+    window_clicks += abs(diff);
+    if (window_clicks > 3) {
+        diff *= (window_clicks < 6) ? 5 : 10;
     }
     uint32_t f = param_i_get(cfg.ft8.tx_freq()) + diff;
     f = limit(f, filter_low, filter_high - (param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? FT8_WIDTH_HZ : FT4_WIDTH_HZ));
