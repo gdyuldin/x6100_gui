@@ -1,3 +1,6 @@
+#if defined(__linux__)
+#include <pthread.h>
+#endif
 #include "js8core/engine.hpp"
 
 #include <algorithm>
@@ -80,7 +83,7 @@ public:
     enabled_submodes_.store(config_.submodes);
     init_schedules();
     start_decode_worker();
-    start_spectrum_worker();
+    if (config_.spectrum_enabled) start_spectrum_worker();
   }
 
   ~Js8EngineImpl() override {
@@ -180,7 +183,7 @@ public:
     total_samples_ += static_cast<int>(frames);
 
     // Emit a lightweight spectrum frame for UI consumers at a throttled rate.
-    if (callbacks_.on_event && frames > 0) {
+    if (config_.spectrum_enabled && callbacks_.on_event && frames > 0) {
       auto const now = std::chrono::steady_clock::now();
       if (now - last_spectrum_time_ >= kSpectrumInterval) {
         last_spectrum_time_ = now;
@@ -349,6 +352,16 @@ public:
     config_.tx_output_gain_boost_enabled = enabled;
   }
 
+  void set_decode_range(int low_hz, int high_hz) override {
+    if (low_hz < 0) low_hz = 0;
+    if (high_hz <= low_hz) return;
+    nfa_.store(low_hz);
+    nfb_.store(high_hz);
+  }
+
+  void set_qso_offset(int offset_hz) override { nfqso_.store(offset_hz); }
+  void set_sync_stats(bool enabled) override { sync_stats_.store(enabled); }
+
   void set_submodes(int submodes) override {
     constexpr int knownSubmodes = (1 << static_cast<int>(protocol::SubmodeId::A)) |
                                  (1 << static_cast<int>(protocol::SubmodeId::B)) |
@@ -372,6 +385,10 @@ public:
 
   std::int64_t time_drift_ms() const override {
     return time_drift_ms_.load();
+  }
+
+  void request_realign() override {
+    drift_realign_pending_.store(true);
   }
 
  private:
@@ -482,6 +499,9 @@ public:
 
         // Turbo can decode as soon as its 79 symbols are captured. Keep the
         // slot available for later retries, matching the desktop scheduler.
+        // Ultra (I) keeps the full threshold, start delay and 0.5 s guard
+        // included, one decode a slot: desktop's samplesNeeded() for its
+        // "JS8 60" (patch 14, which gave it Turbo's path, was withdrawn).
         int samples_needed = (sm.symbol_samples * JS8_NUM_SYMBOLS) +
                             static_cast<int>((0.5 + sm.start_delay_ms / 1000.0) * sample_rate);
         int retry_samples = period;
@@ -533,7 +553,10 @@ public:
 #endif
       decode_state_.params.utc = utc_tm.tm_hour * 10000 + utc_tm.tm_min * 100 + utc_tm.tm_sec;
       decode_state_.params.newdat = true;
-      decode_state_.params.syncStats = false;
+      decode_state_.params.syncStats = sync_stats_.load(); // patch 12
+      decode_state_.params.nfa = nfa_.load();
+      decode_state_.params.nfb = nfb_.load();
+      decode_state_.params.nfqso = nfqso_.load();
     }
 
     // Port of isDecodeReady() from mainwindow.cpp
@@ -1030,6 +1053,10 @@ public:
     int k0_{0};  // Previous sample position for isDecodeReady logic
     std::atomic<std::int64_t> time_drift_ms_{0};
     std::atomic<int> enabled_submodes_{0};
+    std::atomic<int> nfa_{200};    // patch 9: set_decode_range()
+    std::atomic<int> nfb_{2500};
+    std::atomic<int> nfqso_{1500}; // set_qso_offset()
+    std::atomic<bool> sync_stats_{false}; // patch 12: set_sync_stats()
     std::atomic<bool> drift_realign_pending_{false};
     // Written only on the audio thread; may lag time_drift_ms_ by one capture buffer.
     std::int64_t ring_drift_ms_{0};
@@ -1054,12 +1081,21 @@ public:
     events::Variant spectrum_event_{events::Spectrum{}};
     std::mutex event_mutex_;
 
-    std::thread decode_thread_;
-    std::mutex decode_mutex_;
-    std::condition_variable decode_cv_;
-    std::deque<DecodeState> decode_queue_;
-    bool decode_stop_{false};
-    std::atomic<bool> decode_pending_{false};
+    // A decode thread and its queue. lanes_[0] decodes everything, or
+    // everything but Ultra with ultra_own_thread (patch 15); lanes_[1] then
+    // decodes Ultra only.
+    struct DecodeLane {
+      const char* name = "main";
+      const char* thread_name = "js8-decode";
+      const char* log_prefix = "";
+      std::thread thread;
+      std::mutex mutex;
+      std::condition_variable cv;
+      std::deque<DecodeState> queue;
+      bool stop{false};
+    };
+    DecodeLane lanes_[2];
+    static constexpr int kUltraBit = 1 << static_cast<int>(protocol::SubmodeId::I);
 
     std::thread spectrum_thread_;
     std::mutex spectrum_mutex_;
@@ -1114,18 +1150,27 @@ public:
     }
 
     void start_decode_worker() {
-      decode_thread_ = std::thread([this]() { decode_worker_loop(); });
+      lanes_[1].name = "ultra";
+      lanes_[1].thread_name = "js8-decode-u";
+      lanes_[1].log_prefix = "[ultra] ";
+      for (int i = 0; i < (config_.ultra_own_thread ? 2 : 1); ++i) {
+        DecodeLane& lane = lanes_[i];
+        lane.stop = false;
+        lane.thread = std::thread([this, &lane]() { decode_worker_loop(lane); });
+      }
     }
 
     void stop_decode_worker() {
-      {
-        std::lock_guard<std::mutex> lock(decode_mutex_);
-        decode_stop_ = true;
-        decode_queue_.clear();
-        decode_pending_.store(false);
+      for (auto& lane : lanes_) {
+        {
+          std::lock_guard<std::mutex> lock(lane.mutex);
+          lane.stop = true;
+          lane.queue.clear();
+        }
+        lane.cv.notify_one();
       }
-      decode_cv_.notify_one();
-      if (decode_thread_.joinable()) decode_thread_.join();
+      for (auto& lane : lanes_)
+        if (lane.thread.joinable()) lane.thread.join();
     }
 
     void start_spectrum_worker() {
@@ -1142,15 +1187,66 @@ public:
       if (spectrum_thread_.joinable()) spectrum_thread_.join();
     }
 
-    void enqueue_decode(DecodeState snapshot) {
-      // Turbo can retry every second. Do not turn retries into stale work when
-      // the single decoder worker is still processing the previous snapshot.
-      if (decode_pending_.exchange(true)) return;
-      {
-        std::lock_guard<std::mutex> lock(decode_mutex_);
-        decode_queue_.push_back(std::move(snapshot));
+    // x6100 patch 8: never drop a ready decode window. Upstream returned
+    // here while a decode was running, but isDecodeReady() has already
+    // marked the window done, so with several speeds on, a Normal or Fast
+    // slot falling due during a decode (Turbo retries every second) was
+    // never decoded. Desktop JS8Call queues its ready windows instead. Keep
+    // at most one snapshot waiting behind the running decode: a newer one
+    // takes over the waiting one (fresher audio; the ring still holds the
+    // older windows) along with any speed's window only the older one had.
+    static void merge_windows(DecodeParams& into, DecodeParams const& older) {
+      struct Win { int bit; int DecodeParams::*pos; int DecodeParams::*sz; };
+      static constexpr Win wins[] = {
+          {1 << static_cast<int>(protocol::SubmodeId::A), &DecodeParams::kposA, &DecodeParams::kszA},
+          {1 << static_cast<int>(protocol::SubmodeId::B), &DecodeParams::kposB, &DecodeParams::kszB},
+          {1 << static_cast<int>(protocol::SubmodeId::C), &DecodeParams::kposC, &DecodeParams::kszC},
+          {1 << static_cast<int>(protocol::SubmodeId::E), &DecodeParams::kposE, &DecodeParams::kszE},
+          {1 << static_cast<int>(protocol::SubmodeId::I), &DecodeParams::kposI, &DecodeParams::kszI},
+      };
+      for (auto const& w : wins) {
+        if ((older.nsubmodes & w.bit) == 0 || (into.nsubmodes & w.bit) != 0) continue;
+        into.*w.pos = older.*w.pos;
+        into.*w.sz  = older.*w.sz;
+        into.nsubmodes |= w.bit;
       }
-      decode_cv_.notify_one();
+    }
+
+    void enqueue_decode(DecodeState snapshot) {
+      // Patch 15: Ultra's window goes to its own thread, the rest as before.
+      if (config_.ultra_own_thread && (snapshot.params.nsubmodes & kUltraBit)) {
+        if ((snapshot.params.nsubmodes & ~kUltraBit) == 0) {
+          enqueue_lane(lanes_[1], std::move(snapshot));
+          return;
+        }
+        DecodeState ultra;
+        ultra.params = snapshot.params;
+        ultra.params.nsubmodes = kUltraBit;
+        ultra.samples = snapshot.samples;
+        ultra.drift_ms_at_capture = snapshot.drift_ms_at_capture;
+        snapshot.params.nsubmodes &= ~kUltraBit;
+        enqueue_lane(lanes_[1], std::move(ultra));
+      }
+      enqueue_lane(lanes_[0], std::move(snapshot));
+    }
+
+    void enqueue_lane(DecodeLane& lane, DecodeState snapshot) {
+      {
+        std::lock_guard<std::mutex> lock(lane.mutex);
+        if (!lane.queue.empty()) {
+          merge_windows(snapshot.params, lane.queue.back().params);
+          lane.queue.back() = std::move(snapshot);
+          // x6100 patch 13: how often the decoder is still busy when the
+          // next window is ready (the app counts these).
+          if (callbacks_.on_log) {
+            std::string m = std::string(lane.log_prefix) + "decode window merged: the decoder was busy";
+            callbacks_.on_log(LogLevel::Info, m);
+          }
+        } else {
+          lane.queue.push_back(std::move(snapshot));
+        }
+      }
+      lane.cv.notify_one();
     }
 
     void enqueue_spectrum(const std::int16_t* data,
@@ -1174,22 +1270,28 @@ public:
       spectrum_cv_.notify_one();
     }
 
-    void decode_worker_loop() {
+    void decode_worker_loop(DecodeLane& lane) {
+#if defined(__linux__)
+      // x6100 patch 13: named, so per-thread CPU tools can tell it apart.
+      pthread_setname_np(pthread_self(), lane.thread_name);
+#endif
+      // x6100 patch 15: the host may pin or deprioritise this thread.
+      if (callbacks_.on_decode_thread_start) callbacks_.on_decode_thread_start(lane.name);
       for (;;) {
         DecodeState task;
         {
-          std::unique_lock<std::mutex> lock(decode_mutex_);
-          decode_cv_.wait(lock, [&]() { return decode_stop_ || !decode_queue_.empty(); });
-          if (decode_stop_) return;
-          task = std::move(decode_queue_.front());
-          decode_queue_.pop_front();
+          std::unique_lock<std::mutex> lock(lane.mutex);
+          lane.cv.wait(lock, [&]() { return lane.stop || !lane.queue.empty(); });
+          if (lane.stop) return;
+          task = std::move(lane.queue.front());
+          lane.queue.pop_front();
         }
 
         if (callbacks_.on_log) {
           char log_msg[512];
           snprintf(log_msg, sizeof(log_msg),
-                   "Calling legacy_decode: nsubmodes=0x%x, freq_range=%d-%d Hz, nfqso=%d Hz, sample_rate=%d, buffer_size=%zu, callback=%s",
-                   task.params.nsubmodes, task.params.nfa, task.params.nfb, task.params.nfqso,
+                   "%sCalling legacy_decode: nsubmodes=0x%x, freq_range=%d-%d Hz, nfqso=%d Hz, sample_rate=%d, buffer_size=%zu, callback=%s",
+                   lane.log_prefix, task.params.nsubmodes, task.params.nfa, task.params.nfb, task.params.nfqso,
                    config_.sample_rate_hz, task.samples.size(),
                    callbacks_.on_event ? "SET" : "NULL");
           callbacks_.on_log(LogLevel::Info, log_msg);
@@ -1199,17 +1301,17 @@ public:
           if (auto const* d = std::get_if<events::Decoded>(&ev)) {
             auto out = *d;
             out.drift_ms = compute_drift_estimate(task, out);
+            out.capture_drift_ms = static_cast<int>(task.drift_ms_at_capture);
             emit_event(events::Variant{std::move(out)});
             return;
           }
           emit_event(ev);
         });
-        decode_pending_.store(false);
 
         if (callbacks_.on_log) {
           char log_msg[256];
           snprintf(log_msg, sizeof(log_msg),
-                   "legacy_decode returned: %zu decodes", decode_count);
+                   "%slegacy_decode returned: %zu decodes", lane.log_prefix, decode_count);
           callbacks_.on_log(LogLevel::Info, log_msg);
         }
       }

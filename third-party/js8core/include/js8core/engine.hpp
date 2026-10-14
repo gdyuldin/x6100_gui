@@ -53,10 +53,14 @@ struct Decoded {
   int mode = 0;
   // Suggested total drift (ms) to center this signal's cycle.
   int drift_ms = 0;
+  // Drift (ms) the ring was aligned with when this audio was captured; the
+  // signal is on time with drift capture_drift_ms - 1000 * xdt.
+  int capture_drift_ms = 0;
 };
 
 struct DecodeFinished {
   std::size_t decoded = 0;
+  int submodes = 0;  // x6100 patch 15: the pass's submodes (which decode thread)
 };
 
 struct Spectrum {
@@ -76,6 +80,13 @@ struct EngineConfig {
   int tx_output_rate_hz = 48000;
   float tx_output_gain = 1.0f;
   bool tx_output_gain_boost_enabled = false;
+  // Hosts that draw their own waterfall can skip the engine's spectrum
+  // thread and its per-buffer FFT.
+  bool spectrum_enabled = true;
+  // x6100 patch 15: decode submode I (Ultra) on a second decode thread, so
+  // its 4 s slots never wait behind a pass of the slower submodes (and
+  // theirs never behind it).
+  bool ultra_own_thread = false;
 };
 
 struct TxMessageRequest {
@@ -102,6 +113,10 @@ struct EngineCallbacks {
   std::function<void(events::Variant const&)> on_event;
   std::function<void(std::string_view message)> on_error;
   std::function<void(LogLevel level, std::string_view message)> on_log;
+  // x6100 patch 15: called on each decode thread as it starts ("main", or
+  // "ultra" with EngineConfig::ultra_own_thread), so the host can set its
+  // CPU affinity or priority.
+  std::function<void(std::string_view lane)> on_decode_thread_start;
 };
 
 struct EngineDependencies {
@@ -134,9 +149,24 @@ public:
   virtual void set_tx_boost_enabled(bool enabled) = 0;
   virtual void set_submodes(int submodes) = 0;
 
+  // x6100 patch 9: the audio range searched (desktop: its waterfall filter
+  // edges, or 0-5000 Hz) and our own offset, whose neighbours are decoded
+  // first (desktop passes freq() as nfqso). Take effect at the next decode.
+  virtual void set_decode_range(int low_hz, int high_hz) = 0;
+  virtual void set_qso_offset(int offset_hz) = 0;
+
+  // x6100 patch 12: emit events::SyncState for every sync candidate and
+  // decode (desktop's "Show decode attempts" sets syncStats the same way).
+  // Off by default; takes effect at the next decode.
+  virtual void set_sync_stats(bool enabled) = 0;
+
   // Positive = engine clock ahead of system clock; takes effect at the next captured buffer.
   virtual void set_time_drift_ms(std::int64_t drift_ms) = 0;
   virtual std::int64_t time_drift_ms() const = 0;
+
+  // Re-snap the RX ring to the wall clock at the next captured buffer, e.g.
+  // after the host notices its sample count has slipped against real time.
+  virtual void request_realign() = 0;
 };
 
 std::unique_ptr<Js8Engine> make_engine(EngineConfig const& config,

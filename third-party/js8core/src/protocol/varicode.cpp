@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdio>
 #include <cmath>
 
 #ifdef __ANDROID__
@@ -180,8 +181,13 @@ int dbmTomwatts(int dbm) {
   return it->second;
 }
 
+// Desktop's Varicode::formatSNR(): "+05", "-08"; empty outside -60..+60
+// (local patch 7; this was unpadded and unchecked).
 std::string format_snr(int snr) {
-  return (snr >= 0 ? "+" : "") + std::to_string(snr);
+  if (snr < -60 || snr > 60) return {};
+  char buf[8];
+  std::snprintf(buf, sizeof(buf), "%s%0*d", snr >= 0 ? "+" : "", snr < 0 ? 3 : 2, snr);
+  return buf;
 }
 
 std::string trimmed_left(std::string s) {
@@ -727,14 +733,28 @@ std::uint8_t pack_pwr(std::string const& pwr, bool* ok) {
   }
 }
 
+// As desktop's Varicode::packCmd(): an SNR command is [1][type][6-bit
+// number] (type 1 = HEARTBEAT SNR), any other command its 7-bit value.
+// js8core kept 2 bits of the number and shifted every command, so a
+// compound frame's command and SNR didn't match desktop's (local patch 16).
 std::uint8_t pack_cmd(std::uint8_t cmd, std::uint8_t num, bool* p_packed_num) {
-  if (p_packed_num) *p_packed_num = kSnrCmds.count(cmd) > 0;
-  return (cmd & 0x1F) << 2 | (num & 0x03);
+  if (kSnrCmds.count(cmd) > 0) {
+    if (p_packed_num) *p_packed_num = true;
+    std::uint8_t value = static_cast<std::uint8_t>(((1 << 1) | (cmd == 29 ? 1 : 0)) << 6);
+    return static_cast<std::uint8_t>(value + (num & ((1 << 6) - 1)));
+  }
+  if (p_packed_num) *p_packed_num = false;
+  return static_cast<std::uint8_t>(cmd & ((1 << 7) - 1));
 }
 
+// As desktop's Varicode::unpackCmd().
 std::uint8_t unpack_cmd(std::uint8_t value, std::uint8_t* p_num) {
-  if (p_num) *p_num = value & 0x03;
-  return (value >> 2) & 0x1F;
+  if (value & (1 << 7)) {
+    if (p_num) *p_num = value & ((1 << 6) - 1);
+    return (value & (1 << 6)) ? 29 /* HEARTBEAT SNR */ : 25 /* SNR */;
+  }
+  if (p_num) *p_num = 0;
+  return value & ((1 << 7) - 1);
 }
 
 bool is_snr_command(std::string const& cmd) {
@@ -775,19 +795,57 @@ bool is_command_autoreply(std::string const& cmd) {
   return false;
 }
 
+// Port of desktop JS8Call's Varicode::isValidCallsign() and
+// isValidCompoundCallsign() (local patch 6). The earlier version here accepted
+// any short alphanumeric word ("JUST", "HELLO") as a callsign; desktop requires
+// a letter-digit pair so ordinary words aren't mistaken for callsigns.
+namespace {
+bool has_letter_digit_pair(std::string const& s) {
+  for (std::size_t i = 1; i < s.size(); ++i) {
+    bool a = std::isdigit((unsigned char)s[i - 1]), b = std::isdigit((unsigned char)s[i]);
+    bool la = std::isupper((unsigned char)s[i - 1]), lb = std::isupper((unsigned char)s[i]);
+    if ((a && lb) || (la && b)) return true;
+  }
+  return false;
+}
+
+bool is_valid_compound_callsign(std::string const& callsign) {
+  // Compound calls cannot be > 9 characters after removing the slashes.
+  auto slashes = std::count(callsign.begin(), callsign.end(), '/');
+  if ((long)callsign.size() - slashes > 9) return false;
+
+  // Valid when it is: an actual compound call (containing /) whose prefix is
+  // not a base call; a group call (@...); or longer than two characters with
+  // a letter-digit pair, so arbitrary short words aren't coded as callsigns.
+  if (auto index = callsign.find('/'); index != std::string::npos) {
+    return kBaseCalls.find(callsign.substr(0, index)) == kBaseCalls.end();
+  }
+  if (!callsign.empty() && callsign.front() == '@') return true;
+  return callsign.size() > 2 && has_letter_digit_pair(callsign);
+}
+}  // namespace
+
 bool is_valid_callsign(std::string const& callsign, bool* p_is_compound) {
   if (kBaseCalls.find(callsign) != kBaseCalls.end()) {
     if (p_is_compound) *p_is_compound = false;
     return true;
   }
-  static const std::regex re(R"(([@]?|\b)([A-Z0-9\/@][A-Z0-9\/]{0,2}[\/]?[A-Z0-9\/]{0,3}[\/]?[A-Z0-9\/]{0,3})\b)");
-  bool match = std::regex_match(callsign, re);
-  if (p_is_compound) {
-    auto slash = callsign.rfind('/');
-    // /P is represented by the portable bit in a normal directed frame.
-    *p_is_compound = slash != std::string::npos && callsign.substr(slash) != "/P";
+
+  static const std::regex base_re(R"(\b(([0-9A-Z])?([0-9A-Z])([0-9])([A-Z])?([A-Z])?([A-Z])?)([/][P])?\b)");
+  if (std::regex_match(callsign, base_re)) {
+    if (p_is_compound) *p_is_compound = false;
+    return callsign.size() > 2 && has_letter_digit_pair(callsign);
   }
-  return match;
+
+  static const std::regex compound_re(R"((?:[@]?|\b)([A-Z0-9\/@][A-Z0-9\/]{0,2}[\/]?[A-Z0-9\/]{0,3}[\/]?[A-Z0-9\/]{0,3})\b)");
+  if (std::regex_match(callsign, compound_re)) {
+    bool valid = is_valid_compound_callsign(callsign);
+    if (p_is_compound) *p_is_compound = valid;
+    return valid;
+  }
+
+  if (p_is_compound) *p_is_compound = false;
+  return false;
 }
 
 bool is_compound_callsign(std::string const& callsign) {
@@ -990,9 +1048,25 @@ std::string pack_directed_message(std::string const& text, std::string const& my
 
   auto to = match[1].str();
   auto cmd = match.size() > 2 ? match[2].str() : std::string{};
-  auto num = match.size() > 3 ? match[3].str() : std::string{};
 
   if (cmd.empty()) { if (n) *n = 0; return {}; }
+
+  // Desktop's number: only right after SNR (its optional_num_pattern,
+  // (?<=SNR)\s?[-+]?(?:3[01]|[0-2]?[0-9]); std::regex has no lookbehind).
+  // Taking digits after any command dropped them from the text: "RR 73"
+  // went out as RR with a number, a relay to 2E0ABC as one to E0ABC.
+  // (Local patch 11, see UPSTREAM.md.)
+  std::string num;
+  std::size_t consumed = static_cast<std::size_t>(match.position(2) + match.length(2));
+  if (cmd.size() >= 3 && cmd.compare(cmd.size() - 3, 3, "SNR") == 0) {
+    static const std::regex kSnrNum(R"(^\s?[-+]?(?:3[01]|[0-2]?[0-9]))");
+    std::smatch num_match;
+    auto rest = text.substr(consumed);
+    if (std::regex_search(rest, num_match, kSnrNum)) {
+      num = num_match.str(0);
+      consumed += static_cast<std::size_t>(num_match.length(0));
+    }
+  }
 
   bool isToCompound = false;
   bool validTo = (to != mycall) && is_valid_callsign(to, &isToCompound);
@@ -1043,7 +1117,7 @@ std::string pack_directed_message(std::string const& text, std::string const& my
   bits.insert(bits.end(), to_bits.begin(), to_bits.end());
   bits.insert(bits.end(), cmd_bits.begin(), cmd_bits.end());
 
-  if (n) *n = static_cast<int>(match.length(0));
+  if (n) *n = static_cast<int>(consumed);
   return pack72bits(bits_to_int(bits), packed_extra);
 }
 std::vector<std::string> unpack_directed_message(std::string const& text, std::uint8_t* pType) {
@@ -1098,7 +1172,56 @@ static std::string to_upper(std::string const& s) {
   return result;
 }
 
+namespace {
+// Desktop's packHuffMessage(): the default Huffman table with a [1][0]
+// prefix, only when every character has a code; chars packed into *n.
+std::string pack_huff_message(std::string const& text, int* n) {
+  constexpr int frameSize = 72;
+  auto table = default_huff_table();
+  auto valid = huff_valid_chars(table);
+  for (char ch : text) {
+    if (!valid.count(std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(ch)))))) {
+      if (n) *n = 0;
+      return {};
+    }
+  }
+  std::vector<bool> frameBits{true, false};
+  int chars_used = 0;
+  for (auto const& [chars, bits] : huff_encode(table, text)) {
+    if (static_cast<int>(frameBits.size() + bits.size()) < frameSize) {
+      frameBits.insert(frameBits.end(), bits.begin(), bits.end());
+      chars_used += chars;
+      continue;
+    }
+    break;
+  }
+  int pad = frameSize - static_cast<int>(frameBits.size());
+  for (int i = 0; i < pad; ++i) frameBits.push_back(i == 0 ? false : true);
+  auto value = bits_to_int(std::vector<bool>(frameBits.begin(), frameBits.begin() + 64));
+  auto rem = static_cast<std::uint8_t>(bits_to_int(std::vector<bool>(frameBits.begin() + 64, frameBits.end())));
+  if (n) *n = chars_used;
+  return pack72bits(static_cast<std::uint64_t>(value), rem);
+}
+} // namespace
+
+std::string pack_jsc_data_message(std::string const& text, int* n);
+
+// Desktop's packDataMessage(): Huffman or JSC, whichever fits more
+// characters (JSC on a tie). JSC alone put callsigns in more frames than
+// desktop does (local patch 11).
 std::string pack_data_message(std::string const& text, int* n) {
+  int huff_chars = 0, jsc_chars = 0;
+  auto huff = pack_huff_message(to_upper(text), &huff_chars);
+  auto jsc  = pack_jsc_data_message(text, &jsc_chars);
+  if (huff_chars > jsc_chars) {
+    if (n) *n = huff_chars;
+    return huff;
+  }
+  if (n) *n = jsc_chars;
+  return jsc;
+}
+
+std::string pack_jsc_data_message(std::string const& text, int* n) {
   // Legacy data frames use a 2-bit prefix: [data=1][compressed=1] + payload.
   // JSC dictionary only contains uppercase, so convert input first
   std::string upperText = to_upper(text);
@@ -1355,9 +1478,17 @@ std::vector<std::pair<std::string, int>> build_message_frames(std::string const&
           lineFrames.push_back({frame, 0});
         }
         line = line.substr(nlen);
-        if (is_command_buffered(dirCmd) && !line.empty()) {
+        // Desktop's isCommandBuffered() here also counts any command with a
+        // space in it (" RR", " YES", " HEARTBEAT SNR" ...), so the text
+        // after it loses its leading space: "RR 73" sends "73", not " 73"
+        // (local patch 11).
+        bool desktopBuffered = is_command_buffered(dirCmd) ||
+                               (dirCmd.find(' ') != std::string::npos && is_command_allowed(dirCmd));
+        if (desktopBuffered && !line.empty()) {
           line = lstrip(line);
-          int checksumSize = is_command_checksummed(dirCmd);
+          // Desktop sends @APRSIS MSG / MSG TO: without a checksum.
+          bool skipAprsChecksum = to_upper(dirTo) == "@APRSIS" && (dirCmd == " MSG" || dirCmd == " MSG TO:");
+          int checksumSize = skipAprsChecksum ? 0 : is_command_checksummed(dirCmd);
           if (checksumSize == 32) {
             line = line + " " + checksum32(line);
           } else if (checksumSize == 16) {
