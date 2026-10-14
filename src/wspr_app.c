@@ -41,16 +41,22 @@
 #define TX_RATE         WSPR_DEMOD_RATE
 #define CHUNK_SAMPLES   512
 
-#define CENTER_MIN      1400
-#define CENTER_MAX      1600
-#define CENTER_DEFAULT  1500
+/*
+ * The receiver always decodes the whole 200 Hz WSPR window, 1400 to
+ * 1600 Hz, as WSJT-X does. Only the transmit frequency is set by the
+ * operator, anywhere in that window.
+ */
+#define RX_CENTER       WSPR_APP_RX_CENTER
+#define TX_FREQ_MIN     1400
+#define TX_FREQ_MAX     1600
+#define TX_FREQ_DEFAULT 1500
 
 static pthread_mutex_t  mux;
 static bool             ready = false;
 static bool             active = false;
 
 static wspr_worker_t   *worker = NULL;
-static uint16_t         cfg_center = CENTER_DEFAULT;
+static uint16_t         cfg_tx_freq = TX_FREQ_DEFAULT;
 
 /* 0 = receive only, N = one slot in N. */
 static uint8_t          cfg_tx_period = 0;
@@ -362,7 +368,7 @@ static void transmit_message(void)
     if (wspr_encode(call, loc, dbm, symbols) != 0)
         return;
 
-    if (wspr_mod_init(&mod, TX_RATE, (double)cfg_center -
+    if (wspr_mod_init(&mod, TX_RATE, (double)cfg_tx_freq -
                       1.5 * WSPR_TONE_SPACING_HZ) != 0) {
         return;
     }
@@ -514,7 +520,7 @@ static bool setup(void)
 
     teardown();
 
-    worker = wspr_worker_create(WSPR_DEMOD_RATE, (double)cfg_center, &cb);
+    worker = wspr_worker_create(WSPR_DEMOD_RATE, (double)RX_CENTER, &cb);
     if (!worker)
         return false;
 
@@ -608,27 +614,21 @@ void wspr_app_put_audio_samples(size_t n, float *samples)
     wspr_worker_feed(worker, (unsigned int)n, samples);
 }
 
-uint16_t wspr_app_get_center(void)
+uint16_t wspr_app_get_tx_freq(void)
 {
-    return cfg_center;
+    return cfg_tx_freq;
 }
 
-void wspr_app_set_center(uint16_t hz)
+/* Used at the next transmission; the receiver is not touched. */
+void wspr_app_set_tx_freq(uint16_t hz)
 {
-    if (hz < CENTER_MIN)
-        hz = CENTER_MIN;
-    if (hz > CENTER_MAX)
-        hz = CENTER_MAX;
+    if (hz < TX_FREQ_MIN)
+        hz = TX_FREQ_MIN;
+    if (hz > TX_FREQ_MAX)
+        hz = TX_FREQ_MAX;
 
     pthread_mutex_lock(&mux);
-    cfg_center = hz;
-    if (active) {
-        /* the change invalidates the chain; stop the feed while the
-         * worker is replaced, for the same reason as in set_active */
-        audio_feed(false);
-        setup();
-        audio_feed(worker != NULL);
-    }
+    cfg_tx_freq = hz;
     pthread_mutex_unlock(&mux);
 }
 

@@ -54,11 +54,11 @@
 #define WF_HEIGHT       325
 #define TABLE_TOP       55
 
-/* Encoder steps for the window centre, and how long to wait after the
- * last click before rebuilding the receive chain. Rebuilding costs the
- * rest of the slot, so it must not happen on every click. */
-#define CENTER_STEP_HZ  5
-#define CENTER_APPLY_MS 1200
+/* Encoder step for our transmit frequency, and the width of its marker.
+ * Moving it never touches the receiver, which always decodes the whole
+ * 1400-1600 Hz window. */
+#define TX_STEP_HZ      5
+#define TX_MARK_HZ      6               /* four tones, 1.46 Hz apart */
 
 /* ------------------------------------------------------------------ */
 /* Standard WSPR dial frequencies                                      */
@@ -105,15 +105,15 @@ static void band_cb(lv_event_t *e);
 
 static const char *tx_label_getter(void);
 static const char *pwr_label_getter(void);
-static const char *center_label_getter(void);
+static const char *txf_label_getter(void);
 static const char *status_label_getter(void);
 
 static void tx_press_cb(button_data_t *b);
 static void tx_hold_cb(button_data_t *b);
 static void pwr_press_cb(button_data_t *b);
 static void pwr_hold_cb(button_data_t *b);
-static void center_press_cb(button_data_t *b);
-static void center_hold_cb(button_data_t *b);
+static void txf_press_cb(button_data_t *b);
+static void txf_hold_cb(button_data_t *b);
 static void clear_press_cb(button_data_t *b);
 static void band_up_cb(button_data_t *b);
 static void band_down_cb(button_data_t *b);
@@ -121,16 +121,16 @@ static void band_down_cb(button_data_t *b);
 #define table (table_view_obj())
 
 static lv_obj_t   *waterfall;
-static lv_obj_t   *finder;
+static lv_obj_t   *finder;            /* our transmit frequency */
+static lv_obj_t   *window_box;        /* 1400-1600 Hz, decoded */
 
 static lv_timer_t *status_timer = NULL;
-static lv_timer_t *center_timer = NULL;
 static lv_timer_t *fade_timer = NULL;
 
 static lv_anim_t   fade;
 static bool        fade_run = false;
 
-static uint16_t    pending_center = 0;
+static uint16_t    tx_hz = 0;
 static double      cur_lat, cur_lon;
 
 /* ---- Buttons ---------------------------------------------------------- */
@@ -168,8 +168,8 @@ static button_data_t button_band_up = {
     .type = BTN_TEXT, .label = "Band\nup", .press = band_up_cb,
 };
 static button_data_t button_center = {
-    .type = BTN_TEXT_FN, .label_fn = center_label_getter,
-    .press = center_press_cb, .hold = center_hold_cb,
+    .type = BTN_TEXT_FN, .label_fn = txf_label_getter,
+    .press = txf_press_cb, .hold = txf_hold_cb,
 };
 
 static buttons_page_t btn_page_1 = {
@@ -242,9 +242,8 @@ static void load_band(int8_t dir)
 
 static void restart_rx(void)
 {
-    /* set_center() rebuilds the chain, which is exactly what a band
-     * change needs too: the collected baseband no longer belongs to the
-     * frequency being displayed. */
+    /* A band change rebuilds the receive chain: the collected baseband
+     * no longer belongs to the frequency being displayed. */
     wspr_app_set_active(false);
     wspr_app_set_active(true);
 }
@@ -422,11 +421,11 @@ static const char *pwr_label_getter(void)
     return buf;
 }
 
-static const char *center_label_getter(void)
+static const char *txf_label_getter(void)
 {
     static char buf[32];
 
-    snprintf(buf, sizeof(buf), "Center:\n%u Hz", (unsigned)pending_center);
+    snprintf(buf, sizeof(buf), "TX freq:\n%u Hz", (unsigned)tx_hz);
     return buf;
 }
 
@@ -522,24 +521,24 @@ static void pwr_hold_cb(button_data_t *b)
     buttons_refresh(b);
 }
 
-static void apply_center(void);
+static void apply_tx_freq(void);
 
-static void center_press_cb(button_data_t *b)
+static void txf_press_cb(button_data_t *b)
 {
-    uint16_t f = pending_center + 10;
+    uint16_t f = tx_hz + 10;
 
     if (f > 1600)
         f = 1400;
-    pending_center = f;
+    tx_hz = f;
     buttons_refresh(b);
-    apply_center();
+    apply_tx_freq();
 }
 
-static void center_hold_cb(button_data_t *b)
+static void txf_hold_cb(button_data_t *b)
 {
-    pending_center = 1500;
+    tx_hz = 1500;
     buttons_refresh(b);
-    apply_center();
+    apply_tx_freq();
 }
 
 static void clear_press_cb(button_data_t *b)
@@ -548,38 +547,28 @@ static void clear_press_cb(button_data_t *b)
     clean_screen();
 }
 
-/* ---- Window centre ---------------------------------------------------- */
+/* ---- Transmit frequency ---------------------------------------------- */
 
+#define WF_LOW_HZ   (WSPR_APP_RX_CENTER - WSPR_WORK_RATE / 2)
+#define WF_HIGH_HZ  (WSPR_APP_RX_CENTER + WSPR_WORK_RATE / 2)
+
+/*
+ * The waterfall spans one working rate, 375 Hz, around the WSPR window.
+ * The whole window, 1400 to 1600 Hz, is always decoded and outlined; the
+ * red marker is our own transmission, about 6 Hz wide, as in WSJT-X.
+ */
 static void update_finder(void)
 {
-    /*
-     * The waterfall spans one working rate, 375 Hz, centred on the
-     * receive window. The finder marks the 200 Hz the protocol actually
-     * uses inside it.
-     */
-    lv_finder_set_range(finder,
-                        (int16_t)(pending_center - WSPR_WORK_RATE / 2),
-                        (int16_t)(pending_center + WSPR_WORK_RATE / 2));
-    lv_finder_set_width(finder, 200);
-    lv_finder_set_value(finder, (int16_t)pending_center);
+    lv_finder_set_range(finder, (int16_t)WF_LOW_HZ, (int16_t)WF_HIGH_HZ);
+    lv_finder_set_width(finder, TX_MARK_HZ);
+    lv_finder_set_value(finder, (int16_t)(tx_hz - TX_MARK_HZ / 2));   /* left edge */
     lv_obj_invalidate(finder);
 }
 
-static void apply_center(void)
+static void apply_tx_freq(void)
 {
-    if (pending_center == wspr_app_get_center())
-        return;
-
-    wspr_app_set_center(pending_center);
+    wspr_app_set_tx_freq(tx_hz);
     update_finder();
-    clean_screen();
-}
-
-static void center_timer_cb(lv_timer_t *t)
-{
-    (void)t;
-    center_timer = NULL;
-    apply_center();
 }
 
 /* ---- Fade ------------------------------------------------------------- */
@@ -608,17 +597,16 @@ static void fade_back_cb(lv_timer_t *t)
 
 static void rotary_cb(int32_t diff)
 {
-    int32_t f = (int32_t)pending_center + diff * CENTER_STEP_HZ;
+    int32_t f = (int32_t)tx_hz + diff * TX_STEP_HZ;
 
     if (f < 1400)
         f = 1400;
     if (f > 1600)
         f = 1600;
-    pending_center = (uint16_t)f;
+    tx_hz = (uint16_t)f;
 
     buttons_refresh(&button_center);
-    lv_finder_set_value(finder, (int16_t)pending_center);
-    lv_obj_invalidate(finder);
+    apply_tx_freq();
 
     /* Reveal the waterfall while tuning, exactly as the FT8 window
      * does, and bring the table back a second after the last click. */
@@ -634,18 +622,6 @@ static void rotary_cb(int32_t diff)
     } else {
         fade_timer = lv_timer_create(fade_back_cb, 1000, NULL);
         lv_timer_set_repeat_count(fade_timer, 1);
-    }
-
-    /*
-     * Rebuilding the receive chain throws away the slot in progress, so
-     * it waits until the encoder has been still for a moment rather
-     * than firing on every click.
-     */
-    if (center_timer) {
-        lv_timer_reset(center_timer);
-    } else {
-        center_timer = lv_timer_create(center_timer_cb, CENTER_APPLY_MS, NULL);
-        lv_timer_set_repeat_count(center_timer, 1);
     }
 }
 
@@ -713,7 +689,19 @@ static void construct_cb(lv_obj_t *parent)
 
     lv_obj_set_pos(waterfall, 13, 13);
 
-    /* Window marker */
+    /* The decoded window, 1400-1600 Hz: its edges */
+
+    window_box = lv_obj_create(waterfall);
+    lv_obj_remove_style_all(window_box);
+    lv_obj_set_size(window_box, WIDTH * 200 / (WF_HIGH_HZ - WF_LOW_HZ), WF_HEIGHT);
+    lv_obj_set_pos(window_box, WIDTH * (1400 - WF_LOW_HZ) / (WF_HIGH_HZ - WF_LOW_HZ), 0);
+    lv_obj_set_style_border_side(window_box, LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_RIGHT, 0);
+    lv_obj_set_style_border_width(window_box, 1, 0);
+    lv_obj_set_style_border_color(window_box, lv_color_white(), 0);
+    lv_obj_set_style_border_opa(window_box, LV_OPA_40, 0);
+    lv_obj_clear_flag(window_box, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Transmit frequency marker */
 
     finder = lv_finder_create(waterfall);
 
@@ -788,7 +776,7 @@ static void construct_cb(lv_obj_t *parent)
     wspr_app_set_ui_cb(&ui_cb);
     wspr_app_set_active(true);
 
-    pending_center = wspr_app_get_center();
+    tx_hz = wspr_app_get_tx_freq();
     update_finder();
 
     status_timer = lv_timer_create(status_timer_cb, 1000, NULL);
@@ -799,10 +787,6 @@ static void destruct_cb(void)
     if (status_timer) {
         lv_timer_del(status_timer);
         status_timer = NULL;
-    }
-    if (center_timer) {
-        lv_timer_del(center_timer);
-        center_timer = NULL;
     }
     if (fade_timer) {
         lv_timer_del(fade_timer);

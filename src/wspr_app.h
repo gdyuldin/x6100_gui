@@ -74,9 +74,14 @@ bool wspr_app_is_active(void);
  * application subscribes itself in wspr_app_init(). */
 void wspr_app_put_audio_samples(size_t n, float *samples);
 
-/* Centre of the 200 Hz WSPR window in the audio passband. */
-uint16_t wspr_app_get_center(void);
-void     wspr_app_set_center(uint16_t hz);
+/* The receiver decodes the whole WSPR window, 1400 to 1600 Hz, centred
+ * here, as WSJT-X does. */
+#define WSPR_APP_RX_CENTER  1500
+
+/* Audio frequency of our transmission (the middle of its four tones),
+ * 1400 to 1600 Hz. */
+uint16_t wspr_app_get_tx_freq(void);
+void     wspr_app_set_tx_freq(uint16_t hz);
 
 /*
  * Transmit period: 0 means receive only, N means one slot in N. Which
