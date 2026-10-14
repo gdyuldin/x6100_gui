@@ -17,7 +17,10 @@
 #include <cmath>
 #include <chrono>
 #include <string>
+#include <cerrno>
+#include <cstring>
 #include <poll.h>
+#include <unistd.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <bluetooth/bluetooth.h>
@@ -154,11 +157,19 @@ static void cat_thread() {
     // New devices pair through the Bluetooth window.
     struct bt_security sec = {};
     sec.level = BT_SECURITY_MEDIUM;
-    setsockopt(fd_bt_sock, SOL_BLUETOOTH, BT_SECURITY, &sec, sizeof(sec));
+    if (fd_bt_sock >= 0 && setsockopt(fd_bt_sock, SOL_BLUETOOTH, BT_SECURITY, &sec, sizeof(sec)) < 0) {
+        // Not open to anyone instead: no CAT over Bluetooth (poll skips
+        // fd -1), CAT over USB as usual.
+        LV_LOG_ERROR("Bluetooth CAT off: can't require pairing (%s)", strerror(errno));
+        close(fd_bt_sock);
+        fd_bt_sock = -1;
+    }
 
-    bind(fd_bt_sock, (struct sockaddr *)&addr, sizeof(addr));
-    listen(fd_bt_sock, 1);
-    fcntl(fd_bt_sock, F_SETFL, O_NONBLOCK);
+    if (fd_bt_sock >= 0) {
+        bind(fd_bt_sock, (struct sockaddr *)&addr, sizeof(addr));
+        listen(fd_bt_sock, 1);
+        fcntl(fd_bt_sock, F_SETFL, O_NONBLOCK);
+    }
 
     struct pollfd fds[4];
 
