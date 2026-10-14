@@ -37,6 +37,7 @@ typedef enum {
     MODE_FT8,
     MODE_FT4,
     MODE_RTTY,
+    MODE_JS8 = 8,       /* stored in qso_log.db: never reused or changed */
 } qso_log_mode_t;
 
 typedef struct {
