@@ -24,7 +24,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     audio.c mfk.cpp cw.cpp panel.cpp
     rtty.c screenshot.c display.cpp gps.c
     ui_list.c app_info.c
-    dialog.c dialog_swrscan.c
+    dialog.c dialog_swrscan.c dialog_wefax.c wefax/decoder.c wefax/stations.c
     dxcc.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
     ft8_ui/table_view.c

@@ -39,6 +39,7 @@
 #include "dialog_msg_voice.h"
 #include "dialog_swrscan.h"
 #include "dialog_ft8.h"
+#include "dialog_wefax.h"
 #include "dialog_gps.h"
 #include "dialog_qth.h"
 #include "dialog_recorder.h"
@@ -202,6 +203,11 @@ void main_screen_start_app(press_action_t app_action) {
             voice_say_text_fmt("Bluetooth window");
             break;
 
+        case ACTION_APP_WEFAX:
+            dialog_construct(dialog_wefax, obj);
+            voice_say_text_fmt("WeFax window");
+            break;
+
         default:
             break;
     }
@@ -269,6 +275,7 @@ void main_screen_action(press_action_t action) {
         case ACTION_APP_RECORDER:
         case ACTION_APP_WIFI:
         case ACTION_APP_BT:
+        case ACTION_APP_WEFAX:
             main_screen_start_app(action);
             break;
 
