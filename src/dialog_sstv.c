@@ -659,6 +659,10 @@ static void destruct_cb(void)
     tx_running = false;
     tx_started = false;
 
+    /* Back to the power setting, which construct_cb() may have capped at
+     * MAX_PWR (as FT8 does when it closes). */
+    radio_set_pwr(param_f_get(cfg.pwr()));
+
     if (ui_timer) {
         lv_timer_del(ui_timer);
         ui_timer = NULL;
