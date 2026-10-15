@@ -43,7 +43,7 @@ typedef enum {
     ACTION_APP_QTH,
     ACTION_APP_CALLSIGN,
     ACTION_APP_WIFI,
-    ACTION_APP_SSTV,
+    ACTION_APP_SSTV = 111,
     ACTION_APP_BT = 116,
 } press_action_t;
 
