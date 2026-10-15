@@ -459,8 +459,10 @@ static buttons_page_t page_app_2 = {
 static buttons_page_t page_app_3 = {
     {&btn_app_p3, &btn_wifi, &btn_bt}
 };
+/* Page 4: PSK31, Olivia, WeFax, SSTV; the first three come with their own
+ * pull requests, SSTV keeps the last place meanwhile. */
 static buttons_page_t page_app_4 = {
-    {&btn_app_p4, &btn_sstv, NULL, NULL, NULL}
+    {&btn_app_p4, NULL, NULL, NULL, &btn_sstv}
 };
 
 /* RTTY */
