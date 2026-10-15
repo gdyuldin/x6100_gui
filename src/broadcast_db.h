@@ -1,0 +1,32 @@
+#ifndef BROADCAST_DB_H
+#define BROADCAST_DB_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#define BROADCAST_MAX_MATCHES 16
+
+typedef struct {
+    double freq_khz;
+    int start_minute;
+    int stop_minute;
+    char station[202];
+    char language[50];
+    char target[63];
+    char days[60];
+    char itu[50];
+    char remarks[136];
+} broadcast_match_t;
+
+/* Ensure /mnt/broadcast.csv exists, then load it into memory. */
+bool broadcast_db_init(void);
+
+/* Find all stations active now within tolerance_hz of freq_hz. */
+size_t broadcast_db_find_matches(int32_t freq_hz, int tolerance_hz,
+                                 broadcast_match_t *matches, size_t max_matches);
+
+size_t broadcast_db_count(void);
+
+#endif
+
