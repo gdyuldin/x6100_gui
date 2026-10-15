@@ -37,6 +37,9 @@ void audio_play_wait();
 
 audio_player_t *audio_create_player(uint32_t sample_rate, uint32_t ch);
 audio_player_t *audio_get_player(uint32_t sample_rate, uint32_t ch);
+/* Player on the given PulseAudio sink (Bluetooth listening, see
+ * bt_audio.c). NULL if the stream cannot be opened. */
+audio_player_t *audio_create_player_on(const char *device, uint32_t sample_rate, uint32_t ch);
 int audio_player_send(audio_player_t *player, int16_t *samples_buf, size_t samples);
 void audio_player_wait(audio_player_t *player);
 void audio_player_release(audio_player_t *player);

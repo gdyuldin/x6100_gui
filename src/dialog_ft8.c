@@ -43,6 +43,7 @@
 
 #include "ft8/worker.h"
 #include "adif.h"
+#include "ft8_udp.h"
 #include "qso_log.h"
 #include "dxcc.h"
 #include "scheduler.h"
@@ -205,6 +206,89 @@ static dialog_t dialog = {
 
 dialog_t *dialog_ft8 = &dialog;
 
+/* ---- WSJT-X datagrams over UDP (ft8_udp.c) -----------------------------
+ *
+ * Status goes out whenever something a logger shows has changed - RX/TX,
+ * the audio offset, the dial, the station being worked - and with every
+ * heartbeat. One 250 ms timer compares and sends, so no existing code
+ * path has to call it and turning the finder cannot burst packets.
+ * Every ft8_udp_send_* returns at once when UDP is off. */
+
+#define UDP_POLL_MS        250
+#define UDP_HEARTBEAT_POLLS 60      /* 15 s, as WSJT-X */
+
+static lv_timer_t *udp_timer = NULL;
+static uint32_t    udp_polls = 0;
+static int         udp_last_state = -1;
+static int32_t     udp_last_df = -1;
+static int64_t     udp_last_freq = -1;
+static char        udp_last_dx[16];
+
+static const char *udp_mode_str(void) {
+    return param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? "FT8" : "FT4";
+}
+
+/* The QSO partner is not exposed by the qso processor, but the pending TX
+ * message always starts with it ("DXCALL MYCALL ..."), except for CQ. */
+static void udp_current_dx_call(char *out, size_t out_sz) {
+    size_t i = 0;
+
+    out[0] = '\0';
+    if (tx_msg.msg[0] == '\0') return;
+
+    while (tx_msg.msg[i] && tx_msg.msg[i] != ' ' && i < out_sz - 1) {
+        out[i] = tx_msg.msg[i];
+        i++;
+    }
+    out[i] = '\0';
+
+    if (strcmp(out, "CQ") == 0) out[0] = '\0';
+}
+
+static void udp_status_send(void) {
+    char dx_call[16];
+    char my_call[PARAM_TEXT_MAX];
+    char my_grid[PARAM_TEXT_MAX];
+    uint32_t df = (uint32_t)param_i_get(cfg.ft8.tx_freq());
+
+    udp_current_dx_call(dx_call, sizeof(dx_call));
+    param_t_get_into(cfg.callsign(), my_call, sizeof(my_call));
+    param_t_get_into(cfg.qth(), my_grid, sizeof(my_grid));
+
+    ft8_udp_send_status((uint64_t)cparam_i_get(cfg.cur.fg_freq()), udp_mode_str(),
+                        my_call, my_grid, dx_call,
+                        df,                         /* rx df (audio offset) */
+                        df,                         /* tx df                */
+                        state == TX_PROCESS,        /* transmitting */
+                        state != TX_PROCESS);       /* decoding     */
+
+    udp_last_state = (int)state;
+    udp_last_df = (int32_t)df;
+    udp_last_freq = (int64_t)cparam_i_get(cfg.cur.fg_freq());
+    snprintf(udp_last_dx, sizeof(udp_last_dx), "%s", dx_call);
+}
+
+static void udp_timer_cb(lv_timer_t *t) {
+    char dx_call[16];
+
+    (void)t;
+
+    if (++udp_polls >= UDP_HEARTBEAT_POLLS) {
+        udp_polls = 0;
+        ft8_udp_send_heartbeat();
+        udp_status_send();
+        return;
+    }
+
+    udp_current_dx_call(dx_call, sizeof(dx_call));
+    if ((int)state != udp_last_state ||
+        param_i_get(cfg.ft8.tx_freq()) != udp_last_df ||
+        (int64_t)cparam_i_get(cfg.cur.fg_freq()) != udp_last_freq ||
+        strcmp(dx_call, udp_last_dx) != 0) {
+        udp_status_send();
+    }
+}
+
 static void save_qso(const char *remote_callsign, const char *remote_grid, const int r_snr, const int s_snr) {
     time_t now = time(NULL);
 
@@ -222,6 +306,19 @@ static void save_qso(const char *remote_callsign, const char *remote_grid, const
 
     // Save QSO to sqlite log
     qso_log_record_save(qso);
+
+    /* Tell UDP listeners: the structured QSO Logged and the ADIF form, a
+     * valid record (band from frequency, empty fields omitted). */
+    {
+        char my_call[PARAM_TEXT_MAX], my_grid[PARAM_TEXT_MAX];
+
+        param_t_get_into(cfg.callsign(), my_call, sizeof(my_call));
+        param_t_get_into(cfg.qth(), my_grid, sizeof(my_grid));
+        ft8_udp_log_qso(now, qso.remote_call, remote_grid,
+                        (uint64_t)cparam_i_get(cfg.cur.fg_freq()), udp_mode_str(),
+                        s_snr, r_snr, (int)param_f_get(cfg.pwr()),
+                        my_call, my_grid);
+    }
 
     if (strlen(remote_grid) >= 4) {
         double lat, lon, dist;
@@ -301,6 +398,15 @@ static void destruct_cb() {
     dsp_audio_set_active(dsp_audio_sub_id, false);
     keyboard_close();
     worker_done();
+
+    /* After worker_done(): the decoder thread, which also sends, has
+     * stopped, so the socket can go. */
+    if (udp_timer) {
+        lv_timer_del(udp_timer);
+        udp_timer = NULL;
+    }
+    ft8_udp_deinit();
+
     table_view_destroy();
 
     waterfall_set_enabled(true);
@@ -545,6 +651,17 @@ static void construct_cb(lv_obj_t *parent) {
 
     /* Logger */
     ft8_log = adif_log_init("/mnt/ft_log.adi");
+
+    /* WSJT-X compatible datagrams over UDP (GridTracker, JTAlert, ...). */
+    ft8_udp_init();
+    udp_polls = 0;
+    udp_last_state = -1;
+    ft8_udp_send_heartbeat();
+    udp_status_send();
+    udp_timer = lv_timer_create(udp_timer_cb, UDP_POLL_MS, NULL);
+    if (ft8_udp_is_enabled()) {
+        msg_schedule_text_fmt("UDP -> %s:%u", ft8_udp_host(), ft8_udp_port());
+    }
 
     if (param_f_get(cfg.pwr()) > MAX_PWR) {
         radio_set_pwr(MAX_PWR);
@@ -968,6 +1085,15 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
 static void on_message_cb(const char *text, int snr, float freq_hz, float time_sec,
                           const slot_info_t *info, void *ctx) {
     (void)ctx;
+
+    /* Mirror the decode to WSJT-X compatible listeners before the UI
+     * work, so they see it promptly. Worker thread; the emitter only
+     * builds a datagram on the stack and hands it to a non-blocking
+     * socket. */
+    ft8_udp_send_decode(true,
+                        param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? "~" : "+",
+                        text, (int32_t)snr, time_sec, (uint32_t)(freq_hz + 0.5f));
+
     add_rx_text((int16_t)snr, text, (slot_info_t *)info, freq_hz, time_sec);
 }
 
