@@ -29,6 +29,7 @@
 #include "msg.h"
 #include "ui_list.h"
 #include "app_info.h"
+#include "spectrum.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -1056,6 +1057,11 @@ static void construct_cb(lv_obj_t *parent)
 
     dialog.obj = dialog_init(parent);
     freq_start();
+
+    /* Tuning markers on the spectrum: black / white, 1075 / 1925 Hz */
+    spectrum_set_markers(WEFAX_CENTER_HZ - WEFAX_SHIFT_HZ / 2,
+                         WEFAX_CENTER_HZ + WEFAX_SHIFT_HZ / 2);
+
     rx_buttons_sync(true);
 
 
@@ -1181,6 +1187,7 @@ static void construct_cb(lv_obj_t *parent)
 static void destruct_cb(void)
 {
     app_info_abort();
+    spectrum_clear_markers();
     dsp_audio_set_active(dsp_audio_sub_id, false);
     stop_wav_test();
 
