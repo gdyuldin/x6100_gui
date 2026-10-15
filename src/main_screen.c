@@ -39,6 +39,7 @@
 #include "dialog_msg_voice.h"
 #include "dialog_swrscan.h"
 #include "dialog_ft8.h"
+#include "dialog_sstv.h"
 #include "dialog_gps.h"
 #include "dialog_qth.h"
 #include "dialog_recorder.h"
@@ -202,6 +203,11 @@ void main_screen_start_app(press_action_t app_action) {
             voice_say_text_fmt("Bluetooth window");
             break;
 
+        case ACTION_APP_SSTV:
+            dialog_construct(dialog_sstv, obj);
+            voice_say_text_fmt("SSTV window");
+            break;
+
         default:
             break;
     }
@@ -269,6 +275,7 @@ void main_screen_action(press_action_t action) {
         case ACTION_APP_RECORDER:
         case ACTION_APP_WIFI:
         case ACTION_APP_BT:
+        case ACTION_APP_SSTV:
             main_screen_start_app(action);
             break;
 
@@ -646,6 +653,11 @@ static void keypad_vm(const event_keypad_t *kp) {
 static void main_screen_keypad_cb(lv_event_t *e) {
     const event_keypad_t *kp = lv_event_get_param(e);
 
+    /* Any front-panel key (MFK excluded: it is not a keypad key) closes the SSTV
+     * target-callsign keyboard before the key is processed. */
+    if (kp->state == KEYPAD_PRESS)
+        dialog_sstv_keyboard_dismiss();
+
     switch (kp->key) {
         case KEYPAD_PRE:
             keypad_pre(kp);
@@ -749,6 +761,10 @@ static void main_screen_keypad_cb(lv_event_t *e) {
 
 static void main_screen_hkey_cb(lv_event_t * e) {
     event_hkey_t *hkey = lv_event_get_param(e);
+
+    /* Same for microphone keys.  FINP confirms the keyboard, so it is skipped. */
+    if (hkey->state == HKEY_PRESS && hkey->key != HKEY_FINP)
+        dialog_sstv_keyboard_dismiss();
     switch (hkey->key) {
         case HKEY_1:
         case HKEY_2:
