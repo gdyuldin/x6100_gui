@@ -10,9 +10,6 @@
 
 #include "globals.h"
 #include "dsp.h"
-#include "dialog_wefax.h"
-#include "dialog_navtex.h"
-#include "dialog_dsc.h"
 #include "events.h"
 #include "meter.h"
 #include "cfg/cfg_api.h"
@@ -80,6 +77,11 @@ static int32_t dnf_center;
 static int32_t dnf_width;
 
 static bool center_line_show = true;
+
+/* Tuning markers set by an app (spectrum_set_markers), audio Hz */
+static bool    app_markers_show = false;
+static int32_t app_marker_from;
+static int32_t app_marker_to;
 
 static int32_t cur_base_lo_freq;
 static uint8_t prev_fft_dec = 1;
@@ -251,31 +253,11 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
         lv_draw_line(draw_ctx, &line_dsc, &a, &b);
     }
 
-    /* NAVTEX / DSC tuning markers: 1000 Hz center, 170 Hz shift -> 915 / 1085 Hz. */
-    if (dialog_navtex_is_active() || dialog_dsc_is_active()) {
-        int32_t from = sign_from * 915;
-        int32_t to   = sign_to * 1085;
+    /* App tuning markers (spectrum_set_markers) */
 
-        f1 = (int64_t)(w * from) / width_hz;
-        f2 = (int64_t)(w * to) / width_hz;
-
-        lv_point_t a, b;
-
-        a.x = x1 + markers_offset + w / 2 + f1;
-        a.y = y1;
-        b.x = a.x;
-        b.y = y1 + h;
-        lv_draw_line(draw_ctx, &line_dsc, &a, &b);
-
-        a.x = x1 + markers_offset + w / 2 + f2;
-        b.x = a.x;
-        lv_draw_line(draw_ctx, &line_dsc, &a, &b);
-    }
-
-    /* WEFAX tuning markers: 1500 Hz center, 850 Hz shift -> 1075 / 1925 Hz. */
-    if (dialog_wefax_is_active()) {
-        int32_t from = sign_from * 1075;
-        int32_t to   = sign_to * 1925;
+    if (app_markers_show) {
+        int32_t from = sign_from * app_marker_from;
+        int32_t to   = sign_to * app_marker_to;
 
         f1 = (int64_t)(w * from) / width_hz;
         f2 = (int64_t)(w * to) / width_hz;
@@ -310,6 +292,25 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
     }
     if (center_line_show) {
         lv_draw_line(draw_ctx, &line_dsc, &c, &d);
+    }
+}
+
+void spectrum_set_markers(int32_t from_hz, int32_t to_hz) {
+    app_marker_from  = from_hz;
+    app_marker_to    = to_hz;
+    app_markers_show = true;
+    if (obj) {
+        lv_obj_invalidate(obj);
+    }
+}
+
+void spectrum_clear_markers(void) {
+    if (!app_markers_show) {
+        return;
+    }
+    app_markers_show = false;
+    if (obj) {
+        lv_obj_invalidate(obj);
     }
 }
 
