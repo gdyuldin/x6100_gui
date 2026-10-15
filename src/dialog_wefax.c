@@ -149,7 +149,7 @@ static void save_cb(button_data_t *data);
 static void test_cb(button_data_t *data);
 
 static void audio_cb(
-    unsigned int n,
+    size_t n,
     float *samples
 );
 
@@ -3574,7 +3574,7 @@ static void test_cb(button_data_t *data)
  * RX audio callback.
  */
 static void audio_cb(
-    unsigned int n,
+    size_t n,
     float *samples)
 {
     if (!decoder) {
