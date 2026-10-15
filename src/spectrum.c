@@ -10,6 +10,9 @@
 
 #include "globals.h"
 #include "dsp.h"
+#include "dialog_wefax.h"
+#include "dialog_navtex.h"
+#include "dialog_dsc.h"
 #include "events.h"
 #include "meter.h"
 #include "cfg/cfg_api.h"
@@ -231,6 +234,48 @@ static void spectrum_overlay_draw_cb(lv_event_t *e) {
 
         from = sign_from * (param_i_get(cfg.rtty.center()) - param_i_get(cfg.rtty.shift()) / 2);
         to   = sign_to * (param_i_get(cfg.rtty.center()) + param_i_get(cfg.rtty.shift()) / 2);
+
+        f1 = (int64_t)(w * from) / width_hz;
+        f2 = (int64_t)(w * to) / width_hz;
+
+        lv_point_t a, b;
+
+        a.x = x1 + markers_offset + w / 2 + f1;
+        a.y = y1;
+        b.x = a.x;
+        b.y = y1 + h;
+        lv_draw_line(draw_ctx, &line_dsc, &a, &b);
+
+        a.x = x1 + markers_offset + w / 2 + f2;
+        b.x = a.x;
+        lv_draw_line(draw_ctx, &line_dsc, &a, &b);
+    }
+
+    /* NAVTEX / DSC tuning markers: 1000 Hz center, 170 Hz shift -> 915 / 1085 Hz. */
+    if (dialog_navtex_is_active() || dialog_dsc_is_active()) {
+        int32_t from = sign_from * 915;
+        int32_t to   = sign_to * 1085;
+
+        f1 = (int64_t)(w * from) / width_hz;
+        f2 = (int64_t)(w * to) / width_hz;
+
+        lv_point_t a, b;
+
+        a.x = x1 + markers_offset + w / 2 + f1;
+        a.y = y1;
+        b.x = a.x;
+        b.y = y1 + h;
+        lv_draw_line(draw_ctx, &line_dsc, &a, &b);
+
+        a.x = x1 + markers_offset + w / 2 + f2;
+        b.x = a.x;
+        lv_draw_line(draw_ctx, &line_dsc, &a, &b);
+    }
+
+    /* WEFAX tuning markers: 1500 Hz center, 850 Hz shift -> 1075 / 1925 Hz. */
+    if (dialog_wefax_is_active()) {
+        int32_t from = sign_from * 1075;
+        int32_t to   = sign_to * 1925;
 
         f1 = (int64_t)(w * from) / width_hz;
         f2 = (int64_t)(w * to) / width_hz;
