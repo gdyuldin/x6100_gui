@@ -801,7 +801,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_UP:
             if (hkey->state == HKEY_RELEASE) {
-                if (!lm_get_freq()) {
+                if (!lm_get_freq() && !dialog_wefax_mic_step(-1)) {
                     freq_shift(+1, 0);
                 }
             } else if (hkey->state == HKEY_LONG) {
@@ -814,7 +814,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_DOWN:
             if (hkey->state == HKEY_RELEASE) {
-                if (!lm_get_freq()) {
+                if (!lm_get_freq() && !dialog_wefax_mic_step(+1)) {
                     freq_shift(-1, 0);
                 }
             } else if (hkey->state == HKEY_LONG) {
@@ -822,6 +822,13 @@ static void main_screen_hkey_cb(lv_event_t * e) {
                     cfg_band_load_next(false);
                 }
                 dialog_send(EVENT_BAND_DOWN, NULL);
+            }
+            break;
+
+        case HKEY_VM:
+            /* WeFax open: open / close its stations list */
+            if (hkey->state == HKEY_RELEASE) {
+                dialog_wefax_vm_toggle();
             }
             break;
 
