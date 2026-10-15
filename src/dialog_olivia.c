@@ -57,6 +57,7 @@
 
 #include <math.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -527,6 +528,30 @@ static void tx_echo_cb(const char *text)
 
 /* ---- Spectrum and waterfall ------------------------------------------- */
 
+/*
+ * Each new line is averaged with the ones before it (in dB, exponentially,
+ * half of the new line), as desktop waterfalls do: every line moves the
+ * whole picture down a pixel and the screen dims for a moment while that
+ * many pixels change, a flicker at the line rate that a calmer picture
+ * makes much smaller. Display only: the receiver never sees it. Restarted
+ * on a clear, a band or range change and after transmitting.
+ */
+#define WF_AVG_NEW  0.5f
+
+static float       wf_avg[PSK_SPEC_MAXBIN];     /* DSP thread */
+static int         wf_avg_n = 0;                /* DSP thread; 0 = none yet */
+static atomic_bool wf_avg_restart;
+
+/* While we transmit the receiver hears only our own signal, so the
+ * waterfall stops (a red frame says why) instead of filling with it. */
+static lv_obj_t   *tx_frame = NULL;
+static bool        wf_tx = false;               /* UI thread */
+
+static void wf_restart(void)
+{
+    atomic_store(&wf_avg_restart, true);
+}
+
 struct wf_line {
     float *db;
     int    n;
@@ -535,8 +560,21 @@ struct wf_line {
 static void wf_line_ui(void *data)
 {
     struct wf_line *l = (struct wf_line *)data;
+    bool            tx = olivia_tx_is_on();
 
-    if (alive && waterfall)
+    if (alive && tx != wf_tx) {
+        wf_tx = tx;
+        if (tx_frame) {
+            if (tx)
+                lv_obj_clear_flag(tx_frame, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(tx_frame, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (!tx)
+            wf_restart();           /* what came in meanwhile was us */
+    }
+
+    if (alive && waterfall && !tx)
         lv_waterfall_add_data(waterfall, l->db, (uint16_t)l->n);
 
     free(l->db);
@@ -552,12 +590,23 @@ static void on_spec_line(const float *db, int nbins, void *ctx)
     if (!db || nbins <= 0)
         return;
 
+    if (nbins > PSK_SPEC_MAXBIN)
+        nbins = PSK_SPEC_MAXBIN;
+
+    if (atomic_exchange(&wf_avg_restart, false) || nbins != wf_avg_n) {
+        memcpy(wf_avg, db, sizeof(float) * (size_t)nbins);
+        wf_avg_n = nbins;
+    } else {
+        for (int i = 0; i < nbins; i++)
+            wf_avg[i] += WF_AVG_NEW * (db[i] - wf_avg[i]);
+    }
+
     l.n = nbins;
     l.db = (float *)malloc(sizeof(float) * (size_t)nbins);
     if (!l.db)
         return;
 
-    memcpy(l.db, db, sizeof(float) * (size_t)nbins);
+    memcpy(l.db, wf_avg, sizeof(float) * (size_t)nbins);
     scheduler_put(wf_line_ui, &l, sizeof(l));
 }
 
@@ -657,6 +706,7 @@ static void apply_range(void)
     pthread_mutex_lock(&spec_mux);
     psk_spec_set_range(&spec, lo, hi);
     psk_spec_reset(&spec);
+    atomic_store(&wf_avg_restart, true);
     sp_edge_lo = psk_spec_edge_lo_hz(&spec);
     sp_edge_hi = psk_spec_edge_hi_hz(&spec);
     pthread_mutex_unlock(&spec_mux);
@@ -776,6 +826,7 @@ static void change_band(int8_t dir)
     apply_range();
     rebuild_rx();
     lv_waterfall_clear_data(waterfall);
+    wf_restart();
     txt_clear();
 }
 
@@ -822,6 +873,7 @@ static void dial_apply(void)
     /* What the waterfall and the receiver hold belongs to the old dial.
      * The received text stays: it is still the same conversation. */
     lv_waterfall_clear_data(waterfall);
+    wf_restart();
     rebuild_rx();
 
     band_msg(f);
@@ -1101,6 +1153,7 @@ static void status_hold_cb(button_data_t *b)
     (void)b;
     txt_clear();
     lv_waterfall_clear_data(waterfall);
+    wf_restart();
 }
 
 /* ---- Macros ----------------------------------------------------------- */
@@ -1439,6 +1492,20 @@ static void construct_cb(lv_obj_t *parent)
 
     lv_finder_clear_cursor(finder);
 
+    /* Red frame while transmitting, the waterfall stopped */
+
+    tx_frame = lv_obj_create(dialog.obj);
+    lv_obj_remove_style_all(tx_frame);
+    lv_obj_set_pos(tx_frame, 13, 13);
+    lv_obj_set_size(tx_frame, WIDTH, WF_HEIGHT);
+    lv_obj_set_style_border_width(tx_frame, 3, 0);
+    lv_obj_set_style_border_color(tx_frame, lv_color_hex(0xFF1010), 0);
+    lv_obj_set_style_border_opa(tx_frame, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(tx_frame, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(tx_frame, LV_OBJ_FLAG_HIDDEN);
+    wf_tx = false;
+    wf_restart();
+
     /* Received text, over the lower part of the waterfall */
 
     text_box = lv_obj_create(dialog.obj);
@@ -1526,6 +1593,7 @@ static void del_timer(lv_timer_t **t)
 static void destruct_cb(void)
 {
     alive = false;
+    tx_frame = NULL;            /* deleted with the window */
 
     del_timer(&status_timer);
     del_timer(&text_timer);
