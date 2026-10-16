@@ -667,10 +667,41 @@ static void make_meter_color(SettingsPage &page) {
     page.row++;
 }
 
+/***** FT8/FT4 TABLE INFO *****/
+
+static void make_ft8_info(SettingsPage &page) {
+    page.label("FT8/FT4 info");
+
+    lv_obj_t *obj = page.dropdown_int(page.grid, *cfg.ui.ft8_info(),
+                                      " Distance km \n Distance mi \n Country \n Country + km \n Country + mi",
+                                      "FT8 table info");
+
+    lv_obj_set_size(obj, SMALL_6, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, page.row, 1);
+    lv_obj_center(obj);
+
+    page.row++;
+}
+
 static void make_swr_color(SettingsPage &page) {
     page.label("SWR Color");
 
     lv_obj_t *obj = page.dropdown_int(page.grid, *cfg.ui.swr_color(), " Gray \n Colored");
+
+    lv_obj_set_size(obj, SMALL_6, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, page.row, 1);
+    lv_obj_center(obj);
+
+    page.row++;
+}
+
+/***** DECODER TEXT SIZE *****/
+
+static void make_digi_text(SettingsPage &page) {
+    page.label("Decoder text");
+
+    lv_obj_t *obj = page.dropdown_int(page.grid, *cfg.ui.digi_compact(), " Large \n Compact",
+                                      "Decoder text size");
 
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, page.row, 1);
@@ -711,7 +742,13 @@ void make_ui_page(SettingsPage &page) {
     make_waterfall_line(page);
     page.delimiter();
 
+    make_digi_text(page);
+    page.delimiter();
+
     make_knob_info(page);
+    page.delimiter();
+
+    make_ft8_info(page);
     page.delimiter();
 
     make_meter_label_info(page);

@@ -44,6 +44,7 @@
 #include "ft8/worker.h"
 #include "adif.h"
 #include "qso_log.h"
+#include "dxcc.h"
 #include "scheduler.h"
 
 #include <stdlib.h>
@@ -488,12 +489,24 @@ static void construct_cb(lv_obj_t *parent) {
     /* Table */
 
     table_view_build(dialog.obj, 13, 13 + 55, WIDTH, 325 - 55);
+
+    /* Settings > Interface > Decoder text. Compact: 12 rows, sony_28
+     * (line height 20) with 1 px padding = 22 px rows in the 270 px
+     * table. Large: 8 rows, the dialog font as it is (sony_36 + 3 + 3 =
+     * 34 px). Read when the window opens. */
+    if (param_i_get(cfg.ui.digi_compact())) {
+        lv_obj_set_style_text_font(table, &sony_28, LV_PART_ITEMS);
+        lv_obj_set_style_pad_top(table, 1, LV_PART_ITEMS);
+        lv_obj_set_style_pad_bottom(table, 1, LV_PART_ITEMS);
+    }
     table_view_set_press_cb(on_table_press);
     table_view_actions_t tv_actions = {
         .on_close      = on_table_close,
         .on_vol_change = on_table_vol_change,
     };
     table_view_set_actions(&tv_actions);
+    /* Settings > Interface > FT8/FT4 info: distance, country or both. */
+    table_view_set_info((table_view_info_t)param_i_get(cfg.ui.ft8_info()));
 
     /* Fade */
 
@@ -882,6 +895,8 @@ static void add_tx_text(const char * text) {
 static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, float freq_hz, float time_sec) {
 
     ftx_msg_meta_t meta;
+    /* The parser fills call_de only for the messages it knows. */
+    memset(&meta, 0, sizeof(meta));
     meta.freq_hz = freq_hz;
     meta.time_sec = time_sec;
     char * old_msg = strdup(tx_msg.msg);
@@ -923,6 +938,16 @@ static void add_rx_text(int16_t snr, const char * text, slot_info_t *s_info, flo
     cell_data.cell_type = cell_type;
     strncpy(cell_data.text, text, sizeof(cell_data.text) - 1);
     cell_data.meta = meta;
+    /* Country of the sender, from the call (cty.dat), as in JTDX. */
+    cell_data.country[0]    = '\0';
+    cell_data.cty_prefix[0] = '\0';
+    if (meta.type != FXT_MSG_TYPE_OTHER && meta.call_de[0] != '\0') {
+        const char *name, *prefix;
+        if (dxcc_lookup(meta.call_de, &name, &prefix)) {
+            snprintf(cell_data.country, sizeof(cell_data.country), "%s", name);
+            snprintf(cell_data.cty_prefix, sizeof(cell_data.cty_prefix), "%s", prefix);
+        }
+    }
     cell_data.odd = s_info->odd;
     if (PARAM_T_GET(cfg.qth())[0] != 0) {
         if (strlen(meta.grid) > 0) {

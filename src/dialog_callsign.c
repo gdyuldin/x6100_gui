@@ -9,6 +9,7 @@
 #include "dialog_callsign.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <ft8lib/encode.h>
 #include <ft8lib/decode.h>
 
@@ -77,6 +78,22 @@ static bool edit_cancel() {
     return true;
 }
 
+/* Callsigns are capitals only: take lowercase (a USB or Bluetooth keyboard
+ * without Caps Lock) as capitals instead of dropping it silently. LVGL
+ * inserts the replacement as if typed, so the accepted list still applies. */
+static void insert_cb(lv_event_t *e) {
+    const char *in = lv_event_get_param(e);
+    static char up[8];
+    size_t      n = strlen(in);
+    if (n >= sizeof(up)) return;
+    bool lower = false;
+    for (size_t i = 0; i <= n; i++) {
+        up[i] = in[i] >= 'a' && in[i] <= 'z' ? (char)(in[i] - 'a' + 'A') : in[i];
+        lower |= up[i] != in[i];
+    }
+    if (lower) lv_textarea_set_insert_replace(lv_event_get_target(e), up);
+}
+
 static void construct_cb(lv_obj_t *parent) {
     dialog.obj = textarea_window_open(edit_ok, edit_cancel);
 
@@ -90,6 +107,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_textarea_set_max_length(text, CALLSIGN_MAX_LEN);
     lv_textarea_set_placeholder_text(text, "Callsign");
     lv_obj_add_event_cb(text, key_cb, LV_EVENT_KEY, NULL);
+    lv_obj_add_event_cb(text, insert_cb, LV_EVENT_INSERT, NULL);
 
     textarea_window_set(PARAM_T_GET(cfg.callsign()));
 }

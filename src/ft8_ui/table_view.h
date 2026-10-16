@@ -54,6 +54,8 @@ typedef struct {
     ftx_msg_meta_t          meta;
     char                    text[64];
     qso_log_search_worked_t worked_type;
+    char                    country[24];    /* sender's country, "" if unknown */
+    char                    cty_prefix[8];  /* its primary prefix ("DL") */
 } cell_data_t;
 
 /* Optional dialog-level actions invoked from the table's key handler. */
@@ -71,6 +73,18 @@ lv_obj_t *table_view_obj(void);
 
 void table_view_set_press_cb(table_view_press_cb_t cb);
 void table_view_set_actions(const table_view_actions_t *actions);
+
+/* What the right side of an RX row shows besides the SNR (Settings >
+ * Interface > FT8/FT4 info; values as stored in ft8_info). */
+typedef enum {
+    TABLE_INFO_KM = 0,
+    TABLE_INFO_MI,
+    TABLE_INFO_COUNTRY,
+    TABLE_INFO_COUNTRY_KM,
+    TABLE_INFO_COUNTRY_MI,
+} table_view_info_t;
+
+void table_view_set_info(table_view_info_t info);
 
 /* Clear table + ring pool and show a single "Wait sync" placeholder row. */
 void table_view_reset(void);

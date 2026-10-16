@@ -20,7 +20,18 @@ static lv_obj_t             *keyboard = NULL;
 static textarea_window_cb_t ok_cb = NULL;
 static textarea_window_cb_t cancel_cb = NULL;
 
+/* The key that closes the window is usually still held. Closing deletes
+ * the focused object, which resets LVGL's keypad state with a press time
+ * of 0 (boot), so the held key counts as a long press and repeats into
+ * whatever has the focus next: one ESC here closed the whole app. Ignore
+ * that key until it's released. */
+static void swallow_key() {
+    lv_indev_t *indev = lv_indev_get_act();
+    if (indev) lv_indev_wait_release(indev);
+}
+
 static void ok() {
+    swallow_key();
     if (ok_cb) {
         if(ok_cb()) {
             ok_cb = NULL;
@@ -30,6 +41,7 @@ static void ok() {
  }
 
 static void cancel() {
+    swallow_key();
     if (cancel_cb) {
         cancel_cb();
         cancel_cb = NULL;

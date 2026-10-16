@@ -373,8 +373,14 @@ class SettingsManager {
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
     Parameter<int32_t> p_meter_color{"meter_color", METER_GRAY, {},
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    /* FT8/FT4 table, right side: 0 km, 1 mi, 2 country, 3 country + km,
+     * 4 country + mi (table_view_info_t). */
+    Parameter<int32_t> p_ft8_info{"ft8_info", 3, 0, 4,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
     Parameter<int32_t> p_swr_color{"swr_color", SWR_GRAY, {},
         StorageType::GLOBAL, pending_writes_, {}, &global_params_};
+    Parameter<int32_t> p_digi_text_compact{"digi_text_compact", false, 0, 1,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // --- BAND params (`band_params` table) ---
     Parameter<int32_t> p_band_current_vfo{"vfo", (int32_t)X6100_VFO_A, 0, 1,

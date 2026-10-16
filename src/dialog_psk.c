@@ -206,6 +206,11 @@ static lv_obj_t   *finder = NULL;
 static lv_obj_t   *text_box = NULL;
 static lv_obj_t   *line_lbl[TXT_SHOW];
 
+/* Received text font, from Settings > Interface > Decoder text, read when
+ * the window opens: Compact sony_28 (about 9 lines in the box), Large
+ * sony_36, the dialog font (6 lines). */
+static const lv_font_t *txt_font = &sony_28;
+
 static lv_timer_t *status_timer = NULL;
 static lv_timer_t *text_timer = NULL;
 static lv_timer_t *snap_timer = NULL;
@@ -518,7 +523,7 @@ static void txt_render(void)
         lv_obj_t *lbl = line_lbl[k];
         lv_point_t size;
 
-        lv_txt_get_size(&size, l->s, &sony_28, 0, 0, WIDTH - 2 * TEXT_PAD,
+        lv_txt_get_size(&size, l->s, txt_font, 0, 0, WIDTH - 2 * TEXT_PAD,
                         LV_TEXT_FLAG_NONE);
         y -= size.y;
 
@@ -1734,12 +1739,14 @@ static void construct_cb(lv_obj_t *parent)
     lv_obj_set_style_pad_all(text_box, TEXT_PAD, 0);
     lv_obj_clear_flag(text_box, LV_OBJ_FLAG_SCROLLABLE);
 
+    txt_font = param_i_get(cfg.ui.digi_compact()) ? &sony_28 : &sony_36;
+
     for (int i = 0; i < TXT_SHOW; i++) {
         lv_obj_t *lbl = lv_label_create(text_box);
 
         lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(lbl, WIDTH - 2 * TEXT_PAD);
-        lv_obj_set_style_text_font(lbl, &sony_28, 0);
+        lv_obj_set_style_text_font(lbl, txt_font, 0);
         lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
         lv_label_set_text(lbl, "");
         lv_obj_add_flag(lbl, LV_OBJ_FLAG_HIDDEN);

@@ -34,4 +34,6 @@ enum msg_t {
 
     MSG_PANEL_SHOW,
     MSG_PANEL_HIDE,
+
+    MSG_INPUT_DEVICE_CHANGED, /* an input device came or went (a Bluetooth keyboard connecting or waking) */
 };
