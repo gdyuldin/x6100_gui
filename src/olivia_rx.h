@@ -5,6 +5,7 @@
  * The SP9VRC reference code is GPL-2 and was NOT copied.
  *
  * SPDX-License-Identifier: LGPL-2.1-or-later
+ * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  *
  * The receiver finds the block boundary and the frequency offset by
  * itself. It needs no preamble, since Olivia has none - synchronisation

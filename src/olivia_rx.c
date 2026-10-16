@@ -1,6 +1,7 @@
 /*
  * olivia_rx.c - Olivia receiver: synchronisation + decoding
  * SPDX-License-Identifier: LGPL-2.1-or-later
+ * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  *
  * The core of the synchronisation:
  *

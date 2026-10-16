@@ -7,6 +7,7 @@
  * only to verify the results.
  *
  * SPDX-License-Identifier: LGPL-2.1-or-later
+ * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  */
 
 #ifndef OLIVIA_H

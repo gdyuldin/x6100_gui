@@ -1,6 +1,7 @@
 /*
  * olivia_demod.c - MFSK demodulation layer of Olivia
  * SPDX-License-Identifier: LGPL-2.1-or-later
+ * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  *
  * How it works:
  *

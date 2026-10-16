@@ -1,6 +1,7 @@
 /*
  * olivia_resamp.c - rational resampler
  * SPDX-License-Identifier: LGPL-2.1-or-later
+ * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  */
 
 #include "olivia_resamp.h"

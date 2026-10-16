@@ -5,6 +5,7 @@
  * The SP9VRC reference code is GPL-2 and was NOT copied.
  *
  * SPDX-License-Identifier: LGPL-2.1-or-later
+ * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  */
 
 #ifndef OLIVIA_MOD_H

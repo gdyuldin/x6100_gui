@@ -1,6 +1,7 @@
 /*
  * olivia.c - FEC layer of Olivia MFSK
  * SPDX-License-Identifier: LGPL-2.1-or-later
+ * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  *
  * How it works (from the ARRL specification):
  *
