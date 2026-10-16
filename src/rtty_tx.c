@@ -536,6 +536,14 @@ static void expand_macro(const char *in, char *out, size_t out_sz) {
     out[o] = '\0';
 }
 
+void rtty_macro_expand(int idx, char *out, size_t size) {
+    rtty_macro_t *m = rtty_macro_get(idx);
+
+    if (size == 0) return;
+    out[0] = '\0';
+    if (m) expand_macro(m->text, out, size);
+}
+
 bool rtty_macro_send(int idx) {
     rtty_macro_t *m = rtty_macro_get(idx);
     if (!m) return false;

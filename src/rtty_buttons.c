@@ -2,334 +2,320 @@
  *  SPDX-License-Identifier: LGPL-2.1-or-later
  *  Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  *
- *  Xiegu X6100 LVGL GUI - RTTY button pages 2..6
+ *  Xiegu X6100 LVGL GUI - RTTY button page 2
  */
 
 #include "rtty_buttons.h"
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "lvgl/lvgl.h"
 
 #include "mfk.h"
 #include "msg.h"
+#include "digi_menu.h"
+#include "digi_next.h"
 #include "digi_qso.h"
 #include "rtty_sql.h"
 #include "rtty_tx.h"
 
-#define RTTY_MACRO_SLOTS 12
+static digi_next_t next_state;          /* where the QSO is, for Next */
 
-/* ---- page buttons --------------------------------------------------- */
+/* ---- helpers -------------------------------------------------------- */
 
-#define PAGE_BTN(name, text)                \
-    static button_data_t name = {           \
-        .type  = BTN_TEXT,                  \
-        .label = text,                      \
-        .press = button_next_page_cb,       \
-        .hold  = button_prev_page_cb,       \
+static const char *macro_name_at(int idx)
+{
+    const rtty_macro_t *m = (idx < rtty_macros_count()) ? rtty_macro_get(idx) : NULL;
+
+    return m ? m->name : NULL;
+}
+
+static void send_macro(int idx)
+{
+    const rtty_macro_t *m = rtty_macro_get(idx);
+
+    if (m == NULL) {
+        return;
     }
+    if (!rtty_macro_send(idx)) {
+        msg_update_text_fmt("#FF0000 RTTY TX busy");
+        return;
+    }
+    msg_update_text_fmt("#FFFFFF RTTY TX: %s", m->name);
+    digi_next_sent(&next_state, m->name, digi_qso_dx());
+    if (digi_next_is_cq(m->name)) {
+        digi_qso_clear();               /* a CQ starts a new QSO */
+    }
+}
 
-PAGE_BTN(btn_rtty_p2, "(RTTY 2:6)");
-PAGE_BTN(btn_rtty_p3, "(RTTY 3:6)");
-PAGE_BTN(btn_rtty_p4, "(RTTY 4:6)");
-PAGE_BTN(btn_rtty_p5, "(RTTY 5:6)");
-PAGE_BTN(btn_rtty_p6, "(RTTY 6:6)");
+/* ---- page button ---------------------------------------------------- */
 
-#undef PAGE_BTN
+static button_data_t btn_rtty_p2 = {
+    .type  = BTN_TEXT,
+    .label = "(RTTY 2:2)",
+    .press = button_next_page_cb,
+    .hold  = button_prev_page_cb,
+};
 
-/* ---- page 2: transmit and squelch ----------------------------------- */
+/* ---- Next ----------------------------------------------------------- */
+
+/* The step the QSO is at: CQ, Answer, Report, TNX or 73, by macro name.
+ * While a transmission runs the same button stops it. */
+static const char *next_label_getter(void)
+{
+    static char buf[48];
+
+    if (rtty_tx_is_on()) {
+        snprintf(buf, sizeof(buf), "Stop\nTX");
+    } else {
+        digi_next_label(&next_state, digi_qso_dx(), rtty_macros_count(), macro_name_at, buf,
+                        sizeof(buf));
+    }
+    return buf;
+}
+
+static void next_press_cb(button_data_t *b)
+{
+    int idx;
+
+    digi_menu_close();
+    if (rtty_tx_is_on()) {
+        rtty_tx_stop();
+        buttons_refresh(b);
+        return;
+    }
+    idx = digi_next_pick(&next_state, digi_qso_dx(), rtty_macros_count(), macro_name_at);
+    if (idx < 0) {
+        msg_update_text_fmt("#FF0000 No CQ/Answer/Report/TNX/73 macro - see Macros");
+        return;
+    }
+    send_macro(idx);
+    buttons_refresh(b);
+}
+
+static button_data_t btn_rtty_next = {
+    .type     = BTN_TEXT_FN,
+    .label_fn = next_label_getter,
+    .press    = next_press_cb,
+};
+
+/* ---- Send... -------------------------------------------------------- */
 
 static void send_cb(button_data_t *b)
 {
     (void)b;
+    digi_menu_close();
     rtty_tx_open_input();
-}
-
-static void stop_cb(button_data_t *b)
-{
-    (void)b;
-    rtty_tx_stop();
-}
-
-static void new_macro_cb(button_data_t *b)
-{
-    (void)b;
-    rtty_macros_open_menu();
 }
 
 static button_data_t btn_rtty_send = {
     .type  = BTN_TEXT,
-    .label = "Free\nText",
+    .label = "Send...",
     .press = send_cb,
 };
 
-static button_data_t btn_rtty_stop = {
-    .type  = BTN_TEXT,
-    .label = "Stop\nTX",
-    .press = stop_cb,
-};
+/* ---- Macros --------------------------------------------------------- */
 
-static button_data_t btn_rtty_new = {
-    .type  = BTN_TEXT,
-    .label = "New\nMacro",
-    .press = new_macro_cb,
-};
-
-/*
- * The threshold alone is useless without seeing the level it is compared
- * with: park on a quiet spot, read the lower number, set the upper one a
- * few dB above it. "*" means the gate is open.
- */
-static char sql_label[32];
-
-static const char *sql_label_getter(void)
+static void macro_edit_pick(int item, void *ctx)
 {
-    uint8_t v = rtty_change_squelch(0);
-    int lvl = (int)lroundf(rtty_get_level_db());
-
-    if (v == 0) {
-        snprintf(sql_label, sizeof(sql_label), "SQL off\nlvl %d", lvl);
-    } else {
-        snprintf(sql_label, sizeof(sql_label), "SQL %u%s\nlvl %d",
-                 v, rtty_squelch_is_open() ? "*" : "", lvl);
-    }
-    return sql_label;
+    (void)ctx;
+    rtty_macros_edit_slot(item);
 }
 
-/*
- * Set with the knob, like Rate, Shift and Center: press hands the MFK
- * knob to the control, then turn either way. The extra controls sit
- * beyond CTRL_FAST_ACCESS_LAST, where the stock button handler also
- * falls back to the MFK knob, so calling mfk_set_ctrl() directly is the
- * same behaviour.
- */
-static void sql_press_cb(button_data_t *b)
+static void macros_pick(int item, void *ctx)
+{
+    static char  text[DIGI_MENU_MAX][RTTY_MACRO_NAME_LEN + 4];
+    const char  *items[DIGI_MENU_MAX];
+    int          n = rtty_macros_count();
+    int          shown = (n < DIGI_MENU_MAX - 2) ? n : DIGI_MENU_MAX - 2;
+    int          k = 0;
+
+    (void)ctx;
+    if (item < shown) {
+        send_macro(item);
+        buttons_refresh(&btn_rtty_next);
+    } else if (item == shown) {
+        if (n < RTTY_MACRO_MAX) {
+            rtty_macros_open_menu();    /* a new one, at the end */
+        }
+    } else {
+        for (int i = 0; i < n && k < DIGI_MENU_MAX; i++) {
+            snprintf(text[k], sizeof(text[k]), "%s", rtty_macro_get(i)->name);
+            items[k] = text[k];
+            k++;
+        }
+        digi_menu_open(lv_scr_act(), "Edit which macro?", items, k, macro_edit_pick, NULL,
+                       NULL);
+    }
+}
+
+/* Every macro with what it sends now, then New and Edit. */
+static void macros_press_cb(button_data_t *b)
+{
+    static char  text[DIGI_MENU_MAX][72];
+    const char  *items[DIGI_MENU_MAX];
+    int          n = rtty_macros_count();
+    int          k = 0;
+
+    (void)b;
+    if (digi_menu_is_open()) {
+        digi_menu_close();
+        return;
+    }
+    for (int i = 0; i < n && k < DIGI_MENU_MAX - 2; i++) {
+        char out[RTTY_MACRO_TEXT_LEN + 32];
+
+        rtty_macro_expand(i, out, sizeof(out));
+        for (char *p = out; *p; p++) {
+            if (*p == '\n' || *p == '\r') {
+                *p = ' ';
+            }
+        }
+        snprintf(text[k], sizeof(text[k]), "%-7s %.60s", rtty_macro_get(i)->name, out);
+        items[k] = text[k];
+        k++;
+    }
+    items[k++] = (n < RTTY_MACRO_MAX) ? "New macro..." : "(all macro slots used)";
+    if (n > 0) {
+        items[k++] = "Edit a macro...";
+    }
+    digi_menu_open(lv_scr_act(), "Macros: MFK to choose, press to send", items, k,
+                   macros_pick, NULL, NULL);
+}
+
+static void macros_hold_cb(button_data_t *b)
 {
     (void)b;
-    mfk_set_ctrl(CTRL_RTTY_SQUELCH);
+    digi_menu_close();
+    rtty_macros_open_menu();
 }
 
-static button_data_t btn_rtty_sql = {
-    .type     = BTN_TEXT_FN,
-    .label_fn = sql_label_getter,
-    .press    = sql_press_cb,
-    .ctrl     = CTRL_RTTY_SQUELCH,
+static button_data_t btn_rtty_macros = {
+    .type  = BTN_TEXT,
+    .label = "Macros",
+    .press = macros_press_cb,
+    .hold  = macros_hold_cb,
 };
 
-/* ---- pages 3..5: macros --------------------------------------------- */
+/* ---- Menu ----------------------------------------------------------- */
 
-static char macro_labels[RTTY_MACRO_SLOTS][RTTY_MACRO_NAME_LEN + 4];
+/*
+ * The squelch and the reports are set with the knob, like Rate, Shift
+ * and Center: picking one hands the MFK knob to it and its value, with
+ * the live level for the squelch, shows on the message line as it turns.
+ */
+enum {
+    MENU_SQL, MENU_DX, MENU_RST_SENT, MENU_RST_RCVD, MENU_AUTO_DX, MENU_NEW_QSO, MENU_COUNT
+};
 
-static void macro_send_slot(int idx)
+static void menu_pick(int item, void *ctx)
 {
-    if (!rtty_macro_send(idx)) {
-        msg_update_text_fmt("#FF0000 RTTY TX busy");
-    } else {
-        msg_update_text_fmt("#FFFFFF RTTY TX...");
+    (void)ctx;
+    switch (item) {
+        case MENU_SQL:
+            mfk_set_ctrl(CTRL_RTTY_SQUELCH);
+            break;
+
+        case MENU_DX:
+            rtty_qso_open_dx_input();
+            break;
+
+        case MENU_RST_SENT:
+            mfk_set_ctrl(CTRL_RTTY_RST_SENT);
+            break;
+
+        case MENU_RST_RCVD:
+            mfk_set_ctrl(CTRL_RTTY_RST_RCVD);
+            break;
+
+        case MENU_AUTO_DX:
+            digi_qso_toggle_autograb();
+            msg_update_text_fmt("#FFFFFF Auto DX %s", digi_qso_autograb() ? "on" : "off");
+            break;
+
+        case MENU_NEW_QSO:
+            digi_qso_clear();
+            memset(&next_state, 0, sizeof(next_state));
+            msg_update_text_fmt("#FFFFFF QSO cleared");
+            break;
     }
+    buttons_refresh(&btn_rtty_next);
 }
 
-/* button_data_t carries no user pointer, hence one pair of callbacks
- * per slot. */
-#define MACRO_SLOT(n)                                                      \
-    static void macro##n##_press_cb(button_data_t *b)                     \
-    {                                                                      \
-        (void)b;                                                           \
-        macro_send_slot(n);                                                \
-    }                                                                      \
-    static void macro##n##_hold_cb(button_data_t *b)                      \
-    {                                                                      \
-        (void)b;                                                           \
-        rtty_macros_edit_slot(n);                                          \
-    }                                                                      \
-    static button_data_t btn_rtty_macro##n = {                            \
-        .type  = BTN_TEXT,                                                 \
-        .label = macro_labels[n],                                          \
-        .press = macro##n##_press_cb,                                      \
-        .hold  = macro##n##_hold_cb,                                       \
-    };
+static void menu_press_cb(button_data_t *b)
+{
+    static char  text[MENU_COUNT][56];
+    const char  *items[MENU_COUNT];
+    const char  *dx = digi_qso_dx();
+    uint8_t      sq = rtty_change_squelch(0);
+    int          lvl = (int)lroundf(rtty_get_level_db());
 
-MACRO_SLOT(0)
-MACRO_SLOT(1)
-MACRO_SLOT(2)
-MACRO_SLOT(3)
-MACRO_SLOT(4)
-MACRO_SLOT(5)
-MACRO_SLOT(6)
-MACRO_SLOT(7)
-MACRO_SLOT(8)
-MACRO_SLOT(9)
-MACRO_SLOT(10)
-MACRO_SLOT(11)
+    (void)b;
+    if (digi_menu_is_open()) {
+        digi_menu_close();
+        return;
+    }
+    if (sq == 0) {
+        snprintf(text[MENU_SQL], 56, "Squelch with the knob  (off, level %d)", lvl);
+    } else {
+        snprintf(text[MENU_SQL], 56, "Squelch with the knob  (%u, level %d)", sq, lvl);
+    }
+    snprintf(text[MENU_DX], 56, "DX call...  (%s)", (dx && *dx) ? dx : "none");
+    snprintf(text[MENU_RST_SENT], 56, "RST sent with the knob  (%s)", digi_qso_rst_sent());
+    snprintf(text[MENU_RST_RCVD], 56, "RST received with the knob  (%s)",
+             digi_qso_rst_rcvd());
+    snprintf(text[MENU_AUTO_DX], 56, "Auto DX from the text: %s  (press: %s)",
+             digi_qso_autograb() ? "on" : "off", digi_qso_autograb() ? "off" : "on");
+    snprintf(text[MENU_NEW_QSO], 56, "New QSO (clear DX call, RST)");
+    for (int i = 0; i < MENU_COUNT; i++) {
+        items[i] = text[i];
+    }
+    digi_menu_open(lv_scr_act(), "Menu", items, MENU_COUNT, menu_pick, NULL, NULL);
+}
 
-#undef MACRO_SLOT
+static button_data_t btn_rtty_menu = {
+    .type  = BTN_TEXT,
+    .label = "Menu",
+    .press = menu_press_cb,
+};
 
-static button_data_t *const macro_btns[RTTY_MACRO_SLOTS] = {
-    &btn_rtty_macro0, &btn_rtty_macro1, &btn_rtty_macro2,  &btn_rtty_macro3,
-    &btn_rtty_macro4, &btn_rtty_macro5, &btn_rtty_macro6,  &btn_rtty_macro7,
-    &btn_rtty_macro8, &btn_rtty_macro9, &btn_rtty_macro10, &btn_rtty_macro11,
+/* ---- page ----------------------------------------------------------- */
+
+buttons_page_t buttons_page_rtty_2 = {
+    {&btn_rtty_p2, &btn_rtty_next, &btn_rtty_send, &btn_rtty_macros, &btn_rtty_menu}
 };
 
 void rtty_refresh_macro_labels(void)
 {
-    int n = rtty_macros_count();
-
-    for (int i = 0; i < RTTY_MACRO_SLOTS; i++) {
-        rtty_macro_t *m = (i < n) ? rtty_macro_get(i) : NULL;
-
-        snprintf(macro_labels[i], sizeof(macro_labels[i]), "%s",
-                 (m && m->name[0]) ? m->name : "--");
-
-        /* A caption on screen was copied when the page was loaded. */
-        if (macro_btns[i]->disp_btn)
-            buttons_refresh(macro_btns[i]);
+    if (btn_rtty_next.disp_btn) {
+        buttons_refresh(&btn_rtty_next);
     }
 }
 
-/* ---- page 6: QSO fields --------------------------------------------- */
-
-/* The macros carry <CALL> and <RST>; these give them values. The call
- * is normally picked up off the air ("DE <call>"), so the button is
- * mostly there to correct it. */
-static char dx_label[32];
-static char rsts_label[24];
-static char rstr_label[24];
-
-static const char *dx_getter(void)
-{
-    const char *c = digi_qso_dx();
-
-    snprintf(dx_label, sizeof(dx_label), "DX call\n%s", (c && *c) ? c : "---");
-    return dx_label;
-}
-
-static const char *rsts_getter(void)
-{
-    snprintf(rsts_label, sizeof(rsts_label), "RST snt\n%s", digi_qso_rst_sent());
-    return rsts_label;
-}
-
-static const char *rstr_getter(void)
-{
-    snprintf(rstr_label, sizeof(rstr_label), "RST rcv\n%s", digi_qso_rst_rcvd());
-    return rstr_label;
-}
-
-static const char *grab_getter(void)
-{
-    return digi_qso_autograb() ? "Auto DX\non" : "Auto DX\noff";
-}
-
-static void dx_press_cb(button_data_t *b)
-{
-    (void)b;
-    rtty_qso_open_dx_input();
-}
-
-static void dx_hold_cb(button_data_t *b)
-{
-    digi_qso_clear();
-    msg_update_text_fmt("#FFFFFF QSO cleared");
-    buttons_refresh(b);
-}
-
-static void rsts_press_cb(button_data_t *b)
-{
-    (void)b;
-    mfk_set_ctrl(CTRL_RTTY_RST_SENT);
-}
-
-static void rstr_press_cb(button_data_t *b)
-{
-    (void)b;
-    mfk_set_ctrl(CTRL_RTTY_RST_RCVD);
-}
-
-static void grab_cb(button_data_t *b)
-{
-    digi_qso_toggle_autograb();
-    buttons_refresh(b);
-}
-
-static button_data_t btn_rtty_dx = {
-    .type     = BTN_TEXT_FN,
-    .label_fn = dx_getter,
-    .press    = dx_press_cb,
-    .hold     = dx_hold_cb,
-};
-
-static button_data_t btn_rtty_rsts = {
-    .type     = BTN_TEXT_FN,
-    .label_fn = rsts_getter,
-    .press    = rsts_press_cb,
-    .ctrl     = CTRL_RTTY_RST_SENT,
-};
-
-static button_data_t btn_rtty_rstr = {
-    .type     = BTN_TEXT_FN,
-    .label_fn = rstr_getter,
-    .press    = rstr_press_cb,
-    .ctrl     = CTRL_RTTY_RST_RCVD,
-};
-
-static button_data_t btn_rtty_grab = {
-    .type     = BTN_TEXT_FN,
-    .label_fn = grab_getter,
-    .press    = grab_cb,
-};
-
-/* ---- pages ---------------------------------------------------------- */
-
-buttons_page_t buttons_page_rtty_2 = {
-    {&btn_rtty_p2, &btn_rtty_send, &btn_rtty_stop, &btn_rtty_new, &btn_rtty_sql}
-};
-
-buttons_page_t buttons_page_rtty_3 = {
-    {&btn_rtty_p3, &btn_rtty_macro0, &btn_rtty_macro1, &btn_rtty_macro2, &btn_rtty_macro3}
-};
-
-buttons_page_t buttons_page_rtty_4 = {
-    {&btn_rtty_p4, &btn_rtty_macro4, &btn_rtty_macro5, &btn_rtty_macro6, &btn_rtty_macro7}
-};
-
-buttons_page_t buttons_page_rtty_5 = {
-    {&btn_rtty_p5, &btn_rtty_macro8, &btn_rtty_macro9, &btn_rtty_macro10, &btn_rtty_macro11}
-};
-
-buttons_page_t buttons_page_rtty_6 = {
-    {&btn_rtty_p6, &btn_rtty_dx, &btn_rtty_rsts, &btn_rtty_rstr, &btn_rtty_grab}
-};
-
 /* ---- live repaint ---------------------------------------------------- */
 
-/* BTN_TEXT_FN buttons without a subject are painted once when the page
- * loads. The SQL level moves all the time and the QSO fields change from
- * the decoder (Auto DX) and the knob, so whichever of them is on screen
- * is repainted here. */
+/* Next follows the transmitter (Stop TX while it runs) and the DX call,
+ * which the decoder may pick up off the air, so it is repainted here. */
 static lv_timer_t *sql_timer = NULL;
 
 static void sql_timer_cb(lv_timer_t *t)
 {
-    static button_data_t *const live[] = {
-        &btn_rtty_sql, &btn_rtty_dx, &btn_rtty_rsts, &btn_rtty_rstr,
-    };
-
     (void)t;
-    for (size_t i = 0; i < sizeof(live) / sizeof(live[0]); i++) {
-        if (live[i]->disp_btn)
-            buttons_refresh(live[i]);
-    }
+    rtty_refresh_macro_labels();
 }
 
 void rtty_sql_timer_start(void)
 {
-    if (!sql_timer)
+    if (!sql_timer) {
         sql_timer = lv_timer_create(sql_timer_cb, 400, NULL);
+    }
 }
 
 void rtty_sql_timer_stop(void)
 {
+    digi_menu_close();
     if (sql_timer) {
         lv_timer_del(sql_timer);
         sql_timer = NULL;

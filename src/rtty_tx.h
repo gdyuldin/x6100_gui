@@ -15,6 +15,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +48,9 @@ bool          rtty_macros_save(void);
 int  rtty_macro_add(const char *name, const char *text);
 void rtty_macro_set(int idx, const char *name, const char *text);
 void rtty_macro_delete(int idx);
+
+/* What macro idx would send now, its tokens expanded (for a preview). */
+void rtty_macro_expand(int idx, char *out, size_t size);
 
 /* Expand <CALL>/<RST> tokens and transmit macro idx. */
 bool rtty_macro_send(int idx);

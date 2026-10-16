@@ -329,7 +329,7 @@ static button_data_t  btn_wifi   = make_app_btn("WiFi", ACTION_APP_WIFI);
 /* RTTY */
 static button_data_t btn_rtty_p1 = {
     .type  = BTN_TEXT,
-    .label = "(RTTY 1:6)",
+    .label = "(RTTY 1:2)",
     .press = button_next_page_cb,
     .hold  = button_prev_page_cb,
 };
@@ -465,14 +465,10 @@ buttons_page_t buttons_page_rtty = {
     {&btn_rtty_p1, &btn_rtty_rate, &btn_rtty_shift, &btn_rtty_center, &btn_rtty_reverse}
 };
 
-/* Pages 2..6 live in rtty_buttons.c */
+/* Page 2 lives in rtty_buttons.c */
 static buttons_group_t buttons_group_rtty = {
     &buttons_page_rtty,
     &buttons_page_rtty_2,
-    &buttons_page_rtty_3,
-    &buttons_page_rtty_4,
-    &buttons_page_rtty_5,
-    &buttons_page_rtty_6,
 };
 
 buttons_group_t buttons_group_gen = {

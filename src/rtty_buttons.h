@@ -2,16 +2,18 @@
  *  SPDX-License-Identifier: LGPL-2.1-or-later
  *  Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  *
- *  Xiegu X6100 LVGL GUI - RTTY button pages 2..6
+ *  Xiegu X6100 LVGL GUI - RTTY button page 2
  *
- *  Page 1 (Rate, Shift, Center, Reverse) stays in buttons.cpp. The pages
- *  added here are chained after it through buttons_group_rtty:
+ *  Page 1 (Rate, Shift, Center, Reverse) stays in buttons.cpp. Page 2
+ *  is chained after it through buttons_group_rtty:
  *
- *    2  Free Text | Stop TX | New Macro | SQL (threshold and live level)
- *    3  macros 1-4      4  macros 5-8      5  macros 9-12
- *    6  DX call | RST sent | RST received | Auto DX
+ *    (RTTY 2:2) | Next | Send... | Macros | Menu
  *
- *  Macro buttons: press sends, hold edits (an empty slot creates one).
+ *  Next sends the QSO's next step (CQ, Answer, Report, TNX, 73, picked
+ *  by macro name) and stops a running transmission. Macros and Menu
+ *  open a list over the screen: MFK to choose, MFK press to pick, VOL
+ *  press to close. The squelch, the DX call, both reports and Auto DX
+ *  are in Menu; new and edited macros in Macros.
  */
 
 #pragma once
@@ -23,16 +25,13 @@ extern "C" {
 #endif
 
 extern buttons_page_t buttons_page_rtty_2;
-extern buttons_page_t buttons_page_rtty_3;
-extern buttons_page_t buttons_page_rtty_4;
-extern buttons_page_t buttons_page_rtty_5;
-extern buttons_page_t buttons_page_rtty_6;
 
-/* Copy the macro names into the button captions; empty slots show "--". */
+/* Repaint Next after the macros or the QSO changed. */
 void rtty_refresh_macro_labels(void);
 
-/* The SQL caption shows a live level, so it is repainted on a timer
- * while the RTTY application is open. */
+/* Next follows the transmitter and the DX call, so it is repainted on a
+ * timer while the RTTY application is open; stop also closes a list
+ * left open. */
 void rtty_sql_timer_start(void);
 void rtty_sql_timer_stop(void);
 
