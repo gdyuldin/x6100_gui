@@ -10,10 +10,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cfg/cfg_api.h"
 #include "keyboard.h"
 #include "styles.h"
 
-#define MENU_WIDTH  560
+/* Sized by the "Decoder text" setting, as the received text is:
+ * Compact keeps the window behind in view, Large reads at arm's length. */
+#define MENU_WIDTH_COMPACT  560
+#define MENU_WIDTH_LARGE    740
 #define ITEM_LEN    64
 
 static lv_obj_t       *box;
@@ -118,7 +122,13 @@ static void draw_cb(lv_event_t *e)
 void digi_menu_open(lv_obj_t *parent, const char *title, const char *const *items, int n,
                     digi_menu_cb_t cb, void *ctx, lv_obj_t *back)
 {
-    lv_obj_t *label;
+    lv_obj_t        *label;
+    bool             compact = param_i_get(cfg.ui.digi_compact()) != 0;
+    lv_coord_t       width = compact ? MENU_WIDTH_COMPACT : MENU_WIDTH_LARGE;
+    const lv_font_t *font = compact ? &sony_28 : &sony_36;
+    const lv_font_t *title_font = compact ? &sony_24 : &sony_28;
+    lv_coord_t       avail;
+    lv_coord_t       y_ofs = 0;
 
     digi_menu_close();
     if (n <= 0) {
@@ -134,7 +144,7 @@ void digi_menu_open(lv_obj_t *parent, const char *title, const char *const *item
 
     box = lv_obj_create(parent);
     lv_obj_remove_style_all(box);
-    lv_obj_set_width(box, MENU_WIDTH);
+    lv_obj_set_width(box, width);
     lv_obj_set_height(box, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(box, lv_color_hex(0x101418), 0);
     lv_obj_set_style_bg_opa(box, LV_OPA_90, 0);
@@ -148,17 +158,17 @@ void digi_menu_open(lv_obj_t *parent, const char *title, const char *const *item
     lv_obj_align(box, LV_ALIGN_CENTER, 0, 0);
 
     label = lv_label_create(box);
-    lv_obj_set_style_text_font(label, &sony_24, 0);
+    lv_obj_set_style_text_font(label, title_font, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(0xA0A0A0), 0);
     lv_label_set_text(label, title);
 
     list = lv_table_create(box);
-    lv_obj_set_width(list, MENU_WIDTH - 20);
+    lv_obj_set_width(list, width - 20);
     lv_obj_set_height(list, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(list, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(list, 0, LV_PART_MAIN);
-    lv_obj_set_style_text_font(list, &sony_28, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(list, font, LV_PART_ITEMS);
     lv_obj_set_style_text_color(list, lv_color_white(), LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, LV_PART_ITEMS);
     lv_obj_set_style_border_width(list, 0, LV_PART_ITEMS);
@@ -175,7 +185,7 @@ void digi_menu_open(lv_obj_t *parent, const char *title, const char *const *item
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, LV_PART_ITEMS | LV_STATE_EDITED);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, LV_PART_ITEMS | LV_STATE_FOCUS_KEY);
     lv_table_set_col_cnt(list, 1);
-    lv_table_set_col_width(list, 0, MENU_WIDTH - 20);
+    lv_table_set_col_width(list, 0, width - 20);
     lv_table_set_row_cnt(list, (uint16_t)n);
     for (int i = 0; i < n; i++) {
         lv_table_set_cell_value(list, (uint16_t)i, 0, items[i]);
@@ -186,12 +196,18 @@ void digi_menu_open(lv_obj_t *parent, const char *title, const char *const *item
     lv_obj_add_event_cb(list, draw_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
     lv_obj_add_event_cb(list, changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    /* no taller than the window: the rest scrolls */
+    /* No taller than the window, nor over the button row when the list
+     * opens on the main screen: the rest scrolls. */
     lv_obj_update_layout(box);
-    if (lv_obj_get_height(list) > lv_obj_get_height(parent) - 70) {
-        lv_obj_set_height(list, lv_obj_get_height(parent) - 70);
-        lv_obj_align(box, LV_ALIGN_CENTER, 0, 0);
+    avail = lv_obj_get_height(parent) - 20;
+    if (parent == lv_scr_act()) {
+        avail -= BTN_HEIGHT;
+        y_ofs = -BTN_HEIGHT / 2;
     }
+    if (lv_obj_get_height(box) > avail) {
+        lv_obj_set_height(list, lv_obj_get_height(list) - (lv_obj_get_height(box) - avail));
+    }
+    lv_obj_align(box, LV_ALIGN_CENTER, 0, y_ofs);
 
     if (back != NULL) {
         lv_group_remove_obj(back);
