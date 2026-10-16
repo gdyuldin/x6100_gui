@@ -22,6 +22,9 @@
  * The widget stores no data: the application keeps its own array and gives
  * the row contents through cfg.row_cb, which is called only for the visible
  * rows each time the list is drawn (keep it cheap: no file access).
+ *
+ * Copyright (C) 2026 Hany El Imam
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once

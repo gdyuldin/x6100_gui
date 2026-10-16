@@ -1,6 +1,9 @@
 /*
  * Xiegu X6100 - shared list widget ("CHANNELS" look)
  * See ui_list.h.
+ *
+ * Copyright (C) 2026 Hany El Imam
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "ui_list.h"
