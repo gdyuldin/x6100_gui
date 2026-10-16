@@ -1,5 +1,6 @@
 /*
  *  SPDX-License-Identifier: LGPL-2.1-or-later
+ *  Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  *
  *  Fano sequential decoder for the WSPR convolutional code
  *
