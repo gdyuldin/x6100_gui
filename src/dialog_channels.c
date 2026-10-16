@@ -4,6 +4,7 @@
  * (c) 2026 Hany El Imam
  * www.hanynet.com - www.murusfirewall.com - https://github.com/TheMurusTeam
  *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 /*

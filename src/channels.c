@@ -1,5 +1,8 @@
 /*
  * Channel database
+ *
+ * Copyright (C) 2026 Hany El Imam
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "channels.h"
