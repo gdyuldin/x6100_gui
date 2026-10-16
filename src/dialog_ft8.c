@@ -118,7 +118,7 @@ static void construct_cb(lv_obj_t *parent);
 static void key_cb(lv_event_t * e);
 static void destruct_cb();
 static void audio_cb(unsigned int n, float *samples);
-static void rotary_cb(int32_t diff);
+static void rotary_cb(int32_t diff, uint16_t dt);
 
 /* audio_worker callbacks (run on worker thread). UI mutations must go
  * through scheduler_put() to land on the LVGL task. */
@@ -500,22 +500,14 @@ static void set_freq(uint32_t freq) {
     lv_obj_invalidate(finder);
 }
 
-static void rotary_cb(int32_t diff) {
-    /* Faster turns move further: 4-5 clicks within 30 ms move 5 Hz each,
-     * 6 or more 10 Hz. The knob used to be read every 30 ms and handed
-     * over as the sum of its clicks; now every click comes on its own, so
-     * a single diff never got past 3 and the TX frequency moved 1 Hz a
-     * click however fast the knob turned. Count the clicks per 30 ms. */
-    static uint32_t window_ms;
-    static uint32_t window_clicks;
-
-    if (lv_tick_elaps(window_ms) >= 30) {
-        window_ms     = lv_tick_get();
-        window_clicks = 0;
-    }
-    window_clicks += abs(diff);
-    if (window_clicks > 3) {
-        diff *= (window_clicks < 6) ? 5 : 10;
+static void rotary_cb(int32_t diff, uint16_t dt) {
+    /* Faster turns move further, as before the knob handed over each click
+     * on its own (then 4-5 clicks in 30 ms moved 5 Hz each, 6 or more
+     * 10 Hz). dt is the time per click in ms, 0 when unknown. */
+    if (dt > 0 && dt <= 5) {
+        diff *= 10;
+    } else if (dt > 0 && dt < 8) {
+        diff *= 5;
     }
     uint32_t f = param_i_get(cfg.ft8.tx_freq()) + diff;
     f = limit(f, filter_low, filter_high - (param_i_get(cfg.ft8.protocol()) == FTX_PROTOCOL_FT8 ? FT8_WIDTH_HZ : FT4_WIDTH_HZ));
