@@ -18,13 +18,10 @@
  * bonded without printing it).
  *
  * Pairing needs an agent. A small one is registered here, on its own
- * thread and D-Bus connection, and made the default agent:
- *   RequestPinCode       "0000" (older headsets use legacy PIN pairing)
- *   RequestPasskey       0
- *   RequestConfirmation  accepted (the radio has no keypad)
- *   RequestAuthorization, AuthorizeService  accepted
- * It registers again whenever bluetoothd (re)appears on the bus. The
- * bt-agent started by bt_up.sh stays as a fallback.
+ * thread and D-Bus connection, and made the default agent. It answers
+ * pairing questions only while the pairing window is open (agent_call()
+ * has the details) and registers again whenever bluetoothd (re)appears on
+ * the bus. It is the only agent: bt_start.sh and bt_up.sh start none.
  *
  * All D-Bus calls of the worker are synchronous on a private connection
  * of the worker thread; the window only reads the cached list.
@@ -567,6 +564,11 @@ static void pairing_open(void)
     S.open_until = time(NULL) + PAIR_WINDOW_S;
     pthread_mutex_unlock(&S.lock);
 
+    /* bluez restarts its pairable timer only when PairableTimeout is set
+     * or Pairable changes, so set the timeout on every Scan: a second
+     * Scan while still pairable would otherwise close pairing on the
+     * first one's timer (main.conf has 180 s for both). */
+    (void)set_adapter_prop("PairableTimeout", g_variant_new_uint32(PAIR_WINDOW_S));
     (void)set_adapter_prop("Pairable", g_variant_new_boolean(TRUE));
     (void)set_adapter_prop("DiscoverableTimeout", g_variant_new_uint32(PAIR_WINDOW_S));
     (void)set_adapter_prop("Discoverable", g_variant_new_boolean(TRUE));
@@ -574,8 +576,8 @@ static void pairing_open(void)
 }
 
 /* Worker thread, on every refresh: once the window is over, hidden and
- * not pairable again - also against bt_start.sh, which makes the adapter
- * discoverable for good at boot. */
+ * not pairable again, whatever turned them on (bluez also turns both off
+ * after main.conf's timeouts). */
 static void pairing_enforce(void)
 {
     if (pairing_is_open()) {
@@ -1453,8 +1455,7 @@ static void agent_register(void)
     plog("agent: registered (%s, PIN %s)", cap, AGENT_PIN);
 }
 
-/* Default agent again: bt_start.sh's bt-agent (accepts everything) takes
- * that place when it starts after us, e.g. when the adapter comes back. */
+/* Default agent again, e.g. when the adapter comes back. */
 static void agent_make_default(void)
 {
     GVariant *r;
