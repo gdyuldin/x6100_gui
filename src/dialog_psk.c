@@ -67,6 +67,8 @@
 #include "psk_spec.h"
 #include "psk_macro.h"
 #include "digi_qso.h"           /* shared QSO state: DX call and RST */
+#include "digi_menu.h"
+#include "digi_next.h"
 
 #include <math.h>
 #include <pthread.h>
@@ -263,6 +265,7 @@ static bool        was_tx = false;
 static bool        input_active = false;
 static int         edit_idx = -1;      /* macro being edited, -1 = new */
 static char        edit_name[PSK_MACRO_NAME_LEN];
+static digi_next_t next_state;          /* where the QSO is, for Next */
 
 /* ---- Buttons ---------------------------------------------------------- */
 
@@ -291,44 +294,55 @@ static void rst_hold_cb(button_data_t *b);
 static void macro_press(int idx);
 static void macro_hold(int idx);
 
-static char macro_labels[PSK_MACRO_MAX][PSK_MACRO_NAME_LEN + 2];
+/*
+ * One page of buttons: Next, Send..., Macros, Status, Menu.
+ *
+ * Next (also a press of the MFK) sends the macro the QSO needs now and
+ * says which on its label (digi_next.c: CQ, Answer, Report, TNX, 73);
+ * while transmitting it is Stop TX. Macros lists every macro with what it
+ * would send, plus New and Edit; Menu holds squelch, dial, band, the QSO
+ * fields and Clear. Both are lists over the window (digi_menu.c): the MFK
+ * moves, pressing it picks, ESC closes.
+ *
+ * The buttons below that are not on the page (squelch, dial, DX, RST,
+ * ...) keep their callbacks for the menu, and their labels for the
+ * message line while the knob is theirs.
+ */
+static const char *next_label_getter(void);
+static void next_press_cb(button_data_t *b);
+static void macros_press_cb(button_data_t *b);
+static void menu_press_cb(button_data_t *b);
 
-static buttons_page_t page_1, page_2, page_3, page_4, page_5;
+static buttons_page_t page_1;
 
-static button_data_t btn_p1 = {
-    .type = BTN_TEXT, .label = "(PSK 1:5)",
-    .press = button_next_page_cb, .hold = button_prev_page_cb,
-    .next = &page_2, .prev = &page_5,
+static button_data_t btn_next = {
+    .type = BTN_TEXT_FN, .label_fn = next_label_getter, .press = next_press_cb,
 };
 static button_data_t btn_text = {
-    .type = BTN_TEXT, .label = "Free\nText", .press = text_press_cb,
+    .type = BTN_TEXT, .label = "Send...", .press = text_press_cb,
 };
-static button_data_t btn_stop = {
-    .type = BTN_TEXT, .label = "Stop\nTX", .press = stop_press_cb,
+static button_data_t btn_macros = {
+    .type = BTN_TEXT, .label = "Macros", .press = macros_press_cb,
 };
 static button_data_t btn_status = {
     .type = BTN_TEXT_FN, .label_fn = status_label_getter,
     .press = status_press_cb, .hold = status_hold_cb,
 };
+static button_data_t btn_menu = {
+    .type = BTN_TEXT, .label = "Menu", .press = menu_press_cb,
+};
+
+/* not on the page, see above */
+static button_data_t btn_stop = {
+    .type = BTN_TEXT, .label = "Stop\nTX", .press = stop_press_cb,
+};
 static button_data_t btn_sql = {
     .type = BTN_TEXT_FN, .label_fn = sql_label_getter,
     .press = sql_press_cb, .hold = sql_hold_cb,
 };
-
-static button_data_t btn_p2 = {
-    .type = BTN_TEXT, .label = "(PSK 2:5)",
-    .press = button_next_page_cb, .hold = button_prev_page_cb,
-    .next = &page_3, .prev = &page_1,
-};
-/* One button for both directions: press up, hold down. The radio's
- * BAND keys do the same thing. */
 static button_data_t btn_dial = {
     .type = BTN_TEXT_FN, .label_fn = dial_label_getter,
     .press = dial_press_cb, .hold = dial_hold_cb,
-};
-static button_data_t btn_band = {
-    .type = BTN_TEXT, .label = "Band up\nhold: down",
-    .press = band_up_cb, .hold = band_down_cb,
 };
 static button_data_t btn_dx = {
     .type = BTN_TEXT_FN, .label_fn = dx_label_getter,
@@ -339,69 +353,8 @@ static button_data_t btn_rst = {
     .press = rst_press_cb, .hold = rst_hold_cb,
 };
 
-/* Macro buttons: press sends, hold edits (or creates, on an empty slot).
- * button_data_t has no user pointer, so one pair of callbacks per slot. */
-#define PSK_MACRO_BTN(n)                                                      \
-    static void macro##n##_press_cb(button_data_t *b) { (void)b; macro_press(n); } \
-    static void macro##n##_hold_cb(button_data_t *b)  { (void)b; macro_hold(n); }  \
-    static button_data_t btn_macro##n = {                                     \
-        .type  = BTN_TEXT,                                                    \
-        .label = macro_labels[n],                                             \
-        .press = macro##n##_press_cb,                                         \
-        .hold  = macro##n##_hold_cb,                                          \
-    };
-
-PSK_MACRO_BTN(0)
-PSK_MACRO_BTN(1)
-PSK_MACRO_BTN(2)
-PSK_MACRO_BTN(3)
-PSK_MACRO_BTN(4)
-PSK_MACRO_BTN(5)
-PSK_MACRO_BTN(6)
-PSK_MACRO_BTN(7)
-PSK_MACRO_BTN(8)
-PSK_MACRO_BTN(9)
-PSK_MACRO_BTN(10)
-PSK_MACRO_BTN(11)
-
-#undef PSK_MACRO_BTN
-
-static button_data_t *const macro_btns[PSK_MACRO_MAX] = {
-    &btn_macro0, &btn_macro1, &btn_macro2,  &btn_macro3,
-    &btn_macro4, &btn_macro5, &btn_macro6,  &btn_macro7,
-    &btn_macro8, &btn_macro9, &btn_macro10, &btn_macro11,
-};
-
-static button_data_t btn_p3 = {
-    .type = BTN_TEXT, .label = "(PSK 3:5)",
-    .press = button_next_page_cb, .hold = button_prev_page_cb,
-    .next = &page_4, .prev = &page_2,
-};
-static button_data_t btn_p4 = {
-    .type = BTN_TEXT, .label = "(PSK 4:5)",
-    .press = button_next_page_cb, .hold = button_prev_page_cb,
-    .next = &page_5, .prev = &page_3,
-};
-static button_data_t btn_p5 = {
-    .type = BTN_TEXT, .label = "(PSK 5:5)",
-    .press = button_next_page_cb, .hold = button_prev_page_cb,
-    .next = &page_1, .prev = &page_4,
-};
-
 static buttons_page_t page_1 = {
-    {&btn_p1, &btn_text, &btn_stop, &btn_sql, &btn_status}
-};
-static buttons_page_t page_2 = {
-    {&btn_p2, &btn_band, &btn_dial, &btn_dx, &btn_rst}
-};
-static buttons_page_t page_3 = {
-    {&btn_p3, &btn_macro0, &btn_macro1, &btn_macro2, &btn_macro3}
-};
-static buttons_page_t page_4 = {
-    {&btn_p4, &btn_macro4, &btn_macro5, &btn_macro6, &btn_macro7}
-};
-static buttons_page_t page_5 = {
-    {&btn_p5, &btn_macro8, &btn_macro9, &btn_macro10, &btn_macro11}
+    {&btn_next, &btn_text, &btn_macros, &btn_status, &btn_menu}
 };
 
 static dialog_t dialog = {
@@ -418,8 +371,20 @@ dialog_t *dialog_psk = &dialog;
  * that is not on the current page has nothing to repaint. */
 static void refresh_btn(button_data_t *b)
 {
-    if (b && b->disp_btn)
+    if (b && b->disp_btn) {
         buttons_refresh(b);
+    } else if (b && b->type == BTN_TEXT_FN &&
+               ((b == &btn_sql && knob == KNOB_SQL) || (b == &btn_dial && knob == KNOB_DIAL))) {
+        /* the knob's button is not on the page: say it on the message line */
+        char buf[48];
+
+        snprintf(buf, sizeof(buf), "%s", b->label_fn());
+        for (char *p = buf; *p; p++) {
+            if (*p == '\n')
+                *p = ' ';
+        }
+        msg_update_text_fmt("#FFFFFF %s", buf);
+    }
 }
 
 /* ---- Received text ---------------------------------------------------- */
@@ -1239,19 +1204,12 @@ static void status_timer_cb(lv_timer_t *t)
 
     track();
     refresh_btn(&btn_status);
+    refresh_btn(&btn_next);
 }
 
 static void refresh_macro_labels(void)
 {
-    int n = psk_macros_count();
-
-    for (int i = 0; i < PSK_MACRO_MAX; i++) {
-        const psk_macro_t *m = (i < n) ? psk_macro_get(i) : NULL;
-
-        snprintf(macro_labels[i], sizeof(macro_labels[i]), "%s",
-                 (m && m->name[0]) ? m->name : "--");
-        refresh_btn(macro_btns[i]);
-    }
+    refresh_btn(&btn_next);     /* its label names a macro */
 }
 
 /* ---- Keyboard focus around text entry --------------------------------- */
@@ -1311,16 +1269,16 @@ static bool input_cancel_cb(void)
 
 /* ---- Transmit --------------------------------------------------------- */
 
-static void send_text(const char *text)
+static bool send_text(const char *text)
 {
     char buf[PSK_MACRO_TEXT_LEN + 400];
 
     if (!text || !*text)
-        return;
+        return false;
 
     if (psk_tx_is_on()) {
         msg_update_text_fmt("#FF0000 PSK31 TX busy");
-        return;
+        return false;
     }
 
     /* Start and finish on a fresh line on the other station's screen. */
@@ -1330,9 +1288,11 @@ static void send_text(const char *text)
         msg_update_text_fmt("#FFFFFF PSK31 TX...");
         was_tx = true;
         refresh_btn(&btn_status);
-    } else {
-        msg_update_text_fmt("#FF0000 PSK31 TX busy");
+        refresh_btn(&btn_next);
+        return true;
     }
+    msg_update_text_fmt("#FF0000 PSK31 TX busy");
+    return false;
 }
 
 static bool free_text_ok_cb(void)
@@ -1413,7 +1373,13 @@ static void macro_press(int idx)
         return;
     }
 
-    send_text(out);
+    if (send_text(out)) {
+        digi_next_sent(&next_state, m->name, digi_qso_dx());
+        if (digi_next_is_cq(m->name)) {
+            digi_qso_clear();           /* a CQ starts a new QSO */
+        }
+        refresh_btn(&btn_next);
+    }
 }
 
 /* Editor, two steps: name, then text. Both windows
@@ -1525,6 +1491,163 @@ static void macro_hold(int idx)
     textarea_window_open_w_label(editor_name_ok_cb, input_cancel_cb, "Macro name:");
     if (m)
         textarea_set_copy(m->name);
+}
+
+/* ---- Next, Macros, Menu ------------------------------------------------ */
+
+static const char *macro_name_at(int idx)
+{
+    const psk_macro_t *m = psk_macro_get(idx);
+
+    return (m && idx < psk_macros_count()) ? m->name : NULL;
+}
+
+static const char *next_label_getter(void)
+{
+    static char buf[48];
+
+    if (psk_tx_is_on()) {
+        snprintf(buf, sizeof(buf), "Stop\nTX");
+    } else {
+        digi_next_label(&next_state, digi_qso_dx(), psk_macros_count(), macro_name_at, buf,
+                        sizeof(buf));
+    }
+    return buf;
+}
+
+static void next_press_cb(button_data_t *b)
+{
+    int idx;
+
+    (void)b;
+    digi_menu_close();
+    if (input_active)
+        return;
+    if (psk_tx_is_on()) {
+        stop_press_cb(NULL);
+        refresh_btn(&btn_next);
+        return;
+    }
+    idx = digi_next_pick(&next_state, digi_qso_dx(), psk_macros_count(), macro_name_at);
+    if (idx < 0) {
+        msg_update_text_fmt("#FF0000 No CQ/Answer/Report/TNX/73 macro - see Macros");
+        return;
+    }
+    macro_press(idx);
+}
+
+/* Macros: every macro with what it sends now, then New and Edit. */
+static void macro_edit_pick(int item, void *ctx)
+{
+    (void)ctx;
+    macro_hold(item);
+}
+
+static void macros_pick(int item, void *ctx)
+{
+    int n = psk_macros_count();
+
+    (void)ctx;
+    if (item < n) {
+        macro_press(item);
+    } else if (item == n) {
+        macro_hold(n);                  /* a new one, at the end */
+    } else {
+        static char  text[PSK_MACRO_MAX][PSK_MACRO_NAME_LEN + 8];
+        const char  *items[PSK_MACRO_MAX];
+
+        for (int i = 0; i < n; i++) {
+            snprintf(text[i], sizeof(text[i]), "%s", psk_macro_get(i)->name);
+            items[i] = text[i];
+        }
+        digi_menu_open(dialog.obj, "Edit which macro?", items, n, macro_edit_pick, NULL, NULL);
+    }
+}
+
+static void macros_press_cb(button_data_t *b)
+{
+    static char  text[PSK_MACRO_MAX][72];
+    const char  *items[PSK_MACRO_MAX + 2];
+    int          n = psk_macros_count();
+    int          k = 0;
+
+    (void)b;
+    if (input_active)
+        return;
+    if (digi_menu_is_open()) {
+        digi_menu_close();
+        return;
+    }
+    for (int i = 0; i < n && k < DIGI_MENU_MAX - 2; i++) {
+        const psk_macro_t *m = psk_macro_get(i);
+        char               out[PSK_MACRO_TEXT_LEN + 128];
+        const char        *missing = NULL;
+
+        if (!psk_macro_expand(m->text, out, sizeof(out), &missing))
+            snprintf(out, sizeof(out), "%s", m->text);
+        snprintf(text[k], sizeof(text[k]), "%-7s %.60s", m->name, out);
+        items[k] = text[k];
+        k++;
+    }
+    items[k++] = (n < PSK_MACRO_MAX) ? "New macro..." : "(all macro slots used)";
+    if (n > 0)
+        items[k++] = "Edit a macro...";
+    digi_menu_open(dialog.obj, "Macros: MFK to choose, press to send", items, k, macros_pick,
+                   NULL, NULL);
+}
+
+enum {
+    MENU_SQL, MENU_SQL_ONOFF, MENU_DIAL, MENU_DIAL_BACK, MENU_BAND_UP, MENU_BAND_DOWN,
+    MENU_DX, MENU_RST, MENU_NEW_QSO, MENU_CLEAR, MENU_COUNT
+};
+
+static void menu_pick(int item, void *ctx)
+{
+    (void)ctx;
+    switch (item) {
+        case MENU_SQL:       sql_press_cb(&btn_sql); break;
+        case MENU_SQL_ONOFF: sql_hold_cb(&btn_sql); break;
+        case MENU_DIAL:      dial_press_cb(&btn_dial); break;
+        case MENU_DIAL_BACK: dial_hold_cb(&btn_dial); break;
+        case MENU_BAND_UP:   band_up_cb(NULL); break;
+        case MENU_BAND_DOWN: band_down_cb(NULL); break;
+        case MENU_DX:        dx_press_cb(&btn_dx); break;
+        case MENU_RST:       rst_press_cb(&btn_rst); break;
+        case MENU_NEW_QSO:
+            dx_hold_cb(&btn_dx);
+            memset(&next_state, 0, sizeof(next_state));
+            break;
+        case MENU_CLEAR:     clear_press_cb(NULL); break;
+    }
+    refresh_btn(&btn_next);
+}
+
+static void menu_press_cb(button_data_t *b)
+{
+    static char  text[MENU_COUNT][48];
+    const char  *items[MENU_COUNT];
+    const char  *dx = digi_qso_dx();
+
+    (void)b;
+    if (input_active)
+        return;
+    if (digi_menu_is_open()) {
+        digi_menu_close();
+        return;
+    }
+    snprintf(text[MENU_SQL], 48, "Squelch with the knob  (%s)", sql_thr ? "on" : "off");
+    snprintf(text[MENU_SQL_ONOFF], 48, "Squelch %s", sql_thr ? "off" : "on");
+    snprintf(text[MENU_DIAL], 48, "Dial with the knob  (%+d kHz)", (int)(dial_offset_hz / 1000));
+    snprintf(text[MENU_DIAL_BACK], 48, "Dial back to the band's");
+    snprintf(text[MENU_BAND_UP], 48, "Band up");
+    snprintf(text[MENU_BAND_DOWN], 48, "Band down");
+    snprintf(text[MENU_DX], 48, "DX call...  (%s)", (dx && *dx) ? dx : "none");
+    snprintf(text[MENU_RST], 48, "RST sent: %s  (press: next)", digi_qso_rst_sent());
+    snprintf(text[MENU_NEW_QSO], 48, "New QSO (clear DX call, RST)");
+    snprintf(text[MENU_CLEAR], 48, "Clear the text");
+    for (int i = 0; i < MENU_COUNT; i++)
+        items[i] = text[i];
+    digi_menu_open(dialog.obj, "Menu", items, MENU_COUNT, menu_pick, NULL, NULL);
 }
 
 /* ---- QSO fields ------------------------------------------------------- */
@@ -1647,6 +1770,10 @@ static void key_cb(lv_event_t *e)
     switch (key) {
         case LV_KEY_ESC:
             dialog_destruct();
+            break;
+
+        case LV_KEY_ENTER:
+            next_press_cb(NULL);        /* the MFK sends what Next says */
             break;
 
         case KEY_VOL_LEFT_EDIT:
@@ -1822,6 +1949,7 @@ static void del_timer(lv_timer_t **t)
 
 static void destruct_cb(void)
 {
+    digi_menu_close();
     alive = false;
 
     del_timer(&status_timer);
