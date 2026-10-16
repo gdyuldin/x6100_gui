@@ -66,8 +66,12 @@ keeps the licence it has.
 `third-party/js8core`, the JS8 engine from
 [JS8Call-improved/Android-port](https://github.com/JS8Call-improved/Android-port),
 is GPL-3.0 ([third-party/js8core/LICENSE](third-party/js8core/LICENSE)).
-JS8 is part of the default build, so a firmware image built from this
-repository combines the two and is distributed, as a whole, under GPL-3.0.
+JS8 is part of the default build, so the GUI program (`x6100_gui`) built
+from this repository combines the two and is distributed, as a whole, under
+GPL-3.0. The other software in a firmware image (the Linux kernel, the
+libraries) keeps its own licence. js8core brings two small libraries with it,
+Eigen (MPL-2.0) and CRC++ (BSD-3-Clause), with their licence files in
+`third-party/js8core/vendor/`.
 
 The corresponding source of an image is:
 

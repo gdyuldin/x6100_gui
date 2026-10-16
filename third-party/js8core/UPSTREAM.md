@@ -13,7 +13,10 @@ Copied from that commit:
 | `vendor/Eigen`    | `vendor/Eigen`      |
 | `vendor/CRCpp`    | `vendor/CRCpp`      |
 
-`CMakeLists.txt` and this file are ours.
+`CMakeLists.txt` and this file are ours, and so are the licence files of the
+two vendored libraries, which upstream doesn't carry: `vendor/CRCpp/LICENSE`
+(the BSD-3-Clause notice from `CRC.h`'s header) and `vendor/Eigen/COPYING.*`
+(from Eigen 3.4.0, the version vendored).
 
 ## Local patches
 
