@@ -9,6 +9,7 @@
 
 #include "radio.h"
 #include "audio.h"
+#include "bt_audio.h"
 #include "recorder.h"
 #include "dialog.h"
 #include "styles.h"
@@ -170,7 +171,9 @@ static const char* get_item() {
     return lv_table_get_cell_value(table, row, col);
 }
 
-static void play_item() {
+/* bt_sink: play on the Bluetooth headphones (listening on), NULL for
+ * the radio's speaker. */
+static void play_item(const char *bt_sink) {
     const char *item = get_item();
 
     if (!item) {
@@ -199,7 +202,14 @@ static void play_item() {
 
     play_state = true;
 
-    audio_player_t *player = audio_get_player(sfinfo.samplerate, sfinfo.channels);
+    audio_player_t *player = NULL;
+
+    if (bt_sink) {
+        player = audio_create_player_on(bt_sink, sfinfo.samplerate, sfinfo.channels);
+    }
+    if (!player) {
+        player = audio_get_player(sfinfo.samplerate, sfinfo.channels);
+    }
 
     while (play_state) {
         int res = sf_read_short(file, samples_buf, BUF_SIZE);
@@ -220,9 +230,17 @@ static void * play_thread(void *arg) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    audio_set_play_mode(AUDIO_PLAY_ON);
-    play_item();
-    audio_set_play_mode(AUDIO_PLAY_OFF);
+    char bt_sink[96];
+    bool bt = bt_audio_playback_begin(bt_sink, sizeof(bt_sink));
+
+    if (bt) {
+        play_item(bt_sink);
+        bt_audio_playback_end();
+    } else {
+        audio_set_play_mode(AUDIO_PLAY_ON);
+        play_item(NULL);
+        audio_set_play_mode(AUDIO_PLAY_OFF);
+    }
 
     if (dialog.run) {
         scheduler_put_noargs(load_btn_page);

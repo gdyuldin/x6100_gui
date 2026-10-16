@@ -17,7 +17,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     main.c main_screen.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
     app_ports.cpp
-    waterfall.c rotary.cpp keyboard.c encoder.c
+    waterfall.c rotary.cpp keyboard.c kbd_rollover.c encoder.c
     events.c msg.c msg_tiny.c keypad.c
     hkey.c clock.c
     meter.c band_info.cpp tx_info.c
@@ -25,14 +25,18 @@ target_sources(${PROJECT_NAME} PUBLIC
     rtty.c screenshot.c display.cpp gps.c
     rtty_tx.c rtty_sql.c rtty_buttons.c digi_qso.c digi_menu.c digi_next.c
     dialog.c dialog_swrscan.c
+    dxcc.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
     ft8_ui/table_view.c
+    ft8_udp.c
     dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
     textarea_window.c cw_encoder.c buttons.cpp vol.cpp recorder.c
     voice.cpp cw_tune_ui.c adif.c qso_log.c scheduler.cpp
     format.c msg_cw_store.c
     dialog_wifi.c wifi.cpp controls.cpp usb_devices.cpp
+    bt_audio.c
     knobs.cpp lock_manager.c indicators.cpp freq_info.cpp
+    dialog_bt.c bt_ctl.c bt_dev.c bt_spp.c
 )
 
 add_subdirectory(fonts)

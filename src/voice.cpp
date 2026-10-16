@@ -17,6 +17,7 @@ extern "C" {
 #include <aether_radio/x6100_control/control.h>
 
 #include "audio.h"
+#include "bt_audio.h"
 #include "recorder.h"
 #include "msg.h"
 }
@@ -39,7 +40,7 @@ using namespace RHVoice;
 
 class audio_player: public client {
 public:
-    audio_player();
+    explicit audio_player(const char *device);
 
     bool play_speech(const short* samples_buf, std::size_t count);
     void finish();
@@ -48,11 +49,14 @@ private:
     audio::playback_stream stream;
 };
 
-audio_player::audio_player() {
+/* device: a Bluetooth sink while listening is on (bt_audio.c), NULL for
+ * the default output. */
+audio_player::audio_player(const char *device) {
     stream.set_sample_rate(24000);
     stream.set_buffer_size(512);
-    // TODO: handle audio routing on BT connection
-    // stream.set_device("pa_sink_name");
+    if (device) {
+        stream.set_device(device);
+    }
     stream.open();
 }
 
@@ -122,21 +126,35 @@ static void * say_thread(void *arg) {
     }
     strcpy(prev, buf);
 
-    audio_player                    player;
-    std::istringstream              text{ptr};
-    std::istreambuf_iterator<char>  text_start{text};
-    std::istreambuf_iterator<char>  text_end;
-    std::unique_ptr<document>       doc = document::create_from_plain_text(eng, text_start, text_end, content_text, profile);
+    /* Bluetooth listening: speak into the headphones, the radio's
+     * speaker is silent. */
+    char bt_sink[96];
+    bool bt = bt_audio_playback_begin(bt_sink, sizeof(bt_sink));
 
-    doc->speech_settings.relative.rate = cfg.voice.rate()->get() / 100.0;
-    doc->speech_settings.relative.pitch = cfg.voice.pitch()->get() / 100.0;
-    doc->speech_settings.relative.volume = cfg.voice.volume()->get() / 100.0;
-    doc->set_owner(player);
+    {
+        audio_player                    player(bt ? bt_sink : nullptr);
+        std::istringstream              text{ptr};
+        std::istreambuf_iterator<char>  text_start{text};
+        std::istreambuf_iterator<char>  text_end;
+        std::unique_ptr<document>       doc = document::create_from_plain_text(eng, text_start, text_end, content_text, profile);
 
-    audio_set_play_mode(AUDIO_PLAY_ON);
-    doc->synthesize();
-    player.finish();
-    audio_set_play_mode(AUDIO_PLAY_OFF);
+        doc->speech_settings.relative.rate = cfg.voice.rate()->get() / 100.0;
+        doc->speech_settings.relative.pitch = cfg.voice.pitch()->get() / 100.0;
+        doc->speech_settings.relative.volume = cfg.voice.volume()->get() / 100.0;
+        doc->set_owner(player);
+
+        if (!bt) {
+            audio_set_play_mode(AUDIO_PLAY_ON);
+        }
+        doc->synthesize();
+        player.finish();
+        if (!bt) {
+            audio_set_play_mode(AUDIO_PLAY_OFF);
+        }
+    }
+    if (bt) {
+        bt_audio_playback_end();
+    }
 
     run = false;
     sure = false;

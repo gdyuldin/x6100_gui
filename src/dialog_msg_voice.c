@@ -20,6 +20,7 @@
 
 #include "radio.h"
 #include "audio.h"
+#include "bt_audio.h"
 #include "dialog.h"
 #include "dialog_msg_voice.h"
 #include "dsp.h"
@@ -256,7 +257,9 @@ static const char* get_item() {
     return lv_table_get_cell_value(table, row, col);
 }
 
-static void play_item() {
+/* bt_sink: play the preview on the Bluetooth headphones (listening on),
+ * NULL for the codec - always NULL when transmitting. */
+static void play_item(const char *bt_sink) {
     const char *item = get_item();
 
     if (!item) {
@@ -278,7 +281,14 @@ static void play_item() {
     if (!file) {
         return;
     }
-    audio_player_t *player = audio_get_player(sfinfo.samplerate, sfinfo.channels);
+    audio_player_t *player = NULL;
+
+    if (bt_sink) {
+        player = audio_create_player_on(bt_sink, sfinfo.samplerate, sfinfo.channels);
+    }
+    if (!player) {
+        player = audio_get_player(sfinfo.samplerate, sfinfo.channels);
+    }
 
     state = MSG_VOICE_PLAY;
     while (state == MSG_VOICE_PLAY) {
@@ -300,9 +310,17 @@ static void * play_thread(void *arg) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    audio_set_play_mode(AUDIO_PLAY_ON);
-    play_item();
-    audio_set_play_mode(AUDIO_PLAY_OFF);
+    char bt_sink[96];
+    bool bt = bt_audio_playback_begin(bt_sink, sizeof(bt_sink));
+
+    if (bt) {
+        play_item(bt_sink);
+        bt_audio_playback_end();
+    } else {
+        audio_set_play_mode(AUDIO_PLAY_ON);
+        play_item(NULL);
+        audio_set_play_mode(AUDIO_PLAY_OFF);
+    }
 
     void *page_ptr = &page_msg_voice_2;
     scheduler_put(refresh_buttons_on_done, &page_ptr, sizeof(&page_ptr));
@@ -315,7 +333,7 @@ static void * send_thread(void *arg) {
     msg_update_text_fmt("Sending message");
 
     radio_set_modem(true);
-    play_item();
+    play_item(NULL);
     radio_set_modem(false);
 
     void *page_ptr = &page_msg_voice_1;
@@ -336,7 +354,7 @@ static void * beacon_thread(void *arg) {
             case VOICE_BEACON_PLAY:
                 msg_update_text_fmt("Sending message");
                 radio_set_modem(true);
-                play_item();
+                play_item(NULL);
                 radio_set_modem(false);
                 break;
 
@@ -444,6 +462,7 @@ static void construct_cb(lv_obj_t *parent) {
 
 static void destruct_cb() {
     audio_set_play_mode(AUDIO_PLAY_OFF);
+    bt_audio_playback_end();
 
     if (beacon == VOICE_BEACON_IDLE) {
         pthread_cancel(thread);
