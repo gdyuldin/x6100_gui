@@ -1638,6 +1638,7 @@ static void construct_cb(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(text_box, LV_OPA_70, 0);
     lv_obj_set_style_pad_all(text_box, TEXT_PAD, 0);
     lv_obj_clear_flag(text_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_move_foreground(tx_frame);    /* the red frame over the text, too */
 
     txt_font = param_i_get(cfg.ui.digi_compact()) ? &sony_28 : &sony_36;
 
