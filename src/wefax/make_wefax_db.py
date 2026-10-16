@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-2.1-or-later
 # Copyright (C) 2026 Hany El Imam - 1KO125 firmware for the Xiegu X6100
-# Additional term under section 7(b) of the GNU GPL version 3: see NOTICE-1KO125.md.
 """
 Xiegu X6100 - WEFAX stations and schedules from a saved copy of weatherfax.com.
 
