@@ -47,7 +47,10 @@ void digi_menu_close(void)
     if (box == NULL) {
         return;
     }
-    lv_group_remove_obj(list);
+    /* Deleted while still in the group: closing from the list's own key
+     * (VOL press = ESC) leaves LVGL's keypad about to send CANCEL to the
+     * list, and lv_obj_del only stops that for an object in the indev's
+     * group. Out of the group first, CANCEL went to freed memory. */
     lv_obj_del(box);
     box = NULL;
     list = NULL;
