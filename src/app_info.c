@@ -121,19 +121,19 @@ static const char *const extras[] = {
     "",
 };
 
-/* the Appropriate Legal Notices (GNU GPL v3, section 0 and 5d) */
+/* credits and licence notice */
 static const char credits_fmt[] =
     H("CREDITS")
     "%s application for the Xiegu X6100 by Hany El Imam\n"
     "www.hanynet.com - github.com/TheMurusTeam\n"
-    "Part of the 1KO125 firmware, based on R1CBU x6100_gui.\n"
+    "Originally from the 1KO125 firmware, part of OpenX6100, based on R1CBU x6100_gui.\n"
     "%s"
     "\n"
     "Copyright (C) 2026 Hany El Imam.\n"
     "Portions Copyright (C) 2022-2023 Belousov Oleg aka R1CBU and contributors.\n"
-    "This program is free software under the GNU General Public License, version 3 or "
-    "later, and comes with ABSOLUTELY NO WARRANTY. You may redistribute it under that "
-    "license. The full text is in /usr/share/x6100/COPYING on the SD card.";
+    "This program is free software under the GNU Lesser General Public License, version "
+    "2.1 or later, and comes with ABSOLUTELY NO WARRANTY. "
+    "Source: github.com/OpenX6100/x6100_gui";
 
 /* ---- window --------------------------------------------------------------------- */
 
