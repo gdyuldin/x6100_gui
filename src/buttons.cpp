@@ -325,7 +325,16 @@ static button_data_t btn_settings = make_app_btn("Settings", ACTION_APP_SETTINGS
 
 static button_data_t  btn_wifi   = make_app_btn("WiFi", ACTION_APP_WIFI);
 static button_data_t  btn_bt     = make_app_btn("Bluetooth", ACTION_APP_BT);
+/* The apps on their way in declare their button below their own name, one
+ * app per line, so they can be merged in any order without touching each
+ * other's lines. Their places on the pages are fixed below. */
+/* WSPR */
+/* JS8 */
+/* PSK31 */
 static button_data_t  btn_psk    = make_app_btn("PSK31", ACTION_APP_PSK);
+/* Olivia */
+/* WeFax */
+/* SSTV */
 
 /* RTTY */
 static button_data_t btn_rtty_p1 = {
@@ -456,13 +465,29 @@ static buttons_page_t page_app_1 = {
 static buttons_page_t page_app_2 = {
     {&btn_app_p2, &btn_rec, &btn_qth, &btn_callsign, &btn_settings}
 };
-static buttons_page_t page_app_3 = {
-    {&btn_app_p3, &btn_wifi, &btn_bt}
-};
-/* Page 4: PSK31, Olivia, WeFax, SSTV (the others come with their own PRs) */
-static buttons_page_t page_app_4 = {
-    {&btn_app_p4, &btn_psk}
-};
+/* Pages 3 and 4: every app has its fixed place, kept empty (NULL) until the
+ * app comes in. Each app only replaces its own NULL, so the order on the
+ * radio never changes whichever app is merged first. */
+static buttons_page_t page_app_3 = {{
+    &btn_app_p3,
+    &btn_wifi,
+    &btn_bt,
+    /* WSPR */
+    NULL,
+    /* JS8 */
+    NULL,
+}};
+static buttons_page_t page_app_4 = {{
+    &btn_app_p4,
+    /* PSK31 */
+    &btn_psk,
+    /* Olivia */
+    NULL,
+    /* WeFax */
+    NULL,
+    /* SSTV */
+    NULL,
+}};
 
 /* RTTY */
 
