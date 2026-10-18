@@ -36,6 +36,13 @@ target_sources(${PROJECT_NAME} PUBLIC
     bt_audio.c
     knobs.cpp lock_manager.c indicators.cpp freq_info.cpp
     dialog_bt.c bt_ctl.c bt_dev.c bt_spp.c
+    # The apps on their way in: each one's sources below its name
+    # WSPR
+    # JS8
+    # PSK31
+    # Olivia
+    # WeFax
+    # SSTV
 )
 
 add_subdirectory(fonts)
