@@ -26,6 +26,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     dialog.c dialog_swrscan.c
     dxcc.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
+    dialog_js8.c js8_wf.c js8_clock.c
     ft8_ui/table_view.c
     ft8_udp.c
     dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
@@ -74,6 +75,7 @@ liquid
 RHVoice RHVoice_core RHVoice_audio
 ft8
 cw_decoder
+JS8
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

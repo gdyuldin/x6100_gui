@@ -43,6 +43,9 @@ typedef enum {
     ACTION_APP_QTH,
     ACTION_APP_CALLSIGN,
     ACTION_APP_WIFI,
+    /* JS8 opens from the APP menu only, not as a long-press action (#283),
+     * so its number is never stored. */
+    ACTION_APP_JS8 = 112,
     ACTION_APP_BT = 116,
 } press_action_t;
 
