@@ -43,8 +43,16 @@ typedef enum {
     ACTION_APP_QTH,
     ACTION_APP_CALLSIGN,
     ACTION_APP_WIFI,
+    /* The apps on their way in, with their fixed numbers (#283): each one's
+     * line below its name, so they can be merged in any order. */
+    /* WeFax */
     ACTION_APP_WEFAX = 109,
+    /* SSTV */
     ACTION_APP_SSTV = 111,
+    /* JS8 */
+    /* WSPR */
+    /* PSK31 */
+    /* Olivia */
     ACTION_APP_BT = 116,
 } press_action_t;
 

@@ -24,8 +24,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     audio.c mfk.cpp cw.cpp panel.cpp
     rtty.c screenshot.c display.cpp gps.c
     ui_list.c app_info.c
-    dialog.c dialog_swrscan.c dialog_wefax.c wefax/decoder.c wefax/stations.c
-    dialog_sstv.c sstv_resources.c sstv/decoder.c sstv/encoder.c sstv/autodetect.c sstv/vis.c sstv/linesync.c sstv/preview.c
+    dialog.c dialog_swrscan.c
     dxcc.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
     ft8_ui/table_view.c
@@ -38,6 +37,15 @@ target_sources(${PROJECT_NAME} PUBLIC
     bt_audio.c
     knobs.cpp lock_manager.c indicators.cpp freq_info.cpp
     dialog_bt.c bt_ctl.c bt_dev.c bt_spp.c
+    # The apps on their way in: each one's sources below its name
+    # WSPR
+    # JS8
+    # PSK31
+    # Olivia
+    # WeFax
+    dialog_wefax.c wefax/decoder.c wefax/stations.c
+    # SSTV
+    dialog_sstv.c sstv_resources.c sstv/decoder.c sstv/encoder.c sstv/autodetect.c sstv/vis.c sstv/linesync.c sstv/preview.c
 )
 
 add_subdirectory(fonts)
