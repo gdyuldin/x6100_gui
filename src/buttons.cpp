@@ -325,6 +325,7 @@ static button_data_t btn_settings = make_app_btn("Settings", ACTION_APP_SETTINGS
 
 static button_data_t  btn_wifi   = make_app_btn("WiFi", ACTION_APP_WIFI);
 static button_data_t  btn_bt     = make_app_btn("Bluetooth", ACTION_APP_BT);
+static button_data_t  btn_wefax  = make_app_btn("WeFax", ACTION_APP_WEFAX);
 static button_data_t  btn_sstv   = make_app_btn("SSTV", ACTION_APP_SSTV);
 
 /* RTTY */
@@ -459,10 +460,9 @@ static buttons_page_t page_app_2 = {
 static buttons_page_t page_app_3 = {
     {&btn_app_p3, &btn_wifi, &btn_bt}
 };
-/* Page 4: PSK31, Olivia, WeFax, SSTV; the first three come with their own
- * pull requests, SSTV keeps the last place meanwhile. */
+/* Page 4: PSK31, Olivia, WeFax, SSTV (PSK31 and Olivia come with their own PRs) */
 static buttons_page_t page_app_4 = {
-    {&btn_app_p4, NULL, NULL, NULL, &btn_sstv}
+    {&btn_app_p4, NULL, NULL, &btn_wefax, &btn_sstv}
 };
 
 /* RTTY */
