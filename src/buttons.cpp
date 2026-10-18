@@ -325,7 +325,16 @@ static button_data_t btn_settings = make_app_btn("Settings", ACTION_APP_SETTINGS
 
 static button_data_t  btn_wifi   = make_app_btn("WiFi", ACTION_APP_WIFI);
 static button_data_t  btn_bt     = make_app_btn("Bluetooth", ACTION_APP_BT);
+/* The apps on their way in declare their button below their own name, one
+ * app per line, so they can be merged in any order without touching each
+ * other's lines. Their places on the pages are fixed below. */
+/* WSPR */
+/* JS8 */
+/* PSK31 */
+/* Olivia */
 static button_data_t  btn_olivia = make_app_btn("Olivia", ACTION_APP_OLIVIA);
+/* WeFax */
+/* SSTV */
 
 /* RTTY */
 static button_data_t btn_rtty_p1 = {
@@ -445,9 +454,10 @@ static buttons_page_t page_dfl_1 = {
 };
 
 /* App pages */
-static button_data_t btn_app_p1 = make_page_btn("(APP 1:3)", "Application|page 1");
-static button_data_t btn_app_p2 = make_page_btn("(APP 2:3)", "Application|page 2");
-static button_data_t btn_app_p3 = make_page_btn("(APP 3:3)", "Application|page 3");
+static button_data_t btn_app_p1 = make_page_btn("(APP 1:4)", "Application|page 1");
+static button_data_t btn_app_p2 = make_page_btn("(APP 2:4)", "Application|page 2");
+static button_data_t btn_app_p3 = make_page_btn("(APP 3:4)", "Application|page 3");
+static button_data_t btn_app_p4 = make_page_btn("(APP 4:4)", "Application|page 4");
 
 static buttons_page_t page_app_1 = {
     {&btn_app_p1, &btn_rtty, &btn_ft8, &btn_swr, &btn_gps}
@@ -455,9 +465,29 @@ static buttons_page_t page_app_1 = {
 static buttons_page_t page_app_2 = {
     {&btn_app_p2, &btn_rec, &btn_qth, &btn_callsign, &btn_settings}
 };
-static buttons_page_t page_app_3 = {
-    {&btn_app_p3, &btn_wifi, &btn_bt, &btn_olivia}
-};
+/* Pages 3 and 4: every app has its fixed place, kept empty (NULL) until the
+ * app comes in. Each app only replaces its own NULL, so the order on the
+ * radio never changes whichever app is merged first. */
+static buttons_page_t page_app_3 = {{
+    &btn_app_p3,
+    &btn_wifi,
+    &btn_bt,
+    /* WSPR */
+    NULL,
+    /* JS8 */
+    NULL,
+}};
+static buttons_page_t page_app_4 = {{
+    &btn_app_p4,
+    /* PSK31 */
+    NULL,
+    /* Olivia */
+    &btn_olivia,
+    /* WeFax */
+    NULL,
+    /* SSTV */
+    NULL,
+}};
 
 /* RTTY */
 
@@ -478,6 +508,7 @@ buttons_group_t buttons_group_app = {
     &page_app_1,
     &page_app_2,
     &page_app_3,
+    &page_app_4,
 };
 
 buttons_group_t buttons_group_key = {
