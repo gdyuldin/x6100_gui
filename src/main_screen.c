@@ -44,8 +44,15 @@
 #include "dialog_recorder.h"
 #include "dialog_callsign.h"
 #include "dialog_wifi.h"
-#include "dialog_wspr.h"
 #include "dialog_bt.h"
+/* The apps on their way in: each one's include below its name */
+/* WSPR */
+#include "dialog_wspr.h"
+/* JS8 */
+/* PSK31 */
+/* Olivia */
+/* WeFax */
+/* SSTV */
 #include "display.h"
 #include "buttons.h"
 #include "recorder.h"
@@ -198,16 +205,23 @@ void main_screen_start_app(press_action_t app_action) {
             voice_say_text_fmt("Wi-Fi window");
             break;
 
-        case ACTION_APP_WSPR:
-            dialog_construct(dialog_wspr, obj);
-            voice_say_text_fmt("WSPR window");
-            break;
-
         case ACTION_APP_BT:
             dialog_construct(dialog_bt, obj);
             voice_say_text_fmt("Bluetooth window");
             break;
 
+        /* The apps on their way in: each one's case below its name */
+        /* WSPR */
+        case ACTION_APP_WSPR:
+            dialog_construct(dialog_wspr, obj);
+            voice_say_text_fmt("WSPR window");
+            break;
+
+        /* JS8 */
+        /* PSK31 */
+        /* Olivia */
+        /* WeFax */
+        /* SSTV */
         default:
             break;
     }
@@ -274,8 +288,14 @@ void main_screen_action(press_action_t action) {
         case ACTION_APP_SETTINGS:
         case ACTION_APP_RECORDER:
         case ACTION_APP_WIFI:
-        case ACTION_APP_WSPR:
         case ACTION_APP_BT:
+        /* WSPR */
+        case ACTION_APP_WSPR:
+        /* JS8 */
+        /* PSK31 */
+        /* Olivia */
+        /* WeFax */
+        /* SSTV */
             main_screen_start_app(action);
             break;
 

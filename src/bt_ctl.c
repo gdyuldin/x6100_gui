@@ -209,8 +209,8 @@ static void *worker(void *arg)
 
             if (S.settle) {
                 /* The chip has just come back: udev runs bt_start.sh for
-                 * it (power on, visible, bt-agent). Let that finish, so
-                 * bt_up.sh's hidden / not pairable comes last. */
+                 * it (power on, hidden, not pairable, the CAT record).
+                 * Let that finish before bt_up.sh. */
                 S.settle = false;
                 sleep(5);
             }
@@ -361,8 +361,8 @@ bt_ctl_state_t bt_ctl_state(void)
      * the SPP server and tidy up, instead of showing On for a dead
      * adapter. The chip is often back (WiFi on again) before anyone
      * looks: then hci0 is there but it is a new one (another sysfs
-     * inode), started by bt_start.sh as at boot - visible, bt-agent, our
-     * SPP server gone. Either way it is set up again once it is back,
+     * inode), started by bt_start.sh as at boot - hidden, not pairable,
+     * our SPP server gone. Either way it is set up again once it is back,
      * without switching Bluetooth off and on: that leaves this chip
      * deaf to LE keyboards. One stat() per call, cheap enough. */
     if (st == BT_CTL_ON && !S.pending) {

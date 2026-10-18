@@ -618,6 +618,10 @@ static void update_noise_and_levels(float *lin, uint16_t size, bool update_level
     }
 
     min -= 10.0f*log10f(window_size) + 5.0f;
+    /* 1KO125: the displayed bins carry zoom_level_offset (narrower bins have
+     * less noise each, compensated in decimate_emit): the auto levels must
+     * carry it too, or the noise floor climbs by 3 dB per zoom step. */
+    min += zoom_level_offset;
 
     if (min < S_MIN) {
         min = S_MIN;
