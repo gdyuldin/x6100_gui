@@ -26,8 +26,6 @@ target_sources(${PROJECT_NAME} PUBLIC
     dialog.c dialog_swrscan.c
     dxcc.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
-    dialog_wspr.c wspr_app.c wspr_worker.c wspr_demod.c wspr_fano.c
-    wspr_encode.c wspr_mod.c wspr_spec.c
     ft8_ui/table_view.c
     ft8_udp.c
     dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
@@ -38,6 +36,15 @@ target_sources(${PROJECT_NAME} PUBLIC
     bt_audio.c
     knobs.cpp lock_manager.c indicators.cpp freq_info.cpp
     dialog_bt.c bt_ctl.c bt_dev.c bt_spp.c
+    # The apps on their way in: each one's sources below its name
+    # WSPR
+    dialog_wspr.c wspr_app.c wspr_worker.c wspr_demod.c wspr_fano.c
+    wspr_encode.c wspr_mod.c wspr_spec.c
+    # JS8
+    # PSK31
+    # Olivia
+    # WeFax
+    # SSTV
 )
 
 add_subdirectory(fonts)
