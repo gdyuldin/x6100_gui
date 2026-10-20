@@ -29,6 +29,7 @@ typedef struct {
     float start_s;          /* VIS start inside the block, seconds     */
     float bit_ms;           /* measured bit period                     */
     float slip_s;           /* gap found inside the data bits, seconds */
+    bool  near_miss;        /* 1KO125: leaders and start bit found, frame rejected */
 } sstv_vis_result_t;
 
 bool sstv_vis_detect(const float *x, int n, sstv_info_t *out, sstv_vis_result_t *res);

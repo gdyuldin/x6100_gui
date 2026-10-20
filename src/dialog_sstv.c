@@ -23,6 +23,9 @@
 #include "sstv/vis.h"
 #include "sstv/linesync.h"
 #include "sstv/preview.h"
+#include "sstv/sstv_denoise.h"   /* 1KO125 */
+#include "sstv/sstv_dnn.h"       /* 1KO125: ML denoiser */
+#include "sstv/syncgrid.h"       /* 1KO125: Restart confirmed by the line syncs */
 #include "radio.h"
 #include "tx_info.h"
 #include "events.h"
@@ -44,6 +47,9 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <dirent.h>
+#include <unistd.h>
+#include <sys/resource.h>   /* 1KO125: ML denoiser priority */
+#include <sys/syscall.h>
 #include <png.h>
 
 #include "audio.h"
@@ -64,6 +70,8 @@
  * Set to 1 to collect real recordings for debugging/regression tests. */
 #define SSTV_SAVE_DEBUG_WAV 0
 #define SSTV_SAVE_DIR "/mnt/sstv"
+#define SSTV_CONF_FILE "/mnt/sstv.conf"   /* 1KO125: denoise=0 off, 1 classic, 2 ML */
+#define SSTV_DNN_FILE  "/usr/share/x6100/sstv_dnn.bin"   /* 1KO125: ML denoiser model */
 #define SSTV_IMAGE_H 330
 #define SSTV_IMAGE_W 440
 #define SSTV_IMAGE_X 350
@@ -89,6 +97,9 @@ static void test_cb(button_data_t *data);
 #endif
 static void close_cb(button_data_t *data);
 static void restart_cb(button_data_t *data);
+static void denoise_cb(button_data_t *data);   /* 1KO125: Denoise OFF / CLASSIC / ML */
+static void denoise_load(void);
+static sstv_dnn_t *denoise_model(void);
 static void key_cb(lv_event_t *e);
 static void start_cb(button_data_t *data);
 static void cont_start_cb(button_data_t *data);
@@ -180,6 +191,14 @@ static lv_obj_t *sstv_frame = NULL;
 static lv_obj_t *sstv_canvas = NULL;
 static lv_obj_t *status_label = NULL;
 static lv_obj_t *progress_bar = NULL;
+/* 1KO125: TX panel.  It covers the RX panel while TX is set up and sent, with
+ * its own canvas, status and progress bar; the RX panel under it keeps
+ * receiving and drawing.  tx_rx_strip tells what the receiver is doing. */
+static lv_obj_t *tx_panel = NULL;
+static lv_obj_t *tx_canvas = NULL;
+static lv_obj_t *tx_status_label = NULL;
+static lv_obj_t *tx_progress_bar = NULL;
+static lv_obj_t *tx_rx_strip = NULL;
 static volatile bool saved_overlay_pending = false;
 
 /* Valid-but-unsupported VIS notification.
@@ -188,9 +207,21 @@ static volatile bool saved_overlay_pending = false;
 static bool unsupported_vis_pending = false;
 static int unsupported_vis_code = -1;
 static char unsupported_vis_name[48];
+/* 1KO125: "Unsupported SSTV mode" waits SSTV_UNSUPPORTED_WAIT_MS and is
+ * dropped if a picture starts meanwhile: the beginning of a good header can
+ * read as VIS 0 or 15.  The same mode is reported once (not again within
+ * SSTV_UNSUPPORTED_ONCE_MS: one header is found in many scan windows). */
+#define SSTV_UNSUPPORTED_WAIT_MS 1500
+#define SSTV_UNSUPPORTED_ONCE_MS 10000
+static uint32_t unsupported_vis_since = 0;
+static unsigned unsupported_vis_starts = 0;      /* live_capture_starts when queued */
+static int unsupported_vis_reported = -1;
+static uint32_t unsupported_vis_reported_ms = 0;
+static unsigned live_capture_starts = 0;         /* Auto RX captures started (VIS found) */
 static sstv_autodetect_state_t autodetect_last_ui_state = SSTV_AUTODETECT_IDLE;
 static char saved_overlay_name[96];
 static lv_color_t sstv_buffer[SSTV_CANVAS_W * SSTV_CANVAS_H];
+static lv_color_t tx_buffer[SSTV_CANVAS_W * SSTV_CANVAS_H];   /* 1KO125: TX panel canvas */
 static uint8_t test_rgb[SSTV_MAX_W * SSTV_MAX_H * 3];
 static sstv_info_t test_info;
 static lv_timer_t *ui_timer = NULL;
@@ -231,7 +262,8 @@ typedef enum {
     SSTV_TX_PHASE_SELECT_TYPE,
     SSTV_TX_PHASE_SELECT_TEMPLATE,
     SSTV_TX_PHASE_SELECT_TARGET,
-    SSTV_TX_PHASE_SELECT_COLORS
+    SSTV_TX_PHASE_SELECT_COLORS,
+    SSTV_TX_PHASE_SELECT_RX_PICTURE      /* 1KO125: REPLAY - received picture for the miniature */
 } sstv_tx_phase_t;
 
 static sstv_tx_phase_t tx_phase = SSTV_TX_PHASE_NONE;
@@ -311,6 +343,13 @@ static volatile bool live_canvas_clear_pending = false;
 static volatile bool live_abort_requested = false;
 static volatile bool live_mode_ui_pending = false;
 static volatile bool live_restart_enabled = true;
+/* 1KO125: received pictures cleaned (both saved) by sstv/sstv_denoise.c
+ * (CLASSIC) or by the neural network of sstv/sstv_dnn.c (ML) */
+enum { DENOISE_OFF, DENOISE_CLASSIC, DENOISE_ML };
+static volatile int denoise_mode = DENOISE_CLASSIC;
+static const char *const denoise_labels[] = { "Denoise\nOFF", "Denoise\nCLASSIC", "Denoise\nML" };
+/* set by the decoder thread while it cleans the picture: the UI shows it */
+static volatile int denoise_running = DENOISE_OFF;
 /* Progressive display (Auto RX).  live_ls follows the line syncs of the
  * capture (fed by audio_cb() under live_mutex); live_pv decides which row
  * can be drawn; ui_timer_cb() draws up to SSTV_PV_ROWS_PER_TICK rows per
@@ -322,10 +361,38 @@ static sstv_preview_t live_pv;
 static bool live_pv_on = false;
 static float live_pv_slice[SSTV_PV_SLICE_MAX];
 static float live_vis_last_start_s = -1.0f;   /* VIS start in the last detected window */
+static float live_vis_last_off = 0.0f;        /* 1KO125: its tuning offset, Hz */
+static float live_vis_last_leader = 0.0f;     /* 1KO125: its leader quality */
+static bool live_vis_last_near = false;       /* 1KO125: last window was a near miss */
+static uint64_t live_buf0_abs = 0;            /* 1KO125: absolute index of live_samples[0] */
+static float live_capture_off = 0.0f;         /* 1KO125: tuning offset of the capture's VIS */
+/* 1KO125: Restart candidate.  A VIS heard during a capture does not stop it:
+ * the capture goes on, and after SSTV_RESTART_CONFIRM_S of audio the line
+ * syncs decide (sstv/syncgrid.c).  The new capture then starts from the
+ * audio of the candidate, so no row of the new picture is lost.  Up to
+ * RC_MAX candidates are checked side by side; the newest confirmed one wins. */
+#define RC_MAX 2                              /* candidates at a time */
+typedef struct {
+    bool used;
+    bool confirmed;                           /* checked: waits for the others */
+    sstv_info_t info;
+    uint64_t win_end;                         /* end of the window with the VIS (abs) */
+    float start_s, off;
+    double vis_end_abs;                       /* end of its VIS (abs sample index) */
+    unsigned capture_starts;
+} rc_cand_t;
+static rc_cand_t rc_cand[RC_MAX];
 static float *live_samples = NULL;
 static long live_written = 0;
 static long live_target = 0;
 static sstv_info_t live_info;
+/* 1KO125: the Auto RX decoder works on its own copy of the capture, so the VIS
+ * receiver listens again as soon as the decoder starts (an immediate reply is
+ * not lost while the previous picture is decoded and denoised) */
+static float *dec_samples = NULL;
+static long dec_written = 0;
+static sstv_info_t dec_info;
+static volatile bool dec_abort = false;
 
 /* Temporary live-RX diagnostics. No SSTV behaviour is changed here. */
 static struct timespec live_dbg_capture_ts;
@@ -413,21 +480,22 @@ static button_data_t btn_autodetect = { .type = BTN_TEXT, .label = "AUTODETECT",
 #endif
 #endif
 static button_data_t btn_close = { .type = BTN_TEXT, .label = "Close\nSSTV", .press = close_cb };
+static button_data_t btn_denoise = { .type = BTN_TEXT, .label = "Denoise\nCLASSIC", .press = denoise_cb };
 static button_data_t btn_info = { .type = BTN_TEXT, .label = "Info", .press = info_cb };
 
 static buttons_page_t btn_page_1 = {
     .items = { &btn_sstv_page_1, &btn_start, &btn_cont_start, &btn_cont_mode, &btn_tx }
 };
 static buttons_page_t btn_page_2 = {
-    .items = { &btn_sstv_page_2, &btn_browser, &btn_delete_picture, &btn_restart, &btn_close }
+    .items = { &btn_sstv_page_2, &btn_browser, &btn_delete_picture, &btn_restart, &btn_denoise }
 };
 static buttons_page_t btn_page_3 = {
 #if SSTV_PAGE3_MENU && SSTV_PAGE3_AUTODETECT
-    .items = { &btn_sstv_page_3, &btn_test, &btn_autodetect, &btn_info, NULL }
+    .items = { &btn_sstv_page_3, &btn_test, &btn_autodetect, &btn_info, &btn_close }
 #elif SSTV_PAGE3_MENU
-    .items = { &btn_sstv_page_3, &btn_test, NULL, &btn_info, NULL }
+    .items = { &btn_sstv_page_3, &btn_test, NULL, &btn_info, &btn_close }
 #else
-    .items = { &btn_sstv_page_3, NULL, NULL, &btn_info, NULL }
+    .items = { &btn_sstv_page_3, NULL, NULL, &btn_info, &btn_close }
 #endif
 };
 
@@ -487,6 +555,7 @@ static void set_receiver_ui_stopped(void)
         lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
         lv_obj_add_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
     }
+    if (tx_ui_state != SSTV_TX_UI_RX) return;   /* 1KO125: TX panel in front, buttons are TX's */
     btn_start.label = "Start\nAuto RX";
     buttons_disabled(&btn_start, false);
     if (btn_start.disp_btn) buttons_refresh(&btn_start);
@@ -500,6 +569,7 @@ static void set_receiver_ui_listening(void)
         lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
         lv_obj_add_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
     }
+    if (tx_ui_state != SSTV_TX_UI_RX) return;   /* 1KO125 */
     btn_start.label = "Stop\nAuto RX";
     buttons_disabled(&btn_start, false);
     if (btn_start.disp_btn) buttons_refresh(&btn_start);
@@ -512,6 +582,7 @@ static void set_receiver_ui_decoding(const char *mode_name)
     snprintf(status, sizeof(status), "Decoding %s", mode_name ? mode_name : "SSTV");
     set_status(status);
     if (progress_bar) lv_obj_clear_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
+    if (tx_ui_state != SSTV_TX_UI_RX) return;   /* 1KO125 */
     btn_start.label = "Halt\nDecoding";
     buttons_disabled(&btn_start, false);
     if (btn_start.disp_btn) buttons_refresh(&btn_start);
@@ -541,6 +612,82 @@ static void render_scaled_image(void)
         }
     }
     lv_obj_invalidate(sstv_canvas);
+}
+
+static const char *cont_mode_name(sstv_mode_t mode);   /* dialog_sstv_rx.inc */
+
+/* 1KO125: TX status and progress go to the TX panel while it is in front */
+static lv_obj_t *tx_status(void) { return tx_ui_state != SSTV_TX_UI_RX ? tx_status_label : status_label; }
+static lv_obj_t *tx_bar(void) { return tx_ui_state != SSTV_TX_UI_RX ? tx_progress_bar : progress_bar; }
+static void tx_set_status(const char *text)
+{
+    lv_obj_t *l = tx_status();
+    if (l) lv_label_set_text(l, text ? text : "");
+}
+
+static void tx_panel_show(bool on)
+{
+    if (!tx_panel) return;
+    if (on) {
+        lv_obj_clear_flag(tx_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(tx_panel);
+    } else {
+        lv_obj_add_flag(tx_panel, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/* The RX panel again in front: its texts and buttons from the receiver state */
+static void rx_ui_resync(void)
+{
+    if (live_capturing || live_decode_pending) set_receiver_ui_decoding(live_info.name);
+    else if (live_decoding) set_receiver_ui_decoding(dec_info.name);
+    else if (live_enabled) set_receiver_ui_listening();
+    else if (cont_capturing || cont_decode_pending || cont_decoding) update_rx_controls();
+    else set_receiver_ui_stopped();
+}
+
+/* The line on the TX panel that tells what the receiver under it is doing */
+static void tx_rx_strip_update(void)
+{
+    if (!tx_rx_strip) return;
+    static char shown[96] = "";
+    char t[96] = "";
+    if (live_capturing && live_target > 0) {
+        long pct = live_written * 100L / live_target;
+        snprintf(t, sizeof(t), "RX: receiving %s  %ld%%", live_info.name, pct > 100 ? 100L : pct);
+    } else if (live_decode_pending) {
+        snprintf(t, sizeof(t), "RX: decoding %s", live_info.name);
+    } else if (live_decoding) {
+        snprintf(t, sizeof(t), "RX: %s %s", denoise_running != DENOISE_OFF ? "denoising" : "decoding", dec_info.name);
+    } else if (cont_capturing) {
+        snprintf(t, sizeof(t), "RX: Manual RX %s", cont_locked ? cont_mode_name(cont_detected) : "running");
+    } else if (cont_decode_pending || cont_decoding) {
+        snprintf(t, sizeof(t), "RX: decoding Manual RX");
+    }
+    if (strcmp(t, shown) == 0) return;
+    snprintf(shown, sizeof(shown), "%s", t);
+    lv_label_set_text(tx_rx_strip, t);
+    if (t[0]) lv_obj_clear_flag(tx_rx_strip, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(tx_rx_strip, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 1KO125: show a waiting "Unsupported SSTV mode", see unsupported_vis_* */
+static void unsupported_vis_tick(void)
+{
+    if (!unsupported_vis_pending) return;
+    if (live_capture_starts != unsupported_vis_starts) {
+        unsupported_vis_pending = false;
+        fprintf(stderr, "SSTV LIVE: unsupported VIS %d dropped: a good header followed\n", unsupported_vis_code);
+        return;
+    }
+    if (lv_tick_elaps(unsupported_vis_since) < SSTV_UNSUPPORTED_WAIT_MS) return;
+    unsupported_vis_pending = false;
+    if (unsupported_vis_code == unsupported_vis_reported &&
+        lv_tick_elaps(unsupported_vis_reported_ms) < SSTV_UNSUPPORTED_ONCE_MS)
+        return;
+    unsupported_vis_reported = unsupported_vis_code;
+    unsupported_vis_reported_ms = lv_tick_get();
+    msg_schedule_text_fmt("Unsupported SSTV mode: %s (VIS %d)", unsupported_vis_name, unsupported_vis_code);
 }
 
 /* ---- RX: capture, VIS, decoding threads, audio callback ---- */
@@ -607,11 +754,57 @@ static void construct_cb(lv_obj_t *parent)
     lv_bar_set_range(progress_bar, 0, 1000);
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
     lv_obj_add_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
+
+    /* 1KO125: TX panel, same frame as the dialog, over the RX panel */
+    tx_panel = lv_obj_create(dialog.obj);
+    lv_obj_remove_style_all(tx_panel);
+    lv_obj_add_style(tx_panel, &style.dialog.base, 0);
+    lv_obj_set_pos(tx_panel, 0, 0);
+    lv_obj_set_size(tx_panel, LV_PCT(100), LV_PCT(100));
+    lv_obj_clear_flag(tx_panel, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    tx_canvas = lv_canvas_create(tx_panel);
+    lv_canvas_set_buffer(tx_canvas, tx_buffer, SSTV_CANVAS_W, SSTV_CANVAS_H, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_align(tx_canvas, LV_ALIGN_TOP_LEFT, SSTV_IMAGE_X, SSTV_IMAGE_Y);
+    lv_obj_set_size(tx_canvas, SSTV_IMAGE_W, SSTV_IMAGE_H);
+    lv_canvas_fill_bg(tx_canvas, lv_color_black(), LV_OPA_COVER);
+
+    tx_status_label = lv_label_create(tx_panel);
+    lv_label_set_text(tx_status_label, "");
+    lv_obj_set_style_text_color(tx_status_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(tx_status_label, &sony_28, 0);
+    lv_obj_set_width(tx_status_label, 300);
+    lv_obj_set_pos(tx_status_label, 10, 105);
+    lv_obj_set_style_text_align(tx_status_label, LV_TEXT_ALIGN_LEFT, 0);
+
+    tx_progress_bar = lv_bar_create(tx_panel);
+    lv_obj_set_size(tx_progress_bar, 250, 16);
+    lv_obj_set_pos(tx_progress_bar, 35, 155);
+    lv_bar_set_range(tx_progress_bar, 0, 1000);
+    lv_bar_set_value(tx_progress_bar, 0, LV_ANIM_OFF);
+    lv_obj_add_flag(tx_progress_bar, LV_OBJ_FLAG_HIDDEN);
+
+    tx_rx_strip = lv_label_create(tx_panel);
+    lv_obj_set_pos(tx_rx_strip, SSTV_IMAGE_X, SSTV_IMAGE_Y + SSTV_IMAGE_H - 30);
+    lv_obj_set_size(tx_rx_strip, SSTV_IMAGE_W, 30);
+    lv_obj_set_style_bg_color(tx_rx_strip, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(tx_rx_strip, 190, 0);
+    lv_obj_set_style_text_color(tx_rx_strip, lv_color_white(), 0);
+    lv_obj_set_style_text_font(tx_rx_strip, &sony_22, 0);
+    lv_obj_set_style_pad_left(tx_rx_strip, 26, 0);
+    lv_obj_set_style_pad_top(tx_rx_strip, 3, 0);
+    lv_label_set_long_mode(tx_rx_strip, LV_LABEL_LONG_CLIP);
+    lv_label_set_text(tx_rx_strip, "");
+    lv_obj_add_flag(tx_rx_strip, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(tx_panel, LV_OBJ_FLAG_HIDDEN);
+
     set_receiver_ui_stopped();
 
     /* RESTART defaults ON: a new valid VIS restarts the current Auto RX capture. */
     btn_restart.label = live_restart_enabled ? "Auto RX\nRestart ON" : "Auto RX\nRestart OFF";
     buttons_disabled(&btn_restart, false);
+    denoise_load();
+    btn_denoise.label = denoise_labels[denoise_mode];
 #if SSTV_PAGE3_MENU
     buttons_disabled(&btn_test, false);
 #endif
@@ -724,6 +917,7 @@ static void destruct_cb(void)
     tx_template_selector_destroy();
     tx_type_selector_destroy();
     tx_picture_selector_destroy();
+    tx_rxpic_selector_destroy();   /* 1KO125 */
     tx_instruction_hide();
     tx_phase = SSTV_TX_PHASE_NONE;
     sstv_browser_close();
@@ -734,6 +928,11 @@ static void destruct_cb(void)
     sstv_frame = NULL;
     status_label = NULL;
     progress_bar = NULL;
+    tx_panel = NULL;
+    tx_canvas = NULL;
+    tx_status_label = NULL;
+    tx_progress_bar = NULL;
+    tx_rx_strip = NULL;
 }
 
 static void ui_timer_cb(lv_timer_t *timer)
@@ -754,13 +953,7 @@ static void ui_timer_cb(lv_timer_t *timer)
         }
     }
 
-    if (unsupported_vis_pending) {
-        int vis = unsupported_vis_code;
-        char name[sizeof(unsupported_vis_name)];
-        snprintf(name, sizeof(name), "%s", unsupported_vis_name);
-        unsupported_vis_pending = false;
-        msg_schedule_text_fmt("Unsupported SSTV mode: %s (VIS %d)", name, vis);
-    }
+    unsupported_vis_tick();   /* 1KO125 */
 
     /* Initial Auto-RX VIS detector.
      *
@@ -780,7 +973,7 @@ static void ui_timer_cb(lv_timer_t *timer)
 
     pthread_mutex_lock(&live_mutex);
     if ((live_enabled || cont_capturing) && !live_capturing &&
-        !live_decode_pending && !live_decoding &&
+        !live_decode_pending &&   /* 1KO125: also while decoding */
         live_vis_window_ready(&live_scan_next_end, "initial")) {
         live_vis_copy_window(live_scan_next_end);
         initial_window_end = live_scan_next_end;
@@ -798,7 +991,8 @@ static void ui_timer_cb(lv_timer_t *timer)
         sstv_info_t detected_info;
         struct timespec t0,t1;
         clock_gettime(CLOCK_MONOTONIC,&t0);
-        bool found=live_detect_vis(live_vis_window,SSTV_VIS_WINDOW_SAMPLES,&detected_info);
+        bool found=live_detect_vis(live_vis_window,SSTV_VIS_WINDOW_SAMPLES,&detected_info,SSTV_VIS_MIN_LISTEN);
+        found=live_detect_vis_retry(found,&initial_window_end,&detected_info,SSTV_VIS_MIN_LISTEN);   /* 1KO125 */
         clock_gettime(CLOCK_MONOTONIC,&t1);
         double scan_ms=sstv_dbg_elapsed(&t0,&t1)*1000.0;
 
@@ -832,7 +1026,7 @@ static void ui_timer_cb(lv_timer_t *timer)
              * snapshot was being analysed.  Commit only if we are still
              * waiting for the first VIS. */
             if (live_enabled && !live_capturing &&
-                !live_decode_pending && !live_decoding) {
+                !live_decode_pending) {   /* 1KO125: also while decoding */
                 live_info=detected_info;
 
                 double listen_wall=live_dbg_listen_ts_valid ?
@@ -880,6 +1074,7 @@ static void ui_timer_cb(lv_timer_t *timer)
 
                     live_written=(long)keep;
                     live_capturing=true;
+                    live_capture_starts++;   /* 1KO125: drops a waiting "unsupported" */
                     sstv_dbg_capture_start(live_written);
                     live_preview_start(initial_window_end, live_ring_total - live_ring_count);
 
@@ -904,13 +1099,7 @@ static void ui_timer_cb(lv_timer_t *timer)
     }
 
     /* live_find_vis() above may just have queued an unsupported VIS. */
-    if (unsupported_vis_pending) {
-        int vis = unsupported_vis_code;
-        char name[sizeof(unsupported_vis_name)];
-        snprintf(name, sizeof(name), "%s", unsupported_vis_name);
-        unsupported_vis_pending = false;
-        msg_schedule_text_fmt("Unsupported mode: %s (VIS %d)", name, vis);
-    }
+    unsupported_vis_tick();   /* 1KO125 */
 
     /* Auto-RX restart detector.  The audio callback only fills the rolling
      * ring; the windows to scan are scheduled by live_vis_window_ready().  Take a short snapshot while
@@ -918,14 +1107,12 @@ static void ui_timer_cb(lv_timer_t *timer)
      * and outside the real-time audio callback. */
     bool restart_scan = false;
     uint64_t restart_window_end = 0;
-    size_t restart_ring_count = 0;
     pthread_mutex_lock(&live_mutex);
     if (live_restart_enabled && live_capturing &&
         live_vis_window_ready(&live_restart_next_end, "restart")) {
         live_vis_copy_window(live_restart_next_end);
         restart_window_end = live_restart_next_end;
         live_restart_next_end += SSTV_VIS_CHECK_STEP;
-        restart_ring_count=live_ring_count;
         restart_scan=true;
     }
     pthread_mutex_unlock(&live_mutex);
@@ -934,55 +1121,68 @@ static void ui_timer_cb(lv_timer_t *timer)
         sstv_info_t restart_info;
         struct timespec t0,t1;
         clock_gettime(CLOCK_MONOTONIC,&t0);
-        bool found=live_detect_vis(live_vis_window,SSTV_VIS_WINDOW_SAMPLES,&restart_info);
+        bool found=live_detect_vis(live_vis_window,SSTV_VIS_WINDOW_SAMPLES,&restart_info,SSTV_VIS_MIN_RESTART);
+        found=live_detect_vis_retry(found,&restart_window_end,&restart_info,SSTV_VIS_MIN_RESTART);   /* 1KO125 */
         clock_gettime(CLOCK_MONOTONIC,&t1);
+        /* 1KO125: a VIS during a capture is only a candidate: the picture
+         * coming in goes on, the line syncs decide (rc_* below). */
+        (void)t0; (void)t1;
+        if (found && live_vis_last_leader < SSTV_VIS_MIN_LEADER_RESTART) {
+            fprintf(stderr, "SSTV VIS: %s (VIS %d) ignored for Restart, leader %.3f < %.2f\n",
+                    restart_info.name, restart_info.vis, live_vis_last_leader, SSTV_VIS_MIN_LEADER_RESTART);
+            found = false;
+        }
         if (found) {
             pthread_mutex_lock(&live_mutex);
-            if (live_restart_enabled && live_capturing) {
-                fprintf(stderr,
-                        "SSTV DBG: VIS RESTART FOUND capture_wall=%.3fs scan=%.2fms ring=%zu [async]\n",
-                        sstv_dbg_elapsed(&live_dbg_capture_ts,&t1),
-                        sstv_dbg_elapsed(&t0,&t1)*1000.0,
-                        restart_ring_count);
-                long restart_target=(long)((live_mode_seconds(restart_info.mode)+2.0f)*SSTV_SAMPLE_RATE);
-                float *restart_samples=malloc((size_t)restart_target*sizeof(float));
-                if (!restart_samples) {
-                    fprintf(stderr,"SSTV LIVE: RESTART ignored - ERROR allocating %.1f MB capture buffer\n",
-                            (double)restart_target*sizeof(float)/(1024.0*1024.0));
-                } else {
-                    size_t keep=live_ring_count;
-                    if ((long)keep>restart_target) keep=(size_t)restart_target;
-                    size_t oldest=(live_ring_pos + SSTV_PREBUF_SAMPLES - live_ring_count)%SSTV_PREBUF_SAMPLES;
-                    for (size_t i=0;i<keep;++i)
-                        restart_samples[i]=live_ring[(oldest+i)%SSTV_PREBUF_SAMPLES];
-                    fprintf(stderr,"SSTV LIVE: RESTART - new VIS=%d -> %s; discarding current %s capture at %.1f s\n",
-                            restart_info.vis,restart_info.name,live_info.name,
-                            (double)live_written/SSTV_SAMPLE_RATE);
-                    free(live_samples);
-                    live_samples=restart_samples;
-                    live_written=(long)keep;
-                    live_target=restart_target;
-                    live_info=restart_info;
-                    live_preview_start(restart_window_end, live_ring_total - live_ring_count);
-                    sstv_dbg_capture_start(live_written);
-                    live_canvas_clear_pending=true;
-                    switch (live_info.mode) {
-                        case SSTV_MODE_ROBOT8_BW:
-                        case SSTV_MODE_ROBOT36:
-                        case SSTV_MODE_ROBOT72:
-                        case SSTV_MODE_MARTIN_M1:
-                        case SSTV_MODE_MARTIN_M2:
-                        case SSTV_MODE_SCOTTIE_S1:
-                        case SSTV_MODE_SCOTTIE_S2:
-                            cont_mode=live_info.mode;
-                            live_mode_ui_pending=true;
-                            break;
-                        default: break;
-                    }
-                    live_ring_pos=0;
-                    live_ring_count=0;
-                    fprintf(stderr,"SSTV LIVE: RESTART capturing %s from new VIS; target %.1f s, prebuffer=%ld samples\n",
-                            live_info.name,(double)live_target/SSTV_SAMPLE_RATE,live_written);
+            if (live_restart_enabled && live_capturing)
+                rc_add(&restart_info, restart_window_end, live_vis_last_start_s, live_vis_last_off);
+            pthread_mutex_unlock(&live_mutex);
+        }
+    }
+
+    /* 1KO125: Restart candidates: each is checked once SSTV_RESTART_CONFIRM_S
+     * of audio after its VIS is in the capture.  Only the audio thread writes
+     * the capture, and only past live_written: it is read here without the
+     * mutex (live_samples is freed only in this thread). */
+    if (rc_count() > 0) {
+        long n_now = 0;
+        bool alive;
+        pthread_mutex_lock(&live_mutex);
+        alive = live_capturing && live_samples;
+        if (alive) {
+            n_now = live_written;
+            rc_drop_stale();
+        } else if (!live_decode_pending) {
+            rc_clear("no capture any more");    /* Halt, TX...: nothing to restart */
+        }
+        pthread_mutex_unlock(&live_mutex);
+        if (alive) {
+            for (int i = 0; i < RC_MAX; ++i) {
+                if (!rc_cand[i].used || rc_cand[i].confirmed) continue;
+                long need = (long)(rc_cand[i].vis_end_abs - (double)live_buf0_abs) +
+                            (long)(SSTV_RESTART_CONFIRM_S * SSTV_SAMPLE_RATE);
+                if (n_now < need) continue;
+                sstv_syncgrid_verdict_t v;
+                if (rc_check(&rc_cand[i], live_samples, n_now, live_buf0_abs, SSTV_RESTART_CONFIRM_S, &v))
+                    rc_cand[i].confirmed = true;
+                else
+                    rc_cand[i].used = false;
+            }
+            pthread_mutex_lock(&live_mutex);
+            int w = rc_winner();
+            if (w >= 0 && live_capturing) {
+                float *old = live_samples;
+                long fi = rc_from_index(&rc_cand[w]);
+                rc_cand_t c = rc_cand[w];
+                fprintf(stderr, "SSTV LIVE: RESTART - new VIS=%d -> %s; discarding current %s capture at %.1f s\n",
+                        c.info.vis, c.info.name, live_info.name, (double)live_written / SSTV_SAMPLE_RATE);
+                rc_clear(NULL);
+                if (live_capture_from(&c.info, old + fi, live_written - fi, live_buf0_abs + (uint64_t)fi,
+                                      c.win_end, c.start_s, c.off)) {
+                    free(old);
+                    fprintf(stderr, "SSTV LIVE: RESTART capturing %s from the candidate; target %.1f s, %.1f s already in\n",
+                            live_info.name, (double)live_target / SSTV_SAMPLE_RATE,
+                            (double)live_written / SSTV_SAMPLE_RATE);
                 }
             }
             pthread_mutex_unlock(&live_mutex);
@@ -1030,6 +1230,10 @@ static void ui_timer_cb(lv_timer_t *timer)
         tx_picture_load_pending_preview();
 
     if (tx_ui_state == SSTV_TX_UI_SETUP &&
+        tx_phase == SSTV_TX_PHASE_SELECT_RX_PICTURE)
+        tx_rxpic_load_pending_preview();   /* 1KO125 */
+
+    if (tx_ui_state == SSTV_TX_UI_SETUP &&
         tx_phase == SSTV_TX_PHASE_SELECT_TEMPLATE &&
         tx_template_preview_pending) {
         tx_template_preview_pending = false;
@@ -1051,9 +1255,11 @@ static void ui_timer_cb(lv_timer_t *timer)
         msg_schedule_text_fmt("%s", message);
     }
 
+    if (tx_ui_state != SSTV_TX_UI_RX) tx_rx_strip_update();   /* 1KO125 */
+
     if (tx_running) {
-        if (progress_bar) {
-            lv_obj_clear_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
+        if (tx_bar()) {
+            lv_obj_clear_flag(tx_bar(), LV_OBJ_FLAG_HIDDEN);
             int v = 0;
             if (tx_key_time_valid) {
                 uint64_t keyed_ms = monotonic_ms_since(&tx_key_time);
@@ -1067,15 +1273,15 @@ static void ui_timer_cb(lv_timer_t *timer)
                 }
             }
             tx_progress = v;
-            lv_bar_set_value(progress_bar,v,LV_ANIM_OFF);
+            lv_bar_set_value(tx_bar(),v,LV_ANIM_OFF);
         }
-        if (tx_started) { char msg[96]; snprintf(msg,sizeof(msg),"Transmitting %s...",cont_mode_name(tx_mode)); set_status(msg); }
+        if (tx_started) { char msg[96]; snprintf(msg,sizeof(msg),"Transmitting %s...",cont_mode_name(tx_mode)); tx_set_status(msg); }
     } else if (tx_thread_valid) {
         pthread_join(tx_thread, NULL);
         tx_thread_valid = false;
-        if (progress_bar) {
-            lv_bar_set_value(progress_bar, tx_result == 1 ? 1000 : 0, LV_ANIM_OFF);
-            lv_obj_add_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
+        if (tx_bar()) {
+            lv_bar_set_value(tx_bar(), tx_result == 1 ? 1000 : 0, LV_ANIM_OFF);
+            lv_obj_add_flag(tx_bar(), LV_OBJ_FLAG_HIDDEN);
         }
         if (tx_ui_state == SSTV_TX_UI_RF) {
             if (tx_result == 1) {
@@ -1253,9 +1459,59 @@ static void ui_timer_cb(lv_timer_t *timer)
         set_receiver_ui_decoding(live_info.name);
         if (progress_bar) lv_bar_set_value(progress_bar,1000,LV_ANIM_OFF);
         shown_rows=0; test_rows=0; test_ready=false; test_running=true;
+        /* 1KO125: the decoder takes the capture; Auto RX listens again now */
+        pthread_mutex_lock(&live_mutex);
+        /* 1KO125: a Restart candidate when the capture ends: the picture is
+         * over, so its syncs are gone anyway.  The new one only needs its own
+         * syncs in the audio there is (with less than a second: taken). */
+        int rc_take = -1;
+        long rc_fi = 0;
+        uint64_t rc_abs0 = live_buf0_abs;
+        rc_cand_t rc_c;
+        if (rc_count() > 0 && live_samples) {
+            rc_drop_stale();
+            for (int i = 0; i < RC_MAX; ++i) {
+                if (!rc_cand[i].used || rc_cand[i].confirmed) continue;
+                double after = ((double)live_buf0_abs + live_written - rc_cand[i].vis_end_abs) / SSTV_SAMPLE_RATE;
+                bool take;
+                if (after >= 1.0) {
+                    sstv_syncgrid_verdict_t v;
+                    rc_check(&rc_cand[i], live_samples, live_written, live_buf0_abs,
+                             after < SSTV_RESTART_CONFIRM_S ? after : SSTV_RESTART_CONFIRM_S, &v);
+                    take = v.new_share >= 0.45f;
+                } else {
+                    take = true;
+                }
+                fprintf(stderr, "SSTV LIVE: RESTART candidate %s at the end of the capture (%.1f s after its VIS): %s\n",
+                        rc_cand[i].info.name, after, take ? "taken" : "dropped");
+                if (take) rc_cand[i].confirmed = true;
+                else rc_cand[i].used = false;
+            }
+            rc_take = rc_winner();
+            if (rc_take >= 0) {
+                rc_c = rc_cand[rc_take];
+                rc_fi = rc_from_index(&rc_c);
+            }
+        }
+        rc_clear(NULL);
+        dec_samples=live_samples; dec_written=live_written; dec_info=live_info;
+        dec_abort=false;
+        live_samples=NULL; live_written=live_target=0;
+        live_ring_pos=live_ring_count=0; live_wait_samples=live_wait_log_mark=0;
+        live_enabled = (tx_ui_state != SSTV_TX_UI_RF);   /* not while transmitting */
+        if (rc_take >= 0 && live_enabled && dec_samples &&
+            live_capture_from(&rc_c.info, dec_samples + rc_fi, dec_written - rc_fi, rc_abs0 + (uint64_t)rc_fi,
+                              rc_c.win_end, rc_c.start_s, rc_c.off))
+            fprintf(stderr, "SSTV LIVE: capturing %s from the Restart candidate while %s is decoded\n",
+                    live_info.name, dec_info.name);
+        pthread_mutex_unlock(&live_mutex);
         int rc=pthread_create(&test_thread,NULL,live_decode_thread_cb,NULL);
         if (rc==0) test_thread_valid=true;
-        else { fprintf(stderr,"SSTV LIVE: decoder pthread_create failed: %d\n",rc); test_running=false; live_decoding=false; }
+        else {
+            fprintf(stderr,"SSTV LIVE: decoder pthread_create failed: %d\n",rc);
+            free(dec_samples); dec_samples=NULL; dec_written=0;
+            test_running=false; live_decoding=false;
+        }
     }
 
     /* Live progress follows the expected capture duration. */
@@ -1274,6 +1530,10 @@ static void ui_timer_cb(lv_timer_t *timer)
     if (test_ready && test_rows <= 0) {
         test_ready = false;
         shown_rows = 0;
+        if (live_capturing || live_decode_pending) {   /* 1KO125: a new picture is being received */
+            msg_schedule_text_fmt("Decoding failed");
+            return;
+        }
         if (progress_bar)
             lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
         if (live_enabled) {
@@ -1287,7 +1547,26 @@ static void ui_timer_cb(lv_timer_t *timer)
         return;
     }
 
+    /* 1KO125: "Denoising" with progress bar while the picture is cleaned */
+    static int denoise_shown = DENOISE_OFF;
+    int dn = (live_capturing || live_decode_pending) ? DENOISE_OFF : denoise_running;   /* a new picture comes first */
+    if (dn != denoise_shown) {
+        denoise_shown = dn;
+        if (dn != DENOISE_OFF) set_status(dn == DENOISE_ML ? "Denoising (ML)..." : "Denoising...");
+    }
+    if (dn != DENOISE_OFF && progress_bar) {
+        lv_obj_clear_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
+        int v = dn == DENOISE_ML ? sstv_dnn_progress : 500;
+        lv_bar_set_value(progress_bar, v < 0 ? 0 : v > 1000 ? 1000 : v, LV_ANIM_OFF);
+    }
+
     if (!sstv_canvas || !test_ready || shown_rows >= test_rows) return;
+    if (live_capturing || live_decode_pending) {
+        /* 1KO125: the next picture has started and is being drawn: the one
+         * just decoded is saved (message) and stays in the browser */
+        shown_rows = test_rows;
+        return;
+    }
     render_scaled_image();
     shown_rows=test_rows;
     if (progress_bar) lv_bar_set_value(progress_bar,1000,LV_ANIM_OFF);
@@ -1313,6 +1592,53 @@ static void key_cb(lv_event_t *e)
         default:
             break;
     }
+}
+
+/* 1KO125: Denoise OFF / CLASSIC / ML, kept in SSTV_CONF_FILE
+ * (denoise=1 of the older versions is CLASSIC) */
+static void denoise_load(void)
+{
+    FILE *f = fopen(SSTV_CONF_FILE, "r");
+    if (!f) return;                                 /* default: CLASSIC */
+    char line[64];
+    while (fgets(line, sizeof(line), f))
+        if (strncmp(line, "denoise=", 8) == 0) {
+            int v = atoi(line + 8);
+            denoise_mode = (v >= DENOISE_OFF && v <= DENOISE_ML) ? v : DENOISE_CLASSIC;
+        }
+    fclose(f);
+}
+
+static void denoise_save(void)
+{
+    FILE *f = fopen(SSTV_CONF_FILE, "w");
+    if (!f) return;
+    fprintf(f, "denoise=%d\n", denoise_mode);
+    fclose(f);
+}
+
+static void denoise_cb(button_data_t *data)
+{
+    (void)data;
+    denoise_mode = (denoise_mode + 1) % 3;
+    denoise_save();
+    btn_denoise.label = denoise_labels[denoise_mode];
+    if (btn_denoise.disp_btn) buttons_refresh(&btn_denoise);
+    fprintf(stderr, "SSTV: denoise %s\n", denoise_mode == DENOISE_ML ? "ML" : denoise_mode ? "CLASSIC" : "OFF");
+}
+
+/* ML model: read once, when first needed (decoder threads only); NULL if the
+ * file is missing - then the classic denoiser is used */
+static sstv_dnn_t *denoise_model(void)
+{
+    static sstv_dnn_t *model = NULL;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        model = sstv_dnn_load(SSTV_DNN_FILE);
+        if (!model) fprintf(stderr, "SSTV DENOISE: no ML model (%s), classic used\n", SSTV_DNN_FILE);
+    }
+    return model;
 }
 
 static void restart_cb(button_data_t *data)
@@ -1571,22 +1897,28 @@ static void start_cb(button_data_t *data)
 
     /* While Auto RX is receiving/decoding a detected picture, this button is
      * "Halt Decoding": discard only the current picture and keep Auto RX on. */
-    if (live_capturing || live_decode_pending || live_decoding) {
-        live_abort_requested=true;
+    /* 1KO125: the picture being received has its own buffer, the one being
+     * decoded another (dec_samples): Halt discards the picture being received,
+     * or - when nothing is being received - the one being decoded. */
+    if (live_capturing || live_decode_pending) {
         live_capturing=false;
         live_decode_pending=false;
         live_ring_pos=live_ring_count=0;
         live_wait_samples=live_wait_log_mark=0;
-        if (!live_decoding) {
-            free(live_samples);
-            live_samples=NULL;
-            live_written=live_target=0;
-            live_abort_requested=false;
-        }
+        free(live_samples);
+        live_samples=NULL;
+        live_written=live_target=0;
         live_enabled=true;
         pthread_mutex_unlock(&live_mutex);
         set_receiver_ui_listening();
         fprintf(stderr,"SSTV LIVE: HALT - current picture discarded; awaiting next VIS\n");
+        return;
+    }
+    if (live_decoding) {
+        dec_abort=true;
+        pthread_mutex_unlock(&live_mutex);
+        set_receiver_ui_listening();
+        fprintf(stderr,"SSTV LIVE: HALT - picture being decoded discarded; awaiting next VIS\n");
         return;
     }
 

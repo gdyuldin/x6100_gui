@@ -741,6 +741,8 @@ static bool tx_picture_decode_png(const char *path,
     if (color_type == PNG_COLOR_TYPE_GRAY ||
         color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
         png_set_gray_to_rgb(png_ptr);
+    /* 1KO125: interlaced (Adam7) PNG: the rows come in several passes */
+    int passes = png_set_interlace_handling(png_ptr);
 
     png_read_update_info(png_ptr, info_ptr);
     int channels = png_get_channels(png_ptr, info_ptr);
@@ -752,16 +754,20 @@ static bool tx_picture_decode_png(const char *path,
     }
 
     uint8_t *rgb = malloc((size_t)w * h * 3);
-    uint8_t *row = malloc(rowbytes);
-    if (!rgb || !row) {
-        free(rgb); free(row);
+    /* interlaced: the whole picture, the passes fill it in; else one row */
+    uint8_t *raw = malloc(passes > 1 ? rowbytes * h : rowbytes);
+    if (!rgb || !raw) {
+        free(rgb); free(raw);
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         fclose(fp);
         return false;
     }
 
+    for (int pass = 0; pass < passes; ++pass)
     for (png_uint_32 y = 0; y < h; ++y) {
+        uint8_t *row = passes > 1 ? raw + (size_t)y * rowbytes : raw;
         png_read_row(png_ptr, row, NULL);
+        if (pass != passes - 1) continue;
         for (png_uint_32 x = 0; x < w; ++x) {
             const uint8_t *p = row + (size_t)x * channels;
             uint8_t *d = rgb + ((size_t)y * w + x) * 3;
@@ -777,7 +783,7 @@ static bool tx_picture_decode_png(const char *path,
     }
 
     png_read_end(png_ptr, NULL);
-    free(row);
+    free(raw);
     png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
     fclose(fp);
 
@@ -893,11 +899,13 @@ static void tx_save_rx_canvas(void)
     tx_saved_rx_canvas_valid = true;
 }
 
+/* 1KO125: the snapshot of the RX picture taken when TX was pressed, shown on
+ * the TX canvas (the RX canvas under the TX panel is never touched by TX) */
 static void tx_restore_rx_canvas(void)
 {
-    if (!tx_saved_rx_canvas_valid || !sstv_canvas) return;
-    memcpy(sstv_buffer, tx_saved_rx_canvas, sizeof(tx_saved_rx_canvas));
-    lv_obj_invalidate(sstv_canvas);
+    if (!tx_saved_rx_canvas_valid || !tx_canvas) return;
+    memcpy(tx_buffer, tx_saved_rx_canvas, sizeof(tx_saved_rx_canvas));
+    lv_obj_invalidate(tx_canvas);
 }
 
 static void tx_rebuild_current_overlay(void)
@@ -950,10 +958,10 @@ static void tx_build_final_frame(bool cq_overlay)
 
 static void tx_picture_render_preview(void)
 {
-    if (!sstv_canvas || tx_picture_width == 0 || tx_picture_height == 0)
+    if (!tx_canvas || tx_picture_width == 0 || tx_picture_height == 0)
         return;
 
-    lv_canvas_fill_bg(sstv_canvas, lv_color_black(), LV_OPA_COVER);
+    lv_canvas_fill_bg(tx_canvas, lv_color_black(), LV_OPA_COVER);
 
     int out_w = SSTV_IMAGE_W;
     int out_h = (int)((uint64_t)tx_picture_height * out_w / tx_picture_width);
@@ -969,13 +977,13 @@ static void tx_picture_render_preview(void)
         for (int x = 0; x < out_w; ++x) {
             unsigned int sx = (unsigned int)((uint64_t)x * tx_picture_width / out_w);
             size_t o = ((size_t)sy * tx_picture_width + sx) * 3;
-            lv_canvas_set_px(sstv_canvas, x0 + x, y0 + y,
+            lv_canvas_set_px(tx_canvas, x0 + x, y0 + y,
                              lv_color_make(tx_final_rgb[o],
                                            tx_final_rgb[o + 1],
                                            tx_final_rgb[o + 2]));
         }
     }
-    lv_obj_invalidate(sstv_canvas);
+    lv_obj_invalidate(tx_canvas);
 }
 
 static void tx_picture_schedule_preview(void)
@@ -1036,7 +1044,7 @@ static void tx_picture_activate_cb(void *user, int row)
         lv_group_add_obj(keyboard_group,sstv_canvas);
         lv_group_focus_obj(sstv_canvas);
         lv_group_set_editing(keyboard_group,true);
-        if (status_label) lv_obj_clear_flag(status_label,LV_OBJ_FLAG_HIDDEN);
+        if (tx_status()) lv_obj_clear_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
         fprintf(stderr,"SSTV TX UI: IMAGE ONLY picture confirmed -> RF\n");
         tx_start_final_rf();
         return;
@@ -1072,6 +1080,215 @@ static void tx_picture_load_pending_preview(void)
     }
 }
 
+
+
+/* ---- 1KO125: REPLAY - choose the received picture for the miniature ----
+ * Same list as the RX Pics Browser (newest first, DN = denoised copy); the
+ * TX canvas shows the highlighted picture.  The miniature is made from the
+ * PNG file, not from the screen. */
+static lv_obj_t *tx_rxpic_table = NULL;
+static char **tx_rxpic_files = NULL;
+static size_t tx_rxpic_count = 0, tx_rxpic_cap = 0;
+static int tx_rxpic_selected = -1, tx_rxpic_pending = -1;
+static uint64_t tx_rxpic_pending_since_ms = 0;
+static uint8_t *tx_rxpic_rgb = NULL;            /* picture on the TX canvas (row tx_rxpic_selected) */
+static unsigned int tx_rxpic_w = 0, tx_rxpic_h = 0;
+static uint8_t *tx_replay_rgb = NULL;           /* confirmed picture: the miniature comes from here */
+static unsigned int tx_replay_w = 0, tx_replay_h = 0;
+
+static int tx_rxpic_compare(const void *a, const void *b)
+{
+    const char *const *sa = a;
+    const char *const *sb = b;
+    return strcmp(*sb, *sa);   /* newest timestamped filename first, as the browser */
+}
+
+static void tx_rxpic_free_files(void)
+{
+    for (size_t i = 0; i < tx_rxpic_count; ++i) free(tx_rxpic_files[i]);
+    free(tx_rxpic_files);
+    tx_rxpic_files = NULL;
+    tx_rxpic_count = tx_rxpic_cap = 0;
+}
+
+static void tx_rxpic_refresh(void)
+{
+    tx_rxpic_free_files();
+    DIR *dir = opendir(SSTV_SAVE_DIR);
+    if (!dir) return;
+    struct dirent *e;
+    while ((e = readdir(dir)) != NULL) {
+        const char *name = e->d_name;
+        size_t len = strlen(name);
+        if (name[0] == '.' || len < 9 || strncmp(name, "sstv-", 5) != 0 ||
+            strcmp(name + len - 4, ".png") != 0)
+            continue;
+        if (tx_rxpic_count == tx_rxpic_cap) {
+            size_t cap = tx_rxpic_cap ? tx_rxpic_cap * 2 : 128;
+            char **p = realloc(tx_rxpic_files, cap * sizeof(*p));
+            if (!p) break;
+            tx_rxpic_files = p;
+            tx_rxpic_cap = cap;
+        }
+        char *copy = strdup(name);
+        if (copy) tx_rxpic_files[tx_rxpic_count++] = copy;
+    }
+    closedir(dir);
+    qsort(tx_rxpic_files, tx_rxpic_count, sizeof(tx_rxpic_files[0]), tx_rxpic_compare);
+}
+
+/* Any RGB picture on the TX canvas, fitted and centred on black */
+static void tx_canvas_draw_rgb(const uint8_t *rgb, unsigned int w, unsigned int h)
+{
+    if (!tx_canvas) return;
+    lv_canvas_fill_bg(tx_canvas, lv_color_black(), LV_OPA_COVER);
+    if (rgb && w && h) {
+        int out_w = SSTV_IMAGE_W;
+        int out_h = (int)((uint64_t)h * out_w / w);
+        if (out_h > SSTV_IMAGE_H) {
+            out_h = SSTV_IMAGE_H;
+            out_w = (int)((uint64_t)w * out_h / h);
+        }
+        int x0 = (SSTV_IMAGE_W - out_w) / 2, y0 = (SSTV_IMAGE_H - out_h) / 2;
+        for (int y = 0; y < out_h; ++y) {
+            unsigned int sy = (unsigned int)((uint64_t)y * h / out_h);
+            for (int x = 0; x < out_w; ++x) {
+                unsigned int sx = (unsigned int)((uint64_t)x * w / out_w);
+                size_t o = ((size_t)sy * w + sx) * 3;
+                lv_canvas_set_px(tx_canvas, x0 + x, y0 + y, lv_color_make(rgb[o], rgb[o + 1], rgb[o + 2]));
+            }
+        }
+    }
+    lv_obj_invalidate(tx_canvas);
+}
+
+static bool tx_rxpic_show(int row)
+{
+    if (row < 0 || (size_t)row >= tx_rxpic_count) return false;
+    char path[256];
+    snprintf(path, sizeof(path), SSTV_SAVE_DIR "/%s", tx_rxpic_files[row]);
+    uint8_t *rgb = NULL;
+    unsigned int w = 0, h = 0;
+    if (!tx_picture_decode_png(path, &rgb, &w, &h)) {
+        fprintf(stderr, "SSTV TX UI: cannot read received picture %s\n", path);
+        return false;
+    }
+    free(tx_rxpic_rgb);
+    tx_rxpic_rgb = rgb;
+    tx_rxpic_w = w;
+    tx_rxpic_h = h;
+    tx_rxpic_selected = row;
+    tx_canvas_draw_rgb(rgb, w, h);
+    return true;
+}
+
+/* Row: "n | date | time [DN]", as the RX Pics Browser */
+static void tx_rxpic_row_cb(void *user, int index, ui_list_row_t *row)
+{
+    (void)user;
+    if (index < 0 || (size_t)index >= tx_rxpic_count) return;
+    const char *name = tx_rxpic_files[index];
+    snprintf(row->cell[0], UI_LIST_CELL_LEN, "%d", index + 1);
+    if (ui_list_parse_stamp_ext(name, "sstv-", "_dn.png", row->cell[1], UI_LIST_CELL_LEN,
+                                row->cell[2], UI_LIST_CELL_LEN)) {
+        strncat(row->cell[2], " DN", UI_LIST_CELL_LEN - strlen(row->cell[2]) - 1);
+    } else if (!ui_list_parse_stamp(name, "sstv-", row->cell[1], UI_LIST_CELL_LEN,
+                                    row->cell[2], UI_LIST_CELL_LEN)) {
+        snprintf(row->cell[1], UI_LIST_CELL_LEN, "%s", name);
+        row->cell[2][0] = '\0';
+    }
+}
+
+static void tx_rxpic_selection_changed_cb(lv_event_t *e)
+{
+    (void)e;
+    if (tx_ui_state != SSTV_TX_UI_SETUP || tx_phase != SSTV_TX_PHASE_SELECT_RX_PICTURE || !tx_rxpic_table)
+        return;
+    tx_rxpic_pending = ui_list_get_selected(tx_rxpic_table);
+    tx_rxpic_pending_since_ms = tx_now_ms();
+}
+
+static void tx_rxpic_load_pending_preview(void)
+{
+    if (tx_rxpic_pending < 0 || tx_rxpic_pending == tx_rxpic_selected) return;
+    if (tx_now_ms() - tx_rxpic_pending_since_ms < SSTV_TX_PICTURE_DEBOUNCE_MS) return;
+    int row = tx_rxpic_pending;
+    if (!tx_rxpic_show(row)) tx_rxpic_pending = tx_rxpic_selected;   /* do not retry an unreadable file */
+}
+
+static void tx_rxpic_selector_destroy(void)
+{
+    if (tx_rxpic_table) {
+        lv_group_remove_obj(tx_rxpic_table);
+        lv_obj_del(tx_rxpic_table);
+        tx_rxpic_table = NULL;
+    }
+    tx_rxpic_free_files();
+    free(tx_rxpic_rgb);
+    tx_rxpic_rgb = NULL;
+    tx_rxpic_w = tx_rxpic_h = 0;
+    tx_rxpic_selected = tx_rxpic_pending = -1;
+}
+
+static void tx_rxpic_activate_cb(void *user, int row)
+{
+    (void)user;
+    if (tx_ui_state != SSTV_TX_UI_SETUP || tx_phase != SSTV_TX_PHASE_SELECT_RX_PICTURE ||
+        row < 0 || (size_t)row >= tx_rxpic_count)
+        return;
+    /* a quick rotate+press confirms the highlighted row even before its preview */
+    if (tx_rxpic_selected != row && !tx_rxpic_show(row)) return;
+
+    free(tx_replay_rgb);
+    tx_replay_rgb = tx_rxpic_rgb;            /* the selector gives its picture away */
+    tx_replay_w = tx_rxpic_w;
+    tx_replay_h = tx_rxpic_h;
+    tx_rxpic_rgb = NULL;
+    fprintf(stderr, "SSTV TX UI: REPLAY miniature from %s (%ux%u) -> pictures\n",
+            tx_rxpic_files[row], tx_replay_w, tx_replay_h);
+
+    tx_rxpic_selector_destroy();
+    tx_phase = SSTV_TX_PHASE_SELECT_PICTURE;
+    tx_picture_selector_build();
+}
+
+static void tx_rxpic_selector_build(void)
+{
+    tx_rxpic_selector_destroy();
+    tx_rxpic_refresh();
+
+    if (tx_status()) lv_obj_add_flag(tx_status(), LV_OBJ_FLAG_HIDDEN);
+    tx_instruction_show("Rotate MFK to select the received picture for the miniature. Press MFK to confirm.");
+
+    ui_list_cfg_t cfg = {
+        .width = SSTV_TX_LIST_W,
+        .height = SSTV_TX_LIST_H,
+        .col_count = 3,
+        .cols = {
+            { .x = 4,   .w = 30,  .align = UI_LIST_ALIGN_RIGHT, .muted = true },
+            { .x = 42,  .w = 130, .align = UI_LIST_ALIGN_LEFT },
+            { .x = 176, .w = 108, .align = UI_LIST_ALIGN_LEFT },
+        },
+        .row_cb = tx_rxpic_row_cb,
+        .activate_cb = tx_rxpic_activate_cb,
+        .empty_text = "No received pictures",
+    };
+    tx_rxpic_table = tx_list_create(&cfg, SSTV_TX_LIST_X, SSTV_TX_LIST_Y);
+    ui_list_set_count(tx_rxpic_table, (int)tx_rxpic_count);
+
+    if (tx_rxpic_count == 0) {
+        lv_group_add_obj(keyboard_group, sstv_canvas);
+        lv_group_focus_obj(sstv_canvas);
+        lv_group_set_editing(keyboard_group, true);
+        tx_canvas_draw_rgb(NULL, 0, 0);
+        return;
+    }
+    lv_obj_add_event_cb(tx_rxpic_table, tx_rxpic_selection_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    tx_list_focus(tx_rxpic_table);
+    ui_list_select(tx_rxpic_table, 0);       /* the newest received picture */
+    tx_rxpic_pending = 0;
+    tx_rxpic_pending_since_ms = tx_now_ms() - SSTV_TX_PICTURE_DEBOUNCE_MS;
+}
 
 static void tx_type_selector_destroy(void)
 {
@@ -1181,13 +1398,14 @@ static bool tx_template_load(const char *filename)
 static void tx_replay_draw_rx_thumbnail(uint8_t *rgb,
                                         unsigned int w, unsigned int h)
 {
-    if (!rgb || !w || !h || !tx_saved_rx_canvas_valid) return;
+    /* 1KO125: from the received picture chosen in the REPLAY phase */
+    if (!rgb || !w || !h || !tx_replay_rgb || !tx_replay_w || !tx_replay_h) return;
+    const unsigned int sw = tx_replay_w, sh = tx_replay_h;
 
-    /* About 96x72 on a 320x256 TX frame.  Scale with the selected picture
-     * and keep the saved RX canvas aspect ratio. */
+    /* About 96 px wide on a 320x256 TX frame, aspect of the received picture */
     int thumb_w=(int)w*96/320;
     if (thumb_w < 48) thumb_w=48;
-    int thumb_h=(int)((int64_t)thumb_w*SSTV_CANVAS_H/SSTV_CANVAS_W);
+    int thumb_h=(int)((int64_t)thumb_w*sh/sw);
 
     /* Leave room for the bottom line. */
     int bottom_reserved=(w<=160)?24:38;
@@ -1199,16 +1417,23 @@ static void tx_replay_draw_rx_thumbnail(uint8_t *rgb,
         y0=(int)h-bottom_reserved-thumb_h-3;
     if (y0<3) y0=3;
 
+    /* each miniature pixel = mean of the picture pixels it covers */
     for (int y=0;y<thumb_h;y++) {
-        int sy=(int)((int64_t)y*SSTV_CANVAS_H/thumb_h);
+        unsigned int sy0=(unsigned int)((int64_t)y*sh/thumb_h);
+        unsigned int sy1=(unsigned int)((int64_t)(y+1)*sh/thumb_h);
+        if (sy1<=sy0) sy1=sy0+1;
         for (int x=0;x<thumb_w;x++) {
-            int sx=(int)((int64_t)x*SSTV_CANVAS_W/thumb_w);
-            uint32_t c=lv_color_to32(
-                tx_saved_rx_canvas[(size_t)sy*SSTV_CANVAS_W+sx]);
-            tx_rgb_pixel(rgb,w,h,x0+x,y0+y,
-                         (uint8_t)((c>>16)&0xff),
-                         (uint8_t)((c>>8)&0xff),
-                         (uint8_t)(c&0xff));
+            unsigned int sx0=(unsigned int)((int64_t)x*sw/thumb_w);
+            unsigned int sx1=(unsigned int)((int64_t)(x+1)*sw/thumb_w);
+            if (sx1<=sx0) sx1=sx0+1;
+            unsigned int r=0,g=0,b=0,n=0;
+            for (unsigned int yy=sy0;yy<sy1 && yy<sh;yy++)
+                for (unsigned int xx=sx0;xx<sx1 && xx<sw;xx++) {
+                    const uint8_t *p=tx_replay_rgb+((size_t)yy*sw+xx)*3;
+                    r+=p[0]; g+=p[1]; b+=p[2]; n++;
+                }
+            if (!n) continue;
+            tx_rgb_pixel(rgb,w,h,x0+x,y0+y,(uint8_t)(r/n),(uint8_t)(g/n),(uint8_t)(b/n));
         }
     }
 
@@ -1321,7 +1546,7 @@ static void tx_template_selector_build(void)
 {
     tx_template_selector_destroy();
     tx_template_refresh();
-    if(status_label) lv_obj_add_flag(status_label,LV_OBJ_FLAG_HIDDEN);
+    if(tx_status()) lv_obj_add_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
     tx_instruction_show("Rotate MFK to select a TX text template. Press MFK to confirm.");
 
     ui_list_cfg_t cfg = {
@@ -1533,7 +1758,7 @@ static void tx_target_row_cb(void *user, int index, ui_list_row_t *row)
 static void tx_target_selector_build(void)
 {
     tx_target_selector_destroy();
-    if(status_label) lv_obj_add_flag(status_label,LV_OBJ_FLAG_HIDDEN);
+    if(tx_status()) lv_obj_add_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
 
     tx_instruction_show("Set the target callsign, then confirm it.");
 
@@ -1618,25 +1843,67 @@ static void tx_return_to_auto_rx(void)
     live_dbg_vis_checks = 0;
     live_dbg_vis_check_samples = 0;
     fprintf(stderr, "SSTV DBG: LISTEN START SR=%d\n", SSTV_SAMPLE_RATE);
-    live_decode_pending=false;
     live_ring_pos=live_ring_count=0;
     live_wait_samples=live_wait_log_mark=0;
-    free(live_samples);
-    live_samples=NULL;
-    live_written=live_target=0;
+    if (!live_decode_pending) {          /* 1KO125: a partial picture may still wait for the decoder */
+        free(live_samples);
+        live_samples=NULL;
+        live_written=live_target=0;
+    }
     pthread_mutex_unlock(&live_mutex);
 
-    set_receiver_ui_listening();
-    tx_restore_rx_canvas();
+    tx_panel_show(false);                /* 1KO125: the RX panel, as the receiver left it */
+    rx_ui_resync();
     if (btn_tx.disp_btn) buttons_refresh(&btn_tx);
     if (btn_cont_mode.disp_btn) buttons_refresh(&btn_cont_mode);
     update_rx_controls();
 }
 
+/* 1KO125: the receivers run during the whole TX setup and stop only here,
+ * when RF starts.  A picture being received is not thrown away: what has
+ * arrived is decoded and saved like a complete one (the decoder fills the
+ * missing rows with black).  The decoder itself does not need the audio, so a
+ * decode/denoise in course goes on during the transmission. */
+static void tx_stop_receivers_for_rf(void)
+{
+    pthread_mutex_lock(&live_mutex);
+    if (live_capturing) {
+        live_capturing = false;
+        if (live_samples && live_written > SSTV_SAMPLE_RATE * 3) {
+            live_decode_pending = true;          /* decoded as soon as the decoder is free */
+            fprintf(stderr, "SSTV LIVE: TX - %s capture closed after %.1f s, partial picture decoded\n",
+                    live_info.name, (double)live_written / SSTV_SAMPLE_RATE);
+        } else {
+            free(live_samples); live_samples = NULL; live_written = live_target = 0;
+            fprintf(stderr, "SSTV LIVE: TX - capture too short, discarded\n");
+        }
+    }
+    live_enabled = false;
+    live_ring_pos = live_ring_count = 0;
+    live_wait_samples = live_wait_log_mark = 0;
+
+    if (cont_capturing) {
+        cont_capturing = false;
+        bool no_mode = (cont_rx_mode == SSTV_MODE_UNKNOWN && !cont_locked);
+        if (cont_written > 0 && !no_mode) {
+            cont_decode_mode = (cont_rx_mode == SSTV_MODE_UNKNOWN) ? cont_detected : cont_rx_mode;
+            cont_decode_pending = true;
+            fprintf(stderr, "SSTV CONT: TX - Manual capture closed after %.1f s, decoded as %s\n",
+                    (double)cont_written / SSTV_SAMPLE_RATE, cont_mode_name(cont_decode_mode));
+        } else {
+            free(cont_samples); cont_samples = NULL; cont_capacity = cont_written = 0;
+            cont_event = SSTV_CONT_EV_NONE;
+            fprintf(stderr, "SSTV CONT: TX - Manual capture discarded (no SSTV mode)\n");
+        }
+        btn_cont_start.label = "Start\nManual RX";
+    }
+    pthread_mutex_unlock(&live_mutex);
+}
+
 static bool tx_start_final_rf_mode(sstv_mode_t mode)
 {
     if (!tx_picture_width || !tx_picture_height) {
-        set_status("SSTV TX: no final image.");
+        tx_set_status("SSTV TX: no final image.");
         return false;
     }
 
@@ -1645,7 +1912,7 @@ static bool tx_start_final_rf_mode(sstv_mode_t mode)
      * not change the WYSIWYG composition. */
     if (!save_tx_png("/mnt/sstv-tx.png",tx_final_rgb,
                      tx_picture_width,tx_picture_height)) {
-        set_status("SSTV TX: cannot prepare image.");
+        tx_set_status("SSTV TX: cannot prepare image.");
         return false;
     }
 
@@ -1653,6 +1920,8 @@ static bool tx_start_final_rf_mode(sstv_mode_t mode)
         pthread_join(tx_thread,NULL);
         tx_thread_valid=false;
     }
+
+    tx_stop_receivers_for_rf();
 
     /* Snapshot the requested mode now.  Normal TX passes cont_mode;
      * REPEAT LAST TX passes the mode stored with the successful backup. */
@@ -1670,15 +1939,15 @@ static bool tx_start_final_rf_mode(sstv_mode_t mode)
     snprintf(tx_mode_label,sizeof(tx_mode_label),"TX Mode\n%s",cont_mode_name(tx_mode));
     btn_cont_mode.label=tx_mode_label;
 
-    if (status_label) lv_obj_clear_flag(status_label,LV_OBJ_FLAG_HIDDEN);
+    if (tx_status()) lv_obj_clear_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
     {
         char msg[96];
         snprintf(msg,sizeof(msg),"Preparing %s TX...",cont_mode_name(tx_mode));
-        set_status(msg);
+        tx_set_status(msg);
     }
-    if (progress_bar) {
-        lv_bar_set_value(progress_bar,0,LV_ANIM_OFF);
-        lv_obj_clear_flag(progress_bar,LV_OBJ_FLAG_HIDDEN);
+    if (tx_bar()) {
+        lv_bar_set_value(tx_bar(),0,LV_ANIM_OFF);
+        lv_obj_clear_flag(tx_bar(),LV_OBJ_FLAG_HIDDEN);
     }
     if (btn_tx.disp_btn) buttons_refresh(&btn_tx);
     if (btn_cont_mode.disp_btn) buttons_refresh(&btn_cont_mode);
@@ -1689,8 +1958,8 @@ static bool tx_start_final_rf_mode(sstv_mode_t mode)
         fprintf(stderr,"SSTV TX: pthread_create failed: %d\n",rc);
         tx_running=false;
         tx_result=-31;
-        set_status("SSTV TX: thread creation failed.");
-        if (progress_bar) lv_obj_add_flag(progress_bar,LV_OBJ_FLAG_HIDDEN);
+        tx_set_status("SSTV TX: thread creation failed.");
+        if (tx_bar()) lv_obj_add_flag(tx_bar(),LV_OBJ_FLAG_HIDDEN);
         tx_return_to_auto_rx();
         return false;
     }
@@ -1727,7 +1996,7 @@ static void tx_color_activate_cb(void *user, int index)
     lv_group_add_obj(keyboard_group,sstv_canvas);
     lv_group_focus_obj(sstv_canvas);
     lv_group_set_editing(keyboard_group,true);
-    if (status_label) lv_obj_clear_flag(status_label,LV_OBJ_FLAG_HIDDEN);
+    if (tx_status()) lv_obj_clear_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
 
     /* Phase 5 is the single RF launch point for both CQ and REPLY. */
     tx_start_final_rf();
@@ -1783,7 +2052,7 @@ static void tx_color_selector_destroy(void)
 static void tx_color_selector_build(void)
 {
     tx_color_selector_destroy();
-    if (status_label) lv_obj_add_flag(status_label,LV_OBJ_FLAG_HIDDEN);
+    if (tx_status()) lv_obj_add_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
 
     tx_instruction_show("Rotate MFK to select the text colors. Press MFK to confirm and start SSTV transmission.");
 
@@ -1854,7 +2123,7 @@ static void tx_type_update_help(void)
             break;
         case 2:
             text=tx_target_callsign[0]
-                ? "Choose an image and a text template to reply to the target callsign. A miniature of the last received image will be included"
+                ? "Choose a received picture for the miniature, then an image and a text template to reply to the target callsign"
                 : "You must set a target callsign before using this action";
             break;
         case 3:
@@ -1910,6 +2179,12 @@ static void tx_type_activate_cb(void *user, int row)
         if (!tx_target_callsign[0]) return;
         tx_message_type=(row==2) ? SSTV_TX_MESSAGE_REPLAY : SSTV_TX_MESSAGE_REPLY;
         tx_type_selector_destroy();
+        if (row==2) {                    /* 1KO125: first the received picture for the miniature */
+            tx_phase=SSTV_TX_PHASE_SELECT_RX_PICTURE;
+            tx_rxpic_selector_build();
+            fprintf(stderr,"SSTV TX UI: REPLAY TO %s -> received pictures\n",tx_target_callsign);
+            return;
+        }
         tx_phase=SSTV_TX_PHASE_SELECT_PICTURE;
         tx_picture_selector_build();
         fprintf(stderr,"SSTV TX UI: %s TO %s -> pictures\n",
@@ -1938,7 +2213,7 @@ static void tx_type_activate_cb(void *user, int row)
         lv_group_add_obj(keyboard_group,sstv_canvas);
         lv_group_focus_obj(sstv_canvas);
         lv_group_set_editing(keyboard_group,true);
-        if (status_label) lv_obj_clear_flag(status_label,LV_OBJ_FLAG_HIDDEN);
+        if (tx_status()) lv_obj_clear_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
         fprintf(stderr,"SSTV TX UI: REPEAT LAST TX -> RF (%s)\n",
                 cont_mode_name(tx_last_mode));
         tx_start_final_rf_mode(tx_last_mode);
@@ -1956,7 +2231,7 @@ static void tx_type_selector_build(void)
     tx_type_selector_destroy();
     tx_phase=SSTV_TX_PHASE_SELECT_TYPE;
 
-    if (status_label) lv_obj_add_flag(status_label,LV_OBJ_FLAG_HIDDEN);
+    if (tx_status()) lv_obj_add_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
 
     /* This is now the FIRST TX phase.  Keep the received image visible so
      * the operator can read the remote callsign while choosing the action. */
@@ -2044,8 +2319,8 @@ static void tx_picture_selector_build(void)
     tx_picture_selector_destroy();
     tx_picture_selector_refresh();
 
-    if (status_label)
-        lv_obj_add_flag(status_label, LV_OBJ_FLAG_HIDDEN);
+    if (tx_status())
+        lv_obj_add_flag(tx_status(), LV_OBJ_FLAG_HIDDEN);
 
     tx_instruction_show("Rotate MFK to select a TX image. Press MFK to confirm.");
 
@@ -2066,9 +2341,9 @@ static void tx_picture_selector_build(void)
         lv_group_add_obj(keyboard_group, sstv_canvas);
         lv_group_focus_obj(sstv_canvas);
         lv_group_set_editing(keyboard_group, true);
-        set_status("No TX pictures found");
-        if (status_label)
-            lv_obj_clear_flag(status_label, LV_OBJ_FLAG_HIDDEN);
+        tx_set_status("No TX pictures found");
+        if (tx_status())
+            lv_obj_clear_flag(tx_status(), LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
@@ -2102,7 +2377,7 @@ static void tx_ui_cb(button_data_t *data)
 
     if (tx_ui_state == SSTV_TX_UI_RF) {
         tx_abort = true;
-        set_status("Stopping SSTV TX...");
+        tx_set_status("Stopping SSTV TX...");
         return;
     }
 
@@ -2112,10 +2387,11 @@ static void tx_ui_cb(button_data_t *data)
         tx_template_selector_destroy();
         tx_type_selector_destroy();
         tx_picture_selector_destroy();
+        tx_rxpic_selector_destroy();   /* 1KO125 */
         tx_instruction_hide();
         tx_phase = SSTV_TX_PHASE_NONE;
-        if (status_label)
-            lv_obj_clear_flag(status_label, LV_OBJ_FLAG_HIDDEN);
+        if (tx_status())
+            lv_obj_clear_flag(tx_status(), LV_OBJ_FLAG_HIDDEN);
         tx_ui_state = SSTV_TX_UI_RX;
 
         /* TX selectors own keyboard focus while the TX setup is open.
@@ -2129,54 +2405,38 @@ static void tx_ui_cb(button_data_t *data)
         snprintf(tx_mode_label, sizeof(tx_mode_label), "RX Mode\n%s", cont_rx_mode_name());
         btn_cont_mode.label = tx_mode_label;
 
-        if (tx_restore_auto_rx) {
-            pthread_mutex_lock(&live_mutex);
-            live_enabled = true; live_capturing = false; live_decode_pending = false;
-            live_ring_pos = live_ring_count = 0;
-            live_wait_samples = live_wait_log_mark = 0;
-            free(live_samples); live_samples = NULL; live_written = live_target = 0;
-            pthread_mutex_unlock(&live_mutex);
-            set_receiver_ui_listening();
-        } else {
-            set_receiver_ui_stopped();
-        }
-        tx_restore_rx_canvas();
+        /* 1KO125: the receivers were never stopped: back to the RX panel */
+        tx_panel_show(false);
+        rx_ui_resync();
         if (btn_tx.disp_btn) buttons_refresh(&btn_tx);
         if (btn_cont_mode.disp_btn) buttons_refresh(&btn_cont_mode);
         update_rx_controls();
-        fprintf(stderr, "SSTV TX UI: setup cancelled; RX restored%s\n",
-                tx_restore_auto_rx ? " with Auto RX" : " to stand-by");
+        fprintf(stderr, "SSTV TX UI: setup cancelled; RX panel shown again\n");
         return;
     }
 
-    /* Preserve the exact RX pixels before TX preview changes the canvas. */
+    /* RX pixels for the REPLAY miniature and for the first TX phase. */
     tx_save_rx_canvas();
 
-    /* Remember only whether Auto RX was active.  Manual RX is abandoned
-     * without scheduling a decode: TX has priority. */
-    tx_restore_auto_rx = live_enabled || live_capturing || live_decode_pending || live_decoding;
-    pthread_mutex_lock(&live_mutex);
-    live_enabled = false; live_capturing = false; live_decode_pending = false;
-    live_ring_pos = live_ring_count = 0;
-    live_wait_samples = live_wait_log_mark = 0;
-    free(live_samples); live_samples = NULL; live_written = live_target = 0;
-    cont_capturing = false; cont_decode_pending = false;
-    free(cont_samples); cont_samples = NULL; cont_written = cont_capacity = 0;
-    pthread_mutex_unlock(&live_mutex);
+    /* 1KO125: the receivers keep going under the TX panel; they stop only
+     * when RF starts (tx_stop_receivers_for_rf) */
+    tx_restore_auto_rx = false;
 
     tx_ui_state = SSTV_TX_UI_SETUP;
+    tx_restore_rx_canvas();
+    tx_panel_show(true);
     tx_phase = SSTV_TX_PHASE_SELECT_TYPE;
     btn_tx.label = "Cancel TX";
     snprintf(tx_mode_label, sizeof(tx_mode_label), "TX Mode\n%s", cont_mode_name(cont_mode));
     btn_cont_mode.label = tx_mode_label;
-    set_status("TX setup\n\nChoose TX action");
-    if (progress_bar) {
-        lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
-        lv_obj_add_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
+    tx_set_status("TX setup\n\nChoose TX action");
+    if (tx_bar()) {
+        lv_bar_set_value(tx_bar(), 0, LV_ANIM_OFF);
+        lv_obj_add_flag(tx_bar(), LV_OBJ_FLAG_HIDDEN);
     }
     if (btn_tx.disp_btn) buttons_refresh(&btn_tx);
     if (btn_cont_mode.disp_btn) buttons_refresh(&btn_cont_mode);
     update_rx_controls();
     tx_type_selector_build();
-    fprintf(stderr, "SSTV TX UI: entered setup at action selector; previous Auto RX=%d\n", tx_restore_auto_rx ? 1 : 0);
+    fprintf(stderr, "SSTV TX UI: entered setup at action selector; receivers keep running\n");
 }

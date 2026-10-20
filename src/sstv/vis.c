@@ -173,7 +173,7 @@ static bool leader_gate(const float complex *z, int nz, float *off, float *q)
 /* Every assigned 7-bit VIS code: supported and known-unsupported modes.
  * Restricting ML decoding to real codes is what turns parity into coding gain. */
 static const unsigned char vis_codes[] = {
-    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,40,44,48,51,52,55,56,60,63,76,
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,40,44,48,51,52,55,56,59,60,63,76,
     93,94,95,96,97,98,99,100,104,105,113,114,115 };
 
 static bool supported(int vis, sstv_info_t *o)
@@ -242,6 +242,7 @@ bool sstv_vis_detect(const float *x, int n, sstv_info_t *out, sstv_vis_result_t 
         if (m > best_m) { best_m = m; best_t = t; best_edge = lt + st; best_brk = brk; }
     }
     if (best_m < 0.0f) goto done;
+    r.near_miss = true;      /* 1KO125: cleared below if the frame is taken */
 
     /* 4. bit period + slip + soft ML over the VIS codebook */
     static const float periods[] = { 0.0291f, 0.0297f, 0.0303f, 0.0309f };
@@ -344,6 +345,7 @@ bool sstv_vis_detect(const float *x, int n, sstv_info_t *out, sstv_vis_result_t 
     if (best < (h ? SLIP_FRAME_MIN : FRAME_MIN)) goto done;
     if (!best_brk && best < NOBREAK_FRAME_MIN) goto done;
     if ((best - second) * 11.0f < CODE_MARGIN) goto done;     /* ambiguous */
+    r.near_miss = false;
     if (supported(best_vis, out)) ok = true;
     else r.unsupported_vis = best_vis;
 

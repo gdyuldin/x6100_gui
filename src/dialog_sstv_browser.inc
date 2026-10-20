@@ -99,7 +99,11 @@ static void sstv_browser_row_cb(void *user, int index, ui_list_row_t *row)
 
     snprintf(row->cell[0], UI_LIST_CELL_LEN, "%d", index + 1);
 
-    if (!ui_list_parse_stamp(name, "sstv-",
+    if (ui_list_parse_stamp_ext(name, "sstv-", "_dn.png",          /* 1KO125: denoised */
+                                row->cell[1], UI_LIST_CELL_LEN,
+                                row->cell[2], UI_LIST_CELL_LEN)) {
+        strncat(row->cell[2], " DN", UI_LIST_CELL_LEN - strlen(row->cell[2]) - 1);
+    } else if (!ui_list_parse_stamp(name, "sstv-",
                              row->cell[1], UI_LIST_CELL_LEN,
                              row->cell[2], UI_LIST_CELL_LEN)) {
         snprintf(row->cell[1], UI_LIST_CELL_LEN, "%s", name);
@@ -262,6 +266,8 @@ static bool sstv_browser_open_png(const char *filename)
     if (color_type == PNG_COLOR_TYPE_GRAY ||
         color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
         png_set_gray_to_rgb(png_ptr);
+    /* 1KO125: interlaced (Adam7) PNG: the rows come in several passes */
+    int passes = png_set_interlace_handling(png_ptr);
 
     png_read_update_info(png_ptr, info_ptr);
     png_size_t rowbytes = png_get_rowbytes(png_ptr, info_ptr);
@@ -273,17 +279,21 @@ static bool sstv_browser_open_png(const char *filename)
     }
 
     uint8_t *image = malloc((size_t)width * (size_t)height * 3u);
-    uint8_t *row = malloc(rowbytes);
-    if (!image || !row) {
+    /* interlaced: the whole picture, the passes fill it in; else one row */
+    uint8_t *raw = malloc(passes > 1 ? rowbytes * height : rowbytes);
+    if (!image || !raw) {
         free(image);
-        free(row);
+        free(raw);
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         fclose(fp);
         return false;
     }
 
+    for (int pass = 0; pass < passes; ++pass)
     for (png_uint_32 y = 0; y < height; ++y) {
+        uint8_t *row = passes > 1 ? raw + (size_t)y * rowbytes : raw;
         png_read_row(png_ptr, row, NULL);
+        if (pass != passes - 1) continue;
         for (png_uint_32 x = 0; x < width; ++x) {
             const uint8_t *sp = row + (size_t)x * (size_t)channels;
             uint8_t *dp = image + ((size_t)y * width + x) * 3u;
@@ -294,7 +304,7 @@ static bool sstv_browser_open_png(const char *filename)
     }
 
     png_read_end(png_ptr, NULL);
-    free(row);
+    free(raw);
     png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
     fclose(fp);
 
