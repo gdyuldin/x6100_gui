@@ -32,6 +32,7 @@
 #include "cw.h"
 #include "pubsub_ids.h"
 #include "scheduler.h"
+#include "diag_log.h"
 
 /*********************
  *      DEFINES
@@ -123,6 +124,24 @@ static radio_state_t    state = RADIO_RX;
 static uint64_t         now_time;
 static uint64_t         prev_time;
 static uint64_t         idle_time;
+
+/* 1KO125 diagnostics (diag_log.h): what the APP asked the BASE for */
+static volatile bool    diag_cmd_ptt, diag_cmd_modem, diag_cmd_key, diag_cmd_other;
+static const char      *diag_cmd_src = "none";
+static volatile uint64_t diag_cmd_time;
+static uint64_t         diag_tx_start;
+static float            diag_tx_max_pwr;
+static bool             diag_noresp_logged;
+static bool             diag_tx_logged;     /* this TX is in ptt.log (not CW) */
+
+static void diag_tx_cmd(const char *what, bool on, volatile bool *flag) {
+    *flag = on;
+    diag_cmd_src  = diag_source();
+    diag_cmd_time = get_time();
+    diag_noresp_logged = false;
+    diag_ptt_log("CMD  %-10s %-3s  src=%-14s  freq=%d mode=%d pwr=%.1f", what, on ? "ON" : "OFF", diag_cmd_src,
+                 (int)cparam_i_get(cfg.cur.fg_freq()), (int)cparam_i_get(cfg.cur.mode()), param_f_get(cfg.pwr()));
+}
 static bool             mute = false;
 static bool             low_power = false;
 
@@ -439,6 +458,7 @@ bool radio_start_swrscan() {
     }
 
     cparam_i_set(cfg.cur.mode(), x6100_mode_am);
+    diag_tx_cmd("SWR SCAN", true, &diag_cmd_other);
     radio_lock();
     x6100_control_txpwr_set(5.0f);
     x6100_control_swrscan_set(true);
@@ -451,6 +471,7 @@ bool radio_start_swrscan() {
 void radio_stop_swrscan() {
     if (state == RADIO_SWRSCAN) {
         state = RADIO_RX;
+        diag_tx_cmd("SWR SCAN", false, &diag_cmd_other);
         radio_lock();
         x6100_control_swrscan_set(false);
         x6100_control_txpwr_set(param_f_get(cfg.pwr()));
@@ -512,10 +533,12 @@ void radio_set_charger(bool on) {
 }
 
 void radio_set_ptt(bool tx) {
+    diag_tx_cmd("PTT", tx, &diag_cmd_ptt);
     WITH_RADIO_LOCK(x6100_control_ptt_set(tx));
 }
 
 void radio_set_modem(bool tx) {
+    diag_tx_cmd("MODEM", tx, &diag_cmd_modem);
     WITH_RADIO_LOCK(x6100_control_modem_set(tx));
 }
 
@@ -524,6 +547,7 @@ void radio_speaker_play(bool on) {
 }
 
 void radio_set_morse_key(bool on) {
+    diag_cmd_key = on;          /* not logged: one line per dot and dash */
     x6100_gpio_set(x6100_pin_morse_key, on ? 0 : 1);
 }
 
@@ -791,6 +815,7 @@ static void base_control_command(Subject *subj, void *user_data) {
 static void recover_processing_audio_inputs() {
     usleep(10000);
     x6100_vfo_t vfo = param_i_get(cfg.band.current_vfo());
+    diag_ptt_log("CMD  ATU end: MODEM pulse 50 ms at 0.1 W (audio inputs recovery)");
     radio_lock();
     x6100_control_vfo_mode_set(vfo, x6100_mode_usb_dig);
     x6100_control_txpwr_set(0.1f);
@@ -900,6 +925,24 @@ static bool radio_tick() {
         switch (state) {
             case RADIO_RX:
                 if (pack->flag.tx) {
+                    bool cmd = diag_cmd_ptt || diag_cmd_modem || diag_cmd_key || diag_cmd_other;
+                    int  m   = (int)cparam_i_get(cfg.cur.mode());
+                    diag_tx_start   = now_time;
+                    diag_tx_max_pwr = 0.0f;
+                    /* CW is not logged: a TX for every element with QSK, keyer or paddle */
+                    diag_tx_logged  = !(m == x6100_mode_cw || m == x6100_mode_cwr || diag_cmd_key);
+                    if (!diag_tx_logged) {
+                        /* nothing */
+                    } else if (cmd) {
+                        diag_ptt_log("BASE TX ON   commanded by %s (%.1f s before)  freq=%d mode=%d",
+                                     diag_cmd_src, (now_time - diag_cmd_time) / 1000.0f,
+                                     (int)cparam_i_get(cfg.cur.fg_freq()), (int)cparam_i_get(cfg.cur.mode()));
+                    } else {
+                        diag_ptt_log("BASE TX ON   NOT COMMANDED by the APP (mic PTT, PTT jack or BASE)  "
+                                     "freq=%d mode=%d pwr=%.1f  last cmd: %s %.1f s ago",
+                                     (int)cparam_i_get(cfg.cur.fg_freq()), (int)cparam_i_get(cfg.cur.mode()),
+                                     param_f_get(cfg.pwr()), diag_cmd_src, (now_time - diag_cmd_time) / 1000.0f);
+                    }
                     state = RADIO_TX;
                     scheduler_msg_send(MSG_RADIO_TX, NULL);
                     recompute_display_freqs();
@@ -908,16 +951,20 @@ static bool radio_tick() {
 
             case RADIO_TX:
                 if (!pack->flag.tx) {
+                    if (diag_tx_logged) diag_ptt_log("BASE TX OFF  after %.1f s, max power %.1f W", (now_time - diag_tx_start) / 1000.0f,
+                                 diag_tx_max_pwr);
                     state = RADIO_RX;
                     scheduler_msg_send(MSG_RADIO_RX, NULL);
                     recompute_display_freqs();
                 } else {
                     // printf("%d, %d\n", pack->tx_power, pack->alc_level);
+                    if (pack->tx_power * 0.1f > diag_tx_max_pwr) diag_tx_max_pwr = pack->tx_power * 0.1f;
                     tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
                 }
                 break;
 
             case RADIO_ATU_START:
+                diag_tx_cmd("ATU TUNE", true, &diag_cmd_other);
                 WITH_RADIO_LOCK(x6100_control_atu_tune(true));
                 state = RADIO_ATU_WAIT;
                 break;
@@ -932,6 +979,7 @@ static bool radio_tick() {
             case RADIO_ATU_RUN:
                 if (pack->flag.atu_status && !pack->flag.tx) {
                     cfg_atu_save_network(pack->atu_params);
+                    diag_tx_cmd("ATU TUNE", false, &diag_cmd_other);
                     WITH_RADIO_LOCK(x6100_control_atu_tune(false));
                     param_i_set(cfg.atu_enabled(), true);
                     recover_processing_audio_inputs();
@@ -961,6 +1009,13 @@ static bool radio_tick() {
 
             case RADIO_OFF:
                 break;
+        }
+
+        /* TX asked for, but the BASE stays in RX (relay without TX?) */
+        if ((diag_cmd_ptt || diag_cmd_modem) && state == RADIO_RX && !diag_noresp_logged &&
+            now_time - diag_cmd_time > 1500) {
+            diag_ptt_log("BASE did NOT go TX 1.5 s after the command of %s", diag_cmd_src);
+            diag_noresp_logged = true;
         }
 
         hkey_put(pack->hkey);

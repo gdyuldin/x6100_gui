@@ -44,6 +44,7 @@
 #include "scheduler.h"
 #include "wifi.h"
 #include "usb_devices.h"
+#include "diag_log.h"
 
 rotary_t  *vol;
 encoder_t *mfk;
@@ -65,6 +66,7 @@ static void handle_sigint(int signum) {
 
 
 int main(void) {
+    diag_init();        /* 1KO125: /mnt/ptt.log */
 
     // Register signal handler
     struct sigaction sa;
