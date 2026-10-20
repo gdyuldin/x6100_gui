@@ -40,6 +40,11 @@ typedef struct {
     int16_t         max;
 
     struct timespec frame_ts;   /* wall-clock timestamp of most recent PSD frame */
+    /* 1KO125: noise floor of the lines, see lv_waterfall_add_data_with_ts() */
+    float           *floor_buf;
+    uint16_t        floor_buf_cnt;
+    float           floor_db;
+    bool            floor_valid;
 } lv_waterfall_t;
 
 extern const lv_obj_class_t lv_waterfall_class;
