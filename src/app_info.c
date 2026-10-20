@@ -107,8 +107,7 @@ static const char *const bodies[] = {
     "Received pictures: /mnt/sstv, shown by RX Pics Browser.\n\n"
     H("TRANSMIT")
     "TX opens the transmit menu: CQ call, reply, reply with the received picture, picture only, "
-    "repeat. Your pictures go in /mnt/sstv/tx_pics, text templates in /mnt/sstv/tx_text, "
-    "or upload them from the Web Manager (http://<radio IP>/sstv).\n"
+    "repeat. Your pictures go in /mnt/sstv/tx_pics, text templates in /mnt/sstv/tx_text.\n"
     "Transmission starts at the last confirmation: check frequency, power and antenna first.",
 };
 
