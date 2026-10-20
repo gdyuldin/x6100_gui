@@ -18,6 +18,7 @@
 #include "cfg/cfg_api.h"
 #include "cfg/db.h"
 
+#include "diag_log.h"
 #include "main.h"
 #include "main_screen.h"
 #include "styles.h"
@@ -44,7 +45,6 @@
 #include "scheduler.h"
 #include "wifi.h"
 #include "usb_devices.h"
-#include "diag_log.h"
 
 rotary_t  *vol;
 encoder_t *mfk;

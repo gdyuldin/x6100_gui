@@ -14,12 +14,13 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PRIVATE _GNU_SOURCE)
 
 target_sources(${PROJECT_NAME} PUBLIC
+    diag_log.c
     main.c main_screen.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
     app_ports.cpp
     waterfall.c rotary.cpp keyboard.c kbd_rollover.c encoder.c
     events.c msg.c msg_tiny.c keypad.c
-    hkey.c clock.c diag_log.c
+    hkey.c clock.c
     meter.c band_info.cpp tx_info.c tx_level.c tx_player.c
     audio.c mfk.cpp cw.cpp panel.cpp
     rtty.c screenshot.c display.cpp gps.c
