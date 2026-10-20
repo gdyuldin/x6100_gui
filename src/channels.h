@@ -33,7 +33,7 @@ typedef struct {
  *
  * Later:
  * - if channels.json exists -> load it
- * - if it doesn't exist -> create defaults
+ * - if it doesn't exist -> create an empty list
  */
 bool channels_load(void);
 

@@ -10,6 +10,7 @@
 #include "cfg/cfg_api.h"
 
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -20,185 +21,6 @@
 
 static channel_t channels[CHANNELS_MAX];
 static uint16_t channel_count = 0;
-
-
-/*
- * Default channels.
- *
- * These are used only when /mnt/channels.json
- * does not exist yet.
- */
-static const channel_t default_channels[] = {
-
-    {
-        .name = "NAVTEX MF",
-        .freq = 517000,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "NAVTEX HF",
-        .freq = 4208500,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "SHANNON VOLMET",
-        .freq = 3413000,
-        .mode = x6100_mode_usb,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "SHANNON VOLMET",
-        .freq = 5505000,
-        .mode = x6100_mode_usb,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "SHANNON VOLMET",
-        .freq = 8957000,
-        .mode = x6100_mode_usb,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "SHANNON VOLMET",
-        .freq = 13264000,
-        .mode = x6100_mode_usb,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "RTTY DWD DDK2",
-        .freq = 4582200,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "RTTY DWD DDH7",
-        .freq = 7645200,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "RTTY DWD DDK9",
-        .freq = 10100000,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "RTTY DWD DDH9",
-        .freq = 11038200,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "RTTY DWD DDH8",
-        .freq = 14466500,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_fast,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "WEFAX DWD DDH3",
-        .freq = 3853500,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "WEFAX DWD DDK3",
-        .freq = 7878470,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "WEFAX DWD DDK6",
-        .freq = 13881000,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "WEFAX GYA",
-        .freq = 11085000,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "WEFAX GYA",
-        .freq = 8038500,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    },
-
-
-    {
-        .name = "WEFAX GYA",
-        .freq = 4608500,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    },
-
-    {
-        .name = "WEFAX GYA",
-        .freq = 2617000,
-        .mode = x6100_mode_usb_dig,
-        .agc = x6100_agc_slow,
-        .pre = false,
-        .att = false
-    }
-
-
-};
-
-
-#define DEFAULT_CHANNEL_COUNT \
-    (sizeof(default_channels) / sizeof(default_channels[0]))
 
 
 /*
@@ -360,24 +182,6 @@ static bool string_to_agc(
 
 
 /*
- * Load built-in default channels into RAM.
- */
-static void load_defaults(void) {
-
-    channel_count = 0;
-
-    for (
-        uint16_t i = 0;
-        i < DEFAULT_CHANNEL_COUNT && i < CHANNELS_MAX;
-        i++
-    ) {
-        channels[channel_count] = default_channels[i];
-        channel_count++;
-    }
-}
-
-
-/*
  * Save current in-memory database to
  * /mnt/channels.json.
  */
@@ -481,8 +285,10 @@ bool channels_save(void) {
     }
 
 
+    /* Written to a .tmp file and renamed over channels.json, so a power
+     * cut while saving never leaves a half-written list. */
     file = fopen(
-        CHANNELS_FILE,
+        CHANNELS_FILE ".tmp",
         "w"
     );
 
@@ -503,6 +309,19 @@ bool channels_save(void) {
         goto cleanup;
     }
 
+    if (fflush(file) != 0 || fsync(fileno(file)) != 0) {
+        goto cleanup;
+    }
+
+    if (fclose(file) != 0) {
+        file = NULL;
+        goto cleanup;
+    }
+    file = NULL;
+
+    if (rename(CHANNELS_FILE ".tmp", CHANNELS_FILE) != 0) {
+        goto cleanup;
+    }
 
     result = true;
 
@@ -511,6 +330,10 @@ cleanup:
 
     if (file) {
         fclose(file);
+    }
+
+    if (!result) {
+        unlink(CHANNELS_FILE ".tmp");
     }
 
     if (json_text) {
@@ -597,8 +420,7 @@ static char *read_json_file(void) {
  *
  * If /mnt/channels.json does not exist:
  *
- *   1. load built-in defaults
- *   2. create channels.json
+ *   the list starts empty and an empty channels.json is created
  *
  * If it exists:
  *
@@ -614,7 +436,7 @@ bool channels_load(void) {
 
     if (!test_file) {
 
-        load_defaults();
+        channel_count = 0;
 
         return channels_save();
     }

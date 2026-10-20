@@ -31,7 +31,6 @@ bool broadcast_db_init(void);
 size_t broadcast_db_find_matches(int32_t freq_hz, int tolerance_hz,
                                  broadcast_match_t *matches, size_t max_matches);
 
-size_t broadcast_db_count(void);
 
 #endif
 

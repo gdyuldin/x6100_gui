@@ -41,6 +41,8 @@
  */
 
 #include "dialog_channels.h"
+#include "lock_manager.h"
+#include "msg.h"
 #include "channels.h"
 #include "keyboard.h"
 #include "events.h"
@@ -152,7 +154,6 @@ static int16_t edit_row = ROW_NONE;
 static bool drag_active = false;
 
 /* Add a new channel immediately after the window is opened. */
-static bool add_on_construct = false;
 
 /* Deferred recall + close (scheduled from the CLICKED event). */
 static bool recall_pending = false;
@@ -587,6 +588,14 @@ static bool recall_row(int16_t row) {
         return false;
     }
 
+    /* A channel sets frequency and mode: not while either is locked
+     * (the microphone keys already check the frequency lock). */
+    if (lm_get_freq() || lm_get_mode()) {
+        msg_update_text_fmt("Frequency locked");
+        voice_say_text_fmt("Frequency locked");
+        return false;
+    }
+
     last_recalled_row = row;
 
     cparam_i_set(cfg.cur.fg_freq(), channel->freq);
@@ -849,12 +858,6 @@ static void open_common(void) {
     save_kb_state();
     build_window();
     input_attach();
-
-    if (add_on_construct) {
-        add_on_construct = false;
-        add_cb(NULL);
-        return;
-    }
 
     set_selection(row_valid(last_recalled_row) ? last_recalled_row : 0, SCROLL_CENTER);
 }
@@ -1298,6 +1301,10 @@ void dialog_channels_toggle(lv_obj_t *parent, bool other_dialog_running) {
     }
 }
 
+bool dialog_channels_empty(void) {
+    return channels_count() == 0;
+}
+
 bool dialog_channels_is_open(void) {
     return win_mode != WIN_CLOSED;
 }
@@ -1312,10 +1319,6 @@ void dialog_channels_show_added(void) {
     }
     refresh_table();
     set_selection((int16_t)channels_count() - 1, SCROLL_ENSURE);
-}
-
-void dialog_channels_add_on_open(void) {
-    add_on_construct = true;
 }
 
 const char *dialog_channels_last_recalled_name(void) {
@@ -1363,7 +1366,7 @@ bool dialog_channels_recall_relative(int8_t direction) {
     int16_t count = (int16_t)channels_count();
 
     if (count <= 0) {
-        voice_say_text_fmt("No channels");
+        /* No channels: the main screen tunes a step, as without this app */
         return false;
     }
 

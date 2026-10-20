@@ -360,4 +360,3 @@ size_t broadcast_db_find_matches(int32_t freq_hz, int tolerance_hz,
     return found;
 }
 
-size_t broadcast_db_count(void) { return entry_count; }

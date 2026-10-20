@@ -41,6 +41,8 @@ void dialog_channels_show_added(void);
  * direction < 0: previous; direction > 0: next.
  */
 bool dialog_channels_recall_relative(int8_t direction);
+/* true when there are no channels (mic UP/DOWN then tunes a step) */
+bool dialog_channels_empty(void);
 
 /*
  * Name of the last recalled channel ("CHANNEL n" if it has no name).
@@ -52,4 +54,3 @@ const char *dialog_channels_last_recalled_name(void);
  * Request that the next opening of CHANNELS immediately adds the current
  * radio settings as a new channel.
  */
-void dialog_channels_add_on_open(void);
