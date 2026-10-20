@@ -40,21 +40,6 @@
 
 
 /*
- * Tone histogram used only for diagnostics.
- *
- * We are interested in the useful WEFAX audio
- * region. 500..2500 Hz gives plenty of margin
- * around the nominal 1075..1925 Hz range.
- *
- * One bin = 1 Hz.
- */
-#define TONE_HIST_MIN_HZ     500
-#define TONE_HIST_MAX_HZ    2500
-#define TONE_HIST_SIZE       \
-    (TONE_HIST_MAX_HZ - TONE_HIST_MIN_HZ + 1)
-
-
-/*
  * DWD IOC 576 APT START detector.
  */
 #define WEFAX_APT_START_HZ          300.0f
@@ -248,27 +233,6 @@ struct wefax_decoder {
 
 
     /*
-     * Grayscale diagnostics.
-     */
-    uint8_t gray_min;
-    uint8_t gray_max;
-
-    double gray_sum;
-    uint64_t gray_count;
-
-
-    /*
-     * Tone-frequency diagnostics.
-     */
-    double tone_sum;
-    uint64_t tone_count;
-
-    unsigned int tone_print_samples;
-
-    uint32_t tone_histogram[TONE_HIST_SIZE];
-
-
-    /*
      * WEFAX line generator.
      */
     double line_position;
@@ -352,88 +316,6 @@ struct wefax_decoder {
     wefax_row_callback_t row_callback;
     void *row_callback_data;
 };
-
-
-/*
- * Return a percentile from the current
- * one-second tone histogram.
- */
-static float tone_percentile(
-    const wefax_decoder_t *decoder,
-    float percentile)
-{
-    uint64_t total = 0;
-
-
-    for (
-        unsigned int i = 0;
-        i < TONE_HIST_SIZE;
-        i++
-    ) {
-
-        total += decoder->tone_histogram[i];
-    }
-
-
-    if (total == 0) {
-        return 0.0f;
-    }
-
-
-    uint64_t target =
-        (uint64_t)(
-            percentile *
-            (double)(total - 1)
-        );
-
-
-    uint64_t accumulated = 0;
-
-
-    for (
-        unsigned int i = 0;
-        i < TONE_HIST_SIZE;
-        i++
-    ) {
-
-        accumulated +=
-            decoder->tone_histogram[i];
-
-
-        if (accumulated > target) {
-
-            return
-                (float)(
-                    TONE_HIST_MIN_HZ + i
-                );
-        }
-    }
-
-
-    return (float)TONE_HIST_MAX_HZ;
-}
-
-
-/*
- * Clear only the one-second tone
- * diagnostic window.
- */
-static void reset_tone_window(
-    wefax_decoder_t *decoder)
-{
-    decoder->tone_sum = 0.0;
-    decoder->tone_count = 0;
-
-    decoder->tone_print_samples = 0;
-
-
-    memset(
-        decoder->tone_histogram,
-        0,
-        sizeof(decoder->tone_histogram)
-    );
-}
-
 
 /*
  * Build a unity-DC-gain low-pass FIR using a windowed sinc.
@@ -547,15 +429,6 @@ static void reset_dsp(
 
     decoder->previous_valid = false;
 
-
-    decoder->gray_min = 255;
-    decoder->gray_max = 0;
-
-    decoder->gray_sum = 0.0;
-    decoder->gray_count = 0;
-
-
-    reset_tone_window(decoder);
 
     decoder->apt_is_white = false;
     decoder->apt_level_valid = false;
@@ -1808,138 +1681,6 @@ void wefax_decoder_process(
 
             /*
              * ------------------------------------------------
-             * Actual tone frequency
-             * ------------------------------------------------
-             */
-            const float baseband_hz =
-                phase_difference *
-                (float)WEFAX_SAMPLE_RATE /
-                (2.0f * WEFAX_PI);
-
-
-            const float tone_hz =
-                (float)WEFAX_CENTER_HZ -
-                baseband_hz;
-
-
-            /*
-             * ------------------------------------------------
-             * Tone diagnostic
-             * ------------------------------------------------
-             *
-             * Store only values inside a sensible
-             * WEFAX audio range. This prevents large
-             * discriminator glitches from destroying
-             * the percentile measurement.
-             */
-            if (
-                tone_hz >=
-                    (float)TONE_HIST_MIN_HZ &&
-                tone_hz <=
-                    (float)TONE_HIST_MAX_HZ
-            ) {
-
-                unsigned int bin =
-                    (unsigned int)(
-                        tone_hz -
-                        (float)TONE_HIST_MIN_HZ +
-                        0.5f
-                    );
-
-
-                if (bin >= TONE_HIST_SIZE) {
-                    bin = TONE_HIST_SIZE - 1;
-                }
-
-
-                decoder->tone_histogram[bin]++;
-
-
-                decoder->tone_sum +=
-                    tone_hz;
-
-                decoder->tone_count++;
-            }
-
-
-            decoder->tone_print_samples++;
-
-
-            /*
-             * Print approximately once per second.
-             */
-            if (
-                decoder->tone_print_samples >=
-                WEFAX_SAMPLE_RATE
-            ) {
-
-                if (
-                    decoder->tone_count > 0
-                ) {
-
-                    const double average_tone =
-                        decoder->tone_sum /
-                        (double)
-                            decoder->tone_count;
-
-
-                    const float p01 =
-                        tone_percentile(
-                            decoder,
-                            0.01f
-                        );
-
-                    const float p05 =
-                        tone_percentile(
-                            decoder,
-                            0.05f
-                        );
-
-                    const float p50 =
-                        tone_percentile(
-                            decoder,
-                            0.50f
-                        );
-
-                    const float p95 =
-                        tone_percentile(
-                            decoder,
-                            0.95f
-                        );
-
-                    const float p99 =
-                        tone_percentile(
-                            decoder,
-                            0.99f
-                        );
-
-
-                    /*
-                    printf(
-                        "WEFAX: tone avg=%.1f "
-                        "P01=%.0f P05=%.0f "
-                        "P50=%.0f P95=%.0f "
-                        "P99=%.0f Hz\n",
-
-                        average_tone,
-                        p01,
-                        p05,
-                        p50,
-                        p95,
-                        p99
-                    );
-                    */
-                }
-
-
-                reset_tone_window(
-                    decoder
-                );
-            }
-
-
-            /*
-             * ------------------------------------------------
              * WEFAX grayscale demodulation
              * ------------------------------------------------
              *
@@ -1970,35 +1711,6 @@ void wefax_decoder_process(
                 (uint8_t)(
                     gray_f + 0.5f
                 );
-
-
-            /*
-             * Grayscale diagnostics.
-             */
-            if (
-                gray <
-                decoder->gray_min
-            ) {
-
-                decoder->gray_min =
-                    gray;
-            }
-
-
-            if (
-                gray >
-                decoder->gray_max
-            ) {
-
-                decoder->gray_max =
-                    gray;
-            }
-
-
-            decoder->gray_sum +=
-                gray;
-
-            decoder->gray_count++;
 
 
             /*
@@ -2783,58 +2495,6 @@ uint32_t wefax_decoder_row_count(
     return decoder->row_count;
 }
 
-
-uint8_t wefax_decoder_gray_min(
-    const wefax_decoder_t *decoder)
-{
-    if (
-        !decoder ||
-        decoder->gray_count == 0
-    ) {
-
-        return 0;
-    }
-
-
-    return decoder->gray_min;
-}
-
-
-uint8_t wefax_decoder_gray_max(
-    const wefax_decoder_t *decoder)
-{
-    if (
-        !decoder ||
-        decoder->gray_count == 0
-    ) {
-
-        return 0;
-    }
-
-
-    return decoder->gray_max;
-}
-
-
-float wefax_decoder_gray_average(
-    const wefax_decoder_t *decoder)
-{
-    if (
-        !decoder ||
-        decoder->gray_count == 0
-    ) {
-
-        return 0.0f;
-    }
-
-
-    return
-        (float)(
-            decoder->gray_sum /
-            (double)
-                decoder->gray_count
-        );
-}
 
 bool wefax_decoder_auto_start_detected(
     const wefax_decoder_t *decoder)

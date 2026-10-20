@@ -79,18 +79,6 @@ uint32_t wefax_decoder_row_count(
     const wefax_decoder_t *decoder
 );
 
-uint8_t wefax_decoder_gray_min(
-    const wefax_decoder_t *decoder
-);
-
-uint8_t wefax_decoder_gray_max(
-    const wefax_decoder_t *decoder
-);
-
-float wefax_decoder_gray_average(
-    const wefax_decoder_t *decoder
-);
-
 bool wefax_decoder_auto_start_detected(
     const wefax_decoder_t *decoder
 );
