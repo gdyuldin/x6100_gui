@@ -60,9 +60,6 @@
 /*
  * WAV test.
  */
-#define TEST_WAV_PATH        "/mnt/wefax/test.wav"
-#define TEST_TIMER_MS        20
-#define TEST_SAMPLES         240
 
 
 /*
@@ -139,7 +136,6 @@ static void slant_poll(void);
 static bool slant_fax_started(void);
 static void slant_user_tilt_changed(void);
 static void save_cb(button_data_t *data);
-static void test_cb(button_data_t *data);
 
 static void audio_cb(
     size_t n,
@@ -157,10 +153,6 @@ static void update_preview_cb(
     lv_timer_t *timer
 );
 
-static void test_wav_timer_cb(
-    lv_timer_t *timer
-);
-
 static void clear_preview(void);
 static void clear_fax_buffer(void);
 static bool ensure_fax_buffer(void);
@@ -168,10 +160,7 @@ static void store_fax_row(const uint8_t *row);
 static bool save_fax_png_async(void);
 static void *save_fax_worker(void *arg);
 static void check_async_save_completion(void);
-static void stop_wav_test(void);
 static void auto_finish_fax(void);
-
-static bool open_test_wav(void);
 
 
 /*
@@ -297,18 +286,8 @@ static void render_zoomed_fax(void);
 static void rerender_preview(void);
 static void apply_zoom_geometry(void);
 static lv_timer_t *preview_timer = NULL;
-static lv_timer_t *test_timer = NULL;
 static lv_timer_t *save_fax_timer = NULL;
 
-
-/*
- * WAV test state.
- */
-static FILE *test_wav = NULL;
-
-static uint32_t test_data_remaining = 0;
-
-static bool test_running = false;
 
 
 /*
@@ -556,35 +535,6 @@ bool dialog_wefax_is_active(void)
 }
 
 
-/*
- * Little-endian helpers.
- */
-static uint16_t read_le16(
-    const uint8_t *p)
-{
-    return
-        (uint16_t)p[0] |
-        (
-            (uint16_t)p[1] << 8
-        );
-}
-
-
-static uint32_t read_le32(
-    const uint8_t *p)
-{
-    return
-        (uint32_t)p[0] |
-        (
-            (uint32_t)p[1] << 8
-        ) |
-        (
-            (uint32_t)p[2] << 16
-        ) |
-        (
-            (uint32_t)p[3] << 24
-        );
-}
 
 
 /*
@@ -634,381 +584,6 @@ static void clear_preview(void)
 
 
 
-/*
- * Stop WAV test and release the file.
- */
-static void stop_wav_test(void)
-{
-    if (test_timer) {
-
-        lv_timer_del(test_timer);
-
-        test_timer = NULL;
-    }
-
-
-    if (test_wav) {
-
-        fclose(test_wav);
-
-        test_wav = NULL;
-    }
-
-
-    test_data_remaining = 0;
-    test_running = false;
-}
-
-
-/*
- * Open and validate the test WAV.
- *
- * Required:
- *
- *   RIFF/WAVE
- *   IEEE float
- *   mono
- *   11025 Hz
- *   32 bits
- *
- * We scan RIFF chunks instead of assuming
- * a fixed 44-byte WAV header.
- */
-static bool open_test_wav(void)
-{
-    uint8_t header[12];
-
-
-    test_wav =
-        fopen(
-            TEST_WAV_PATH,
-            "rb"
-        );
-
-
-    if (!test_wav) {
-
-        printf(
-            "WEFAX TEST: unable to open %s\n",
-            TEST_WAV_PATH
-        );
-
-        return false;
-    }
-
-
-    if (
-        fread(
-            header,
-            1,
-            sizeof(header),
-            test_wav
-        ) != sizeof(header)
-    ) {
-
-        printf(
-            "WEFAX TEST: invalid WAV header\n"
-        );
-
-        stop_wav_test();
-
-        return false;
-    }
-
-
-    if (
-        memcmp(
-            header,
-            "RIFF",
-            4
-        ) != 0 ||
-        memcmp(
-            header + 8,
-            "WAVE",
-            4
-        ) != 0
-    ) {
-
-        printf(
-            "WEFAX TEST: not a RIFF/WAVE file\n"
-        );
-
-        stop_wav_test();
-
-        return false;
-    }
-
-
-    bool format_found = false;
-    bool data_found = false;
-
-
-    uint16_t audio_format = 0;
-    uint16_t channels = 0;
-    uint32_t sample_rate = 0;
-    uint16_t bits_per_sample = 0;
-
-
-    while (!data_found) {
-
-        uint8_t chunk_header[8];
-
-
-        if (
-            fread(
-                chunk_header,
-                1,
-                sizeof(chunk_header),
-                test_wav
-            ) != sizeof(chunk_header)
-        ) {
-
-            break;
-        }
-
-
-        const uint32_t chunk_size =
-            read_le32(
-                chunk_header + 4
-            );
-
-
-        if (
-            memcmp(
-                chunk_header,
-                "fmt ",
-                4
-            ) == 0
-        ) {
-
-            if (chunk_size < 16) {
-
-                printf(
-                    "WEFAX TEST: invalid fmt chunk\n"
-                );
-
-                stop_wav_test();
-
-                return false;
-            }
-
-
-            uint8_t fmt[16];
-
-
-            if (
-                fread(
-                    fmt,
-                    1,
-                    sizeof(fmt),
-                    test_wav
-                ) != sizeof(fmt)
-            ) {
-
-                printf(
-                    "WEFAX TEST: unable to read fmt chunk\n"
-                );
-
-                stop_wav_test();
-
-                return false;
-            }
-
-
-            audio_format =
-                read_le16(
-                    fmt
-                );
-
-            channels =
-                read_le16(
-                    fmt + 2
-                );
-
-            sample_rate =
-                read_le32(
-                    fmt + 4
-                );
-
-            bits_per_sample =
-                read_le16(
-                    fmt + 14
-                );
-
-
-            format_found = true;
-
-
-            /*
-             * Skip any extended fmt data.
-             */
-            if (chunk_size > 16) {
-
-                if (
-                    fseek(
-                        test_wav,
-                        (long)(
-                            chunk_size - 16
-                        ),
-                        SEEK_CUR
-                    ) != 0
-                ) {
-
-                    printf(
-                        "WEFAX TEST: unable to skip fmt extension\n"
-                    );
-
-                    stop_wav_test();
-
-                    return false;
-                }
-            }
-        }
-        else if (
-            memcmp(
-                chunk_header,
-                "data",
-                4
-            ) == 0
-        ) {
-
-            test_data_remaining =
-                chunk_size;
-
-            data_found = true;
-
-            break;
-        }
-        else {
-
-            /*
-             * Unknown RIFF chunk.
-             */
-            if (
-                fseek(
-                    test_wav,
-                    (long)chunk_size,
-                    SEEK_CUR
-                ) != 0
-            ) {
-
-                break;
-            }
-        }
-
-
-        /*
-         * RIFF chunks are padded to an even
-         * number of bytes.
-         */
-        if (
-            chunk_size & 1
-        ) {
-
-            if (
-                fseek(
-                    test_wav,
-                    1,
-                    SEEK_CUR
-                ) != 0
-            ) {
-
-                break;
-            }
-        }
-    }
-
-
-    if (
-        !format_found ||
-        !data_found
-    ) {
-
-        printf(
-            "WEFAX TEST: fmt/data chunk not found\n"
-        );
-
-        stop_wav_test();
-
-        return false;
-    }
-
-
-    /*
-     * WAV format 3 = IEEE floating point.
-     */
-    if (audio_format != 3) {
-
-        printf(
-            "WEFAX TEST: unsupported WAV format %u "
-            "(expected IEEE float = 3)\n",
-            (unsigned int)audio_format
-        );
-
-        stop_wav_test();
-
-        return false;
-    }
-
-
-    if (channels != 1) {
-
-        printf(
-            "WEFAX TEST: WAV must be mono "
-            "(channels=%u)\n",
-            (unsigned int)channels
-        );
-
-        stop_wav_test();
-
-        return false;
-    }
-
-
-    if (
-        sample_rate !=
-        WEFAX_SAMPLE_RATE
-    ) {
-
-        printf(
-            "WEFAX TEST: wrong sample rate %u "
-            "(expected %u)\n",
-
-            (unsigned int)sample_rate,
-            (unsigned int)WEFAX_SAMPLE_RATE
-        );
-
-        stop_wav_test();
-
-        return false;
-    }
-
-
-    if (bits_per_sample != 32) {
-
-        printf(
-            "WEFAX TEST: wrong sample size %u bits "
-            "(expected 32)\n",
-            (unsigned int)bits_per_sample
-        );
-
-        stop_wav_test();
-
-        return false;
-    }
-
-
-    printf(
-        "WEFAX TEST: WAV OK - "
-        "%u Hz mono float32, %u data bytes\n",
-
-        (unsigned int)sample_rate,
-        (unsigned int)test_data_remaining
-    );
-
-
-    return true;
-}
 
 
 /*
@@ -1182,7 +757,6 @@ static void destruct_cb(void)
     app_info_abort();
     spectrum_clear_markers();
     dsp_audio_set_active(dsp_audio_sub_id, false);
-    stop_wav_test();
 
 
     if (preview_timer) {
@@ -1943,8 +1517,9 @@ static bool save_fax_png_async(void)
     time_t now = time(NULL);
     struct tm tm_now;
 
-    if (!localtime_r(&now, &tm_now)) {
-        printf("WEFAX SAVE: localtime failed\n");
+    /* UTC, like the stations' schedules */
+    if (!gmtime_r(&now, &tm_now)) {
+        printf("WEFAX SAVE: gmtime failed\n");
         free(job->image);
         free(job);
         return false;
@@ -2049,11 +1624,6 @@ static void auto_finish_fax(void)
     printf("WEFAX AUTO: fax complete - saving PNG\n");
     */
 
-    /*
-     * The WAV test must stop here as well, otherwise it would continue
-     * feeding samples after the decoder has been reset.
-     */
-    stop_wav_test();
 
     if (!save_fax_png_async()) {
         printf(
@@ -3194,10 +2764,6 @@ static void save_cb(button_data_t *data)
         return;
     }
 
-    /*
-     * Stop WAV feeding before taking the snapshot.
-     */
-    stop_wav_test();
 
     /*
      * Snapshot the fax and start the PNG write in a worker thread.
@@ -3224,7 +2790,6 @@ static void close_cb(button_data_t *data)
 {
     (void)data;
 
-    stop_wav_test();
 
     dialog_destruct();
 }
@@ -3243,7 +2808,6 @@ static void cont_cb(button_data_t *data)
 
     /* Stop Manual RX: the decoder stops, the picture stays */
     if (wefax_decoder_get_mode(decoder) == WEFAX_MODE_CONT) {
-        stop_wav_test();
         wefax_decoder_set_mode(decoder, WEFAX_MODE_IDLE);
         rx_buttons_sync(false);
         msg_schedule_text_fmt("Manual decoder stopped");
@@ -3264,10 +2828,6 @@ static void cont_cb(button_data_t *data)
     msg_schedule_text_fmt("Manual decoder started");
 
 
-    /*
-     * If a WAV test is running, stop it first.
-     */
-    stop_wav_test();
 
 
     wefax_decoder_set_mode(
@@ -3319,7 +2879,6 @@ static void auto_cb(button_data_t *data)
 
     /* Stop Auto RX: abort the automatic session, the picture stays */
     if (wefax_decoder_get_mode(decoder) == WEFAX_MODE_AUTO) {
-        stop_wav_test();
         atomic_store(&auto_reset_pending, false);
         wefax_decoder_set_mode(decoder, WEFAX_MODE_IDLE);
         auto_start_generation_seen = 0;
@@ -3340,7 +2899,6 @@ static void auto_cb(button_data_t *data)
 
     msg_schedule_text_fmt("Awaiting WEFAX header...");
 
-    stop_wav_test();
 
     wefax_decoder_set_mode(
         decoder,
@@ -3411,7 +2969,6 @@ static void clear_cb(button_data_t *data)
         return;
     }
 
-    stop_wav_test();
 
     /*
      * CLEAR has different semantics in CONT and AUTO.
@@ -3497,70 +3054,6 @@ static void rx_buttons_sync(bool force)
 }
 
 
-/*
- * F5 on FAX 2:2 - Test WAV.
- */
-static void test_cb(button_data_t *data)
-{
-    (void)data;
-
-
-    if (!decoder) {
-        return;
-    }
-
-
-    /*
-     * Pressing Test again while already
-     * running restarts from the beginning.
-     */
-    stop_wav_test();
-
-
-    /*
-     * AUTO + Test: keep AUTO active and restart its detector
-     * from the beginning of the WAV.
-     * Test alone retains the previous CONT behaviour.
-     */
-    if (
-        wefax_decoder_get_mode(decoder) ==
-        WEFAX_MODE_AUTO
-    ) {
-        wefax_decoder_reset(decoder);
-    auto_start_generation_seen = 0;
-    }
-    else {
-        wefax_decoder_set_mode(
-            decoder,
-            WEFAX_MODE_CONT
-        );
-    }
-
-
-    clear_preview();
-    rx_buttons_sync(false);
-
-
-    if (!open_test_wav()) {
-        return;
-    }
-
-
-    test_running = true;
-
-
-    test_timer =
-        lv_timer_create(
-            test_wav_timer_cb,
-            TEST_TIMER_MS,
-            NULL
-        );
-
-
-    printf(
-        "WEFAX TEST: started\n"
-    );
-}
 
 
 /*
@@ -3575,13 +3068,6 @@ static void audio_cb(
     }
 
 
-    /*
-     * During WAV playback the radio audio must
-     * not be mixed into the test stream.
-     */
-    if (test_running) {
-        return;
-    }
 
 
     /*
@@ -3612,117 +3098,6 @@ static void audio_cb(
 }
 
 
-/*
- * WAV playback timer.
- *
- * 12000 samples/sec * 20 ms = 240 samples.
- */
-static void test_wav_timer_cb(
-    lv_timer_t *timer)
-{
-    (void)timer;
-
-
-    if (
-        !test_running ||
-        !test_wav ||
-        !decoder
-    ) {
-
-        return;
-    }
-
-
-    float samples[TEST_SAMPLES];
-
-
-    uint32_t available_samples =
-        test_data_remaining /
-        sizeof(float);
-
-
-    if (available_samples == 0) {
-
-        printf(
-            "WEFAX TEST: finished - "
-            "samples=%llu rows=%u\n",
-
-            (unsigned long long)
-                wefax_decoder_sample_count(
-                    decoder
-                ),
-
-            (unsigned int)
-                wefax_decoder_row_count(
-                    decoder
-                )
-        );
-
-
-        stop_wav_test();
-
-        return;
-    }
-
-
-    unsigned int wanted =
-        TEST_SAMPLES;
-
-
-    if (
-        available_samples <
-        wanted
-    ) {
-
-        wanted =
-            available_samples;
-    }
-
-
-    const size_t got =
-        fread(
-            samples,
-            sizeof(float),
-            wanted,
-            test_wav
-        );
-
-
-    if (got == 0) {
-
-        printf(
-            "WEFAX TEST: unexpected EOF/read error\n"
-        );
-
-        stop_wav_test();
-
-        return;
-    }
-
-
-    test_data_remaining -=
-        (uint32_t)(
-            got *
-            sizeof(float)
-        );
-
-
-    wefax_decoder_process(
-        decoder,
-        samples,
-        (unsigned int)got
-    );
-
-
-    if (got < wanted) {
-
-        printf(
-            "WEFAX TEST: short read\n"
-        );
-
-        stop_wav_test();
-    }
-}
 
 
 /*
