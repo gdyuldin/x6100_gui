@@ -54,6 +54,7 @@ add_subdirectory(cfg)
 add_subdirectory(cat)
 add_subdirectory(settings)
 add_subdirectory(cw_decoder)
+add_subdirectory(js8)
 
 include_directories(utf8)
 include_directories(${CMAKE_SYSROOT}/usr/include/RHVoice/)

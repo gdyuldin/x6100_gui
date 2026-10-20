@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+//
 // params.db across the move to R1CBU 1.0 (src/cfg/js8_db.c): every kind of
 // card gets 1.0's settings conversion exactly once, and JS8's frequency lists.
 // Also checked against copies of testers' real cards before it went in.
