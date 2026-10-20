@@ -884,25 +884,6 @@ static long rc_from_index(const rc_cand_t *c)
     return (long)(from_abs - live_buf0_abs);
 }
 
-#if SSTV_PAGE3_MENU
-static void *test_thread_cb(void *arg)
-{
-    const char *path = arg ? (const char *)arg : SSTV_TEST_WAV;
-    fprintf(stderr, "SSTV %s: starting automatic VIS detection\n", arg ? "LIVE" : "TEST");
-    int rows = sstv_decode_wav(path, test_rgb, &test_info);
-    test_rows = rows > 0 ? rows : 0;
-    test_ready = true;
-    test_running = false;
-    if (arg) {
-        pthread_mutex_lock(&live_mutex);
-        live_ring_pos=live_ring_count=0; live_wait_samples=live_wait_log_mark=0;
-        live_enabled=true;
-        pthread_mutex_unlock(&live_mutex);
-        fprintf(stderr,"SSTV LIVE: decoder finished; listening again for next VIS header\n");
-    }
-    return NULL;
-}
-#endif
 
 
 static bool save_debug_wav(const char *path, const float *samples, long count)

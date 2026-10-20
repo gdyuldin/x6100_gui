@@ -27,6 +27,7 @@
 #include "sstv/sstv_dnn.h"       /* 1KO125: ML denoiser */
 #include "sstv/syncgrid.h"       /* 1KO125: Restart confirmed by the line syncs */
 #include "radio.h"
+#include "lock_manager.h"
 #include "tx_info.h"
 #include "events.h"
 #include "msg.h"
@@ -56,14 +57,7 @@
 
 #define SSTV_CANVAS_W 440
 #define SSTV_CANVAS_H 330
-#define SSTV_TEST_WAV "/mnt/sstv.wav"
 
-/* Third menu page [SSTV 3:3]: Info (F4) always; Test RX (F2) and AUTODETECT
- * (F3) only with SSTV_PAGE3_MENU 1.  On page 3 the AUTODETECT button is shown
- * only with SSTV_PAGE3_AUTODETECT 1 (its code is kept).
- * Test RX disabled for now: set SSTV_PAGE3_MENU back to 1 to get it again. */
-#define SSTV_PAGE3_MENU 0
-#define SSTV_PAGE3_AUTODETECT 0
 #define SSTV_DEBUG_WAV "/mnt/sstv-debug.wav"
 /* Save every Auto-RX capture to SSTV_DEBUG_WAV before decoding.
  * Disabled: 5-13 MB written to the SD card per picture (wear + delay).
@@ -92,9 +86,6 @@
 
 static void construct_cb(lv_obj_t *parent);
 static void destruct_cb(void);
-#if SSTV_PAGE3_MENU
-static void test_cb(button_data_t *data);
-#endif
 static void close_cb(button_data_t *data);
 static void restart_cb(button_data_t *data);
 static void denoise_cb(button_data_t *data);   /* 1KO125: Denoise OFF / CLASSIC / ML */
@@ -110,11 +101,6 @@ static void page_1_cb(button_data_t *data);
 static void page_2_cb(button_data_t *data);
 static void page_3_cb(button_data_t *data);
 static void info_cb(button_data_t *data);   /* 1KO125: Info window, see app_info.c */
-#if SSTV_PAGE3_MENU
-#if SSTV_PAGE3_AUTODETECT
-static void autodetect_cb(button_data_t *data);
-#endif
-#endif
 static void audio_cb(size_t n, float *samples);
 static void tx_ui_cb(button_data_t *data);
 static void tx_picture_selector_build(void);
@@ -143,12 +129,9 @@ static void tx_template_selection_changed_cb(lv_event_t *e);
 static void tx_template_activate_cb(void *user, int row);
 static void tx_template_render(void);
 static void tx_template_render_selected(void);
-static void tx_target_selector_build(void);
 static void tx_target_selector_destroy(void);
-static void tx_target_activate_cb(void *user, int row);
 static bool tx_target_keyboard_ok_cb(void);
 static bool tx_target_keyboard_cancel_cb(void);
-static void tx_target_render(void);
 static lv_obj_t *tx_find_keyboard_recursive(lv_obj_t *parent);
 static void tx_target_keyboard_force_lower(void);
 static void tx_target_keyboard_open_now(void);
@@ -158,9 +141,6 @@ static void tx_color_selection_changed_cb(lv_event_t *e);
 static void tx_color_activate_cb(void *user, int index);
 static void tx_color_render_selected(void);
 static void ui_timer_cb(lv_timer_t *timer);
-#if SSTV_PAGE3_MENU
-static void *test_thread_cb(void *arg);
-#endif
 static void *live_decode_thread_cb(void *arg);
 static void *cont_decode_thread_cb(void *arg);
 static void *tx_thread_cb(void *arg);
@@ -170,6 +150,8 @@ static bool save_tx_png(const char *path, const uint8_t *rgb, unsigned int width
 static bool tx_start_final_rf(void);
 static bool tx_start_final_rf_mode(sstv_mode_t mode);
 static void tx_return_to_auto_rx(void);
+static void tx_lock_radio(void);
+static void tx_unlock_radio(void);
 static void set_status(const char *text);
 static void reset_ui_to_standby(void);
 static void render_scaled_image(void);
@@ -237,6 +219,10 @@ static int shown_rows = 0;
 static pthread_t tx_thread;
 static bool tx_thread_valid = false;
 static volatile bool tx_running = false;
+/* Frequency, mode and band are locked while transmitting; the user's own
+ * locks from before are put back afterwards. */
+static bool tx_locks_held = false;
+static bool tx_saved_lock_freq, tx_saved_lock_mode, tx_saved_lock_band;
 static volatile bool tx_abort = false;
 static volatile bool tx_started = false;
 static volatile int tx_progress = 0;
@@ -267,7 +253,6 @@ typedef enum {
 } sstv_tx_phase_t;
 
 static sstv_tx_phase_t tx_phase = SSTV_TX_PHASE_NONE;
-static bool tx_type_preview_cq = true;
 static bool tx_template_preview_pending = false;
 static bool tx_color_preview_pending = false;
 static uint32_t tx_color_preview_since_ms = 0;
@@ -473,12 +458,6 @@ static button_data_t btn_browser = { .type = BTN_TEXT, .label = "RX Pics\nBrowse
 static button_data_t btn_delete_picture = { .type = BTN_TEXT, .label = "Delete\npicture", .press = delete_picture_cb };
 static button_data_t btn_tx = { .type = BTN_TEXT, .label = "TX", .press = tx_ui_cb };
 static button_data_t btn_restart = { .type = BTN_TEXT, .label = "Auto RX\nRestart ON", .press = restart_cb };
-#if SSTV_PAGE3_MENU
-static button_data_t btn_test = { .type = BTN_TEXT, .label = "Test RX", .press = test_cb };
-#if SSTV_PAGE3_AUTODETECT
-static button_data_t btn_autodetect = { .type = BTN_TEXT, .label = "AUTODETECT", .press = autodetect_cb };
-#endif
-#endif
 static button_data_t btn_close = { .type = BTN_TEXT, .label = "Close\nSSTV", .press = close_cb };
 static button_data_t btn_denoise = { .type = BTN_TEXT, .label = "Denoise\nCLASSIC", .press = denoise_cb };
 static button_data_t btn_info = { .type = BTN_TEXT, .label = "Info", .press = info_cb };
@@ -490,13 +469,7 @@ static buttons_page_t btn_page_2 = {
     .items = { &btn_sstv_page_2, &btn_browser, &btn_delete_picture, &btn_restart, &btn_denoise }
 };
 static buttons_page_t btn_page_3 = {
-#if SSTV_PAGE3_MENU && SSTV_PAGE3_AUTODETECT
-    .items = { &btn_sstv_page_3, &btn_test, &btn_autodetect, &btn_info, &btn_close }
-#elif SSTV_PAGE3_MENU
-    .items = { &btn_sstv_page_3, &btn_test, NULL, &btn_info, &btn_close }
-#else
     .items = { &btn_sstv_page_3, NULL, NULL, &btn_info, &btn_close }
-#endif
 };
 
 static dialog_t dialog = {
@@ -805,9 +778,6 @@ static void construct_cb(lv_obj_t *parent)
     buttons_disabled(&btn_restart, false);
     denoise_load();
     btn_denoise.label = denoise_labels[denoise_mode];
-#if SSTV_PAGE3_MENU
-    buttons_disabled(&btn_test, false);
-#endif
 
     shown_rows = 0;
     test_ready = false;
@@ -842,6 +812,7 @@ static void destruct_cb(void)
         pthread_join(tx_thread, NULL);
         tx_thread_valid = false;
     }
+    tx_unlock_radio();
     tx_running = false;
     tx_started = false;
 
@@ -1279,6 +1250,7 @@ static void ui_timer_cb(lv_timer_t *timer)
     } else if (tx_thread_valid) {
         pthread_join(tx_thread, NULL);
         tx_thread_valid = false;
+        tx_unlock_radio();
         if (tx_bar()) {
             lv_bar_set_value(tx_bar(), tx_result == 1 ? 1000 : 0, LV_ANIM_OFF);
             lv_obj_add_flag(tx_bar(), LV_OBJ_FLAG_HIDDEN);
@@ -1315,22 +1287,6 @@ static void ui_timer_cb(lv_timer_t *timer)
             tx_started=false;
             tx_progress=0;
             tx_return_to_auto_rx();
-        } else {
-            if (tx_result == 1) {
-                char msg[96];
-                snprintf(msg,sizeof(msg),"%s test TX complete.",cont_mode_name(tx_mode));
-                set_status(msg);
-                snprintf(msg,sizeof(msg),"SSTV %s test TX complete",cont_mode_name(tx_mode));
-                msg_schedule_text_fmt("%s", msg);
-            } else if (tx_result == -1) {
-                set_status("SSTV test TX aborted.");
-            } else {
-                char msg[96];
-                snprintf(msg,sizeof(msg),"SSTV test TX failed (%d).",tx_result);
-                set_status(msg);
-            }
-            tx_started=false;
-            tx_progress=0;
         }
     }
 
@@ -1668,47 +1624,6 @@ static void close_cb(button_data_t *data)
     dialog_destruct();
 }
 
-#if SSTV_PAGE3_MENU
-static void test_cb(button_data_t *data)
-{
-    (void)data;
-
-    if (!sstv_canvas || test_running || cont_capturing || cont_decode_pending || cont_decoding)
-        return;
-
-    if (live_enabled || live_capturing) {
-        pthread_mutex_lock(&live_mutex);
-        live_enabled=false; live_capturing=false;
-        free(live_samples); live_samples=NULL; live_written=live_target=0;
-        pthread_mutex_unlock(&live_mutex);
-        fprintf(stderr,"SSTV LIVE: paused by WAV Test\n");
-    }
-
-    if (test_thread_valid) {
-        pthread_join(test_thread, NULL);
-        test_thread_valid = false;
-    }
-
-    lv_canvas_fill_bg(sstv_canvas, lv_color_white(), LV_OPA_COVER);
-    set_status("Decoding Test WAV");
-    if (progress_bar) {
-        lv_bar_set_value(progress_bar,0,LV_ANIM_OFF);
-        lv_obj_clear_flag(progress_bar, LV_OBJ_FLAG_HIDDEN);
-    }
-    shown_rows = 0;
-    test_rows = 0;
-    test_ready = false;
-    test_running = true;
-
-    int rc = pthread_create(&test_thread, NULL, test_thread_cb, NULL);
-    if (rc != 0) {
-        fprintf(stderr, "SSTV TEST: pthread_create failed: %d\n", rc);
-        test_running = false;
-        return;
-    }
-    test_thread_valid = true;
-}
-#endif
 
 static void page_1_cb(button_data_t *data)
 {
@@ -1733,19 +1648,6 @@ static void page_3_cb(button_data_t *data)
     buttons_load_page(&btn_page_3);
 }
 
-#if SSTV_PAGE3_MENU
-
-#if SSTV_PAGE3_AUTODETECT
-static void autodetect_cb(button_data_t *data)
-{
-    (void)data;
-
-    sstv_autodetect_start();
-    autodetect_last_ui_state = SSTV_AUTODETECT_LISTENING;
-    msg_schedule_text_fmt("SSTV AUTODETECT: listening...");
-}
-#endif /* SSTV_PAGE3_AUTODETECT */
-#endif /* SSTV_PAGE3_MENU */
 
 static void browser_cb(button_data_t *data)
 {

@@ -88,42 +88,6 @@ static int tx_text_width(const char *text, int scale)
     return n ? (int)(n * 6 - 1) * scale : 0;
 }
 
-static void tx_draw_text_scaled(uint8_t *rgb, unsigned int w, unsigned int h,
-                                int y, const char *text, int scale)
-{
-    if (!text || !*text) return;
-    int tw = tx_text_width(text, scale);
-    while (scale > 1 && tw > (int)w - 8) {
-        scale--;
-        tw = tx_text_width(text, scale);
-    }
-    int x0=((int)w-tw)/2;
-
-    for (int pass=0; pass<2; ++pass) {
-        for (size_t ci=0; text[ci]; ++ci) {
-            const uint8_t *g=tx_glyph5x7(text[ci]);
-            int gx=x0+(int)ci*6*scale;
-            for (int x=0;x<5;x++) for (int yy=0;yy<7;yy++) {
-                if (!(g[x] & (1u<<yy))) continue;
-                for (int sy=0;sy<scale;sy++) for (int sx=0;sx<scale;sx++) {
-                    int px=gx+x*scale+sx, py=y+yy*scale+sy;
-                    if (pass==0) {
-                        for (int oy=-4;oy<=4;oy++) {
-                            for (int ox=-4;ox<=4;ox++) {
-                                if (ox*ox + oy*oy <= 17)
-                                    tx_rgb_pixel(rgb,w,h,px+ox,py+oy,0,0,0);
-                            }
-                        }
-                    } else {
-                        tx_rgb_pixel(rgb,w,h,px,py,255,0,0);
-                        tx_rgb_pixel(rgb,w,h,px+1,py,255,0,0);
-                    }
-                }
-            }
-        }
-    }
-}
-
 static void tx_draw_text_aligned_color(uint8_t *rgb, unsigned int w, unsigned int h,
                                        int y, const char *text, int scale,
                                        tx_text_align_t align, tx_rgb_t color)
@@ -167,12 +131,6 @@ static void tx_draw_text_aligned_color(uint8_t *rgb, unsigned int w, unsigned in
             }
         }
     }
-}
-
-static void tx_draw_text(uint8_t *rgb, unsigned int w, unsigned int h,
-                         int y, const char *text)
-{
-    tx_draw_text_scaled(rgb,w,h,y,text,(w<=160)?2:4);
 }
 
 /* Middle template text: slightly smaller than top/bottom and automatically

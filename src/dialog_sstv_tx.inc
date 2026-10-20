@@ -1575,23 +1575,6 @@ static void tx_template_selector_build(void)
 }
 
 
-static void tx_target_update_label(void)
-{
-    if (tx_target_label)
-        lv_label_set_text(tx_target_label,"Target callsign:");
-
-    if (tx_target_callsign_label)
-        lv_label_set_text(tx_target_callsign_label,
-                          tx_target_callsign[0] ? tx_target_callsign : "<not set>");
-}
-
-static void tx_target_render(void)
-{
-    tx_template_render();
-    tx_picture_render_preview();
-    tx_target_update_label();
-}
-
 static void tx_target_selector_destroy(void)
 {
     /* The virtual keyboard is a separate window on the screen: it is not a
@@ -1714,86 +1697,6 @@ static void tx_target_keyboard_open_now(void)
 }
 
 
-static void tx_target_activate_cb(void *user, int row)
-{
-    (void)user;
-    if (tx_ui_state!=SSTV_TX_UI_SETUP ||
-        tx_phase!=SSTV_TX_PHASE_SELECT_TARGET || !tx_target_table) return;
-
-    if (row<0) return;
-
-    if (row==0) {
-        lv_group_remove_obj(tx_target_table);
-
-        /* Do not create the keyboard from inside the MFK PRESS event.
-         * The same physical press can otherwise reach the newly-created
-         * keyboard and immediately switch its page (typically to numbers). */
-        tx_target_keyboard_open_pending=true;
-        return;
-    }
-
-    if (row==1) {
-        if (!tx_target_callsign[0]) {
-            msg_schedule_text_fmt("Enter a target callsign first");
-            return;
-        }
-
-        tx_target_render();
-        tx_target_selector_destroy();
-        tx_message_type = SSTV_TX_MESSAGE_REPLY;
-        tx_phase = SSTV_TX_PHASE_SELECT_COLORS;
-        tx_color_selector_build();
-        fprintf(stderr,"SSTV TX UI: Phase 4 target confirmed: %s -> Phase 5 colors\n",
-                tx_target_callsign);
-    }
-}
-
-static void tx_target_row_cb(void *user, int index, ui_list_row_t *row)
-{
-    (void)user;
-    snprintf(row->cell[0],UI_LIST_CELL_LEN,"%s",index==0 ? "EDIT TARGET" : "USE TARGET");
-    if (index==1 && !tx_target_callsign[0]) row->muted=true;
-}
-
-static void tx_target_selector_build(void)
-{
-    tx_target_selector_destroy();
-    if(tx_status()) lv_obj_add_flag(tx_status(),LV_OBJ_FLAG_HIDDEN);
-
-    tx_instruction_show("Set the target callsign, then confirm it.");
-
-    /* Phase 4 target heading + larger blue current callsign. */
-    tx_target_label=lv_label_create(dialog.obj);
-    lv_obj_set_pos(tx_target_label,SSTV_TX_LIST_X,SSTV_TX_LIST_Y+20);
-    lv_obj_set_width(tx_target_label,SSTV_TX_LIST_W);
-    lv_obj_set_style_text_font(tx_target_label,&sony_28,0);
-    lv_obj_set_style_text_color(tx_target_label,lv_color_white(),0);
-
-    tx_target_callsign_label=lv_label_create(dialog.obj);
-    lv_obj_set_pos(tx_target_callsign_label,SSTV_TX_LIST_X,SSTV_TX_LIST_Y+55);
-    lv_obj_set_width(tx_target_callsign_label,SSTV_TX_LIST_W);
-    lv_obj_set_style_text_font(tx_target_callsign_label,&sony_36,0);
-    lv_obj_set_style_text_color(tx_target_callsign_label,lv_palette_main(LV_PALETTE_BLUE),0);
-    tx_target_update_label();
-
-    ui_list_cfg_t cfg = {
-        .width = SSTV_TX_LIST_W,
-        .height = 106,
-        .font = &sony_44,
-        .col_count = 1,
-        .cols = { TX_LIST_MENU_COL },
-        .row_cb = tx_target_row_cb,
-        .activate_cb = tx_target_activate_cb,
-    };
-    tx_target_table=tx_list_create(&cfg,SSTV_TX_LIST_X,SSTV_TX_LIST_Y+105);
-    ui_list_set_count(tx_target_table,2);
-    tx_list_focus(tx_target_table);
-
-    /* If a target was used earlier in this runtime it is immediately restored
-     * in both the field and the WYSIWYG preview. */
-    tx_target_render();
-}
-
 
 static void tx_color_apply(int row)
 {
@@ -1827,8 +1730,31 @@ static void tx_color_selection_changed_cb(lv_event_t *e)
 }
 
 
+static void tx_lock_radio(void)
+{
+    if (tx_locks_held) return;
+    tx_saved_lock_freq = lm_get_freq();
+    tx_saved_lock_mode = lm_get_mode();
+    tx_saved_lock_band = lm_get_band();
+    lm_set_freq(true);
+    lm_set_mode(true);
+    lm_set_band(true);
+    tx_locks_held = true;
+}
+
+static void tx_unlock_radio(void)
+{
+    if (!tx_locks_held) return;
+    lm_set_freq(tx_saved_lock_freq);
+    lm_set_mode(tx_saved_lock_mode);
+    lm_set_band(tx_saved_lock_band);
+    tx_locks_held = false;
+}
+
+
 static void tx_return_to_auto_rx(void)
 {
+    tx_unlock_radio();
     tx_ui_state=SSTV_TX_UI_RX;
     tx_phase=SSTV_TX_PHASE_NONE;
     btn_tx.label="TX";
@@ -1919,6 +1845,7 @@ static bool tx_start_final_rf_mode(sstv_mode_t mode)
     if (tx_thread_valid) {
         pthread_join(tx_thread,NULL);
         tx_thread_valid=false;
+        tx_unlock_radio();
     }
 
     tx_stop_receivers_for_rf();
@@ -1953,6 +1880,7 @@ static bool tx_start_final_rf_mode(sstv_mode_t mode)
     if (btn_cont_mode.disp_btn) buttons_refresh(&btn_cont_mode);
     update_rx_controls();
 
+    tx_lock_radio();
     int rc=pthread_create(&tx_thread,NULL,tx_thread_cb,NULL);
     if (rc != 0) {
         fprintf(stderr,"SSTV TX: pthread_create failed: %d\n",rc);
