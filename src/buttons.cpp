@@ -453,11 +453,9 @@ static buttons_page_t page_dfl_1 = {
 };
 
 /* App pages */
-/* "(APP n:3)" while page 4 has no app yet: the first app on it makes them
- * "(APP n:4)" and adds page 4 to buttons_group_app. */
-static button_data_t btn_app_p1 = make_page_btn("(APP 1:3)", "Application|page 1");
-static button_data_t btn_app_p2 = make_page_btn("(APP 2:3)", "Application|page 2");
-static button_data_t btn_app_p3 = make_page_btn("(APP 3:3)", "Application|page 3");
+static button_data_t btn_app_p1 = make_page_btn("(APP 1:4)", "Application|page 1");
+static button_data_t btn_app_p2 = make_page_btn("(APP 2:4)", "Application|page 2");
+static button_data_t btn_app_p3 = make_page_btn("(APP 3:4)", "Application|page 3");
 static button_data_t btn_app_p4 = make_page_btn("(APP 4:4)", "Application|page 4");
 
 static buttons_page_t page_app_1 = {
@@ -478,7 +476,7 @@ static buttons_page_t page_app_3 = {{
     /* JS8 */
     NULL,
 }};
-[[maybe_unused]] static buttons_page_t page_app_4 = {{
+static buttons_page_t page_app_4 = {{
     &btn_app_p4,
     /* PSK31 */
     NULL,
@@ -509,8 +507,7 @@ buttons_group_t buttons_group_app = {
     &page_app_1,
     &page_app_2,
     &page_app_3,
-    /* &page_app_4: with its first app (PSK31, Olivia, WeFax or SSTV), so
-     * the radio never shows an empty page */
+    &page_app_4,
 };
 
 buttons_group_t buttons_group_key = {
