@@ -39,6 +39,9 @@
 #include "dialog_msg_voice.h"
 #include "dialog_swrscan.h"
 #include "dialog_ft8.h"
+#include "dialog_channels.h"
+#include "broadcast_db.h"
+#include "broadcast_overlay.h"
 #include "dialog_gps.h"
 #include "dialog_qth.h"
 #include "dialog_recorder.h"
@@ -821,8 +824,14 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_UP:
             if (hkey->state == HKEY_RELEASE) {
-                if (!lm_get_freq() && !dialog_wefax_mic_step(-1)) {
-                    freq_shift(+1, 0);
+                if (!lm_get_freq()) {
+                    if (dialog_wefax_mic_step(-1)) {
+                        /* WeFax open: previous station in its list */
+                    } else if (dialog_channels_recall_relative(-1)) {
+                        msg_update_text_fmt("%s", dialog_channels_last_recalled_name());
+                    } else if (dialog_channels_empty()) {
+                        freq_shift(+1, 0);
+                    }
                 }
             } else if (hkey->state == HKEY_LONG) {
                 if (!lm_get_band()) {
@@ -834,8 +843,14 @@ static void main_screen_hkey_cb(lv_event_t * e) {
 
         case HKEY_DOWN:
             if (hkey->state == HKEY_RELEASE) {
-                if (!lm_get_freq() && !dialog_wefax_mic_step(+1)) {
-                    freq_shift(-1, 0);
+                if (!lm_get_freq()) {
+                    if (dialog_wefax_mic_step(+1)) {
+                        /* WeFax open: next station in its list */
+                    } else if (dialog_channels_recall_relative(+1)) {
+                        msg_update_text_fmt("%s", dialog_channels_last_recalled_name());
+                    } else if (dialog_channels_empty()) {
+                        freq_shift(-1, 0);
+                    }
                 }
             } else if (hkey->state == HKEY_LONG) {
                 if (!lm_get_band()) {
@@ -846,9 +861,28 @@ static void main_screen_hkey_cb(lv_event_t * e) {
             break;
 
         case HKEY_VM:
-            /* WeFax open: open / close its stations list */
+            /* WeFax open: its stations list; otherwise open/close CHANNELS,
+             * also on top of another dialog (an overlay, see
+             * dialog_channels.c). CHANNELS already open over WeFax is still
+             * closed by V/M. As in Hany's 1KO125 firmware (#311). */
             if (hkey->state == HKEY_RELEASE) {
-                dialog_wefax_vm_toggle();
+                if (dialog_channels_is_open() || !dialog_wefax_vm_toggle()) {
+                    dialog_channels_toggle(obj, dialog_running);
+                }
+            }
+            break;
+
+        case HKEY_GENE:
+            /* Broadcast Info: always available, also over app dialogs. */
+            if (hkey->state == HKEY_RELEASE) {
+                broadcast_overlay_show();
+            }
+            break;
+
+        case HKEY_NW:
+            /* Save as channel: always available, also over app dialogs. */
+            if (hkey->state == HKEY_RELEASE) {
+                broadcast_overlay_save_channel();
             }
             break;
 
@@ -1134,6 +1168,7 @@ void main_screen_set_freq(uint64_t freq) {
 }
 
 lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
+    broadcast_db_init();
     uint16_t y = 0;
     uint16_t spectrum_height = (uint16_t)param_i_get(cfg.ui.spectrum_height());
 

@@ -15,6 +15,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE _GNU_SOURCE)
 
 target_sources(${PROJECT_NAME} PUBLIC
     main.c main_screen.c
+    channels.c dialog_channels.c broadcast_db.c broadcast_overlay.c cJSON.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
     app_ports.cpp
     waterfall.c rotary.cpp keyboard.c kbd_rollover.c encoder.c
