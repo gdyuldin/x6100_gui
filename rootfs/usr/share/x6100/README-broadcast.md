@@ -29,8 +29,8 @@ Corrections go to EiBi (the address is in that README).
 - In the firmware: replace this file with the season's `sked-<season>.csv`
   from https://www.eibispace.de/dx/ (same format, header line included)
   and update the season above.
-- On a radio: the first time Broadcast Info is used, this file is copied to
-  `/mnt/broadcast.csv` on the SD card, and from then on only that copy is
-  read. A newer firmware does not replace it: to update, copy a newer
-  `sked-<season>.csv` there as `broadcast.csv` (or delete it, and the
-  firmware's copy is taken again).
+- On a radio: this file is read where it is, so each firmware brings its
+  own season's schedule. To use another one (a newer season, or your own
+  list), put it on the SD card as `/mnt/broadcast.csv` (the DATA
+  partition): when that file is there, it is read instead. Delete it to go
+  back to the firmware's copy.

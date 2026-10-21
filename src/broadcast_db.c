@@ -13,6 +13,8 @@
 #include <time.h>
 #include <unistd.h>
 
+/* The user's own schedule on the SD card wins; otherwise the firmware's, read
+ * in place, so each firmware brings its season's schedule (as /mnt/vosk). */
 #define BROADCAST_FILE         "/mnt/broadcast.csv"
 #define BROADCAST_DEFAULT_FILE "/usr/share/x6100/broadcast.csv"
 #define LINE_SIZE              1024
@@ -34,25 +36,6 @@ typedef struct {
 static broadcast_entry_t *entries = NULL;
 static size_t entry_count = 0;
 static size_t entry_capacity = 0;
-
-static bool copy_file(const char *src, const char *dst) {
-    FILE *in = fopen(src, "rb");
-    if (!in) return false;
-    FILE *out = fopen(dst, "wb");
-    if (!out) { fclose(in); return false; }
-
-    char buf[4096];
-    size_t n;
-    bool ok = true;
-    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
-        if (fwrite(buf, 1, n, out) != n) { ok = false; break; }
-    }
-    if (ferror(in)) ok = false;
-    fclose(in);
-    if (fclose(out) != 0) ok = false;
-    if (!ok) unlink(dst);
-    return ok;
-}
 
 static int parse_hhmm(const char *s) {
     if (!s || strlen(s) < 4) return -1;
@@ -202,10 +185,8 @@ bool broadcast_db_init(void) {
     entries = NULL;
     entry_count = entry_capacity = 0;
 
-    if (access(BROADCAST_FILE, F_OK) != 0 &&
-        !copy_file(BROADCAST_DEFAULT_FILE, BROADCAST_FILE)) return false;
-
     FILE *f = fopen(BROADCAST_FILE, "r");
+    if (!f) f = fopen(BROADCAST_DEFAULT_FILE, "r");
     if (!f) return false;
 
     char line[LINE_SIZE];
