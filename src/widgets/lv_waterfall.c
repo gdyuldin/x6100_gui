@@ -171,7 +171,7 @@ void lv_waterfall_add_data_with_ts(lv_obj_t * obj, float * data, uint16_t cnt, s
     /* 1KO125: levels from the noise floor of this line */
     float           lo = waterfall->min, hi = waterfall->max;
 
-    if (cnt > 0) {
+    if (waterfall->auto_levels && cnt > 0) {
         if (waterfall->floor_buf_cnt < cnt) {
             waterfall->floor_buf = lv_mem_realloc(waterfall->floor_buf, cnt * sizeof(float));
             waterfall->floor_buf_cnt = waterfall->floor_buf ? cnt : 0;
@@ -237,6 +237,13 @@ void lv_waterfall_set_max(lv_obj_t * obj, int16_t val) {
     waterfall->max = val;
 }
 
+void lv_waterfall_set_auto_levels(lv_obj_t * obj, bool on) {
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_waterfall_t * waterfall = (lv_waterfall_t *)obj;
+    waterfall->auto_levels = on;
+    waterfall->floor_valid = false;
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/
@@ -256,7 +263,8 @@ static void lv_waterfall_constructor(const lv_obj_class_t * class_p, lv_obj_t * 
     waterfall->line_buf = NULL;
     waterfall->min = -40;
     waterfall->max = 0;
-    waterfall->floor_buf = NULL;        /* 1KO125 */
+    waterfall->auto_levels = false;     /* 1KO125 */
+    waterfall->floor_buf = NULL;
     waterfall->floor_buf_cnt = 0;
     waterfall->floor_db = 0.0f;
     waterfall->floor_valid = false;
