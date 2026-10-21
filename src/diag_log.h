@@ -12,19 +12,23 @@
  *
  * The file is limited to DIAG_MAX_BYTES; the previous part is kept as
  * ptt.log.old. At most DIAG_MAX_PER_S lines a second are written; the next
- * line says how many were skipped.
+ * line says how many were skipped. The lines are written by a thread of their
+ * own, so the caller never waits for the SD card.
  */
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 /* Writes the start line. Call first thing in main(). */
 void diag_init(void);
 /* Name of the origin of the TX commands of the calling thread
- * ("CAT LAN", "FT8"...); a static string. */
-void diag_set_source(const char *name);
-const char *diag_source(void);
+ * ("CAT LAN", "FT8"...); a static string. Returns the previous one (NULL:
+ * none), to put back after a single command. */
+const char *diag_set_source(const char *name);
+/* Copies the calling thread's origin ("thread <id>" if it has none). */
+void diag_source_copy(char *dst, size_t size);
 void diag_ptt_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 #ifdef __cplusplus
 }
