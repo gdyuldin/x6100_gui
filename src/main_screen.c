@@ -1168,7 +1168,6 @@ void main_screen_set_freq(uint64_t freq) {
 }
 
 lv_obj_t * main_screen(lv_obj_t *overlay_scr) {
-    broadcast_db_init();
     uint16_t y = 0;
     uint16_t spectrum_height = (uint16_t)param_i_get(cfg.ui.spectrum_height());
 

@@ -25,7 +25,9 @@ typedef struct {
 } broadcast_match_t;
 
 /* Load /mnt/broadcast.csv if the user put one there, otherwise the
- * firmware's /usr/share/x6100/broadcast.csv, into memory. */
+ * firmware's /usr/share/x6100/broadcast.csv, into memory. Called by the
+ * first broadcast_db_find_matches(), so nothing is loaded until the
+ * Channel List's GENE or NW is used. */
 bool broadcast_db_init(void);
 
 /* Find all stations active now within tolerance_hz of freq_hz. */
