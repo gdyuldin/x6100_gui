@@ -19,6 +19,7 @@
 #define BROADCAST_DEFAULT_FILE "/usr/share/x6100/broadcast.csv"
 #define LINE_SIZE              1024
 
+/* One line of the CSV while it is parsed */
 typedef struct {
     double freq_khz;
     int start_minute;
@@ -31,11 +32,28 @@ typedef struct {
     char remarks[136];
     char start_date[61];
     char stop_date[61];
+} broadcast_row_t;
+
+/* Stored: the texts are offsets into one pool, so ~9,500 lines take about
+ * 1.5 MB instead of ~700 bytes of fixed fields each. */
+enum { F_STATION, F_LANGUAGE, F_TARGET, F_DAYS, F_ITU, F_REMARKS, F_START_DATE, F_STOP_DATE, F_COUNT };
+
+typedef struct {
+    double   freq_khz;
+    int16_t  start_minute;
+    int16_t  stop_minute;
+    uint32_t text[F_COUNT];
 } broadcast_entry_t;
 
 static broadcast_entry_t *entries = NULL;
 static size_t entry_count = 0;
 static size_t entry_capacity = 0;
+static char  *pool = NULL;
+static size_t pool_size = 0;
+static size_t pool_capacity = 0;
+static bool   loaded = false;      /* loaded on first use, not at start-up */
+
+#define TEXT(e, f) (pool + (e)->text[f])
 
 static int parse_hhmm(const char *s) {
     if (!s || strlen(s) < 4) return -1;
@@ -168,7 +186,23 @@ static void sanitize_station_name(char *dst, size_t size, const char *src) {
     dst[out] = '\0';
 }
 
-static bool append_entry(const broadcast_entry_t *entry) {
+static bool pool_add(const char *text, uint32_t *offset) {
+    size_t n = strlen(text) + 1;
+    if (pool_size + n > pool_capacity) {
+        size_t cap = pool_capacity ? pool_capacity : 256 * 1024;
+        while (pool_size + n > cap) cap *= 2;
+        char *p = realloc(pool, cap);
+        if (!p) return false;
+        pool = p;
+        pool_capacity = cap;
+    }
+    memcpy(pool + pool_size, text, n);
+    *offset = (uint32_t)pool_size;
+    pool_size += n;
+    return true;
+}
+
+static bool append_entry(const broadcast_row_t *row) {
     if (entry_count == entry_capacity) {
         size_t cap = entry_capacity ? entry_capacity * 2 : 1024;
         broadcast_entry_t *p = realloc(entries, cap * sizeof(*entries));
@@ -176,14 +210,40 @@ static bool append_entry(const broadcast_entry_t *entry) {
         entries = p;
         entry_capacity = cap;
     }
-    entries[entry_count++] = *entry;
+    broadcast_entry_t *e = &entries[entry_count];
+    e->freq_khz     = row->freq_khz;
+    e->start_minute = (int16_t)row->start_minute;
+    e->stop_minute  = (int16_t)row->stop_minute;
+    const char *texts[F_COUNT] = {
+        row->station, row->language, row->target, row->days,
+        row->itu, row->remarks, row->start_date, row->stop_date
+    };
+    for (int i = 0; i < F_COUNT; i++)
+        if (!pool_add(texts[i], &e->text[i])) return false;
+    entry_count++;
     return true;
 }
 
-bool broadcast_db_init(void) {
+static void free_all(void) {
     free(entries);
+    free(pool);
     entries = NULL;
+    pool = NULL;
     entry_count = entry_capacity = 0;
+    pool_size = pool_capacity = 0;
+}
+
+/* Give back what the doubling left unused */
+static void shrink_to_fit(void) {
+    broadcast_entry_t *e = realloc(entries, entry_count * sizeof(*entries));
+    if (e) { entries = e; entry_capacity = entry_count; }
+    char *p = realloc(pool, pool_size);
+    if (p) { pool = p; pool_capacity = pool_size; }
+}
+
+bool broadcast_db_init(void) {
+    free_all();
+    loaded = true;      /* once, even if the file is missing: no retry on every press */
 
     FILE *f = fopen(BROADCAST_FILE, "r");
     if (!f) f = fopen(BROADCAST_DEFAULT_FILE, "r");
@@ -206,7 +266,7 @@ bool broadcast_db_init(void) {
         }
         if (count < 5) continue;
 
-        broadcast_entry_t e;
+        broadcast_row_t e;
         memset(&e, 0, sizeof(e));
         e.freq_khz = strtod(fields[0], NULL);
         if (e.freq_khz <= 0 || !parse_time_range(fields[1], &e.start_minute, &e.stop_minute)) continue;
@@ -219,10 +279,12 @@ bool broadcast_db_init(void) {
         copy_text(e.start_date, sizeof(e.start_date), count > 9 ? fields[9] : "");
         copy_text(e.stop_date, sizeof(e.stop_date), count > 10 ? fields[10] : "");
         if (!e.station[0]) continue;
-        if (!append_entry(&e)) { fclose(f); return false; }
+        if (!append_entry(&e)) { fclose(f); free_all(); return false; }
     }
     fclose(f);
-    return entry_count > 0;
+    if (entry_count == 0) { free_all(); return false; }
+    shrink_to_fit();
+    return true;
 }
 
 static bool time_is_active(int now, int start, int stop) {
@@ -306,16 +368,17 @@ static void make_match(const broadcast_entry_t *e, broadcast_match_t *m) {
     m->freq_khz = e->freq_khz;
     m->start_minute = e->start_minute;
     m->stop_minute = e->stop_minute;
-    copy_text(m->station, sizeof(m->station), e->station);
-    copy_text(m->language, sizeof(m->language), e->language);
-    copy_text(m->target, sizeof(m->target), e->target);
-    copy_text(m->days, sizeof(m->days), e->days);
-    copy_text(m->itu, sizeof(m->itu), e->itu);
-    copy_text(m->remarks, sizeof(m->remarks), e->remarks);
+    copy_text(m->station, sizeof(m->station), TEXT(e, F_STATION));
+    copy_text(m->language, sizeof(m->language), TEXT(e, F_LANGUAGE));
+    copy_text(m->target, sizeof(m->target), TEXT(e, F_TARGET));
+    copy_text(m->days, sizeof(m->days), TEXT(e, F_DAYS));
+    copy_text(m->itu, sizeof(m->itu), TEXT(e, F_ITU));
+    copy_text(m->remarks, sizeof(m->remarks), TEXT(e, F_REMARKS));
 }
 
 size_t broadcast_db_find_matches(int32_t freq_hz, int tolerance_hz,
                                  broadcast_match_t *matches, size_t max_matches) {
+    if (!loaded) broadcast_db_init();
     if (!entries || !matches || !max_matches) return 0;
 
     time_t now_t = time(NULL);
@@ -334,8 +397,8 @@ size_t broadcast_db_find_matches(int32_t freq_hz, int tolerance_hz,
         int schedule_wday = utc.tm_wday;
         if (e->start_minute > e->stop_minute && now_minute < e->stop_minute)
             schedule_wday = (schedule_wday + 6) % 7;
-        if (!days_is_active(e->days, schedule_wday)) continue;
-        if (!date_is_active(e->start_date, e->stop_date, &utc)) continue;
+        if (!days_is_active(TEXT(e, F_DAYS), schedule_wday)) continue;
+        if (!date_is_active(TEXT(e, F_START_DATE), TEXT(e, F_STOP_DATE), &utc)) continue;
         make_match(e, &matches[found++]);
     }
     return found;
