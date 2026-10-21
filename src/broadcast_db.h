@@ -24,7 +24,8 @@ typedef struct {
     char remarks[136];
 } broadcast_match_t;
 
-/* Ensure /mnt/broadcast.csv exists, then load it into memory. */
+/* Load /mnt/broadcast.csv if the user put one there, otherwise the
+ * firmware's /usr/share/x6100/broadcast.csv, into memory. */
 bool broadcast_db_init(void);
 
 /* Find all stations active now within tolerance_hz of freq_hz. */
