@@ -14,6 +14,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PRIVATE _GNU_SOURCE)
 
 target_sources(${PROJECT_NAME} PUBLIC
+    diag_log.c
     main.c main_screen.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
     app_ports.cpp

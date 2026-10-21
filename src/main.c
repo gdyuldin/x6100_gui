@@ -18,6 +18,7 @@
 #include "cfg/cfg_api.h"
 #include "cfg/db.h"
 
+#include "diag_log.h"
 #include "main.h"
 #include "main_screen.h"
 #include "styles.h"
@@ -65,6 +66,7 @@ static void handle_sigint(int signum) {
 
 
 int main(void) {
+    diag_init();        /* 1KO125: /mnt/ptt.log */
 
     // Register signal handler
     struct sigaction sa;

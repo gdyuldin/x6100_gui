@@ -63,6 +63,7 @@
 #include "indicators.h"
 #include "freq_info.h"
 #include "lock_manager.h"
+#include "diag_log.h"
 
 #include <unistd.h>
 #include <stdint.h>
@@ -630,7 +631,9 @@ static void keypad_lock(const event_keypad_t *kp) {
 static void keypad_ptt(const event_keypad_t *kp) {
     switch (kp->state) {
         case KEYPAD_PRESS:
+            diag_set_source("front PTT key");
             radio_set_ptt(true);
+            diag_set_source("UI");
 
             switch (cparam_i_get(cfg.cur.mode())) {
                 case x6100_mode_cw:
@@ -649,7 +652,9 @@ static void keypad_ptt(const event_keypad_t *kp) {
                     break;
             }
 
+            diag_set_source("front PTT key");
             radio_set_ptt(false);
+            diag_set_source("UI");
             break;
         default:
             break;
