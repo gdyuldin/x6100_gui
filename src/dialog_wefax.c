@@ -2930,7 +2930,7 @@ static void clear_cb(button_data_t *data)
 
     printf(
         "WEFAX: samples=%llu blocks=%llu "
-        "rows=%u gray=%u..%u avg=%.1f\n",
+        "rows=%u\n",
 
         (unsigned long long)
             wefax_decoder_sample_count(
@@ -2945,21 +2945,7 @@ static void clear_cb(button_data_t *data)
         (unsigned int)
             wefax_decoder_row_count(
                 decoder
-            ),
-
-        (unsigned int)
-            wefax_decoder_gray_min(
-                decoder
-            ),
-
-        (unsigned int)
-            wefax_decoder_gray_max(
-                decoder
-            ),
-
-        wefax_decoder_gray_average(
-            decoder
-        )
+            )
     );
 
 
