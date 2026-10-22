@@ -2,6 +2,7 @@
  * olivia_resamp.c - rational resampler
  * SPDX-License-Identifier: LGPL-2.1-or-later
  * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
+ * Part of OpenX6100 (github.com/OpenX6100)
  */
 
 #include "olivia_resamp.h"
