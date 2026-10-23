@@ -1,4 +1,8 @@
 /*
+ *  SPDX-License-Identifier: LGPL-2.1-or-later
+ *  Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
+ *  Part of OpenX6100 (github.com/OpenX6100)
+ *
  * bt_audio.c - Bluetooth headset audio: listening and PTT.
  *
  * Everything here shells out to pactl, and every one of those calls can
