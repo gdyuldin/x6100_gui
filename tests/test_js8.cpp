@@ -1,5 +1,8 @@
 /*
  *  SPDX-License-Identifier: GPL-3.0-or-later
+ *  Copyright (c) 2026 Randal Warren VE7NHW
+ *  Copyright (c) the JS8Call-improved authors (ported from their Android app)
+ *  Part of OpenX6100 (github.com/OpenX6100)
  *
  *  Tests for src/js8 (JS8 receive).
  */
@@ -667,9 +670,12 @@ TEST_CASE("time search: finds a signal 5 s out and gives up when nothing comes",
     });
     s.start(60000, 200, 3000, 1500);
     CHECK(s.active());
-    // Up to a window that starts just before the signal: one decode of it.
+    // Exactly the window that starts just before the signal: one decode of
+    // it. (Fed from the start, faster than real time, the worker could take
+    // an earlier window part-way and then never see this one: Kris SP2KMO,
+    // on OpenX6100 #314.)
     std::size_t end = (std::size_t)((lead - 0.5) * 12000) + 15 * 12000;
-    for (std::size_t i = 0; i < end; i += 1200) s.feed(&pcm[i], std::min<std::size_t>(1200, end - i), sys_at(std::min(end, i + 1200)));
+    for (std::size_t i = end - 15 * 12000; i < end; i += 1200) s.feed(&pcm[i], std::min<std::size_t>(1200, end - i), sys_at(std::min(end, i + 1200)));
     {
         std::unique_lock<std::mutex> lock(m);
         cv.wait_for(lock, std::chrono::seconds(60), [&] { return got.has_value(); });

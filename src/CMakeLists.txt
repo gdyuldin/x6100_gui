@@ -14,6 +14,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PRIVATE _GNU_SOURCE)
 
 target_sources(${PROJECT_NAME} PUBLIC
+    diag_log.c
     main.c main_screen.c
     channels.c dialog_channels.c broadcast_db.c broadcast_overlay.c cJSON.c
     styles.c spectrum.c radio.c dsp.cpp util.cpp
@@ -30,7 +31,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
     ft8_ui/table_view.c
     ft8_udp.c
-    dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c
+    dialog_msg_voice.c dialog_recorder.c dialog_qth.c dialog_callsign.c digi_menu.c
     textarea_window.c cw_encoder.c buttons.cpp vol.cpp recorder.c
     voice.cpp cw_tune_ui.c adif.c qso_log.c scheduler.cpp
     format.c msg_cw_store.c
@@ -41,6 +42,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     # The apps on their way in: each one's sources below its name
     # WSPR
     # JS8
+    dialog_js8.c js8_wf.c js8_clock.c
     # PSK31
     # Olivia
     # WeFax
@@ -84,6 +86,7 @@ liquid
 RHVoice RHVoice_core RHVoice_audio
 ft8
 cw_decoder
+JS8
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
