@@ -46,6 +46,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     # PSK31
     # Olivia
     # WeFax
+    dialog_wefax.c wefax/decoder.c wefax/stations.c
     # SSTV
 )
 
