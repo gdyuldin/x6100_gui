@@ -22,7 +22,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     waterfall.c rotary.cpp keyboard.c kbd_rollover.c encoder.c
     events.c msg.c msg_tiny.c keypad.c
     hkey.c clock.c
-    meter.c band_info.cpp tx_info.c tx_level.c tx_player.c
+    meter.c band_info.cpp tx_info.c
     audio.c mfk.cpp cw.cpp panel.cpp
     rtty.c screenshot.c display.cpp gps.c
     ui_list.c app_info.c
@@ -44,6 +44,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     # JS8
     dialog_js8.c js8_wf.c js8_clock.c
     # PSK31
+    dialog_psk.c psk_rx.c psk_tx.c psk_spec.c psk_macro.c digi_qso.c digi_menu.c digi_next.c
     # Olivia
     # WeFax
     # SSTV
