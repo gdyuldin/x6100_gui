@@ -22,6 +22,7 @@
 #include "msg.h"
 #include "ui_list.h"
 #include "app_info.h"
+#include "app_radio.h"
 #include "spectrum.h"
 
 #include <stdio.h>
@@ -130,6 +131,9 @@ static void tilt_cb(button_data_t *data);
 /* Auto Slant, see dialog_wefax_slant.inc */
 static const char *slant_label_getter(void);
 static void slant_auto_cb(button_data_t *data);
+static const char *denoise_label_getter(void);
+static void denoise_cb(button_data_t *data);
+static bool denoise_on = true;  /* Denoise ON/OFF, saved in slant.txt */
 static void slant_load(void);
 static void slant_flush(void);
 static void slant_poll(void);
@@ -469,6 +473,13 @@ static button_data_t btn_auto_slant = {
     .press = slant_auto_cb
 };
 
+/* 1KO125: Denoise ON/OFF, see wefax/decoder.c */
+static button_data_t btn_denoise = {
+    .type = BTN_TEXT_FN,
+    .label_fn = denoise_label_getter,
+    .press = denoise_cb
+};
+
 
 static buttons_page_t btn_page_1 = {
     .items = {
@@ -509,7 +520,7 @@ static buttons_page_t btn_page_4 = {
     .items = {
         &btn_fax_page_4,
         &btn_auto_slant,
-        NULL,
+        &btn_denoise,
         &btn_info,
         &btn_close
     }
@@ -591,6 +602,9 @@ static void clear_preview(void)
  */
 static void construct_cb(lv_obj_t *parent)
 {
+    app_radio_begin();      /* 1KO125: USB-D locked, zoom 4x, DSP off while open */
+    spectrum_set_markers(WEFAX_CENTER_HZ - WEFAX_SHIFT_HZ / 2,
+                         WEFAX_CENTER_HZ + WEFAX_SHIFT_HZ / 2);   /* tuning markers: black / white, 1075 / 1925 Hz */
     zoom_mode = WEFAX_ZOOM_SMALL;
     btn_zoom.label = " View Size\nSmall";
 
@@ -616,6 +630,8 @@ static void construct_cb(lv_obj_t *parent)
             row_cb,
             NULL
         );
+
+        wefax_decoder_set_denoise(decoder, denoise_on);
     }
 
     if (dsp_audio_sub_id == AUDIO_SUB_INVALID) {
@@ -625,11 +641,6 @@ static void construct_cb(lv_obj_t *parent)
 
     dialog.obj = dialog_init(parent);
     freq_start();
-
-    /* Tuning markers on the spectrum: black / white, 1075 / 1925 Hz */
-    spectrum_set_markers(WEFAX_CENTER_HZ - WEFAX_SHIFT_HZ / 2,
-                         WEFAX_CENTER_HZ + WEFAX_SHIFT_HZ / 2);
-
     rx_buttons_sync(true);
 
 
@@ -754,8 +765,9 @@ static void construct_cb(lv_obj_t *parent)
  */
 static void destruct_cb(void)
 {
-    app_info_abort();
+    app_radio_end();        /* 1KO125: mode, zoom and DSP of before */
     spectrum_clear_markers();
+    app_info_abort();
     dsp_audio_set_active(dsp_audio_sub_id, false);
 
 
@@ -1514,10 +1526,10 @@ static bool save_fax_png_async(void)
         );
     }
 
+    /* 1KO125: file name in UTC, the time of the broadcast schedules */
     time_t now = time(NULL);
     struct tm tm_now;
 
-    /* UTC, like the stations' schedules */
     if (!gmtime_r(&now, &tm_now)) {
         printf("WEFAX SAVE: gmtime failed\n");
         free(job->image);

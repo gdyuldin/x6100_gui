@@ -123,7 +123,7 @@ static void freq_tune_row(int row)
 {
     const wefax_row_t *r = wefax_db_row(row);
     if (!r) return;
-    cparam_i_set(cfg.cur.mode(), x6100_mode_usb);
+    cparam_i_set(cfg.cur.mode(), x6100_mode_usb_dig);
     cparam_i_set(cfg.cur.fg_freq(), r->hz - FREQ_CENTER_HZ);
     freq_recalled_row = row;
     freq_recalled_dial = r->hz - FREQ_CENTER_HZ;
