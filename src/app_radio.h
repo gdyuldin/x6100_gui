@@ -16,7 +16,9 @@
  *     another zoom is set back to 4x.  The 4x is never saved: the zoom
  *     stored for each mode group stays the user's own;
  *   - noise reduction, noise blanker and notches off on the radio
- *     (radio_set_rx_dsp_off(), not saved).
+ *     (radio_set_rx_dsp_off(), not saved); their buttons still change
+ *     and save the setting, but it reaches the radio only when the app
+ *     closes.
  * When it closes: the mode and the mode lock of before, the zoom stored
  * for that mode, the DSP settings.  The frequency stays the app's.
  */

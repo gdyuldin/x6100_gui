@@ -143,6 +143,20 @@ static void mode_changed_cb(Subject *subj, void *user_data)
     }
 }
 
+/* ---- NR, NB, notches -------------------------------------------------- */
+
+/* Their buttons still work while the app is open, and the change is saved,
+ * but the radio's own observer sends it to the radio: put them off again
+ * right after (as JS8 does).  The saved settings are sent at the end. */
+static Observer *dsp_watch[4];
+
+static void dsp_held_cb(Subject *subj, void *user_data)
+{
+    (void)subj;
+    (void)user_data;
+    radio_set_rx_dsp_off(true);
+}
+
 /* ---- app --------------------------------------------------------------- */
 
 void app_radio_begin(void)
@@ -162,6 +176,10 @@ void app_radio_begin(void)
     /* after the mode: the zoom of the USB-D group is the one to keep */
     zoom_begin();
     radio_set_rx_dsp_off(true);
+    dsp_watch[0] = subject_subscribe((Subject *)cfg.dsp.nr(), dsp_held_cb, NULL);
+    dsp_watch[1] = subject_subscribe((Subject *)cfg.dsp.nb(), dsp_held_cb, NULL);
+    dsp_watch[2] = subject_subscribe((Subject *)cfg.dsp.dnf(), dsp_held_cb, NULL);
+    dsp_watch[3] = subject_subscribe((Subject *)cfg.dsp.dnf_auto(), dsp_held_cb, NULL);
     fprintf(stderr, "APP RADIO: USB-D locked, NR/NB/notch off (mode before: %d)\n", saved_mode);
 }
 
@@ -169,6 +187,12 @@ void app_radio_end(void)
 {
     if (!mode_active) {
         return;
+    }
+    for (unsigned i = 0; i < sizeof(dsp_watch) / sizeof(dsp_watch[0]); i++) {
+        if (dsp_watch[i]) {
+            param_unsubscribe(dsp_watch[i]);
+            dsp_watch[i] = NULL;
+        }
     }
     radio_set_rx_dsp_off(false);
     zoom_end();
