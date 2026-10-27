@@ -493,16 +493,18 @@ static buttons_page_t page_app_4 = {{
     /* SSTV */
     &btn_sstv,
 }};
-/* Page 5: the Channel List first, then Hany's NavTex and DSC in their
- * fixed places, as on pages 3 and 4. */
+/* Page 5: Hany's NavTex and DSC in their fixed places, as on pages 3
+ * and 4 (the same places as in his 1KO125 firmware), then the Channel
+ * List last. */
 static buttons_page_t page_app_5 = {{
     &btn_app_p5,
-    /* Channels */
-    &btn_channels,
     /* NavTex */
     NULL,
     /* DSC */
     NULL,
+    NULL,
+    /* Channels */
+    &btn_channels,
 }};
 
 /* RTTY */
