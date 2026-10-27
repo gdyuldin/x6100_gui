@@ -326,6 +326,12 @@ void main_screen_action(press_action_t action) {
             dialog_construct(dialog_callsign, obj);
             voice_say_text_fmt("Callsign window");
             break;
+
+        case ACTION_APP_CHANNELS:
+            /* As the hand mic's V/M key: over a running app it opens as
+             * an overlay (dialog_channels.c). */
+            dialog_channels_toggle(obj, dialog_running);
+            break;
     }
 }
 
