@@ -40,6 +40,40 @@
 
 
 /*
+ * 1KO125 Denoise (wefax_decoder_set_denoise()): a demodulator made for
+ * selective fading, then a light sharpening of each row.
+ *
+ * Selective fading makes one of the two tones fade for a moment while the
+ * other does not: the phase discriminator then follows the stronger tone
+ * and a white area turns into black streaks.  This demodulator measures the
+ * energy of the white and of the black tone separately (two moving sums of
+ * WEFAX_TONE_LEN samples, 12000 / 14 = 857 Hz: each one has a null on the
+ * other tone, 850 Hz away), follows the level of each tone (peak, decaying
+ * with WEFAX_TONE_TAU_S) and compares the two tones each against its own
+ * level, the same idea as the automatic threshold of the SITOR-B receiver.
+ * The two levels are kept within WEFAX_TONE_RATIO of each other, so a tone
+ * absent for a long time (a white chart has little black) does not make the
+ * noise at its frequency look like signal.
+ *
+ * The moving sums span about 4 pixels, so lines and text 1-2 pixels thick
+ * come out lighter: each row is then sharpened along the line, by
+ * WEFAX_SHARPEN times its difference from the mean of WEFAX_SHARPEN_W
+ * pixels, which gives them back their contrast.
+ *
+ * It is used only for the picture; the APT START/STOP detector keeps the
+ * phase discriminator, and the decoder's own measures (black rows, phasing
+ * and slant) see the row before the sharpening.  The picture moves
+ * WEFAX_TONE_LEN / 2 samples (about 2 pixels) to the right, the same on
+ * every row.
+ */
+#define WEFAX_TONE_LEN      14
+#define WEFAX_TONE_TAU_S    0.3f
+#define WEFAX_TONE_RATIO    6.0f
+#define WEFAX_SHARPEN       0.7f
+#define WEFAX_SHARPEN_W     5
+
+
+/*
  * DWD IOC 576 APT START detector.
  */
 #define WEFAX_APT_START_HZ          300.0f
@@ -233,6 +267,20 @@ struct wefax_decoder {
 
 
     /*
+     * 1KO125 Denoise, see WEFAX_TONE_LEN.
+     */
+    bool denoise;
+    uint8_t row_sharp[WEFAX_WIDTH];
+
+    float tone_phase;
+    float tone_w_i[WEFAX_TONE_LEN], tone_w_q[WEFAX_TONE_LEN];
+    float tone_b_i[WEFAX_TONE_LEN], tone_b_q[WEFAX_TONE_LEN];
+    float tone_w_si, tone_w_sq, tone_b_si, tone_b_sq;
+    unsigned int tone_pos;
+    float tone_w_level, tone_b_level;
+
+
+    /*
      * WEFAX line generator.
      */
     double line_position;
@@ -243,6 +291,13 @@ struct wefax_decoder {
     unsigned int pixel_samples;
 
     uint8_t row[WEFAX_WIDTH];
+
+    /* 1KO125: the same row from the classic discriminator.  With Denoise
+     * the picture comes from tone_gray(), but the black band that confirms
+     * START is judged on this one, as without Denoise: tone_gray() needs
+     * time (TAU) and more signal to reach full black on a weak start. */
+    double pixel_sum_cls;
+    uint8_t row_cls[WEFAX_WIDTH];
 
     uint32_t row_count;
 
@@ -316,6 +371,110 @@ struct wefax_decoder {
     wefax_row_callback_t row_callback;
     void *row_callback_data;
 };
+
+/*
+ * 1KO125 Denoise: the row sharpened along the line, see WEFAX_SHARPEN.
+ * The mean of WEFAX_SHARPEN_W pixels is mirrored at the two ends.
+ */
+static void sharpen_row(
+    const uint8_t *in,
+    uint8_t *out)
+{
+    const int half = WEFAX_SHARPEN_W / 2;
+
+    for (int x = 0; x < WEFAX_WIDTH; x++) {
+        int sum = 0;
+
+        for (int k = -half; k <= half; k++) {
+            int i = x + k;
+            if (i < 0) i = -i - 1;
+            if (i >= WEFAX_WIDTH) i = 2 * WEFAX_WIDTH - i - 1;
+            sum += in[i];
+        }
+
+        const float mean = (float)sum / WEFAX_SHARPEN_W;
+        float v = in[x] + WEFAX_SHARPEN * (in[x] - mean);
+
+        if (v < 0.0f) v = 0.0f;
+        if (v > 255.0f) v = 255.0f;
+        out[x] = (uint8_t)(v + 0.5f);
+    }
+}
+
+
+/*
+ * 1KO125 Denoise demodulator: gray level (0 black .. 255 white) of one
+ * sample of the low-passed baseband, see WEFAX_TONE_LEN.
+ */
+static float tone_gray(
+    wefax_decoder_t *decoder,
+    float fi,
+    float fq)
+{
+    const float step =
+        2.0f * WEFAX_PI * (WEFAX_SHIFT_HZ / 2.0f) / (float)WEFAX_SAMPLE_RATE;
+
+    decoder->tone_phase += step;
+    if (decoder->tone_phase > WEFAX_PI) {
+        decoder->tone_phase -= 2.0f * WEFAX_PI;
+    }
+
+    const float c = cosf(decoder->tone_phase);
+    const float sn = sinf(decoder->tone_phase);
+
+    /* white tone (+shift/2) and black tone (-shift/2) moved to 0 Hz */
+    const float wi = fi * c + fq * sn, wq = fq * c - fi * sn;
+    const float bi = fi * c - fq * sn, bq = fq * c + fi * sn;
+
+    const unsigned int k = decoder->tone_pos;
+
+    decoder->tone_w_si += wi - decoder->tone_w_i[k];
+    decoder->tone_w_sq += wq - decoder->tone_w_q[k];
+    decoder->tone_b_si += bi - decoder->tone_b_i[k];
+    decoder->tone_b_sq += bq - decoder->tone_b_q[k];
+    decoder->tone_w_i[k] = wi;
+    decoder->tone_w_q[k] = wq;
+    decoder->tone_b_i[k] = bi;
+    decoder->tone_b_q[k] = bq;
+
+    if (++decoder->tone_pos >= WEFAX_TONE_LEN) {
+        /* once per turn, the sums again from scratch: no rounding drift */
+        decoder->tone_pos = 0;
+        decoder->tone_w_si = decoder->tone_w_sq = 0.0f;
+        decoder->tone_b_si = decoder->tone_b_sq = 0.0f;
+        for (unsigned int n = 0; n < WEFAX_TONE_LEN; n++) {
+            decoder->tone_w_si += decoder->tone_w_i[n];
+            decoder->tone_w_sq += decoder->tone_w_q[n];
+            decoder->tone_b_si += decoder->tone_b_i[n];
+            decoder->tone_b_sq += decoder->tone_b_q[n];
+        }
+    }
+
+    const float ew = decoder->tone_w_si * decoder->tone_w_si + decoder->tone_w_sq * decoder->tone_w_sq;
+    const float eb = decoder->tone_b_si * decoder->tone_b_si + decoder->tone_b_sq * decoder->tone_b_sq;
+
+    /* level of each tone: peak, decaying with WEFAX_TONE_TAU_S */
+    static float decay = 0.0f;
+    if (decay == 0.0f) {
+        decay = expf(-1.0f / (WEFAX_TONE_TAU_S * (float)WEFAX_SAMPLE_RATE));
+    }
+    float lw = decoder->tone_w_level * decay;
+    float lb = decoder->tone_b_level * decay;
+    if (ew > lw) lw = ew;
+    if (eb > lb) lb = eb;
+
+    /* the stronger level at most WEFAX_TONE_RATIO times the weaker one */
+    if (lb > lw * WEFAX_TONE_RATIO) lb = lw * WEFAX_TONE_RATIO;
+    if (lw > lb * WEFAX_TONE_RATIO) lw = lb * WEFAX_TONE_RATIO;
+    if (lw < 1e-20f) lw = 1e-20f;
+    if (lb < 1e-20f) lb = 1e-20f;
+    decoder->tone_w_level = lw;
+    decoder->tone_b_level = lb;
+
+    const float a = ew / lw, b = eb / lb;
+    return 255.0f * a / (a + b + 1e-20f);
+}
+
 
 /*
  * Build a unity-DC-gain low-pass FIR using a windowed sinc.
@@ -429,6 +588,16 @@ static void reset_dsp(
 
     decoder->previous_valid = false;
 
+    decoder->tone_phase = 0.0f;
+    memset(decoder->tone_w_i, 0, sizeof(decoder->tone_w_i));
+    memset(decoder->tone_w_q, 0, sizeof(decoder->tone_w_q));
+    memset(decoder->tone_b_i, 0, sizeof(decoder->tone_b_i));
+    memset(decoder->tone_b_q, 0, sizeof(decoder->tone_b_q));
+    decoder->tone_w_si = decoder->tone_w_sq = 0.0f;
+    decoder->tone_b_si = decoder->tone_b_sq = 0.0f;
+    decoder->tone_pos = 0;
+    decoder->tone_w_level = decoder->tone_b_level = 1e-12f;
+
 
     decoder->apt_is_white = false;
     decoder->apt_level_valid = false;
@@ -471,6 +640,7 @@ static void reset_dsp(
     decoder->current_pixel = 0;
 
     decoder->pixel_sum = 0.0;
+    decoder->pixel_sum_cls = 0.0;
     decoder->pixel_samples = 0;
 
 
@@ -554,6 +724,23 @@ void wefax_decoder_reset(
             (unsigned int)(WEFAX_APT_STOP_HOLDOFF_SAMPLES / WEFAX_SAMPLE_RATE)
         );
     }
+}
+
+
+void wefax_decoder_set_denoise(
+    wefax_decoder_t *decoder,
+    bool on)
+{
+    if (decoder) {
+        decoder->denoise = on;
+    }
+}
+
+
+bool wefax_decoder_get_denoise(
+    const wefax_decoder_t *decoder)
+{
+    return decoder && decoder->denoise;
 }
 
 
@@ -1713,6 +1900,14 @@ void wefax_decoder_process(
                 );
 
 
+            /* 1KO125: the gray of the picture (the APT detector below
+             * keeps the discriminator) */
+            const uint8_t pix_gray =
+                decoder->denoise ?
+                (uint8_t)(tone_gray(decoder, filtered_i, filtered_q) + 0.5f) :
+                gray;
+
+
             /*
              * AUTO: DWD APT detector.
              *
@@ -1944,6 +2139,7 @@ void wefax_decoder_process(
                             decoder->line_position = 0.0;
                             decoder->current_pixel = 0;
                             decoder->pixel_sum = 0.0;
+                            decoder->pixel_sum_cls = 0.0;
                             decoder->pixel_samples = 0;
                             decoder->row_count = 0;
 
@@ -2110,6 +2306,9 @@ void wefax_decoder_process(
             ) {
 
                 decoder->pixel_sum +=
+                    pix_gray;
+
+                decoder->pixel_sum_cls +=
                     gray;
 
                 decoder->pixel_samples++;
@@ -2130,6 +2329,15 @@ void wefax_decoder_process(
                             decoder->pixel_samples +
                             0.5
                         );
+
+                    decoder->row_cls[
+                        decoder->current_pixel
+                    ] =
+                        (uint8_t)(
+                            decoder->pixel_sum_cls /
+                            decoder->pixel_samples +
+                            0.5
+                        );
                 }
 
 
@@ -2145,6 +2353,10 @@ void wefax_decoder_process(
 
                     decoder->row[
                         decoder->current_pixel
+                    ] = pix_gray;
+
+                    decoder->row_cls[
+                        decoder->current_pixel
                     ] = gray;
                 }
 
@@ -2153,6 +2365,9 @@ void wefax_decoder_process(
                     pixel;
 
                 decoder->pixel_sum =
+                    pix_gray;
+
+                decoder->pixel_sum_cls =
                     gray;
 
                 decoder->pixel_samples =
@@ -2171,6 +2386,15 @@ void wefax_decoder_process(
                     ] =
                         (uint8_t)(
                             decoder->pixel_sum /
+                            decoder->pixel_samples +
+                            0.5
+                        );
+
+                    decoder->row_cls[
+                        decoder->current_pixel
+                    ] =
+                        (uint8_t)(
+                            decoder->pixel_sum_cls /
                             decoder->pixel_samples +
                             0.5
                         );
@@ -2200,7 +2424,7 @@ void wefax_decoder_process(
                         x++
                     ) {
                         if (
-                            decoder->row[x] <
+                            decoder->row_cls[x] <
                             WEFAX_CONFIRM_BLACK_THRESHOLD
                         ) {
                             black_pixels++;
@@ -2266,7 +2490,7 @@ void wefax_decoder_process(
                         x++
                     ) {
                         if (
-                            decoder->row[x] <
+                            decoder->row_cls[x] <
                             WEFAX_CONFIRM_BLACK_THRESHOLD
                         ) {
                             black_pixels++;
@@ -2289,6 +2513,7 @@ void wefax_decoder_process(
                             decoder->line_position = 1.0;
                             decoder->current_pixel = 0;
                             decoder->pixel_sum = 0.0;
+                            decoder->pixel_sum_cls = 0.0;
                             decoder->pixel_samples = 0;
                             decoder->row_count = 0;
                             memset(
@@ -2360,8 +2585,15 @@ void wefax_decoder_process(
                     decoder->row_callback
                 ) {
 
+                    const uint8_t *out_row = decoder->row;
+
+                    if (decoder->denoise) {
+                        sharpen_row(decoder->row, decoder->row_sharp);
+                        out_row = decoder->row_sharp;
+                    }
+
                     decoder->row_callback(
-                        decoder->row,
+                        out_row,
                         WEFAX_WIDTH,
                         decoder->row_count,
                         decoder->row_callback_data
@@ -2397,6 +2629,9 @@ void wefax_decoder_process(
 
 
                 decoder->pixel_sum =
+                    0.0;
+
+                decoder->pixel_sum_cls =
                     0.0;
 
                 decoder->pixel_samples =
