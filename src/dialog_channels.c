@@ -788,6 +788,11 @@ static void build_window(void) {
     lv_obj_set_size(table, TABLE_W, LV_SIZE_CONTENT);
     lv_table_set_col_cnt(table, 1);
     lv_table_set_col_width(table, 0, TABLE_W);
+    /* A new table has one row whose cell holds nothing yet. With no channels
+     * refresh_table() shrinks it to 0 rows, and LVGL 8.3 then frees that cell
+     * without checking it (lv_table_set_row_cnt reads cell_data[i]->user_data):
+     * the GUI crashed when CHANNELS opened on an empty list. Give it a value. */
+    lv_table_set_cell_value(table, 0, 0, " ");
 
     lv_obj_set_style_border_width(table, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(table, 0, LV_PART_MAIN);
