@@ -44,7 +44,7 @@ static const char *const bodies[] = {
     /* WEFAX */
     H("WEFAX - WEATHER FAX RECEIVER")
     "WEFAX receives the weather charts that meteorological services broadcast on HF as an "
-    "analog fax signal: 120 lines per minute, IOC 576, 1500 Hz audio centre, USB.\n\n"
+    "analog fax signal: 120 lines per minute, IOC 576, 1500 Hz audio centre, USB-D.\n\n"
     H("HOW TO USE IT")
     "Press Freq. to open the list of weather-fax stations with their daily schedules. Tune a "
     "station, then press Start Auto RX: the receiver waits for the start tone, draws the fax "
@@ -53,6 +53,12 @@ static const char *const bodies[] = {
     H("CORRECTIONS")
     "Align moves the picture sideways, Tilt straightens a slanted picture. The Tilt is "
     "remembered for each station; Auto Slant measures it on the phasing signal of each fax.\n\n"
+    H("DENOISE")
+    "With Denoise ON (default) the receiver measures the white and the black tone separately "
+    "and follows the level of each one, so that when one tone fades white areas do not turn "
+    "into black streaks; each line is then lightly sharpened. Denoise OFF is the classic "
+    "receiver: try it if a picture with real shades of gray (a satellite picture) looks "
+    "wrong.\n\n"
     H("FILES")
     "Saved faxes: /mnt/wefax (PNG). Open them with Fax Browser.\n\n"
     H("MICROPHONE")
@@ -104,10 +110,24 @@ static const char *const bodies[] = {
     H("RECEIVE")
     "Start Auto RX waits for the VIS header, decodes the picture and saves it. Start Manual RX "
     "receives a picture already under way, in the mode chosen with RX Mode or by Autodetect. "
+    "With Auto RX Restart ON a new VIS heard during a picture starts a new reception only if, "
+    "within 3 seconds, the line syncs of the new picture follow it and those of the picture "
+    "under way stop: a part of a picture that sounds like a VIS no longer breaks the reception. "
     "Received pictures: /mnt/sstv, shown by RX Pics Browser.\n\n"
+    H("DENOISE")
+    "Denoise (page 2) cleans the received picture; the button changes OFF / CLASSIC / ML. "
+    "CLASSIC rebuilds the lines spoiled by QRM, removes the coloured dots and dashes and "
+    "smooths the grain without blurring the edges. ML uses a small neural network trained on "
+    "SSTV receptions: it cleans much more, takes about a second after the picture ends and "
+    "leaves a clean picture as it is; very thin lines and small text may come out softer. "
+    "With CLASSIC or ML the screen shows the cleaned picture and both are saved: the original "
+    "and the cleaned one (_dn.png, marked DN in the browser).\n\n"
     H("TRANSMIT")
-    "TX opens the transmit menu: CQ call, reply, reply with the received picture, picture only, "
+    "TX opens the transmit menu: CQ call, reply, replay (reply with a miniature of a received picture, chosen among the saved ones), picture only, "
     "repeat. Your pictures go in /mnt/sstv/tx_pics, text templates in /mnt/sstv/tx_text.\n"
+    "While you set up TX the receiver keeps going (the line at the bottom of the picture "
+    "tells what it is doing); it stops only when transmission starts, and a picture being "
+    "received is saved with the part that has arrived.\n"
     "Transmission starts at the last confirmation: check frequency, power and antenna first.",
 };
 

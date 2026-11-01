@@ -27,6 +27,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     rtty.c screenshot.c display.cpp gps.c
     rtty_tx.c rtty_sql.c rtty_buttons.c digi_qso.c digi_next.c
     ui_list.c app_info.c
+    app_radio.c
     dialog.c dialog_swrscan.c
     dxcc.c
     dialog_ft8.c dialog_freq.c dialog_gps.c dialog_msg_cw.c
@@ -49,6 +50,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     # WeFax
     dialog_wefax.c wefax/decoder.c wefax/stations.c
     # SSTV
+    dialog_sstv.c sstv_resources.c sstv/decoder.c sstv/encoder.c sstv/autodetect.c sstv/vis.c sstv/linesync.c sstv/preview.c sstv/sstv_denoise.c sstv/sstv_dnn.c sstv/syncgrid.c
 )
 
 add_subdirectory(fonts)
