@@ -474,9 +474,15 @@ static buttons_page_t page_app_2 = {
 static buttons_page_t page_app_3 = {
     {&btn_app_p3, &btn_wifi, &btn_bt, &btn_js8, &btn_wefax}
 };
-static buttons_page_t page_app_4 = {
-    {&btn_app_p4, &btn_sstv, &btn_channels}
-};
+/* Each app on its way in adds its button below its own name line, so they
+ * merge in any order (#313). */
+static buttons_page_t page_app_4 = {{
+    &btn_app_p4,
+    &btn_sstv,
+    &btn_channels,
+    /* WSPR */
+    /* PSK31 */
+}};
 
 /* RTTY */
 
