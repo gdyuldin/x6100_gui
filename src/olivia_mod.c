@@ -1,6 +1,6 @@
 /*
  * olivia_mod.c - MFSK modulation layer of Olivia
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  * Part of OpenX6100 (github.com/OpenX6100)
  *

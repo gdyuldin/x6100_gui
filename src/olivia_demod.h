@@ -4,7 +4,7 @@
  * Written from scratch from the public Olivia specification.
  * The SP9VRC reference code is GPL-2 and was NOT copied.
  *
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (c) 2026 Krzysztof Myszkowski SP2KMO
  * Part of OpenX6100 (github.com/OpenX6100)
  *
